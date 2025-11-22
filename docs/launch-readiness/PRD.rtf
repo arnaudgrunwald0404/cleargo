@@ -1,0 +1,436 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2761
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 # Launch Readiness Console \'96 Product Requirements Document (PRD)\
+\
+## 1. Overview\
+\
+ClearCompany runs multiple product launches and feature releases in parallel across ~15 products/pods. Today, launch readiness is managed via a spreadsheet-based \'93Go / Conditional Go / No Go\'94 matrix per epic, filled in by various stakeholders and manually reviewed in GTM/roadmap meetings.\
+\
+This doesn\'92t scale:\
+\
+- It\'92s easy for criteria to be stale or incomplete.\
+- Launch risks are only discovered late, often within weeks of target dates.\
+- There\'92s no single view across all launches; everything is buried in Sheets and slides.\
+- Nobody gets systematic reminders or alerts; everything is ad hoc.\
+\
+**Launch Readiness Console** is an internal tool to replace the static spreadsheet with a structured, intelligent \'93control tower\'94 for launches. It will:\
+\
+- Model the existing matrix (criteria, stakeholders, Go/Conditional/No Go) in a real database.\
+- Automatically calculate launch readiness, highlight risks, and enforce gating rules.\
+- Notify stakeholders to update their pieces and summarize status for leadership.\
+- Integrate with Aha! so product and GTM data stay in sync.\
+\
+This is a **single-tenant internal web app** used by ClearCompany\'92s product and GTM org.\
+\
+---\
+\
+## 2. Problem Statement\
+\
+We need to manage launch readiness across many simultaneous launches without relying on manual spreadsheet policing.\
+\
+**Core problems:**\
+\
+1. No consistent, real-time view of launch readiness across products.\
+2. Gating criteria (e.g., security, support readiness, migration) are often discovered too late.\
+3. Stakeholders forget to update statuses; the matrix gets stale.\
+4. Launch decisions (why we went Go/Conditional/No Go) aren\'92t logged cleanly.\
+5. Aha! is the roadmap source of truth, but launch readiness lives outside it.\
+\
+---\
+\
+## 3. Goals & Non-Goals\
+\
+### 3.1 Goals\
+\
+- Provide a **single, living view** of launch readiness across all active launches.\
+- Enforce consistent **Go / Conditional Go / No Go** logic with **gating criteria** and **tier-specific rules**.\
+- Make risks obvious early via **alerts, reminders, and simple scoring**.\
+- Integrate with **Aha!** to pull launchable epics and push back summary status.\
+- Support **T-based milestones** (e.g., T-90, T-30, T+30, T+90) and flag misalignment.\
+- Serve as the canonical tool for **Go/No-Go decision meetings** and **post-launch reviews**.\
+\
+### 3.2 Non-Goals (for v1)\
+\
+- No customer-facing portal. Internal-only.\
+- No complex workflow engine beyond simple reminders & basic rules.\
+- No deep analytics dashboards yet (beyond readiness % and basic KPI fields).\
+- No dynamic AI agent automation in v1 (LLM-based summaries can come later).\
+\
+---\
+\
+## 4. Target Users & Personas\
+\
+1. **CPO / ELT (Arnaud, CEO, CFO, etc.)**\
+   - Needs a single view of major launches, risks, and readiness.\
+   - Uses it in quarterly / monthly reviews and GTM councils.\
+\
+2. **Senior Director of Product / Product Leadership (Dan + pod leads)**\
+   - Oversees launches across pods.\
+   - Wants to know which launches are at risk and why.\
+   - Uses the tool to prioritize work and adjust roadmap.\
+\
+3. **Product Managers (per product/epic)**\
+   - Own launch readiness for their epics/themes.\
+   - Coordinate with PMM, Eng, Support to fill the matrix.\
+   - Need a clear checklist and visibility into blockers.\
+\
+4. **Product Marketing / GTM leads**\
+   - Responsible for GTM criteria (messaging, sales assets, campaigns).\
+   - Need reminders and a clear view of their outstanding tasks.\
+\
+5. **Engineering / Architecture / Security / Support / IM / Learning**\
+   - Own specific criteria (e.g., migration tooling, support readiness, docs).\
+   - Need an easy way to see and update what they\'92re on the hook for.\
+\
+6. **Product Ops (or equivalent)**\
+   - Owns configuration of criteria, tiers, gates.\
+   - Runs Go/No-Go sessions and curates views for leadership.\
+\
+---\
+\
+## 5. High-Level Concept\
+\
+Each launch (usually an Aha epic/theme) is represented as a set of **criteria rows**. For each criterion, a **Decision Owner** sets the status: **Go**, **Conditional Go**, or **No Go**, plus any conditions and due dates.\
+\
+The system then:\
+\
+- Computes **launch-level readiness** and **verdict** (Go / Conditional / No Go).\
+- Highlights **gate criteria** that block launches if not met.\
+- Flags **time-based risk** (e.g., 30 days to launch but multiple gates not ready).\
+- Sends **reminders** to owners to update their items.\
+- Produces **portfolio and launch-level views** for leadership.\
+\
+---\
+\
+## 6. Key Concepts & Data Model (Conceptual)\
+\
+### 6.1 Entities\
+\
+#### 6.1.1 User\
+\
+Represents an internal ClearCompany user.\
+\
+- `id` (UUID)\
+- `name` (string)\
+- `email` (string)\
+- `role` (enum: `CPO`, `PRODUCT_LEAD`, `PM`, `PMM`, `ENG_LEAD`, `SUPPORT_LEAD`, `SECURITY`, `LEARNING`, `PRODUCT_OPS`, `OTHER`)\
+- `slack_handle` (string, optional)\
+- `is_active` (boolean)\
+- `created_at`, `updated_at`\
+\
+Auth: SSO via corporate IdP or Google Workspace.\
+\
+---\
+\
+#### 6.1.2 Product\
+\
+Represents a ClearCompany product / pillar.\
+\
+- `id` (UUID)\
+- `name` (string) \'96 e.g., \'93ClearRecruit ATS\'94, \'93ClearLearn\'94, \'93Compensation\'94\
+- `pillar` (enum: `HIRE`, `ENABLE`, `GROW`, `PLATFORM`, `TALENT_AI`, `ANALYTICS`)\
+- `pod` (string) \'96 e.g., \'93TA Core\'94, \'93Platform\'94\
+- `owner_id` (User)\
+- `created_at`, `updated_at`\
+\
+---\
+\
+#### 6.1.3 Launch\
+\
+Core object representing a launchable epic/theme. Maps 1:1 to an **Aha Epic**.\
+\
+- `id` (UUID) \'96 internal\
+- `aha_id` (string)\
+- `aha_url` (string)\
+- `name` (string)\
+- `product_id` (FK \uc0\u8594  Product)\
+- `tier` (enum: `TIER_1`, `TIER_2`, `TIER_3`) \'96 from Aha \'93Launch Tier\'94\
+- `target_launch_date` (date) \'96 from Aha \'93Estimated GA Release (PM Owned)\'94\
+- `status` (enum: `PLANNED`, `IN_EVALUATION`, `GO`, `CONDITIONAL_GO`, `NO_GO`, `SHIPPED`, `CANCELLED`)\
+- `readiness_score` (float 0\'961) \'96 computed\
+- `risk_level` (enum: `LOW`, `MEDIUM`, `HIGH`) \'96 computed\
+- `owner_id` (User)\
+- `business_priority` (string / enum)\
+- `csm_priority` (string / enum)\
+- `tags` (string[])\
+- `created_at`, `updated_at`\
+\
+---\
+\
+#### 6.1.4 Criterion\
+\
+Global template definition of a readiness criterion (row).\
+\
+- `id` (UUID)\
+- `label` (string)\
+- `description` (text)\
+- `category` (enum: `PRODUCT_TECH`, `GTM`, `SUPPORT`, `DATA_ANALYTICS`, `LEGAL_SECURITY`, `OPS`, `OTHER`)\
+- `gate` (boolean)\
+- `tier_applicability` (enum: `ALL`, `TIER_1_ONLY`, `TIER_1_AND_2`)\
+- `decision_owner_role` (enum; see User.role)\
+- `status_definition_go` (text)\
+- `status_definition_conditional` (text)\
+- `status_definition_no_go` (text)\
+- `is_active` (boolean)\
+- `sort_order` (integer)\
+- `created_at`, `updated_at`\
+\
+---\
+\
+#### 6.1.5 LaunchCriterionStatus\
+\
+Instance of a Criterion for a specific Launch.\
+\
+- `id` (UUID)\
+- `launch_id` (FK \uc0\u8594  Launch)\
+- `criterion_id` (FK \uc0\u8594  Criterion)\
+- `status` (enum: `GO`, `CONDITIONAL_GO`, `NO_GO`, `NOT_SET`)\
+- `current_status_notes` (text)\
+- `condition` (text, optional)\
+- `condition_type` (enum: `PRE_LAUNCH`, `T_PLUS_30`, `T_PLUS_90`, `OTHER`, nullable)\
+- `condition_due_date` (date, optional)\
+- `condition_owner_id` (User, optional)\
+- `decision_owner_id` (User)\
+- `last_updated_at` (timestamp)\
+- `last_updated_by` (User)\
+- `score_value` (int: 2 / 1 / 0 / null)\
+\
+---\
+\
+#### 6.1.6 DecisionSnapshot\
+\
+Snapshot of launch readiness at a specific decision time (e.g., Go/No-Go).\
+\
+- `id` (UUID)\
+- `launch_id` (FK \uc0\u8594  Launch)\
+- `taken_at` (timestamp)\
+- `decision_type` (enum: `GO_NO_GO_MEETING`, `CHECKPOINT`, `POST_LAUNCH_REVIEW`)\
+- `verdict` (enum: `GO`, `CONDITIONAL_GO`, `NO_GO`)\
+- `notes` (text)\
+- `created_by` (User)\
+- `snapshot_data` (JSON)\
+\
+---\
+\
+#### 6.1.7 Notification / Reminder\
+\
+- `id` (UUID)\
+- `user_id` (User)\
+- `type` (enum: `REMINDER_UPDATE_STATUS`, `UPCOMING_LAUNCH_AT_RISK`, `WEEKLY_DIGEST`)\
+- `payload` (JSON)\
+- `sent_at` (timestamp)\
+- `delivery_channel` (enum: `EMAIL`, `SLACK`)\
+- `status` (enum: `SENT`, `FAILED`)\
+\
+---\
+\
+## 7. Core Functional Requirements\
+\
+### 7.1 Launch Configuration\
+\
+1. **Create Launch**\
+   - Manual or via Aha sync.\
+   - Required: name, product, tier, target date, owner.\
+   - On creation, auto-attach active Criteria matching tier and create LaunchCriterionStatus rows with `NOT_SET`.\
+\
+2. **Edit Launch**\
+   - PM/Product Ops can edit tier, target date, owner, notes.\
+   - Recompute risk and reminders on change.\
+\
+3. **Archive / Cancel Launch**\
+   - Mark `CANCELLED`; retain historical data.\
+\
+---\
+\
+### 7.2 Criteria Configuration (Admin)\
+\
+- Product Ops can create/edit global Criteria.\
+- Criteria grouped by category; `sort_order` controls display.\
+- `is_active = false` stops criteria being instantiated for new launches.\
+\
+---\
+\
+### 7.3 Launch Readiness Evaluation\
+\
+#### 7.3.1 Per-Criterion Status\
+\
+- Decision Owner or Product Ops sets `status` and updates notes.\
+- If `CONDITIONAL_GO`:\
+  - Must set `condition`, `condition_type`, `condition_due_date`, `condition_owner_id`.\
+\
+Scoring:\
+\
+- GO \uc0\u8594  2  \
+- CONDITIONAL_GO \uc0\u8594  1  \
+- NO_GO \uc0\u8594  0  \
+- NOT_SET \uc0\u8594  null  \
+\
+---\
+\
+#### 7.3.2 Launch-Level Verdict & Readiness Score\
+\
+**Readiness Score (0\'961)**\
+\
+- Consider only non-gate criteria (`gate = false`).\
+- `readiness_score = sum(score_value) / (2 * number_of_non_gate_criteria_with_status_set)`.\
+\
+**Launch Verdict (status)**\
+\
+- Base: `IN_EVALUATION` if any criterion is set.\
+- Rules:\
+  - Any gate == `NO_GO` \uc0\u8594  launch.status = `NO_GO`.\
+  - Else any gate == `CONDITIONAL_GO` with unresolved pre-launch condition \uc0\u8594  `CONDITIONAL_GO`.\
+  - Else tier thresholds:\
+    - Tier 1: readiness \uc0\u8805  0.9 \u8594  `GO`, else `CONDITIONAL_GO`.\
+    - Tier 2: readiness \uc0\u8805  0.8 \u8594  `GO`, else `CONDITIONAL_GO`.\
+    - Tier 3: readiness \uc0\u8805  0.7 \u8594  `GO`, else `CONDITIONAL_GO` (must-have gates cannot be `NO_GO`).\
+\
+Manual override allowed for Product Ops/CPO with a recorded reason.\
+\
+**Risk Level**\
+\
+- `days_to_launch = target_launch_date - today`.\
+\
+Example:\
+\
+- `HIGH` if `days_to_launch <= 30` and any gate not GO or readiness below threshold.\
+- `MEDIUM` if `days_to_launch <= 60` and readiness moderately below threshold.\
+- Else `LOW`.\
+\
+---\
+\
+### 7.4 Views & UX\
+\
+#### 7.4.1 Portfolio Dashboard\
+\
+- Table of launches with:\
+  - Name, Product/Pillar/Pod, Tier, target date, days to launch, status, readiness %, risk, gate counts.\
+- Filters: tier, pillar, pod, owner, status, timeframe.\
+- Sort: target date, risk, readiness.\
+\
+#### 7.4.2 Launch Detail View\
+\
+- Header: launch name, product, tier, dates, status, risk, readiness bar, gate counts.\
+- Matrix: criteria grouped by category with status, owners, conditions, timestamps.\
+- Action: create DecisionSnapshot (\'93Take Go/No-Go Snapshot\'94).\
+\
+#### 7.4.3 Owner View (\'93My Items\'94)\
+\
+- For current user:\
+  - All LaunchCriterionStatus where they\'92re decision_owner or condition_owner.\
+  - Show launch, product, criterion, status, condition, due date, overdue flag.\
+\
+#### 7.4.4 Decision Log / Snapshots\
+\
+- List snapshots for launch:\
+  - Decision date/time, type, verdict, notes, creator.\
+- Selecting snapshot shows read-only matrix state at that time.\
+\
+---\
+\
+### 7.5 Notifications & Alerts (v1)\
+\
+1. **Stale Criterion Reminder**\
+   - If `last_updated_at` older than X days (e.g., 14) and status != GO:\
+     - Email reminder to decision_owner.\
+\
+2. **Upcoming Launch Risk Alert**\
+   - Weekly:\
+     - Launches with `days_to_launch <= 45` and `risk_level = HIGH`.\
+     - Notify launch owner, pod lead, Product Ops.\
+\
+3. **Weekly Digest (CPO / Product Leads)**\
+   - Top N launches by tier, risk, and days-to-launch.\
+   - Include status, readiness, key gate blockers.\
+\
+Channels: email in v1, Slack later.\
+\
+---\
+\
+### 7.6 Aha Integration (Summary)\
+\
+- Aha Epics are the canonical **Launch** source.\
+- We:\
+  - Read tier, GA date, owner, product/pod, priority, tags, etc.\
+  - Write back readiness status, score, risk, Go/No-Go date, and a URL back to the console.\
+- A separate technical doc specifies exact field mapping and API details.\
+\
+---\
+\
+### 7.7 Permissions & Roles\
+\
+- All authenticated users: read access to portfolio and launch detail.\
+- Launch owner, Product Ops, CPO: edit launch metadata.\
+- LaunchCriterionStatus: editable by decision_owner and Product Ops; others read-only.\
+- Criteria configuration: Product Ops & CPO only.\
+\
+---\
+\
+### 7.8 Audit & Logging\
+\
+- Log:\
+  - Launch.status, tier, target date changes.\
+  - LaunchCriterionStatus.status/condition/decision_owner changes.\
+  - DecisionSnapshot creation.\
+- Store audit entries with timestamp, user, entity type/id, JSON diff.\
+\
+---\
+\
+## 8. Non-Functional Requirements\
+\
+- Portfolio view (\uc0\u8804 100 launches): < 2s.\
+- Launch detail (~50 criteria): < 1s after fetch.\
+- 99%+ availability (internal tool).\
+- SSO, RBAC, HTTPS.\
+- No customer PII stored.\
+\
+Tech stack:\
+\
+- Frontend: React + TypeScript + Vite + Mantine.\
+- Backend: Node/TypeScript or Supabase functions.\
+- DB: Postgres (Supabase).\
+- Jobs: n8n or backend scheduler.\
+\
+---\
+\
+## 9. Analytics & Success Metrics\
+\
+- Adoption:\
+  - Launches in console vs Aha epics tagged as Launch.\
+  - % of Tier 1/2 launches using console for Go/No-Go.\
+\
+- Data Freshness:\
+  - Median age of criteria updates.\
+  - % launches with all gate criteria updated in last 14 days.\
+\
+- Launch Quality:\
+  - Count of Tier 1 launches slipping post-Go due to readiness issues.\
+  - Qualitative feedback from PMs/PMMs/ELT.\
+\
+---\
+\
+## 10. Phasing\
+\
+### v1 (MVP \'96 operational)\
+\
+- Data model implemented.\
+- Portfolio Dashboard, Launch Detail, My Items.\
+- Readiness scoring + verdict.\
+- Email reminders/alerts.\
+- Aha sync (in + basic write-back).\
+- Auth & RBAC.\
+- Basic audit log.\
+\
+### v2+\
+\
+- Richer Aha write-back.\
+- Slack integration.\
+- T+30/T+90 post-launch tracking.\
+- LLM-based summaries / exec briefs.\
+- Advanced per-product / per-tier configuration.\
+}

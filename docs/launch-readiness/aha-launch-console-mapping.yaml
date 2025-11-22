@@ -1,0 +1,468 @@
+version: 1
+description: >
+  Canonical data mapping between Aha! Epics and the Launch Readiness Console
+  (internal DB + computed fields). Defines system-of-record, directions, and
+  placeholder API keys for Aha custom fields.
+
+systems:
+  aha:
+    description: Aha! product management platform – Epics are canonical source for product data.
+  launch_console_db:
+    description: Internal Postgres/Supabase DB for Launch Readiness Console – canonical for readiness state.
+
+entities:
+
+  # ---------------------------------------------------------------------------
+  # User
+  # ---------------------------------------------------------------------------
+  User:
+    db_table: users
+    system_of_record: launch_console_db
+    fields:
+      - name: id
+        type: uuid
+        source_system: launch_console_db
+        direction: internal
+      - name: name
+        type: text
+        source_system: launch_console_db
+        direction: internal
+      - name: email
+        type: text
+        source_system: launch_console_db
+        direction: internal
+      - name: role
+        type: enum(CPO, PRODUCT_LEAD, PM, PMM, ENG_LEAD, SUPPORT_LEAD, SECURITY, LEARNING, PRODUCT_OPS, OTHER)
+        source_system: launch_console_db
+        direction: internal
+      - name: slack_handle
+        type: text|null
+        source_system: launch_console_db
+        direction: internal
+      - name: is_active
+        type: boolean
+        source_system: launch_console_db
+        direction: internal
+
+  # ---------------------------------------------------------------------------
+  # Product
+  # ---------------------------------------------------------------------------
+  Product:
+    db_table: products
+    system_of_record: launch_console_db
+    fields:
+      - name: id
+        type: uuid
+      - name: name
+        type: text
+        comment: Human-readable product/module name (e.g. "ClearRecruit ATS").
+      - name: pillar
+        type: enum(HIRE, ENABLE, GROW, PLATFORM, TALENT_AI, ANALYTICS)
+      - name: pod
+        type: text
+      - name: owner_id
+        type: uuid (FK -> users.id)
+
+  # ---------------------------------------------------------------------------
+  # Launch  (1:1 with Aha Epic)
+  # ---------------------------------------------------------------------------
+  Launch:
+    db_table: launches
+    description: Canonical internal representation of an Aha Epic that is a launch.
+    system_of_record: mixed
+    fields:
+
+      # Identity & linkage
+      - name: id
+        type: uuid
+        source_system: launch_console_db
+        direction: internal
+      - name: aha_id
+        type: text
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: id_or_reference_num
+          notes: use Epic.id if stable, otherwise reference_num fallback.
+      - name: aha_url
+        type: text
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: url
+
+      # Display / basic metadata
+      - name: name
+        type: text
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: name
+
+      - name: product_id
+        type: uuid (FK -> products.id)
+        source_system: launch_console_db
+        direction: internal
+        derivation: looked up from Aha Component(s) → internal Product mapping.
+
+      - name: product_component
+        type: text|null
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field_label: "Component(s)"
+          custom_field_key: components   # TODO: replace with actual Aha key
+
+      - name: pod
+        type: text|null
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field_label: "Dev Backlog/Pod"
+          custom_field_key: dev_backlog_pod   # TODO: replace with actual key
+
+      - name: owner_id
+        type: uuid (FK -> users.id)
+        source_system: launch_console_db
+        direction: internal
+        derivation: map Aha.assigned_to_user (email) -> User.email.
+
+      - name: owner_email
+        type: text|null
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: assigned_to_user
+
+      - name: status_raw
+        type: text|null
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: workflow_status
+
+      - name: tags
+        type: text[]
+        source_system: aha
+        direction: read
+        aha:
+          object: epic
+          field: tags
+
+      # Tier & candidate flag
+      - name: tier
+        type: enum(TIER_1, TIER_2, TIER_3)
+        system_of_record: aha
+        direction: read
+        aha:
+          object: epic
+          field_label: "Launch Tier"
+          custom_field_key: launch_tier      # TODO
+          mapping:
+            "Tier 1": TIER_1
+            "Tier 2": TIER_2
+            "Tier 3": TIER_3
+
+      - name: is_launch_candidate
+        type: boolean
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Launch Candidate"     # or tag "LaunchConsole"
+          custom_field_key: launch_candidate  # TODO
+
+      # Dates
+      - name: target_launch_date
+        type: date|null
+        system_of_record: aha
+        direction: read
+        comment: canonical date for readiness (T-90/T-30/T+30).
+        aha:
+          field_label: "Estimated GA Release (PM Owned)"
+          custom_field_key: estimated_ga_release_pm_owned  # TODO
+
+      - name: scheduled_ga_dev_date
+        type: date|null
+        system_of_record: aha
+        direction: read
+        comment: dev-facing schedule; display-only.
+        aha:
+          field_label: "Scheduled GA Release (Dev Only)"
+          custom_field_key: scheduled_ga_release_dev_only  # TODO
+
+      # Business / CSM priority & value signals
+      - name: business_priority
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Business Priority"
+          custom_field_key: business_priority  # TODO
+
+      - name: csm_priority
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "CSM Priority"
+          custom_field_key: csm_priority  # TODO
+
+      - name: modified_rice_score
+        type: json|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Modified RICE"
+          custom_field_key: modified_rice  # TODO
+
+      - name: wsjf_score
+        type: json|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "WSJF"
+          custom_field_key: wsjf  # TODO
+
+      - name: product_value
+        type: json|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Product value"
+          custom_field_key: product_value  # TODO
+
+      # GTM / implementation links
+      - name: gtm_link
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Product Marketing/GTM Link"
+          custom_field_key: gtm_link  # TODO
+
+      - name: activation_process
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Activation Process"
+          custom_field_key: activation_process  # TODO
+
+      - name: new_org_setup
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "New Org Setup"
+          custom_field_key: new_org_setup  # TODO
+
+      - name: existing_org_setup
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Existing Org Setup"
+          custom_field_key: existing_org_setup  # TODO
+
+      - name: pricing_model
+        type: text|null
+        system_of_record: aha
+        direction: read
+        aha:
+          field_label: "Pricing Model"
+          custom_field_key: pricing_model  # TODO
+
+      # Readiness / risk – canonical in Launch Console, mirrored to Aha
+      - name: readiness_status
+        type: enum(Go, Conditional Go, No Go, Not Evaluated)
+        system_of_record: launch_console_db
+        direction: write_back_to_aha
+        aha:
+          field_label: "Launch Readiness Status"
+          custom_field_key: launch_readiness_status  # TODO
+
+      - name: readiness_score_pct
+        type: integer (0-100)
+        system_of_record: launch_console_db
+        direction: write_back_to_aha
+        aha:
+          field_label: "Launch Readiness Score (%)"
+          custom_field_key: launch_readiness_score_pct  # TODO
+          derivation: readiness_score * 100, rounded.
+
+      - name: risk_level
+        type: enum(Low, Medium, High)
+        system_of_record: launch_console_db
+        direction: write_back_to_aha
+        aha:
+          field_label: "Launch Risk"
+          custom_field_key: launch_risk  # TODO
+
+      - name: last_go_no_go_decision_date
+        type: date|null
+        system_of_record: launch_console_db
+        direction: write_back_to_aha
+        aha:
+          field_label: "Launch Go/No-Go Decision Date"
+          custom_field_key: launch_go_no_go_decision_date  # TODO
+
+      - name: console_url
+        type: text
+        system_of_record: launch_console_db
+        direction: write_back_to_aha
+        aha:
+          field_label: "Launch Console URL"
+          custom_field_key: launch_console_url  # TODO
+          derivation: "https://launch-console.clearcompany.com/launch/{launch.id}"
+
+      # Internal console state
+      - name: internal_status
+        type: enum(PLANNED, IN_EVALUATION, GO, CONDITIONAL_GO, NO_GO, SHIPPED, CANCELLED)
+        system_of_record: launch_console_db
+        direction: internal
+        comment: mirrors verdict + lifecycle; not written back to Aha.
+
+      - name: readiness_score
+        type: float (0-1)
+        system_of_record: launch_console_db
+        direction: internal
+        derivation: >
+          Sum of score_value for non-gate criteria / (2 * count_of_non_gate_criteria_with_status_set).
+
+      - name: created_at
+        type: timestamp
+      - name: updated_at
+        type: timestamp
+
+  # ---------------------------------------------------------------------------
+  # Criterion (global definition)
+  # ---------------------------------------------------------------------------
+  Criterion:
+    db_table: criteria
+    system_of_record: launch_console_db
+    fields:
+      - name: id
+        type: uuid
+      - name: label
+        type: text
+      - name: description
+        type: text
+      - name: category
+        type: enum(PRODUCT_TECH, GTM, SUPPORT, DATA_ANALYTICS, LEGAL_SECURITY, OPS, OTHER)
+      - name: gate
+        type: boolean
+      - name: tier_applicability
+        type: enum(ALL, TIER_1_ONLY, TIER_1_AND_2)
+      - name: decision_owner_role
+        type: enum(User.role)
+      - name: status_definition_go
+        type: text
+      - name: status_definition_conditional
+        type: text
+      - name: status_definition_no_go
+        type: text
+      - name: is_active
+        type: boolean
+      - name: sort_order
+        type: integer
+
+  # ---------------------------------------------------------------------------
+  # LaunchCriterionStatus (per launch per criterion)
+  # ---------------------------------------------------------------------------
+  LaunchCriterionStatus:
+    db_table: launch_criterion_statuses
+    system_of_record: launch_console_db
+    unique_key: [launch_id, criterion_id]
+    fields:
+      - name: id
+        type: uuid
+      - name: launch_id
+        type: uuid (FK -> launches.id)
+      - name: criterion_id
+        type: uuid (FK -> criteria.id)
+      - name: status
+        type: enum(GO, CONDITIONAL_GO, NO_GO, NOT_SET)
+      - name: current_status_notes
+        type: text
+      - name: condition
+        type: text|null
+      - name: condition_type
+        type: "enum(PRE_LAUNCH, T_PLUS_30, T_PLUS_90, OTHER)|null"
+      - name: condition_due_date
+        type: date|null
+      - name: condition_owner_id
+        type: uuid|null (FK -> users.id)
+      - name: decision_owner_id
+        type: uuid (FK -> users.id)
+      - name: score_value
+        type: integer|null
+        derivation:
+          GO: 2
+          CONDITIONAL_GO: 1
+          NO_GO: 0
+          NOT_SET: null
+      - name: last_updated_at
+        type: timestamp
+      - name: last_updated_by
+        type: uuid (FK -> users.id)
+
+  # ---------------------------------------------------------------------------
+  # DecisionSnapshot
+  # ---------------------------------------------------------------------------
+  DecisionSnapshot:
+    db_table: decision_snapshots
+    system_of_record: launch_console_db
+    fields:
+      - name: id
+        type: uuid
+      - name: launch_id
+        type: uuid (FK -> launches.id)
+      - name: taken_at
+        type: timestamp
+      - name: decision_type
+        type: enum(GO_NO_GO_MEETING, CHECKPOINT, POST_LAUNCH_REVIEW)
+      - name: verdict
+        type: enum(GO, CONDITIONAL_GO, NO_GO)
+      - name: notes
+        type: text
+      - name: snapshot_data
+        type: jsonb
+      - name: created_by
+        type: uuid (FK -> users.id)
+
+integrations:
+
+  - name: aha_epic_to_launch_sync
+    direction: aha -> launch_console_db
+    trigger: scheduled_and_manual
+    filter:
+      object: epic
+      conditions:
+        - workspace_in_allowed_set
+        - (custom_field.launch_candidate == true) OR (tags contains "LaunchConsole")
+    behaviour:
+      - upsert Launch by aha_id
+      - update fields where system_of_record == aha
+      - if new Launch: instantiate Criteria -> LaunchCriterionStatus with NOT_SET
+
+  - name: launch_readiness_to_aha_sync
+    direction: launch_console_db -> aha
+    trigger:
+      - readiness_recomputed
+      - go_no_go_decision_snapshot_created
+    behaviour:
+      - for each Launch with aha_id:
+          write custom_fields:
+            "Launch Readiness Status": readiness_status
+            "Launch Readiness Score %": readiness_score_pct
+            "Launch Risk": risk_level
+            "Launch Go/No-Go Date": last_go_no_go_decision_date
+            "Launch Console URL": console_url
+      - only issue Aha update if values changed since last sync
