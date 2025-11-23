@@ -4,6 +4,10 @@ description: >
   (internal DB + computed fields). Defines system-of-record, directions, and
   placeholder API keys for Aha custom fields.
 
+custom_fields_config:
+  path: ../../config/aha-custom-fields.json
+  notes: Keys are resolved by alias from this file under fields.*.key
+
 systems:
   aha:
     description: Aha! product management platform – Epics are canonical source for product data.
@@ -115,7 +119,7 @@ entities:
         aha:
           object: epic
           field_label: "Component(s)"
-          custom_field_key: components   # TODO: replace with actual Aha key
+          custom_field_key_ref: components
 
       - name: pod
         type: text|null
@@ -124,7 +128,7 @@ entities:
         aha:
           object: epic
           field_label: "Dev Backlog/Pod"
-          custom_field_key: dev_backlog_pod   # TODO: replace with actual key
+          custom_field_key_ref: dev_backlog_pod
 
       - name: owner_id
         type: uuid (FK -> users.id)
@@ -164,7 +168,7 @@ entities:
         aha:
           object: epic
           field_label: "Launch Tier"
-          custom_field_key: launch_tier      # TODO
+          custom_field_key_ref: launch_tier
           mapping:
             "Tier 1": TIER_1
             "Tier 2": TIER_2
@@ -176,7 +180,7 @@ entities:
         direction: read
         aha:
           field_label: "Launch Candidate"     # or tag "LaunchConsole"
-          custom_field_key: launch_candidate  # TODO
+          custom_field_key_ref: launch_candidate
 
       # Dates
       - name: target_launch_date
@@ -186,7 +190,7 @@ entities:
         comment: canonical date for readiness (T-90/T-30/T+30).
         aha:
           field_label: "Estimated GA Release (PM Owned)"
-          custom_field_key: estimated_ga_release_pm_owned  # TODO
+          custom_field_key_ref: estimated_ga_release_pm_owned
 
       - name: scheduled_ga_dev_date
         type: date|null
@@ -195,7 +199,7 @@ entities:
         comment: dev-facing schedule; display-only.
         aha:
           field_label: "Scheduled GA Release (Dev Only)"
-          custom_field_key: scheduled_ga_release_dev_only  # TODO
+          custom_field_key_ref: scheduled_ga_release_dev_only
 
       # Business / CSM priority & value signals
       - name: business_priority
@@ -204,7 +208,7 @@ entities:
         direction: read
         aha:
           field_label: "Business Priority"
-          custom_field_key: business_priority  # TODO
+          custom_field_key_ref: business_priority
 
       - name: csm_priority
         type: text|null
@@ -212,7 +216,7 @@ entities:
         direction: read
         aha:
           field_label: "CSM Priority"
-          custom_field_key: csm_priority  # TODO
+          custom_field_key_ref: csm_priority
 
       - name: modified_rice_score
         type: json|null
@@ -220,7 +224,7 @@ entities:
         direction: read
         aha:
           field_label: "Modified RICE"
-          custom_field_key: modified_rice  # TODO
+          custom_field_key_ref: modified_rice
 
       - name: wsjf_score
         type: json|null
@@ -228,7 +232,7 @@ entities:
         direction: read
         aha:
           field_label: "WSJF"
-          custom_field_key: wsjf  # TODO
+          custom_field_key_ref: wsjf
 
       - name: product_value
         type: json|null
@@ -236,7 +240,7 @@ entities:
         direction: read
         aha:
           field_label: "Product value"
-          custom_field_key: product_value  # TODO
+          custom_field_key_ref: product_value
 
       # GTM / implementation links
       - name: gtm_link
@@ -245,7 +249,7 @@ entities:
         direction: read
         aha:
           field_label: "Product Marketing/GTM Link"
-          custom_field_key: gtm_link  # TODO
+          custom_field_key_ref: gtm_link
 
       - name: activation_process
         type: text|null
@@ -253,7 +257,7 @@ entities:
         direction: read
         aha:
           field_label: "Activation Process"
-          custom_field_key: activation_process  # TODO
+          custom_field_key_ref: activation_process
 
       - name: new_org_setup
         type: text|null
@@ -261,7 +265,7 @@ entities:
         direction: read
         aha:
           field_label: "New Org Setup"
-          custom_field_key: new_org_setup  # TODO
+          custom_field_key_ref: new_org_setup
 
       - name: existing_org_setup
         type: text|null
@@ -269,7 +273,7 @@ entities:
         direction: read
         aha:
           field_label: "Existing Org Setup"
-          custom_field_key: existing_org_setup  # TODO
+          custom_field_key_ref: existing_org_setup
 
       - name: pricing_model
         type: text|null
@@ -277,7 +281,7 @@ entities:
         direction: read
         aha:
           field_label: "Pricing Model"
-          custom_field_key: pricing_model  # TODO
+          custom_field_key_ref: pricing_model
 
       # Readiness / risk – canonical in Launch Console, mirrored to Aha
       - name: readiness_status
@@ -286,7 +290,7 @@ entities:
         direction: write_back_to_aha
         aha:
           field_label: "Launch Readiness Status"
-          custom_field_key: launch_readiness_status  # TODO
+          custom_field_key_ref: launch_readiness_status
 
       - name: readiness_score_pct
         type: integer (0-100)
@@ -294,7 +298,7 @@ entities:
         direction: write_back_to_aha
         aha:
           field_label: "Launch Readiness Score (%)"
-          custom_field_key: launch_readiness_score_pct  # TODO
+          custom_field_key_ref: launch_readiness_score_pct
           derivation: readiness_score * 100, rounded.
 
       - name: risk_level
@@ -303,7 +307,7 @@ entities:
         direction: write_back_to_aha
         aha:
           field_label: "Launch Risk"
-          custom_field_key: launch_risk  # TODO
+          custom_field_key_ref: launch_risk
 
       - name: last_go_no_go_decision_date
         type: date|null
@@ -311,7 +315,7 @@ entities:
         direction: write_back_to_aha
         aha:
           field_label: "Launch Go/No-Go Decision Date"
-          custom_field_key: launch_go_no_go_decision_date  # TODO
+          custom_field_key_ref: launch_go_no_go_decision_date
 
       - name: console_url
         type: text
@@ -319,7 +323,7 @@ entities:
         direction: write_back_to_aha
         aha:
           field_label: "Launch Console URL"
-          custom_field_key: launch_console_url  # TODO
+          custom_field_key_ref: launch_console_url
           derivation: "https://launch-console.clearcompany.com/launch/{launch.id}"
 
       # Internal console state

@@ -16,7 +16,7 @@ Key decisions (confirmed)
 - Email provider: Resend.
 - Allowlist: Only @clearcompany.com emails can receive magic links.
 - Aha: Canonical mapping doc exists at docs/launch-readiness/aha-launch-console-mapping.yaml.
-- Aha integration: Inbound via webhook; write-back to Aha triggered on status/readiness/risk change.
+- Aha integration: Inbound via webhook with filter ((Launch Candidate == true) OR tag "LaunchConsole"); write-back fields (Status, Score %, Risk, Go/No-Go Date, Console URL) triggered on readiness recompute and decision snapshot; idempotent updates only when changed.
 - Readiness thresholds: Configurable per tier (T1/T2/T3) via Admin Settings.
 - Owner resolution: Product/pod roster determines decision owners; Product Ops fallback user: agrunwald@clearcompany.com.
 - Pillar/pod taxonomy: Fixed and owned in Aha (synced to console).
@@ -40,7 +40,7 @@ Architecture overview
 Data model (summary)
 - user(id, name, email, role, is_active, slack_handle?)
 - product(id, name, pillar, pod, owner_id)
-- launch(id, aha_id, aha_url, name, product_id, tier, target_launch_date, status, readiness_score, risk_level, owner_id, tags, business_priority, csm_priority)
+- launch(id, aha_id, aha_url, name, product_id, product_component?, pod?, tier, target_launch_date, status, readiness_status, readiness_score, risk_level, last_go_no_go_decision_date?, console_url?, owner_id, owner_email?, tags, business_priority, csm_priority)
 - criterion(id, label, description, category, gate, tier_applicability, decision_owner_role, status_definitions, sort_order, is_active)
 - launch_criterion_status(id, launch_id, criterion_id, status, notes, condition, condition_type, condition_due_date, condition_owner_id, decision_owner_id, last_updated_at, last_updated_by, score_value)
 - decision_snapshot(id, launch_id, taken_at, decision_type, verdict, notes, created_by, snapshot_data)
@@ -72,9 +72,15 @@ Notifications (email via Resend)
 - Upcoming Launch Risk Alert: covered in digest for MVP; optional extra job later.
 
 Aha integration
-- Inbound: Webhook endpoint verifies secret; upserts launches; maps tier, GA date, owner, product/pod/pillar using canonical mapping at docs/launch-readiness/aha-launch-console-mapping.yaml. Creates missing products and maintains taxonomy.
+- Inbound: Webhook endpoint verifies secret; upserts launches using canonical mapping at docs/launch-readiness/aha-launch-console-mapping.yaml.
+  - Filter: include epics in allowed workspaces where (Launch Candidate == true) OR (tags contains "LaunchConsole").
+  - Map: tier, GA date, owner (by email), product/pod/pillar, product_component; create missing Products and maintain taxonomy.
+  - On first sync of a new Launch: instantiate all applicable Criteria with NOT_SET.
 - Backfill: one-time import job for existing epics (idempotent).
-- Outbound write-back: Triggered on status/readiness/risk change; includes back-link URL to console; retry/backoff.
+- Outbound write-back (idempotent): only when values change, triggered on readiness recompute and decision snapshot creation.
+  - Fields written back to Aha: "Launch Readiness Status", "Launch Readiness Score %", "Launch Risk", "Launch Go/No-Go Date", "Launch Console URL".
+  - Console URL format: https://launch-console.clearcompany.com/launch/{launch.id}
+  - Retries with backoff on transient errors.
 
 Admin Settings (v1 must-have)
 - Per-tier thresholds (T1/T2/T3)
@@ -176,9 +182,17 @@ Epics, user stories, and tickets (with acceptance criteria)
   - T8.3 Weekly leadership digest (configurable schedule)
 - E9 Aha integration (webhook + write-back)
   - T9.1 Webhook endpoint (verify secret, upsert, mapping doc)
+    - AC: Secret verified; allowed workspaces enforced; filter: (Launch Candidate == true) OR (tags contains "LaunchConsole"); idempotent upsert.
   - T9.2 Initial backfill job (idempotent)
+    - AC: Imports historical epics matching filter; safe to re-run; respects mapping doc.
   - T9.3 Owner resolution via roster; Product Ops fallback if unresolved
-  - T9.4 Write-back on status/readiness/risk change
+    - AC: Aha assigned_to_user email → existing User by email; if none, assign fallback Product Ops; audited.
+  - T9.4 Console URL derivation
+    - AC: console_url computed and stored; exposed in UI; matches format.
+  - T9.5 Write-back payload + idempotency
+    - AC: Writes fields: Readiness Status, Readiness Score %, Risk, Go/No-Go Date, Console URL; only sends when values changed since last sync; retries with backoff.
+  - T9.6 Mapping keys confirmation and tests
+    - AC: All Aha field_label → custom_field_key values filled (remove TODOs); config-driven; unit tests for inbound mapping (tier, dates, owner, pod/component) and write-back triggers.
 - E10 Audit & admin views
   - T10.1 Admin audit viewer (filters, CSV)
 - E11 Performance, security hygiene, observability
