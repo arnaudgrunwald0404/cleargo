@@ -12,7 +12,7 @@ Executive summary
 - Scope (v1): Data model; Portfolio + Launch Detail + My Items; matrix editing; scoring/verdict/risk; email reminders and digests; Aha webhook sync + write-back on status change; auth without SSO; RBAC; audit; admin settings.
 
 Key decisions (confirmed)
-- Auth: No SSO. Passwordless email login (magic link) via Resend.
+- Auth: Native Supabase Auth (Google OAuth). Replaces custom magic links.
 - Email provider: Resend.
 - Allowlist: Only @clearcompany.com emails can receive magic links.
 - Aha: Canonical mapping doc exists at docs/launch-readiness/aha-launch-console-mapping.yaml.
@@ -34,7 +34,7 @@ Architecture overview
 - Backend: Node/TypeScript (API + jobs) or Supabase functions.
 - Database: Postgres (Supabase). Migrations + seed scripts.
 - Jobs: Scheduled workers; Aha webhook listener; email senders.
-- Auth: Passwordless magic links (Resend), email allowlist, secure sessions.
+- Auth: Native Supabase Auth (Google OAuth).
 - Integrations: Aha (webhook in, write-back out), Resend (email).
 
 Data model (summary)
@@ -144,8 +144,8 @@ Phasing and milestones
 
 Epics, user stories, and tickets (with acceptance criteria)
 - E1 Platform foundations (Auth without SSO, RBAC, env)
-- T1.1 Passwordless auth via Resend
-    - AC: Request-link form, one-time token (30m), sign-out, rate-limit, allowlist @clearcompany.com.
+  - T1.1 Supabase Auth (Google)
+    - AC: Google OAuth provider configured; RLS policies for authenticated users.
   - T1.2 RBAC scaffolding
     - AC: Roles enforced; admin seed for Product Ops/CPO.
 - T1.3 Envs & secrets
@@ -236,14 +236,17 @@ Delivery sequence (sprints)
 - Sprint 6: E12, E13 (tests, polish, docs, UAT)
 
 Immediate next tickets
-1) T1.1 Passwordless auth via Resend (allowlist @clearcompany.com) — Done (magic-link API, verify, signout, login UI, email helper).
+1) T1.1 Supabase Auth (Google) — Done (Replaced NextAuth/Resend with Native Supabase Auth).
 2) T1.2 RBAC scaffolding — Done (role resolver with file-based overrides and fallback Product Ops).
 3) T2.1 Schema + migrations (incl. settings, roster) — Done (db/migrations/0001_initial.sql created).
 4) T2.2 Seed data — Done (db/seeds/0001_seed.sql with defaults and fallback user).
-5) T3.1 Criteria CRUD — Done (Admin UI page at /admin/criteria; list/create/edit; role-gated; file-backed store pending DB integration).
-6) T3.3 Criteria import from XLSX
+5) T3.1 Criteria CRUD — Done (Admin UI page at /admin/criteria; list/create/edit; role-gated; connected to Supabase DB).
+6) Admin Settings UI — Done (Page at /admin/settings; reads/writes to app_settings table; RBAC checks).
+7) T3.3 Criteria import from XLSX
 
 Change log
+- v1.1 (2025-11-23): Completed Admin Settings UI (/admin/settings) and API. Moved settings source of truth to DB.
+- v1.0 (2025-11-23): Migrated to Native Supabase Auth (Google); removed NextAuth.js. Automated DB schema & RLS application via Supabase CLI. Connected Criteria CRUD to Supabase DB.
 - v0.9 (2025-11-22): Completed T3.1 — Criteria Admin UI (/admin/criteria), API (GET/POST/PATCH), validation, and role gating. Temporary file-backed store; will switch to DB repo.
 - v0.8 (2025-11-22): Added DB migration and seed SQL (T2.1, T2.2) and documented apply steps.
 - v0.7 (2025-11-22): Finished T1.3 (env & secrets): added AHA_WEBHOOK_SECRET, FALLBACK_PRODUCT_OPS_EMAIL, COMPANY_TIMEZONE, DIGEST_SCHEDULE; documented settings.

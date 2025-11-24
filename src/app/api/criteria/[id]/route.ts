@@ -1,8 +1,8 @@
+import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
+import { deleteCriteria, updateCriteria } from "@/lib/db/criteria";
 import { resolveRole } from "@/lib/roles";
-import { updateCriterion } from "@/lib/criteriaStore";
 
 const updateSchema = z.object({
   label: z.string().min(1).optional(),
@@ -22,10 +22,29 @@ function forbid() {
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const session = await getSession();
-  if (!session) return forbid();
-  const role = await resolveRole(session.email);
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
+  const role = await resolveRole(user.email);
+  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+
+  const deleted = await deleteCriteria(params.id);
+  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ message: "Criteria deleted successfully" });
+}
+
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
+  const role = await resolveRole(user.email);
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   const body = await req.json();
@@ -33,7 +52,24 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
-  const updated = await updateCriterion(params.id, parsed.data as any);
+  const updated = await updateCriteria(params.id, parsed.data as any);
+  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json({ item: updated });
+}
+
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
+  const role = await resolveRole(user.email);
+  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+
+  const body = await req.json();
+  const parsed = updateSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
+  }
+  const updated = await updateCriteria(params.id, parsed.data as any);
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ item: updated });
 }

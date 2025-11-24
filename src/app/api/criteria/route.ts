@@ -1,8 +1,8 @@
+import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getSession } from "@/lib/auth";
 import { resolveRole } from "@/lib/roles";
-import { listCriteria, createCriterion } from "@/lib/criteriaStore";
+import { createCriteria, getCriteria, listCriteria } from "@/lib/db/criteria";
 import type { CriterionCategory, DecisionOwnerRole, TierApplicability } from "@/types/criteria";
 
 const createSchema = z.object({
@@ -29,9 +29,10 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await getSession();
-  if (!session) return forbid();
-  const role = await resolveRole(session.email);
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
+  const role = await resolveRole(user.email);
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   const body = await req.json();
@@ -39,6 +40,6 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
-  const item = await createCriterion(parsed.data as any);
+  const item = await createCriteria(parsed.data as any);
   return NextResponse.json({ item }, { status: 201 });
 }

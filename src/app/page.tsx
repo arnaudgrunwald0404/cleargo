@@ -1,10 +1,13 @@
-import { getSession } from "@/lib/auth";
+import { createClient } from "@/lib/supabase/server";
+import { SignIn, SignOut } from "@/components/auth-components";
 import { resolveRole } from "@/lib/roles";
 
 export default async function HomePage() {
-  const session = await getSession();
-  const email = session?.email || null;
+  const supabase = createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  const email = user?.email;
   const role = email ? await resolveRole(email) : null;
+
   return (
     <main className="centered">
       <h1>Launch Readiness Console</h1>
@@ -13,14 +16,13 @@ export default async function HomePage() {
           <p>Signed in as {email}{role ? ` — role: ${role}` : ""}</p>
           <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
             <a href="/admin/criteria">Criteria Admin</a>
-            <form action="/api/auth/signout" method="post">
-              <button type="submit">Sign out</button>
-            </form>
+            <a href="/admin/settings">Settings</a>
+            <SignOut />
           </div>
         </>
       ) : (
         <p>
-          You are not signed in. <a href="/login">Sign in</a>
+          You are not signed in. <SignIn />
         </p>
       )}
     </main>

@@ -56,6 +56,63 @@ export default function CriteriaAdminPage() {
   });
   const [editingId, setEditingId] = useState<string | null>(null);
 
+  // Import state
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<{ preview: any[], count: number } | null>(null);
+
+  async function handlePreviewImport() {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportError(null);
+    const formData = new FormData();
+    formData.append("file", importFile);
+
+    try {
+      const res = await fetch("/api/criteria/import", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to preview");
+      setImportPreview(data);
+    } catch (e: any) {
+      setImportError(e.message);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
+  async function handleCommitImport() {
+    if (!importFile) return;
+    setImportLoading(true);
+    setImportError(null);
+    const formData = new FormData();
+    formData.append("file", importFile);
+
+    try {
+      const res = await fetch("/api/criteria/import?commit=true", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to import");
+
+      alert(`Import successful! Created: ${data.created}, Updated: ${data.updated}`);
+      setImportPreview(null);
+      setImportFile(null);
+      // Refresh list
+      const listRes = await fetch("/api/criteria");
+      const listData = await listRes.json();
+      setItems(listData.items || []);
+    } catch (e: any) {
+      setImportError(e.message);
+    } finally {
+      setImportLoading(false);
+    }
+  }
+
   useEffect(() => {
     (async () => {
       try {
@@ -201,6 +258,52 @@ export default function CriteriaAdminPage() {
         </form>
       </section>
 
+      <section style={{ marginTop: 32, padding: "16px", border: "1px solid #ccc", borderRadius: "8px" }}>
+        <h2>Import from Excel</h2>
+        <p>Upload a .xlsx file to bulk create or update criteria. Matches by Label.</p>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+          <input type="file" accept=".xlsx" onChange={(e) => setImportFile(e.target.files?.[0] || null)} />
+          <button onClick={handlePreviewImport} disabled={!importFile || importLoading}>
+            {importLoading ? "Processing..." : "Preview Import"}
+          </button>
+        </div>
+        {importError && <p style={{ color: "red", marginTop: 8 }}>{importError}</p>}
+
+        {importPreview && (
+          <div style={{ marginTop: 16, background: "#f9f9f9", padding: 12 }}>
+            <h3>Preview</h3>
+            <p>Found {importPreview.count} items.</p>
+            <div style={{ maxHeight: 200, overflowY: "auto", fontSize: "0.9em" }}>
+              <table style={{ width: "100%", textAlign: "left" }}>
+                <thead>
+                  <tr>
+                    <th>Label</th>
+                    <th>Category</th>
+                    <th>Gate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {importPreview.preview.slice(0, 10).map((item: any, i: number) => (
+                    <tr key={i}>
+                      <td>{item.label}</td>
+                      <td>{item.category}</td>
+                      <td>{item.gate ? "Yes" : "No"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {importPreview.count > 10 && <p>...and {importPreview.count - 10} more</p>}
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <button onClick={handleCommitImport} disabled={importLoading} style={{ backgroundColor: "#228be6", color: "white", border: "none", padding: "8px 16px", cursor: "pointer" }}>
+                {importLoading ? "Importing..." : "Confirm & Import"}
+              </button>
+              <button onClick={() => setImportPreview(null)} style={{ marginLeft: 8 }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </section>
+
       <section style={{ marginTop: 32 }}>
         <h2>Existing criteria</h2>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -238,7 +341,7 @@ export default function CriteriaAdminPage() {
           </tbody>
         </table>
       </section>
-    </main>
+    </main >
   );
 }
 
