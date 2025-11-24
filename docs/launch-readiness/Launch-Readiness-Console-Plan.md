@@ -229,7 +229,7 @@ API surface (MVP)
 
 Delivery sequence (sprints)
 - Sprint 1: E1, E2 (auth, RBAC, schema, seeds) — Done (v1.2)
-- Sprint 2: E3, E4 (criteria admin + launch CRUD/instantiation)
+- Sprint 2: E3, E4 (criteria admin + launch CRUD/instantiation) — Done (v1.3)
 - Sprint 3: E5, E6 (matrix, scoring, verdict, risk, portfolio, my items)
 - Sprint 4: E9, E8 (Aha webhook/backfill/write-back; Resend + reminders + digest)
 - Sprint 5: E7, E10, E11 (snapshots, audit view, perf/security/observability)
@@ -242,9 +242,12 @@ Immediate next tickets
 4) T2.2 Seed data — Done (db/seeds/0001_seed.sql with defaults and fallback user).
 5) T3.1 Criteria CRUD — Done (Admin UI page at /admin/criteria; list/create/edit; role-gated; connected to Supabase DB).
 6) Admin Settings UI — Done (Page at /admin/settings; reads/writes to app_settings table; RBAC checks).
-7) T3.3 Criteria import from XLSX
+7) T3.3 Criteria import from XLSX — Done (API at /api/criteria/import; Admin UI at /admin/criteria).
+8) T4.1 Launch Create/Edit/Cancel — Done (UI at /launches; API at /api/launches).
+9) T4.2 Auto-instantiation of criteria — Done (handled in createLaunch service).
 
 Change log
+- v1.3 (2025-11-23): Completed Sprint 2. Implemented Launch CRUD (/launches), Product API, and verified Criteria Import.
 - v1.2 (2025-11-23): Completed Sprint 1. Added RLS policies (0003_rls_policies.sql) and fixed Supabase middleware session refreshing.
 - v1.1 (2025-11-23): Completed Admin Settings UI (/admin/settings) and API. Moved settings source of truth to DB.
 - v1.0 (2025-11-23): Migrated to Native Supabase Auth (Google); removed NextAuth.js. Automated DB schema & RLS application via Supabase CLI. Connected Criteria CRUD to Supabase DB.
