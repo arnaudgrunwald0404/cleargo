@@ -1,5 +1,8 @@
 import { createClient } from '@/lib/supabase/server';
 import { Launch, LaunchStatus } from '@/types/launches';
+import { sendSlackNotification } from '@/lib/slack/notifications';
+import { SlackNotificationPayload } from '@/types/slack';
+import { sendEmailNotification } from '@/lib/email/notifications';
 
 export async function recomputeLaunchReadiness(launchId: string) {
     const supabase = createClient();
@@ -7,9 +10,16 @@ export async function recomputeLaunchReadiness(launchId: string) {
     // 1. Fetch launch data and criteria statuses
     const { data: launch, error: launchError } = await supabase
         .from('launch')
-        .select('tier, target_launch_date')
+        .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email')
         .eq('id', launchId)
         .single();
+
+    // ... (rest of function)
+
+
+
+    // 7. Trigger Aha! Write-back
+    // ...
 
     if (launchError) throw launchError;
 
@@ -126,4 +136,61 @@ export async function recomputeLaunchReadiness(launchId: string) {
             updated_at: new Date().toISOString()
         })
         .eq('id', launchId);
+
+    // 6. Send Notifications if changed
+    if (launch.readiness_status && launch.readiness_status !== readinessStatus) {
+        const metadata = {
+            launchName: launch.name,
+            oldStatus: launch.readiness_status,
+            newStatus: readinessStatus,
+            launchUrl: launch.console_url || `http://localhost:3000/launches/${launch.id}`
+        };
+
+        await sendSlackNotification({
+            type: 'launch_status_change',
+            priority: 'high',
+            launch_id: launch.id,
+            metadata
+        }).catch(console.error);
+
+        if (launch.owner_email) {
+            await sendEmailNotification({
+                type: 'launch_status_change',
+                recipientEmail: launch.owner_email,
+                metadata
+            });
+        }
+    }
+
+    if (launch.risk_level && launch.risk_level !== riskLevel && (riskLevel === 'HIGH' || riskLevel === 'MEDIUM')) {
+        const metadata = {
+            launchName: launch.name,
+            riskLevel: riskLevel,
+            launchUrl: launch.console_url || `http://localhost:3000/launches/${launch.id}`,
+            reason: "Readiness score dropped or launch date approaching with unresolved items."
+        };
+
+        await sendSlackNotification({
+            type: 'launch_risk_alert',
+            priority: 'high',
+            launch_id: launch.id,
+            metadata
+        }).catch(console.error);
+
+        if (launch.owner_email) {
+            await sendEmailNotification({
+                type: 'launch_risk_alert',
+                recipientEmail: launch.owner_email,
+                metadata
+            });
+        }
+    }
+
+    // 7. Trigger Aha! Write-back
+    try {
+        const { writeBackLaunchReadiness } = await import('@/lib/aha/write-back');
+        await writeBackLaunchReadiness(launchId);
+    } catch (error) {
+        console.error('Failed to trigger Aha! write-back:', error);
+    }
 }

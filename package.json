@@ -8,11 +8,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@mantine/core": "^8.3.9",
+    "@mantine/hooks": "^8.3.9",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",
     "cookie": "^0.6.0",
     "jose": "^5.2.3",
     "next": "14.2.15",
+    "postcss-preset-mantine": "^1.18.0",
+    "postcss-simple-vars": "^7.0.1",
     "react": "18.2.0",
     "react-dom": "18.2.0",
     "resend": "^3.2.0",

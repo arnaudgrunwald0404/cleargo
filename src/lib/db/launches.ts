@@ -28,6 +28,14 @@ export interface Launch {
     console_url: string | null;
     last_go_no_go_decision_date: string | null;
     scheduled_ga_dev_date: string | null;
+    modified_rice_score: any | null;
+    wsjf_score: any | null;
+    product_value: any | null;
+    gtm_link: string | null;
+    activation_process: string | null;
+    new_org_setup: string | null;
+    existing_org_setup: string | null;
+    pricing_model: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -69,6 +77,14 @@ export async function upsertLaunchFromAha(
         business_priority: launchData.business_priority,
         csm_priority: launchData.csm_priority,
         tags: launchData.tags,
+        modified_rice_score: launchData.modified_rice_score,
+        wsjf_score: launchData.wsjf_score,
+        product_value: launchData.product_value,
+        gtm_link: launchData.gtm_link,
+        activation_process: launchData.activation_process,
+        new_org_setup: launchData.new_org_setup,
+        existing_org_setup: launchData.existing_org_setup,
+        pricing_model: launchData.pricing_model,
         updated_at: new Date().toISOString(),
     };
 

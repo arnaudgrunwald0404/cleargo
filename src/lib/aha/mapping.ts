@@ -63,6 +63,14 @@ export interface MappedLaunchData {
     business_priority: string | null;
     csm_priority: string | null;
     tags: string[];
+    modified_rice_score: any | null;
+    wsjf_score: any | null;
+    product_value: any | null;
+    gtm_link: string | null;
+    activation_process: string | null;
+    new_org_setup: string | null;
+    existing_org_setup: string | null;
+    pricing_model: string | null;
 }
 
 export function mapEpicToLaunch(epic: AhaEpic): MappedLaunchData {
@@ -79,6 +87,14 @@ export function mapEpicToLaunch(epic: AhaEpic): MappedLaunchData {
         business_priority: getCustomFieldValue(epic, 'business_priority'),
         csm_priority: getCustomFieldValue(epic, 'csm_priority'),
         tags: epic.tags ?? [],
+        modified_rice_score: getCustomFieldValue(epic, 'modified_rice'),
+        wsjf_score: getCustomFieldValue(epic, 'wsjf'),
+        product_value: getCustomFieldValue(epic, 'product_value'),
+        gtm_link: getCustomFieldValue(epic, 'gtm_link'),
+        activation_process: getCustomFieldValue(epic, 'activation_process'),
+        new_org_setup: getCustomFieldValue(epic, 'new_org_setup'),
+        existing_org_setup: getCustomFieldValue(epic, 'existing_org_setup'),
+        pricing_model: getCustomFieldValue(epic, 'pricing_model'),
     };
 }
 
