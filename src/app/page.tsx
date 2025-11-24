@@ -15,6 +15,8 @@ export default async function HomePage() {
         <>
           <p>Signed in as {email}{role ? ` — role: ${role}` : ""}</p>
           <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+            <a href="/launches">Launches</a>
+            <a href="/my-items">My Items</a>
             <a href="/admin/criteria">Criteria Admin</a>
             <a href="/admin/settings">Settings</a>
             <SignOut />

@@ -15,6 +15,14 @@ export default function LaunchesPage() {
         tier: "TIER_3",
     });
 
+    // Filter state
+    const [filters, setFilters] = useState({
+        search: "",
+        tier: "ALL",
+        status: "ALL",
+        risk: "ALL"
+    });
+
     useEffect(() => {
         loadData();
     }, []);
@@ -69,6 +77,14 @@ export default function LaunchesPage() {
         }
     }
 
+    const filteredLaunches = launches.filter(l => {
+        if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        if (filters.tier !== "ALL" && l.tier !== filters.tier) return false;
+        if (filters.status !== "ALL" && l.status !== filters.status) return false;
+        if (filters.risk !== "ALL" && (l.risk_level || 'LOW') !== filters.risk) return false;
+        return true;
+    });
+
     if (loading) return <div className="p-8">Loading...</div>;
 
     return (
@@ -81,6 +97,48 @@ export default function LaunchesPage() {
                 >
                     {showCreate ? "Cancel" : "New Launch"}
                 </button>
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded shadow border mb-6 flex gap-4 flex-wrap items-center">
+                <input
+                    type="text"
+                    placeholder="Search launches..."
+                    value={filters.search}
+                    onChange={e => setFilters({ ...filters, search: e.target.value })}
+                    className="p-2 border rounded w-64"
+                />
+                <select
+                    value={filters.tier}
+                    onChange={e => setFilters({ ...filters, tier: e.target.value })}
+                    className="p-2 border rounded"
+                >
+                    <option value="ALL">All Tiers</option>
+                    <option value="TIER_1">Tier 1</option>
+                    <option value="TIER_2">Tier 2</option>
+                    <option value="TIER_3">Tier 3</option>
+                </select>
+                <select
+                    value={filters.status}
+                    onChange={e => setFilters({ ...filters, status: e.target.value })}
+                    className="p-2 border rounded"
+                >
+                    <option value="ALL">All Statuses</option>
+                    <option value="PLANNED">Planned</option>
+                    <option value="PRE_LAUNCH">Pre-Launch</option>
+                    <option value="LAUNCHING">Launching</option>
+                    <option value="LAUNCHED">Launched</option>
+                </select>
+                <select
+                    value={filters.risk}
+                    onChange={e => setFilters({ ...filters, risk: e.target.value })}
+                    className="p-2 border rounded"
+                >
+                    <option value="ALL">All Risks</option>
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                </select>
             </div>
 
             {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
@@ -175,14 +233,14 @@ export default function LaunchesPage() {
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {launches.length === 0 ? (
+                        {filteredLaunches.length === 0 ? (
                             <tr>
                                 <td colSpan={8} className="p-8 text-center text-gray-500">
-                                    No launches found. Create one to get started.
+                                    No launches found matching filters.
                                 </td>
                             </tr>
                         ) : (
-                            launches.map(launch => (
+                            filteredLaunches.map(launch => (
                                 <tr key={launch.id} className="hover:bg-gray-50">
                                     <td className="p-4 font-medium">
                                         <Link href={`/launches/${launch.id}`} className="text-blue-600 hover:underline">

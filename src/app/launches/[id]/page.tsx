@@ -3,26 +3,53 @@ import { useEffect, useState } from "react";
 import { Launch } from "@/types/launches";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import Matrix from "@/components/Matrix";
+import { createClient } from "@/lib/supabase/client";
 
 export default function LaunchDetailPage() {
     const params = useParams();
     const id = params.id as string;
 
     const [launch, setLaunch] = useState<Launch | null>(null);
+    const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        if (id) loadLaunch();
+        if (id) loadData();
     }, [id]);
 
-    async function loadLaunch() {
+    async function loadData() {
         try {
-            setLoading(true);
+            // Fetch launch
             const res = await fetch(`/api/launches/${id}`);
             if (!res.ok) throw new Error("Failed to fetch launch");
             const data = await res.json();
             setLaunch(data);
+
+            // Fetch matrix
+            // We can use Supabase client directly here for ease, or create an API route.
+            // Let's use Supabase client for read-only (or authenticated read)
+            const supabase = createClient();
+            const { data: matrixData, error: matrixError } = await supabase
+                .from('launch_criterion_status')
+                .select(`
+                    *,
+                    criterion:criterion_id (*)
+                `)
+                .eq('launch_id', id)
+                .order('criterion(sort_order)'); // This might fail if sort_order is not on the join? 
+            // Supabase join sorting syntax is tricky. Let's sort in JS.
+
+            if (matrixError) throw matrixError;
+
+            // Sort by criterion sort_order
+            const sorted = (matrixData || []).sort((a: any, b: any) =>
+                (a.criterion?.sort_order || 0) - (b.criterion?.sort_order || 0)
+            );
+
+            setMatrix(sorted);
+
         } catch (e: any) {
             setError(e.message);
         } finally {
@@ -88,13 +115,15 @@ export default function LaunchDetailPage() {
                 </div>
             </div>
 
-            <div className="bg-white p-6 rounded shadow border">
+            <div className="mb-8">
                 <h2 className="text-xl font-bold mb-4">Readiness Matrix</h2>
-                <p className="text-gray-500 italic">
-                    Matrix view coming in Sprint 3.
-                    <br />
-                    (Check database table `launch_criterion_status` to verify instantiation)
-                </p>
+                {matrix.length === 0 ? (
+                    <div className="bg-yellow-50 p-4 rounded text-yellow-800">
+                        No criteria found. This might be because no criteria matched the launch tier ({launch.tier}) or none are active.
+                    </div>
+                ) : (
+                    <Matrix launchId={launch.id} items={matrix} onUpdate={loadData} />
+                )}
             </div>
         </div>
     );
