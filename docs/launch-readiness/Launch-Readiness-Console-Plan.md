@@ -228,7 +228,7 @@ API surface (MVP)
 - Aha webhook: POST /api/integrations/aha/webhook (secret-verified)
 
 Delivery sequence (sprints)
-- Sprint 1: E1, E2 (auth, RBAC, schema, seeds)
+- Sprint 1: E1, E2 (auth, RBAC, schema, seeds) — Done (v1.2)
 - Sprint 2: E3, E4 (criteria admin + launch CRUD/instantiation)
 - Sprint 3: E5, E6 (matrix, scoring, verdict, risk, portfolio, my items)
 - Sprint 4: E9, E8 (Aha webhook/backfill/write-back; Resend + reminders + digest)
@@ -245,6 +245,7 @@ Immediate next tickets
 7) T3.3 Criteria import from XLSX
 
 Change log
+- v1.2 (2025-11-23): Completed Sprint 1. Added RLS policies (0003_rls_policies.sql) and fixed Supabase middleware session refreshing.
 - v1.1 (2025-11-23): Completed Admin Settings UI (/admin/settings) and API. Moved settings source of truth to DB.
 - v1.0 (2025-11-23): Migrated to Native Supabase Auth (Google); removed NextAuth.js. Automated DB schema & RLS application via Supabase CLI. Connected Criteria CRUD to Supabase DB.
 - v0.9 (2025-11-22): Completed T3.1 — Criteria Admin UI (/admin/criteria), API (GET/POST/PATCH), validation, and role gating. Temporary file-backed store; will switch to DB repo.
