@@ -1,10 +1,13 @@
 export type CriterionCategory =
   | "PRODUCT_TECH"
+  | "PRODUCT_DOCUMENTATION"
   | "GTM"
   | "SUPPORT"
   | "DATA_ANALYTICS"
+  | "ANALYTICS_AND_METRICS"
   | "LEGAL_SECURITY"
   | "OPS"
+  | "STRATEGY"
   | "OTHER";
 
 export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2";
@@ -29,6 +32,7 @@ export type Criterion = {
   gate: boolean;
   tier_applicability: TierApplicability;
   decision_owner_role: DecisionOwnerRole;
+  decision_owner_email?: string | null; // Email or placeholder "[name of pod's product manager]"
   status_definition_go?: string;
   status_definition_conditional?: string;
   status_definition_no_go?: string;

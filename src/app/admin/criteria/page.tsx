@@ -21,11 +21,14 @@ type Item = {
 
 const CATEGORIES = [
   "PRODUCT_TECH",
+  "PRODUCT_DOCUMENTATION",
   "GTM",
   "SUPPORT",
   "DATA_ANALYTICS",
+  "ANALYTICS_AND_METRICS",
   "LEGAL_SECURITY",
   "OPS",
+  "STRATEGY",
   "OTHER",
 ];
 const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2"];

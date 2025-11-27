@@ -13,6 +13,10 @@ export default function AdminSettingsPage() {
 
     // Helper for array fields (allowlisted_domains)
     const [domainInput, setDomainInput] = useState("");
+    
+    // Helper for pod -> product manager mapping
+    const [podMappingPod, setPodMappingPod] = useState("");
+    const [podMappingEmail, setPodMappingEmail] = useState("");
 
     useEffect(() => {
         fetchSettings();
@@ -76,6 +80,32 @@ export default function AdminSettingsPage() {
         setSettings({
             ...settings,
             allowlisted_domains: settings.allowlisted_domains.filter((d) => d !== domain),
+        });
+    };
+
+    const addPodMapping = () => {
+        if (!podMappingPod.trim() || !podMappingEmail.trim() || !settings) return;
+        const mapping = settings.pod_product_manager_mapping || {};
+        if (mapping[podMappingPod.trim()]) return; // Already exists
+
+        setSettings({
+            ...settings,
+            pod_product_manager_mapping: {
+                ...mapping,
+                [podMappingPod.trim()]: podMappingEmail.trim(),
+            },
+        });
+        setPodMappingPod("");
+        setPodMappingEmail("");
+    };
+
+    const removePodMapping = (pod: string) => {
+        if (!settings) return;
+        const mapping = settings.pod_product_manager_mapping || {};
+        const { [pod]: removed, ...rest } = mapping;
+        setSettings({
+            ...settings,
+            pod_product_manager_mapping: rest,
         });
     };
 
@@ -333,6 +363,70 @@ export default function AdminSettingsPage() {
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                                 />
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Pod -> Product Manager Mapping */}
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
+                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-semibold text-gray-900">Pod → Product Manager Mapping</h2>
+                                <p className="text-sm text-gray-500">Map pod names to product manager emails for criteria resolution</p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+                            <input
+                                type="text"
+                                value={podMappingPod}
+                                onChange={(e) => setPodMappingPod(e.target.value)}
+                                placeholder="Pod Name"
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPodMapping(); } }}
+                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            />
+                            <input
+                                type="email"
+                                value={podMappingEmail}
+                                onChange={(e) => setPodMappingEmail(e.target.value)}
+                                placeholder="Product Manager Email"
+                                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addPodMapping(); } }}
+                                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            />
+                            <button
+                                type="button"
+                                onClick={addPodMapping}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
+                            >
+                                Add Mapping
+                            </button>
+                        </div>
+                        <div className="space-y-2">
+                            {settings.pod_product_manager_mapping && Object.keys(settings.pod_product_manager_mapping).length > 0 ? (
+                                Object.entries(settings.pod_product_manager_mapping).map(([pod, email]) => (
+                                    <div key={pod} className="flex items-center justify-between bg-gray-50 px-4 py-2 rounded-lg border border-gray-200">
+                                        <div className="flex items-center gap-3">
+                                            <span className="font-medium text-gray-900">{pod}</span>
+                                            <span className="text-gray-400">→</span>
+                                            <span className="text-gray-700">{email}</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => removePodMapping(pod)}
+                                            className="text-gray-400 hover:text-red-600 transition-colors"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                ))
+                            ) : (
+                                <p className="text-sm text-gray-500 italic">No pod mappings configured</p>
+                            )}
                         </div>
                     </div>
 

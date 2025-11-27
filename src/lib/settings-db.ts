@@ -13,6 +13,7 @@ export interface AppSettings {
     fallback_user_email: string;
     aha_webhook_secret: string | null;
     email_sender: string;
+    pod_product_manager_mapping?: Record<string, string>; // pod_name -> email
     updated_at: string;
 }
 

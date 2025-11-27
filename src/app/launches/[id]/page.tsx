@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
-import { Button } from "@mantine/core";
+import { Button, Select } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 
@@ -19,6 +20,7 @@ export default function LaunchDetailPage() {
     const [error, setError] = useState<string | null>(null);
     const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
     const [refreshSnapshots, setRefreshSnapshots] = useState(0);
+    const [updatingTier, setUpdatingTier] = useState(false);
 
     useEffect(() => {
         if (id) loadData();
@@ -62,6 +64,42 @@ export default function LaunchDetailPage() {
         }
     }
 
+    async function handleTierUpdate(newTier: string | null) {
+        if (!newTier || !launch || newTier === launch.tier) return;
+
+        setUpdatingTier(true);
+        try {
+            const res = await fetch(`/api/launches/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tier: newTier }),
+            });
+
+            if (!res.ok) throw new Error('Failed to update tier');
+
+            const updatedLaunch = await res.json();
+            setLaunch(updatedLaunch);
+
+            notifications.show({
+                title: 'Tier updated',
+                message: `Launch tier has been updated to ${newTier.replace('_', ' ')}`,
+                color: 'green',
+            });
+
+            // Reload matrix data as tier change may affect criteria
+            await loadData();
+        } catch (error: any) {
+            console.error(error);
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to update tier',
+                color: 'red',
+            });
+        } finally {
+            setUpdatingTier(false);
+        }
+    }
+
     if (loading) return <div className="p-8">Loading...</div>;
     if (error) return <div className="p-8 text-red-600">Error: {error}</div>;
     if (!launch) return <div className="p-8">Launch not found</div>;
@@ -76,9 +114,20 @@ export default function LaunchDetailPage() {
                 <div className="flex justify-between items-start">
                     <div>
                         <h1 className="text-3xl font-bold mb-2">{launch.name}</h1>
-                        <div className="flex gap-3 text-sm text-gray-600">
+                        <div className="flex gap-3 items-center text-sm text-gray-600">
                             <span className="bg-gray-100 px-2 py-1 rounded">{(launch as any).product?.name || 'No Product'}</span>
-                            <span className="bg-gray-100 px-2 py-1 rounded">{launch.tier}</span>
+                            <Select
+                                value={launch.tier}
+                                onChange={handleTierUpdate}
+                                data={[
+                                    { value: 'TIER_1', label: 'Tier 1 (Major)' },
+                                    { value: 'TIER_2', label: 'Tier 2 (Significant)' },
+                                    { value: 'TIER_3', label: 'Tier 3 (Minor)' },
+                                ]}
+                                disabled={updatingTier}
+                                size="xs"
+                                style={{ width: 150 }}
+                            />
                             <span className="bg-gray-100 px-2 py-1 rounded">{launch.status}</span>
                         </div>
                     </div>
