@@ -232,7 +232,7 @@ Delivery sequence (sprints)
 - Sprint 2: E3, E4 (criteria admin + launch CRUD/instantiation) — Done (v1.3)
 - Sprint 3: E5, E6 (matrix, scoring, verdict, risk, portfolio, my items) — Done (v1.4)
 - Sprint 4: E9, E8 (Aha webhook/backfill/write-back; Resend + reminders + digest) — Done (v1.5)
-- Sprint 5: E7, E10, E11 (snapshots, audit view, perf/security/observability)
+- Sprint 5: E7, E10, E11 (snapshots, audit view, perf/security/observability) — Done (v1.6)
 - Sprint 6: E12, E13 (tests, polish, docs, UAT)
 
 Immediate next tickets
@@ -248,12 +248,16 @@ Immediate next tickets
 10) T5.1 Matrix UI — Done (Launch Detail page).
 11) T5.3/T5.4 Scoring, Verdict, Risk — Done (src/lib/readiness.ts).
 12) T6.1 Portfolio Dashboard — Done (Launch List with filters).
+13) T7.1/T7.2 Decision Snapshots — Done (Modal UI, history list, API endpoints).
 14) T8.1 Aha! Webhook & Mapping — Done (Extended mapping implemented).
 15) T8.2 Aha! Write-back — Done (Triggered on readiness change).
 16) T9.1 Slack Notifications — Done (Status/Risk alerts).
 17) T9.2 Email Notifications — Done (Resend integration).
+18) T10.1 Audit Log Viewer — Done (Admin page with filters and CSV export).
+19) T11.1/T11.2/T11.3 Performance & Security — Done (DB indexes, rate limiting, error handling).
 
 Change log
+- v1.6 (2025-11-26): Completed Sprint 5. Implemented Decision Snapshots (E7), Audit Log Viewer (E10), and Performance/Security hardening (E11): DB indexes, rate limiting, Mantine notifications.
 - v1.5 (2025-11-23): Completed Sprint 4. Implemented Aha! extended mapping & write-back, Slack notifications (status/risk), and Email notifications (Resend).
 - v1.4 (2025-11-23): Completed Sprint 3. Implemented Matrix View, Scoring/Verdict/Risk logic, Portfolio Dashboard filters, and My Items view.
 - v1.3 (2025-11-23): Completed Sprint 2. Implemented Launch CRUD (/launches), Product API, and verified Criteria Import.

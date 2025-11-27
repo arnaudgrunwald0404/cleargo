@@ -25,6 +25,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
         const body = await req.json();
         const launch = await updateLaunch(params.id, body);
+
+        // Trigger write-back to Aha! if launch has aha_id
+        if (launch.aha_id) {
+            try {
+                const { writeBackLaunchReadiness } = await import('@/lib/aha/write-back');
+                await writeBackLaunchReadiness(launch.id);
+                console.log(`Write-back triggered for launch ${launch.id}`);
+            } catch (error) {
+                console.error('Write-back failed:', error);
+                // Don't fail the update if write-back fails
+            }
+        }
+
         return NextResponse.json(launch);
     } catch (error) {
         console.error('Error updating launch:', error);

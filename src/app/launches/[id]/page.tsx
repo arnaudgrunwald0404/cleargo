@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
+import { Button } from "@mantine/core";
+import SnapshotModal from "@/components/SnapshotModal";
+import SnapshotList from "@/components/SnapshotList";
 
 export default function LaunchDetailPage() {
     const params = useParams();
@@ -14,6 +17,8 @@ export default function LaunchDetailPage() {
     const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
+    const [refreshSnapshots, setRefreshSnapshots] = useState(0);
 
     useEffect(() => {
         if (id) loadData();
@@ -77,11 +82,14 @@ export default function LaunchDetailPage() {
                             <span className="bg-gray-100 px-2 py-1 rounded">{launch.status}</span>
                         </div>
                     </div>
-                    <div className="text-right">
+                    <div className="text-right flex flex-col items-end gap-2">
                         <div className="text-sm text-gray-500">Target Date</div>
-                        <div className="font-medium text-lg">
+                        <div className="font-medium text-lg mb-2">
                             {launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : 'Not set'}
                         </div>
+                        <Button size="xs" variant="outline" onClick={() => setSnapshotModalOpen(true)}>
+                            Take Snapshot
+                        </Button>
                     </div>
                 </div>
 
@@ -125,6 +133,19 @@ export default function LaunchDetailPage() {
                     <Matrix launchId={launch.id} items={matrix} onUpdate={loadData} />
                 )}
             </div>
-        </div>
+
+
+            <div className="mb-8">
+                <h2 className="text-xl font-bold mb-4">Decision History</h2>
+                <SnapshotList launchId={launch.id} refreshTrigger={refreshSnapshots} />
+            </div>
+
+            <SnapshotModal
+                launchId={launch.id}
+                opened={snapshotModalOpen}
+                onClose={() => setSnapshotModalOpen(false)}
+                onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
+            />
+        </div >
     );
 }

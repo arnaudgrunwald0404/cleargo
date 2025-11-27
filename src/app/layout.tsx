@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import "./globals.css";
+import '@mantine/core/styles.css';
+import '@mantine/notifications/styles.css';
+import { MantineProvider, ColorSchemeScript } from '@mantine/core';
+import { Notifications } from '@mantine/notifications';
 
 const geistSans = Inter({
   variable: "--font-geist-sans",
@@ -24,10 +28,16 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <ColorSchemeScript />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        {children}
+        <MantineProvider>
+          <Notifications />
+          {children}
+        </MantineProvider>
       </body>
     </html>
   );

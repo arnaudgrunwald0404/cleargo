@@ -106,34 +106,46 @@ export function shouldProcessEpic(epic: AhaEpic): boolean {
     return isLaunchCandidate || hasLaunchTag;
 }
 
-export function buildWriteBackPayload(readinessData: {
+export function buildWriteBackPayload(data: {
     readiness_status: string | null;
     readiness_score: number | null;
     risk_level: string | null;
     last_go_no_go_decision_date: string | null;
     console_url: string | null;
+    tier?: string | null;
+    target_launch_date?: string | null;
 }): Record<string, any> {
     const payload: Record<string, any> = {};
 
-    if (readinessData.readiness_status !== null) {
-        payload[getCustomFieldKey('launch_readiness_status')] = readinessData.readiness_status;
+    // Readiness fields
+    if (data.readiness_status !== null) {
+        payload[getCustomFieldKey('launch_readiness_status')] = data.readiness_status;
     }
 
-    if (readinessData.readiness_score !== null) {
-        const scorePercent = Math.round(readinessData.readiness_score * 100);
+    if (data.readiness_score !== null) {
+        const scorePercent = Math.round(data.readiness_score * 100);
         payload[getCustomFieldKey('launch_readiness_score_pct')] = scorePercent;
     }
 
-    if (readinessData.risk_level !== null) {
-        payload[getCustomFieldKey('launch_risk')] = readinessData.risk_level;
+    if (data.risk_level !== null) {
+        payload[getCustomFieldKey('launch_risk')] = data.risk_level;
     }
 
-    if (readinessData.last_go_no_go_decision_date !== null) {
-        payload[getCustomFieldKey('launch_go_no_go_decision_date')] = readinessData.last_go_no_go_decision_date;
+    if (data.last_go_no_go_decision_date !== null) {
+        payload[getCustomFieldKey('launch_go_no_go_decision_date')] = data.last_go_no_go_decision_date;
     }
 
-    if (readinessData.console_url !== null) {
-        payload[getCustomFieldKey('launch_console_url')] = readinessData.console_url;
+    if (data.console_url !== null) {
+        payload[getCustomFieldKey('launch_console_url')] = data.console_url;
+    }
+
+    // Phase 1: Core launch fields
+    if (data.tier !== undefined && data.tier !== null) {
+        payload[getCustomFieldKey('launch_tier')] = mapTierToAha(data.tier);
+    }
+
+    if (data.target_launch_date !== undefined && data.target_launch_date !== null) {
+        payload[getCustomFieldKey('estimated_ga_release_pm_owned')] = data.target_launch_date;
     }
 
     return payload;

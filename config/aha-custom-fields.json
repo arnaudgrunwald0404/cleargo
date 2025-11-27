@@ -1,26 +1,89 @@
 {
   "workspace_ids": [],
   "fields": {
-    "components": {"label": "Component(s)", "key": ""},
-    "dev_backlog_pod": {"label": "Dev Backlog/Pod", "key": ""},
-    "launch_tier": {"label": "Launch Tier", "key": ""},
-    "launch_candidate": {"label": "Launch Candidate", "key": ""},
-    "estimated_ga_release_pm_owned": {"label": "Estimated GA Release (PM Owned)", "key": ""},
-    "scheduled_ga_release_dev_only": {"label": "Scheduled GA Release (Dev Only)", "key": ""},
-    "business_priority": {"label": "Business Priority", "key": ""},
-    "csm_priority": {"label": "CSM Priority", "key": ""},
-    "modified_rice": {"label": "Modified RICE", "key": ""},
-    "wsjf": {"label": "WSJF", "key": ""},
-    "product_value": {"label": "Product value", "key": ""},
-    "gtm_link": {"label": "Product Marketing/GTM Link", "key": ""},
-    "activation_process": {"label": "Activation Process", "key": ""},
-    "new_org_setup": {"label": "New Org Setup", "key": ""},
-    "existing_org_setup": {"label": "Existing Org Setup", "key": ""},
-    "pricing_model": {"label": "Pricing Model", "key": ""},
-    "launch_readiness_status": {"label": "Launch Readiness Status", "key": ""},
-    "launch_readiness_score_pct": {"label": "Launch Readiness Score %", "key": ""},
-    "launch_risk": {"label": "Launch Risk", "key": ""},
-    "launch_go_no_go_decision_date": {"label": "Launch Go/No-Go Date", "key": ""},
-    "launch_console_url": {"label": "Launch Console URL", "key": ""}
+    "components": {
+      "label": "Component(s)",
+      "key": "components"
+    },
+    "dev_backlog_pod": {
+      "label": "Dev Backlog/Pod",
+      "key": "dev_backlog_pod"
+    },
+    "launch_tier": {
+      "label": "Launch Tier",
+      "key": "gtm_visibility"
+    },
+    "launch_candidate": {
+      "label": "Launch Candidate",
+      "key": "launch_candidate"
+    },
+    "estimated_ga_release_pm_owned": {
+      "label": "Estimated GA Release (PM Owned)",
+      "key": "estimated_ga_release_pm_owned"
+    },
+    "scheduled_ga_release_dev_only": {
+      "label": "Scheduled GA Release (Dev Only)",
+      "key": "scheduled_ga_release_dev_only"
+    },
+    "business_priority": {
+      "label": "Business Priority",
+      "key": "business_priority"
+    },
+    "csm_priority": {
+      "label": "CSM Priority",
+      "key": "csm_priority"
+    },
+    "modified_rice": {
+      "label": "Modified RICE",
+      "key": "modified_rice"
+    },
+    "wsjf": {
+      "label": "WSJF",
+      "key": "wsjf"
+    },
+    "product_value": {
+      "label": "Product value",
+      "key": "product_value"
+    },
+    "gtm_link": {
+      "label": "Product Marketing/GTM Link",
+      "key": "product_marketinggtm_link"
+    },
+    "activation_process": {
+      "label": "Activation Process",
+      "key": "activation_process"
+    },
+    "new_org_setup": {
+      "label": "New Org Setup",
+      "key": "new_org_setup"
+    },
+    "existing_org_setup": {
+      "label": "Existing Org Setup",
+      "key": "existing_org_setup"
+    },
+    "pricing_model": {
+      "label": "Pricing Model",
+      "key": "pricing_model"
+    },
+    "launch_readiness_status": {
+      "label": "Launch Readiness Status",
+      "key": ""
+    },
+    "launch_readiness_score_pct": {
+      "label": "Launch Readiness Score %",
+      "key": ""
+    },
+    "launch_risk": {
+      "label": "Launch Risk",
+      "key": ""
+    },
+    "launch_go_no_go_decision_date": {
+      "label": "Launch Go/No-Go Date",
+      "key": ""
+    },
+    "launch_console_url": {
+      "label": "Launch Console URL",
+      "key": ""
+    }
   }
 }

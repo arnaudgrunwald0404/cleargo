@@ -101,7 +101,7 @@ export async function updateEpicCustomFields(
 
 export async function getCustomFields(): Promise<any> {
     // This endpoint fetches custom field definitions for discovery
-    const url = `${BASE_URL}/meta/custom_fields`;
+    const url = `${BASE_URL}/custom_field_definitions`;
     return await fetchWithRetry(url, {
         method: 'GET',
         headers: {
@@ -109,4 +109,66 @@ export async function getCustomFields(): Promise<any> {
             'Content-Type': 'application/json',
         },
     });
+}
+
+export async function getProducts(): Promise<any> {
+    // List all products (workspaces) accessible with this API token
+    const url = `${BASE_URL}/products`;
+    return await fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${AHA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+export async function getEpics(params?: { per_page?: number; page?: number; product?: string }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.per_page) queryParams.set('per_page', params.per_page.toString());
+    if (params?.page) queryParams.set('page', params.page.toString());
+
+    // If product is specified, use product-specific endpoint
+    let url;
+    if (params?.product) {
+        url = `${BASE_URL}/products/${params.product}/epics`;
+    } else {
+        url = `${BASE_URL}/epics`;
+    }
+
+    if (queryParams.toString()) {
+        url += `?${queryParams.toString()}`;
+    }
+
+    return await fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${AHA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+export async function testConnection(): Promise<any> {
+    // Test connection by fetching account info
+    const url = `${BASE_URL}/account`;
+    return await fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${AHA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+// Factory function for API endpoint usage
+export function getAhaClient() {
+    return {
+        getEpic,
+        getEpics,
+        getProducts,
+        updateEpicCustomFields,
+        getCustomFields,
+        testConnection,
+    };
 }
