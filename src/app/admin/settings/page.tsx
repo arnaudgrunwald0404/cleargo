@@ -1669,7 +1669,8 @@ function ReleaseScheduleSection({
 
             {/* Releases without launch dates */}
             <div className="mb-6">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-900">Releases Without Launch Dates</h3>
                     <button
                         onClick={onRefresh}
                         disabled={launchReleasesLoading}
@@ -1677,7 +1678,6 @@ function ReleaseScheduleSection({
                     >
                         Refresh
                     </button>
-                    <h3 className="text-md font-semibold text-gray-900">Releases Without Launch Dates</h3>
                 </div>
                 {launchReleasesLoading ? (
                     <div className="text-center py-4 text-gray-500 text-sm">Loading release names from launches...</div>
