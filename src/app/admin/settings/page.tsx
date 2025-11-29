@@ -1522,6 +1522,56 @@ function UserManagementSection({
     );
 }
 
+function ReleaseWithoutDateRow({
+    launchRelease,
+    formatDateForInput,
+    handleMapReleaseName,
+}: {
+    launchRelease: {releaseName: string; launchDate: string | null};
+    formatDateForInput: (date: string) => string;
+    handleMapReleaseName: (releaseName: string, launchDate: string) => Promise<void>;
+}) {
+    const [dateInput, setDateInput] = useState(launchRelease.launchDate ? formatDateForInput(launchRelease.launchDate) : "");
+
+    return (
+        <tr className="hover:bg-purple-50 transition-colors">
+            <td className="px-4 py-3 whitespace-nowrap">
+                <span className="font-medium text-gray-900">{launchRelease.releaseName}</span>
+            </td>
+            <td className="px-4 py-3 whitespace-nowrap">
+                <input
+                    type="text"
+                    placeholder="MM/DD/YYYY"
+                    value={dateInput}
+                    onChange={(e) => setDateInput(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && dateInput.trim()) {
+                            handleMapReleaseName(launchRelease.releaseName, dateInput);
+                            setDateInput("");
+                        }
+                    }}
+                    className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 text-sm"
+                />
+            </td>
+            <td className="px-4 py-3 text-right">
+                <button
+                    onClick={() => {
+                        if (dateInput.trim()) {
+                            handleMapReleaseName(launchRelease.releaseName, dateInput);
+                            setDateInput("");
+                        } else {
+                            alert("Please enter a launch date");
+                        }
+                    }}
+                    className="text-purple-600 hover:text-purple-900 text-sm font-medium"
+                >
+                    Map
+                </button>
+            </td>
+        </tr>
+    );
+}
+
 function ReleaseDateInputRow({
     releaseDate,
     formatDateForInput,
@@ -1690,28 +1740,23 @@ function ReleaseScheduleSection({
                             <colgroup>
                                 <col className="w-2/3" />
                                 <col className="w-1/3" />
+                                <col className="w-24" />
                             </colgroup>
                             <thead className="bg-purple-100">
                                 <tr>
                                     <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Release Name</th>
                                     <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Launch Date</th>
+                                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-900">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-purple-200">
                                 {releasesWithoutDates.map((launchRelease) => (
-                                    <tr key={launchRelease.releaseName} className="hover:bg-purple-50 transition-colors">
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <span className="font-medium text-gray-900">{launchRelease.releaseName}</span>
-                                        </td>
-                                        <td className="px-4 py-3 whitespace-nowrap">
-                                            <ReleaseDateInputRow
-                                                releaseDate={launchRelease.launchDate || ""}
-                                                formatDateForInput={formatDateForInput}
-                                                handleMapReleaseDate={(date) => handleMapReleaseName(launchRelease.releaseName, date || launchRelease.launchDate || "")}
-                                                releaseName={launchRelease.releaseName}
-                                            />
-                                        </td>
-                                    </tr>
+                                    <ReleaseWithoutDateRow
+                                        key={launchRelease.releaseName}
+                                        launchRelease={launchRelease}
+                                        formatDateForInput={formatDateForInput}
+                                        handleMapReleaseName={handleMapReleaseName}
+                                    />
                                 ))}
                             </tbody>
                         </table>
