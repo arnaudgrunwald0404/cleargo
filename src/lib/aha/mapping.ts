@@ -137,13 +137,25 @@ export async function mapEpicToLaunch(
         custom_fields: customFields,
     };
 
+    // Helper function to normalize release values (can be string, array, or date)
+    const normalizeReleaseValue = (value: any): string | null => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) {
+            // If array, join with comma or take first element
+            return value.length > 0 ? String(value[0]) : null;
+        }
+        // For dates or other types, convert to string
+        return String(value);
+    };
+
     return {
         aha_id: epic.reference_num || epic.id,
         aha_url: epic.url,
         name: epic.name,
         tier: mapTierFromAha(getCustomFieldValue(epic, 'launch_tier')),
-        target_launch_date: getCustomFieldValue(epic, 'estimated_ga_release_pm_owned'),
-        scheduled_ga_dev_date: getCustomFieldValue(epic, 'scheduled_ga_release_dev_only'),
+        target_launch_date: normalizeReleaseValue(getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
+        scheduled_ga_dev_date: normalizeReleaseValue(getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
         owner_email: epic.assigned_to_user?.email ?? null,
         product_component: getCustomFieldValue(epic, 'components'),
         pod: getCustomFieldValue(epic, 'dev_backlog_pod'),

@@ -90,6 +90,7 @@ export async function upsertLaunchFromAha(
     };
 
     // Resolve launch date from release schedule if release name is present
+    // Note: target_launch_date is now text, so we convert dates to ISO string format
     if (launchData.aha_release_name) {
         const { data: releaseSchedule } = await supabase
             .from('release_schedule')
@@ -97,8 +98,11 @@ export async function upsertLaunchFromAha(
             .eq('release_name', launchData.aha_release_name)
             .single();
 
-        if (releaseSchedule) {
-            upsertData.target_launch_date = releaseSchedule.launch_date;
+        if (releaseSchedule?.launch_date) {
+            // Convert date to ISO string if it's a Date object, otherwise use as-is (already string)
+            upsertData.target_launch_date = releaseSchedule.launch_date instanceof Date 
+                ? releaseSchedule.launch_date.toISOString().split('T')[0] 
+                : String(releaseSchedule.launch_date);
         }
     }
 
