@@ -37,7 +37,7 @@ export default function AdminSettingsPage() {
     const [releasesLoading, setReleasesLoading] = useState(false);
     const [releaseNameInput, setReleaseNameInput] = useState("");
     const [releaseDateInput, setReleaseDateInput] = useState("");
-    const [editingReleaseId, setEditingReleaseId] = useState<number | null>(null);
+    const [editingReleaseId, setEditingReleaseId] = useState<number | string | null>(null);
     const [launchReleases, setLaunchReleases] = useState<Array<{releaseName: string; launchDate: string | null}>>([]);
     const [launchReleasesLoading, setLaunchReleasesLoading] = useState(false);
 
@@ -147,6 +147,7 @@ export default function AdminSettingsPage() {
             if (!res.ok) throw new Error("Failed to add release");
             setReleaseNameInput("");
             setReleaseDateInput("");
+            setEditingReleaseId(null);
             fetchReleases();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
@@ -1593,8 +1594,8 @@ function ReleaseScheduleSection({
     setReleaseDateInput: (input: string) => void;
     onAdd: () => void;
     onDelete: (id: number) => void;
-    editingReleaseId: number | null;
-    setEditingReleaseId: (id: number | null) => void;
+    editingReleaseId: number | string | null;
+    setEditingReleaseId: (id: number | string | null) => void;
     onUpdate: (id: number, releaseName: string, launchDate: string) => void;
     launchReleases: Array<{releaseName: string; launchDate: string | null}>;
     launchReleasesLoading: boolean;
@@ -1718,43 +1719,19 @@ function ReleaseScheduleSection({
                 )}
             </div>
 
-            {/* Add manually */}
-            <div className="mb-6">
-                <h3 className="text-md font-semibold text-gray-900 mb-3">Add Manually</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <input
-                        type="text"
-                        value={releaseNameInput}
-                        onChange={(e) => setReleaseNameInput(e.target.value)}
-                        placeholder="e.g. APP-R-304 Release 2025.10"
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } }}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                    <input
-                        type="text"
-                        value={releaseDateInput}
-                        onChange={(e) => setReleaseDateInput(e.target.value)}
-                        placeholder="MM/DD/YYYY (e.g. 10/08/2026)"
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); onAdd(); } }}
-                        className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    />
-                    <button
-                        type="button"
-                        onClick={onAdd}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors"
-                    >
-                        Add Mapping
-                    </button>
-                </div>
-            </div>
-
             {/* Current mappings */}
             <div>
-                <h3 className="text-md font-semibold text-gray-900 mb-3">Current Mappings</h3>
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-md font-semibold text-gray-900">Current Mappings</h3>
+                    <button
+                        onClick={() => setEditingReleaseId("new")}
+                        className="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                    >
+                        + Add Mapping
+                    </button>
+                </div>
                 {loading ? (
                     <div className="text-center py-8 text-gray-500">Loading releases...</div>
-                ) : releases.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic">No release mappings configured</p>
                 ) : (
                     <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
                         <table className="min-w-full divide-y divide-indigo-200 table-fixed">
@@ -1771,6 +1748,51 @@ function ReleaseScheduleSection({
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-indigo-200">
+                                {editingReleaseId === "new" && (
+                                    <tr className="hover:bg-indigo-50 transition-colors">
+                                        <td className="px-4 py-3">
+                                            <input
+                                                type="text"
+                                                placeholder="e.g. APP-R-304 Release 2025.10"
+                                                id="release-name-new"
+                                                className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3">
+                                            <input
+                                                type="text"
+                                                placeholder="MM/DD/YYYY"
+                                                id="release-date-new"
+                                                className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
+                                            />
+                                        </td>
+                                        <td className="px-4 py-3 text-right">
+                                            <button
+                                                onClick={() => {
+                                                    const nameInput = document.getElementById("release-name-new") as HTMLInputElement;
+                                                    const dateInput = document.getElementById("release-date-new") as HTMLInputElement;
+                                                    if (nameInput && dateInput && nameInput.value && dateInput.value) {
+                                                        setReleaseNameInput(nameInput.value);
+                                                        setReleaseDateInput(dateInput.value);
+                                                        onAdd();
+                                                        setEditingReleaseId(null);
+                                                    } else {
+                                                        alert("Please fill in both release name and date");
+                                                    }
+                                                }}
+                                                className="text-indigo-600 hover:text-indigo-900 mr-4"
+                                            >
+                                                Save
+                                            </button>
+                                            <button
+                                                onClick={() => setEditingReleaseId(null)}
+                                                className="text-gray-600 hover:text-gray-900"
+                                            >
+                                                Cancel
+                                            </button>
+                                        </td>
+                                    </tr>
+                                )}
                                 {releases.map((release) => (
                                     <tr key={release.id} className="hover:bg-indigo-50 transition-colors">
                                         {editingReleaseId === release.id ? (
@@ -1839,6 +1861,13 @@ function ReleaseScheduleSection({
                                         )}
                                     </tr>
                                 ))}
+                                {releases.length === 0 && editingReleaseId !== "new" && (
+                                    <tr>
+                                        <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">
+                                            No release mappings configured. Click "+ Add Mapping" to create one.
+                                        </td>
+                                    </tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
