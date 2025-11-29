@@ -1647,36 +1647,44 @@ function ReleaseScheduleSection({
         }
     });
 
+    // Separate releases without dates from those with dates
+    const releasesWithoutDates = launchReleases.filter((launchRelease) => {
+        const existingLaunchDate = releaseNameToDateMap.get(launchRelease.releaseName);
+        return !existingLaunchDate;
+    });
+
     return (
-        <div className="space-y-6">
-            {/* Release Date → Release Name Mapping */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900">Release Name → Launch Date Mapping</h2>
-                            <p className="text-sm text-gray-500">Map release names from synchronized launches to launch dates</p>
-                        </div>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
                     </div>
-                    <button
-                        onClick={onRefresh}
-                        disabled={launchReleasesLoading}
-                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        Refresh
-                    </button>
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900">Release Schedule</h2>
+                        <p className="text-sm text-gray-500">Map release names to launch dates</p>
+                    </div>
                 </div>
+                <button
+                    onClick={onRefresh}
+                    disabled={launchReleasesLoading}
+                    className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    Refresh
+                </button>
+            </div>
+
+            {/* Releases without launch dates */}
+            <div className="mb-6">
+                <h3 className="text-md font-semibold text-gray-900 mb-3">Releases Without Launch Dates</h3>
                 {launchReleasesLoading ? (
-                    <div className="text-center py-8 text-gray-500">Loading release names from launches...</div>
-                ) : launchReleases.length === 0 ? (
-                    <p className="text-sm text-gray-500 italic">No release names found. Release names will appear here once launches are synced from AHA.</p>
+                    <div className="text-center py-4 text-gray-500 text-sm">Loading release names from launches...</div>
+                ) : releasesWithoutDates.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">All releases have launch dates mapped</p>
                 ) : (
-                    <div className="overflow-x-auto mb-4">
+                    <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
@@ -1685,65 +1693,31 @@ function ReleaseScheduleSection({
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {launchReleases.map((launchRelease) => {
-                                    const existingLaunchDate = releaseNameToDateMap.get(launchRelease.releaseName);
-                                    
-                                    return (
-                                        <tr key={launchRelease.releaseName} className="hover:bg-gray-50">
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                <span className="text-sm font-medium text-gray-900">{launchRelease.releaseName}</span>
-                                            </td>
-                                            <td className="px-6 py-4 whitespace-nowrap">
-                                                {existingLaunchDate ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-sm text-gray-900">{formatDateForDisplay(existingLaunchDate)}</span>
-                                                        <button
-                                                            onClick={() => {
-                                                                const newDate = prompt("Enter new launch date (MM/DD/YYYY):", formatDateForDisplay(existingLaunchDate));
-                                                                if (newDate && newDate.trim()) {
-                                                                    const release = releases.find(r => r.release_name === launchRelease.releaseName);
-                                                                    if (release) {
-                                                                        onUpdate(release.id, launchRelease.releaseName, newDate.trim());
-                                                                    }
-                                                                }
-                                                            }}
-                                                            className="text-xs text-indigo-600 hover:text-indigo-900"
-                                                        >
-                                                            Change
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <ReleaseDateInputRow
-                                                        releaseDate={launchRelease.launchDate || ""}
-                                                        formatDateForInput={formatDateForInput}
-                                                        handleMapReleaseDate={(date) => handleMapReleaseName(launchRelease.releaseName, date || launchRelease.launchDate || "")}
-                                                        releaseName={launchRelease.releaseName}
-                                                    />
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {releasesWithoutDates.map((launchRelease) => (
+                                    <tr key={launchRelease.releaseName} className="hover:bg-gray-50">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <span className="text-sm font-medium text-gray-900">{launchRelease.releaseName}</span>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <ReleaseDateInputRow
+                                                releaseDate={launchRelease.launchDate || ""}
+                                                formatDateForInput={formatDateForInput}
+                                                handleMapReleaseDate={(date) => handleMapReleaseName(launchRelease.releaseName, date || launchRelease.launchDate || "")}
+                                                releaseName={launchRelease.releaseName}
+                                            />
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
                 )}
             </div>
 
-            {/* Add Release Mapping */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Release Schedule</h2>
-                        <p className="text-sm text-gray-500">Map release identifiers to launch dates</p>
-                    </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+            {/* Add manually */}
+            <div className="mb-6">
+                <h3 className="text-md font-semibold text-gray-900 mb-3">Add Manually</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                     <input
                         type="text"
                         value={releaseNameInput}
@@ -1770,9 +1744,9 @@ function ReleaseScheduleSection({
                 </div>
             </div>
 
-            {/* Release Mappings List */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-md font-semibold text-gray-900 mb-4">Current Mappings</h3>
+            {/* Current mappings */}
+            <div>
+                <h3 className="text-md font-semibold text-gray-900 mb-3">Current Mappings</h3>
                 {loading ? (
                     <div className="text-center py-8 text-gray-500">Loading releases...</div>
                 ) : releases.length === 0 ? (
