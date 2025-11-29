@@ -41,7 +41,7 @@ export async function createSnapshot(
         category,
         gate,
         tier_applicability,
-        decision_owner_role
+        decision_owner_email
       )
     `)
         .eq('launch_id', launchId);

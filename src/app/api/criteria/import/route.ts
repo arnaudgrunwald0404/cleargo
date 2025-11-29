@@ -1,11 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+                                                                                            import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { resolveRole } from "@/lib/roles";
 import { upsertCriteriaBatch, CreateCriterionInput } from "@/lib/db/criteria";
 import * as XLSX from "xlsx";
-import { CriterionCategory, DecisionOwnerRole, TierApplicability } from "@/types/criteria";
+import { CriterionCategory, TierApplicability } from "@/types/criteria";
 
 const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest) {
 
         const criteria: CreateCriterionInput[] = [];
         const errors: Array<{ row: number; label: string; error: string }> = [];
-        let currentCategory = "General";
+        let currentCategory: string = "";
         let sortOrder = 0;
 
         // Start from row 19 (index 18) - row 18 is headers
@@ -111,22 +111,6 @@ export async function POST(req: NextRequest) {
             const colF = row[5] ? row[5].toString().trim() : "";
             const colG = row[6] ? row[6].toString().trim() : "";
 
-            // Update category if present in Column A (index 0)
-            // Only update if column A has a value AND column B also has a value (actual data row)
-            // OR if column A has a value but column B is empty (category header row)
-            if (colA) {
-                // If column B is empty, this is likely a category header row
-                if (!colB) {
-                    currentCategory = colA;
-                    console.log(`[Import] Row ${rowNumber}: Found category header: "${colA}"`);
-                    continue; // Skip category header rows
-                } else {
-                    // Both A and B have values - A is category, B is label
-                    currentCategory = colA;
-                }
-            }
-            // If column A is empty but column B has a value, use previous category
-
             // Label should be in column B (index 1), skip if empty
             if (!colB) {
                 continue;
@@ -134,117 +118,53 @@ export async function POST(req: NextRequest) {
 
             const label = colB;
 
+            // Always read category from column A
+            if (colA) {
+                currentCategory = colA;
+                console.log(`[Import] Row ${rowNumber}: Category from column A: "${currentCategory}"`);
+            } else if (!currentCategory) {
+                // If column A is empty and we don't have a category yet, skip this row
+                console.log(`[Import] Row ${rowNumber}: Skipping - no category in column A and no previous category`);
+                continue;
+            } else {
+                // Column A is empty but we have a previous category - use it
+                console.log(`[Import] Row ${rowNumber}: Using previous category: "${currentCategory}"`);
+            }
+            // Use currentCategory (either from this row's column A or from previous row)
+
             // Validate: skip rows with empty labels
             if (!label) {
                 console.log(`[Import] Skipping row ${rowNumber}: empty label`);
                 continue;
             }
 
-            // Email/role is in Column C (index 2)
-            const emailOrRoleRaw = colC;
-            
-            // Check if it's the placeholder for pod product manager
-            const isPodPmPlaceholder = emailOrRoleRaw.toLowerCase().includes("pod") && 
-                                      emailOrRoleRaw.toLowerCase().includes("product manager");
+            // Email is in Column C (index 2) - store exactly as provided
+            const emailOrRoleRaw = colC ? colC.trim() : "";
             
             let decisionOwnerEmail: string | null = null;
-            let role: DecisionOwnerRole = "PM";
             
-            if (isPodPmPlaceholder || emailOrRoleRaw === POD_PM_PLACEHOLDER) {
-                // Store the placeholder
-                decisionOwnerEmail = POD_PM_PLACEHOLDER;
-                role = "PM"; // Default role for pod product managers
-            } else if (emailOrRoleRaw.includes("@")) {
-                // It's an email address
-                decisionOwnerEmail = emailOrRoleRaw;
-                // Try to infer role from email or default to PM
-                const emailUpper = emailOrRoleRaw.toUpperCase();
-                if (emailUpper.includes("PMM") || emailUpper.includes("MARKETING")) {
-                    role = "PMM";
-                } else if (emailUpper.includes("ENG") || emailUpper.includes("ENGINEERING")) {
-                    role = "ENG_LEAD";
-                } else if (emailUpper.includes("SUPPORT")) {
-                    role = "SUPPORT_LEAD";
-                } else if (emailUpper.includes("SECURITY")) {
-                    role = "SECURITY";
-                } else if (emailUpper.includes("LEARNING") || emailUpper.includes("ENABLEMENT")) {
-                    role = "LEARNING";
-                } else if (emailUpper.includes("OPS")) {
-                    role = "PRODUCT_OPS";
+            if (emailOrRoleRaw) {
+                // Check if it's the placeholder for pod product manager
+                const isPodPmPlaceholder = emailOrRoleRaw.toLowerCase().includes("pod") && 
+                                          emailOrRoleRaw.toLowerCase().includes("product manager");
+                
+                if (isPodPmPlaceholder || emailOrRoleRaw === POD_PM_PLACEHOLDER) {
+                    // Store the placeholder exactly as provided
+                    decisionOwnerEmail = POD_PM_PLACEHOLDER;
+                } else if (emailOrRoleRaw.includes("@")) {
+                    // It's an email address - store it exactly as provided
+                    decisionOwnerEmail = emailOrRoleRaw;
                 } else {
-                    role = "PM"; // Default
-                }
-            } else if (emailOrRoleRaw) {
-                // It's a role name, not an email
-                const upper = emailOrRoleRaw.toUpperCase();
-                if (upper === "SAM") {
-                    role = "LEARNING";
-                } else if (upper.includes("ELT") || upper.includes("CPO")) {
-                    role = "CPO";
-                } else if (upper.includes("PMM")) {
-                    role = "PMM";
-                } else if (upper.includes("PM")) {
-                    role = "PM";
-                } else if (upper.includes("ENG")) {
-                    role = "ENG_LEAD";
-                } else if (upper.includes("SUPPORT")) {
-                    role = "SUPPORT_LEAD";
-                } else if (upper.includes("SECURITY")) {
-                    role = "SECURITY";
-                } else if (upper.includes("LEARNING") || upper.includes("ENABLEMENT")) {
-                    role = "LEARNING";
-                } else if (upper.includes("OPS")) {
-                    role = "PRODUCT_OPS";
-                } else {
-                    role = "OTHER";
-                }
-            } else {
-                // Default based on category if possible, else PM
-                const catUpper = currentCategory.toUpperCase();
-                if (catUpper.includes("PRODUCT") || catUpper.includes("FEATURE")) {
-                    role = "PM";
-                } else if (catUpper.includes("GTM") || catUpper.includes("MARKET") || catUpper.includes("ENABLEMENT")) {
-                    role = "PMM";
-                } else if (catUpper.includes("REVENUE") || catUpper.includes("EXECUTIVE")) {
-                    role = "CPO";
-                } else if (catUpper.includes("SUPPORT")) {
-                    role = "SUPPORT_LEAD";
-                } else {
-                    role = "PM";
+                    // It's not an email or placeholder - store as null
+                    decisionOwnerEmail = null;
                 }
             }
+            
+            console.log(`[Import] Row ${rowNumber}: Column C="${emailOrRoleRaw}" -> email="${decisionOwnerEmail}"`);
 
-            // Map Category to Enum if possible, else OTHER
-            let category: CriterionCategory = "OTHER";
-            const catUpper = currentCategory.toUpperCase();
-            
-            // More comprehensive category mapping
-            if (catUpper.includes("PRODUCT") || catUpper.includes("FEATURE") || 
-                catUpper.includes("DOCUMENTATION") || catUpper.includes("PM DOCUMENTATION")) {
-                category = "PRODUCT_DOCUMENTATION";
-            } else if (catUpper.includes("GTM") || catUpper.includes("MARKET") || 
-                       catUpper.includes("GO-TO-MARKET") || catUpper.includes("MARKETING")) {
-                category = "GTM";
-            } else if (catUpper.includes("SUPPORT")) {
-                category = "SUPPORT";
-            } else if (catUpper.includes("DATA") || catUpper.includes("ANALYTICS") || 
-                       catUpper.includes("METRICS") || catUpper.includes("MEASUREMENT")) {
-                category = "ANALYTICS_AND_METRICS";
-            } else if (catUpper.includes("LEGAL") || catUpper.includes("SECURITY") || 
-                       catUpper.includes("COMPLIANCE") || catUpper.includes("PRIVACY")) {
-                category = "LEGAL_SECURITY";
-            } else if (catUpper.includes("OPS") || catUpper.includes("OPERATIONS")) {
-                category = "OPS";
-            } else if (catUpper.includes("ENABLEMENT") || catUpper.includes("TRAINING") || 
-                       catUpper.includes("LEARNING")) {
-                category = "GTM"; // Enablement falls under GTM
-            } else if (catUpper.includes("EXECUTIVE") || catUpper.includes("STRATEGIC") || 
-                       catUpper.includes("BUSINESS") || catUpper.includes("REVENUE") ||
-                       catUpper.includes("FOUNDATION")) {
-                // Executive/Strategic/Business categories could map to PRODUCT_TECH or OTHER
-                // Defaulting to PRODUCT_TECH for now, but could be adjusted
-                category = "STRATEGY";
-            }
+            // Use the exact text from column A as category (no mapping)
+            // If no category has been set yet, use "OTHER" as fallback
+            const category = (currentCategory || "OTHER") as CriterionCategory;
 
             // Convert empty strings to null for status definitions
             const statusGo = colE || null;
@@ -258,7 +178,6 @@ export async function POST(req: NextRequest) {
                     category: category,
                     gate: false, // Template doesn't specify gate
                     tier_applicability: "ALL", // Default
-                    decision_owner_role: role,
                     decision_owner_email: decisionOwnerEmail,
                     status_definition_go: statusGo,
                     status_definition_conditional: statusConditional,
@@ -277,7 +196,15 @@ export async function POST(req: NextRequest) {
         console.log(`[Import] Parsed ${criteria.length} criteria from ${rows.length} rows`);
 
         if (commit) {
+            console.log(`[Import] Committing ${criteria.length} criteria to database...`);
+            if (criteria.length === 0) {
+                console.warn(`[Import] Warning: No criteria to import!`);
+            }
             const result = await upsertCriteriaBatch(criteria);
+            console.log(`[Import] Result: created=${result.created}, updated=${result.updated}, errors=${result.errors.length}`);
+            if (result.errors.length > 0) {
+                console.error(`[Import] Errors during upsert:`, result.errors);
+            }
             return NextResponse.json({
                 message: "Import successful",
                 ...result,

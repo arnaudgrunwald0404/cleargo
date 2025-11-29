@@ -11,6 +11,7 @@ type MatrixItem = {
         category: string;
         gate: boolean;
         description?: string;
+        sort_order?: number;
     };
 };
 
@@ -31,6 +32,18 @@ export default function Matrix({ launchId, items, onUpdate }: Props) {
         acc[cat].push(item);
         return acc;
     }, {} as Record<string, MatrixItem[]>);
+
+    // Sort items within each category by sort_order, then by label
+    Object.keys(grouped).forEach(cat => {
+        grouped[cat].sort((a, b) => {
+            const sortA = a.criterion.sort_order ?? 0;
+            const sortB = b.criterion.sort_order ?? 0;
+            if (sortA !== sortB) {
+                return sortA - sortB;
+            }
+            return (a.criterion.label || '').localeCompare(b.criterion.label || '');
+        });
+    });
 
     // Sort categories (optional)
     const categories = Object.keys(grouped).sort();

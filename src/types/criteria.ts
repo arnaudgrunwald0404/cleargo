@@ -31,7 +31,6 @@ export type Criterion = {
   category: CriterionCategory;
   gate: boolean;
   tier_applicability: TierApplicability;
-  decision_owner_role: DecisionOwnerRole;
   decision_owner_email?: string | null; // Email or placeholder "[name of pod's product manager]"
   status_definition_go?: string;
   status_definition_conditional?: string;

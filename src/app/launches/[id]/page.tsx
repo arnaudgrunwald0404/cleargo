@@ -34,6 +34,17 @@ export default function LaunchDetailPage() {
             const data = await res.json();
             setLaunch(data);
 
+            // Ensure criteria are instantiated for this launch (especially ALL criteria)
+            // This will backfill any missing criteria that should apply
+            try {
+                await fetch(`/api/launches/${id}/instantiate-criteria`, {
+                    method: 'POST',
+                });
+            } catch (e) {
+                // Non-fatal if instantiation fails
+                console.warn('Failed to instantiate criteria:', e);
+            }
+
             // Fetch matrix
             // We can use Supabase client directly here for ease, or create an API route.
             // Let's use Supabase client for read-only (or authenticated read)
@@ -50,8 +61,25 @@ export default function LaunchDetailPage() {
 
             if (matrixError) throw matrixError;
 
+            // Deduplicate by criterion_id (keep the most recently updated one)
+            const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
+                const existing = acc.find((a: any) => a.criterion_id === item.criterion_id);
+                if (!existing) {
+                    acc.push(item);
+                } else {
+                    // Keep the one with the most recent last_updated_at
+                    const existingDate = new Date(existing.last_updated_at || 0);
+                    const itemDate = new Date(item.last_updated_at || 0);
+                    if (itemDate > existingDate) {
+                        const index = acc.indexOf(existing);
+                        acc[index] = item;
+                    }
+                }
+                return acc;
+            }, []);
+
             // Sort by criterion sort_order
-            const sorted = (matrixData || []).sort((a: any, b: any) =>
+            const sorted = deduplicated.sort((a: any, b: any) =>
                 (a.criterion?.sort_order || 0) - (b.criterion?.sort_order || 0)
             );
 

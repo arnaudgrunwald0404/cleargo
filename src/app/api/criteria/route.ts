@@ -11,7 +11,7 @@ const createSchema = z.object({
   category: z.custom<CriterionCategory>(),
   gate: z.boolean(),
   tier_applicability: z.custom<TierApplicability>(),
-  decision_owner_role: z.custom<DecisionOwnerRole>(),
+  decision_owner_email: z.string().nullable().optional(),
   status_definition_go: z.string().optional(),
   status_definition_conditional: z.string().optional(),
   status_definition_no_go: z.string().optional(),

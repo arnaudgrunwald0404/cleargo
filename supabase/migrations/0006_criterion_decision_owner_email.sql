@@ -4,6 +4,7 @@
 ALTER TABLE criterion
   ADD COLUMN IF NOT EXISTS decision_owner_email text;
 
-COMMENT ON COLUMN criterion.decision_owner_email IS 'Email address of decision owner, or special placeholder "[name of pod\'s product manager]" which will be resolved at launch level based on pod';
+COMMENT ON COLUMN criterion.decision_owner_email IS 'Email address of decision owner, or special placeholder "[name of pod''s product manager]" which will be resolved at launch level based on pod';
+
 
 

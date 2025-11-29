@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@mantine/core": "^8.3.9",
+    "@mantine/form": "^8.3.9",
     "@mantine/hooks": "^8.3.9",
     "@mantine/notifications": "^8.3.9",
     "@supabase/ssr": "^0.7.0",
@@ -30,6 +31,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4.1.17",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",

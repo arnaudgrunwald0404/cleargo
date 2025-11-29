@@ -7,3 +7,4 @@ ALTER TABLE app_settings
 COMMENT ON COLUMN app_settings.pod_product_manager_mapping IS 'Mapping of pod names to product manager emails. Format: {"pod_name": "email@example.com"}';
 
 
+

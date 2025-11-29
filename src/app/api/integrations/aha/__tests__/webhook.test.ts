@@ -44,7 +44,7 @@ jest.mock('@/lib/aha/webhook-validator', () => ({
 // Mock mapping
 jest.mock('@/lib/aha/mapping', () => ({
     shouldProcessEpic: jest.fn().mockReturnValue(true),
-    mapEpicToLaunch: jest.fn().mockReturnValue({
+    mapEpicToLaunch: jest.fn().mockResolvedValue({
         aha_id: 'E-123',
         name: 'Test Epic',
         tier: 'TIER_1',

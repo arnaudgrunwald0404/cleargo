@@ -20,18 +20,21 @@ export async function instantiateLaunchMatrix(launchId: string, tier: string) {
     }
 
     // 2. Filter based on tier applicability
-    // tier_applicability can be 'ALL', 'TIER_1', 'TIER_2', 'TIER_3'
-    // If it's 'ALL', it applies to everyone.
-    // If it's a specific tier, it applies if the launch tier matches.
-    // Note: We might want logic where TIER_1 includes TIER_2/3 criteria?
-    // For now, let's assume strict matching or 'ALL'.
-    // Actually, usually TIER_1 is the most strict, so it might include everything.
-    // But the schema says `tier_applicability` is a single string.
-    // Let's assume the rule is: if applicability is 'ALL' OR applicability == launch.tier.
+    // tier_applicability can be 'ALL', 'TIER_1_ONLY', 'TIER_1_AND_2'
+    // If it's 'ALL', it applies to all tiers (TIER_1, TIER_2, TIER_3)
+    // If it's 'TIER_1_ONLY', it applies only to TIER_1
+    // If it's 'TIER_1_AND_2', it applies to TIER_1 and TIER_2
+    // For TIER_3, only 'ALL' criteria apply
 
     const applicableCriteria = criteria.filter((c) => {
+        // ALL criteria apply to all tiers
         if (c.tier_applicability === 'ALL') return true;
-        return c.tier_applicability === tier;
+        // TIER_1_ONLY applies only to TIER_1
+        if (c.tier_applicability === 'TIER_1_ONLY' && tier === 'TIER_1') return true;
+        // TIER_1_AND_2 applies to TIER_1 and TIER_2
+        if (c.tier_applicability === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) return true;
+        // For TIER_3, only ALL criteria apply (already handled above)
+        return false;
     });
 
     if (applicableCriteria.length === 0) {
@@ -43,9 +46,6 @@ export async function instantiateLaunchMatrix(launchId: string, tier: string) {
         launch_id: launchId,
         criterion_id: c.id,
         status: 'NOT_SET',
-        decision_owner_role: c.decision_owner_role, // Store this? No, it's on the criterion.
-        // We don't store role here, we resolve it dynamically or store the resolved user.
-        // For now, just link them.
     }));
 
     // 4. Insert rows

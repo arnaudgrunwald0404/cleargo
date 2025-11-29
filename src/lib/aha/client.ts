@@ -67,7 +67,20 @@ async function fetchWithRetry<T>(
 }
 
 export async function getEpic(epicId: string): Promise<AhaEpic> {
-    const url = `${BASE_URL}/epics/${epicId}`;
+    // Request all necessary fields including custom_fields to ensure pod and other custom fields are loaded
+    const fields = [
+        'id',
+        'reference_num',
+        'name',
+        'url',
+        'workflow_status',
+        'assigned_to_user',
+        'tags',
+        'custom_fields',
+        'release'
+    ].join(',');
+    
+    const url = `${BASE_URL}/epics/${epicId}?fields=${encodeURIComponent(fields)}`;
     const response = await fetchWithRetry<{ epic: AhaEpic }>(url, {
         method: 'GET',
         headers: {
@@ -127,6 +140,20 @@ export async function getEpics(params?: { per_page?: number; page?: number; prod
     const queryParams = new URLSearchParams();
     if (params?.per_page) queryParams.set('per_page', params.per_page.toString());
     if (params?.page) queryParams.set('page', params.page.toString());
+    
+    // Request all necessary fields including custom_fields to ensure pod and other custom fields are loaded
+    const fields = [
+        'id',
+        'reference_num',
+        'name',
+        'url',
+        'workflow_status',
+        'assigned_to_user',
+        'tags',
+        'custom_fields',
+        'release'
+    ].join(',');
+    queryParams.set('fields', fields);
 
     // If product is specified, use product-specific endpoint
     let url;

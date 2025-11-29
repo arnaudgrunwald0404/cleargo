@@ -14,6 +14,7 @@ export interface AppSettings {
     aha_webhook_secret: string | null;
     email_sender: string;
     pod_product_manager_mapping?: Record<string, string>; // pod_name -> email
+    aha_fields_to_load?: string[]; // List of AHA custom field aliases to load
     updated_at: string;
 }
 
@@ -43,8 +44,34 @@ export async function getSettings(): Promise<AppSettings> {
             fallback_user_email: defaults.fallbackProductOpsEmail,
             aha_webhook_secret: process.env.AHA_WEBHOOK_SECRET || null,
             email_sender: defaults.emailSender,
+            aha_fields_to_load: [
+                'dev_backlog_pod',
+                'primary_goal',
+                'modernization_effort',
+                'csm_priority',
+                'analytics_enablement',
+                't_shirt_est',
+                'progress',
+                'reason_for_release_change',
+                'release_target_after_pod_planning'
+            ],
             updated_at: new Date().toISOString(),
         };
+    }
+    
+    // Ensure aha_fields_to_load has a default value if missing
+    if (!data.aha_fields_to_load || (Array.isArray(data.aha_fields_to_load) && data.aha_fields_to_load.length === 0)) {
+        data.aha_fields_to_load = [
+            'dev_backlog_pod',
+            'primary_goal',
+            'modernization_effort',
+            'csm_priority',
+            'analytics_enablement',
+            't_shirt_est',
+            'progress',
+            'reason_for_release_change',
+            'release_target_after_pod_planning'
+        ];
     }
 
     return data as AppSettings;
