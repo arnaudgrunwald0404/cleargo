@@ -1738,8 +1738,8 @@ function ReleaseScheduleSection({
                     <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                         <table className="min-w-full divide-y divide-purple-200 table-fixed">
                             <colgroup>
-                                <col className="w-2/3" />
-                                <col className="w-1/3" />
+                                <col className="w-2/5" />
+                                <col className="w-2/5" />
                                 <col className="w-24" />
                             </colgroup>
                             <thead className="bg-purple-100">
@@ -1781,8 +1781,8 @@ function ReleaseScheduleSection({
                     <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
                         <table className="min-w-full divide-y divide-indigo-200 table-fixed">
                             <colgroup>
-                                <col className="w-2/3" />
-                                <col className="w-1/3" />
+                                <col className="w-2/5" />
+                                <col className="w-2/5" />
                                 <col className="w-24" />
                             </colgroup>
                             <thead className="bg-indigo-100">
