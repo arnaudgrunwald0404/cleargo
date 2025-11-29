@@ -634,6 +634,7 @@ export default function AdminSettingsPage() {
                                 onUpdate={handleUpdateRelease}
                                 launchReleases={launchReleases}
                                 launchReleasesLoading={launchReleasesLoading}
+                                onRefresh={fetchLaunchReleaseDates}
                             />
                         )}
 
@@ -1582,6 +1583,7 @@ function ReleaseScheduleSection({
     onUpdate,
     launchReleases,
     launchReleasesLoading,
+    onRefresh,
 }: {
     releases: any[];
     loading: boolean;
@@ -1596,6 +1598,7 @@ function ReleaseScheduleSection({
     onUpdate: (id: number, releaseName: string, launchDate: string) => void;
     launchReleases: Array<{releaseName: string; launchDate: string | null}>;
     launchReleasesLoading: boolean;
+    onRefresh: () => void;
 }) {
     const formatDateForDisplay = (dateString: string) => {
         if (!dateString) return "";
@@ -1649,6 +1652,13 @@ function ReleaseScheduleSection({
             {/* Release Date → Release Name Mapping */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
                 <div className="flex items-center gap-3 mb-4">
+                    <button
+                        onClick={onRefresh}
+                        disabled={launchReleasesLoading}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        Refresh
+                    </button>
                     <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
