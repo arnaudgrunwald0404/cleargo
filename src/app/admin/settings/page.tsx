@@ -1651,7 +1651,18 @@ function ReleaseScheduleSection({
         <div className="space-y-6">
             {/* Release Date → Release Name Mapping */}
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
+                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-semibold text-gray-900">Release Name → Launch Date Mapping</h2>
+                            <p className="text-sm text-gray-500">Map release names from synchronized launches to launch dates</p>
+                        </div>
+                    </div>
                     <button
                         onClick={onRefresh}
                         disabled={launchReleasesLoading}
@@ -1659,15 +1670,6 @@ function ReleaseScheduleSection({
                     >
                         Refresh
                     </button>
-                    <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center">
-                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Release Name → Launch Date Mapping</h2>
-                        <p className="text-sm text-gray-500">Map release names from synchronized launches to launch dates</p>
-                    </div>
                 </div>
                 {launchReleasesLoading ? (
                     <div className="text-center py-8 text-gray-500">Loading release names from launches...</div>
