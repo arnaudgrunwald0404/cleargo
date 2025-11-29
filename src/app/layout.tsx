@@ -46,12 +46,12 @@ export default async function RootLayout({
 
   const role = email ? await resolveRole(email) : null;
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[8px]' : ''}`}
       >
         <MantineProvider theme={theme}>
           <Notifications />
