@@ -125,8 +125,8 @@ export async function mapEpicToLaunch(
         }
     }
 
-    // Store the extracted release name in standard fields for easy access
-    const releaseName = extractReleaseName(epic);
+    // Store the full release name in standard fields (no parsing)
+    const releaseName = epic.release?.name || null;
     if (releaseName) {
         standardFields.aha_release_name = releaseName;
     }
@@ -174,12 +174,6 @@ export async function mapEpicToLaunch(
     };
 }
 
-function extractReleaseName(epic: AhaEpic): string | null {
-    if (!epic.release?.name) return null;
-    // Extract YYYY.MM from release name (e.g. "Release 2025.11" -> "2025.11")
-    const match = epic.release.name.match(/(\d{4}\.\d{2})/);
-    return match ? match[1] : null;
-}
 
 export function shouldProcessEpic(epic: AhaEpic): boolean {
     // Filter: (Launch Candidate == true) OR (tags contains "LaunchConsole")
