@@ -1725,7 +1725,7 @@ function ReleaseScheduleSection({
                     <h3 className="text-md font-semibold text-gray-900">Current Mappings</h3>
                     <button
                         onClick={() => setEditingReleaseId("new")}
-                        className="px-3 py-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors"
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors"
                     >
                         + Add Mapping
                     </button>
