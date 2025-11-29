@@ -1684,21 +1684,21 @@ function ReleaseScheduleSection({
                 ) : releasesWithoutDates.length === 0 ? (
                     <p className="text-sm text-gray-500 italic">All releases have launch dates mapped</p>
                 ) : (
-                    <div className="border-2 border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
-                        <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                    <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                        <table className="min-w-full divide-y divide-purple-200 table-fixed">
                             <colgroup>
                                 <col className="w-auto" />
                                 <col className="w-auto" />
                             </colgroup>
-                            <thead className="bg-gray-100">
+                            <thead className="bg-purple-100">
                                 <tr>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Release Name</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Launch Date</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white divide-y divide-purple-200">
                                 {releasesWithoutDates.map((launchRelease) => (
-                                    <tr key={launchRelease.releaseName} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={launchRelease.releaseName} className="hover:bg-purple-50 transition-colors">
                                         <td className="px-4 py-3 whitespace-nowrap">
                                             <span className="font-medium text-gray-900">{launchRelease.releaseName}</span>
                                         </td>
@@ -1756,23 +1756,23 @@ function ReleaseScheduleSection({
                 ) : releases.length === 0 ? (
                     <p className="text-sm text-gray-500 italic">No release mappings configured</p>
                 ) : (
-                    <div className="border-2 border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
-                        <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                    <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
+                        <table className="min-w-full divide-y divide-indigo-200 table-fixed">
                             <colgroup>
                                 <col className="w-auto" />
                                 <col className="w-auto" />
                                 <col className="w-24" />
                             </colgroup>
-                            <thead className="bg-gray-100">
+                            <thead className="bg-indigo-100">
                                 <tr>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
-                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
-                                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-900">Actions</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Name</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Launch Date</th>
+                                    <th className="px-4 py-2 text-right text-xs font-medium text-indigo-900">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white divide-y divide-indigo-200">
                                 {releases.map((release) => (
-                                    <tr key={release.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={release.id} className="hover:bg-indigo-50 transition-colors">
                                         {editingReleaseId === release.id ? (
                                             <>
                                                 <td className="px-4 py-3">
