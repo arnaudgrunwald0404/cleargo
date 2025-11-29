@@ -1684,21 +1684,21 @@ function ReleaseScheduleSection({
                 ) : releasesWithoutDates.length === 0 ? (
                     <p className="text-sm text-gray-500 italic">All releases have launch dates mapped</p>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
+                    <div>
+                        <table className="w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Release Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Launch Date</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Release Name</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Launch Date</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                                 {releasesWithoutDates.map((launchRelease) => (
                                     <tr key={launchRelease.releaseName} className="hover:bg-gray-50">
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-4 whitespace-nowrap">
                                             <span className="text-sm font-medium text-gray-900">{launchRelease.releaseName}</span>
                                         </td>
-                                        <td className="px-6 py-4 whitespace-nowrap">
+                                        <td className="px-4 py-4 whitespace-nowrap">
                                             <ReleaseDateInputRow
                                                 releaseDate={launchRelease.launchDate || ""}
                                                 formatDateForInput={formatDateForInput}
@@ -1752,13 +1752,13 @@ function ReleaseScheduleSection({
                 ) : releases.length === 0 ? (
                     <p className="text-sm text-gray-500 italic">No release mappings configured</p>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
+                    <div>
+                        <table className="w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Release Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Launch Date</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Release Name</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Launch Date</th>
+                                    <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
@@ -1766,7 +1766,7 @@ function ReleaseScheduleSection({
                                     <tr key={release.id} className="hover:bg-gray-50">
                                         {editingReleaseId === release.id ? (
                                             <>
-                                                <td className="px-6 py-4">
+                                                <td className="px-4 py-4">
                                                     <input
                                                         type="text"
                                                         defaultValue={release.release_name}
@@ -1774,7 +1774,7 @@ function ReleaseScheduleSection({
                                                         className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
                                                     />
                                                 </td>
-                                                <td className="px-6 py-4">
+                                                <td className="px-4 py-4">
                                                     <input
                                                         type="text"
                                                         defaultValue={formatDateForDisplay(release.launch_date)}
@@ -1783,7 +1783,7 @@ function ReleaseScheduleSection({
                                                         className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500"
                                                     />
                                                 </td>
-                                                <td className="px-6 py-4 text-right">
+                                                <td className="px-4 py-4 text-right">
                                                     <button
                                                         onClick={() => {
                                                             const nameInput = document.getElementById(`release-name-${release.id}`) as HTMLInputElement;
@@ -1806,9 +1806,9 @@ function ReleaseScheduleSection({
                                             </>
                                         ) : (
                                             <>
-                                                <td className="px-6 py-4 text-sm text-gray-900">{release.release_name}</td>
-                                                <td className="px-6 py-4 text-sm text-gray-600">{formatDateForDisplay(release.launch_date)}</td>
-                                                <td className="px-6 py-4 text-right text-sm font-medium">
+                                                <td className="px-4 py-4 text-sm text-gray-900">{release.release_name}</td>
+                                                <td className="px-4 py-4 text-sm text-gray-600">{formatDateForDisplay(release.launch_date)}</td>
+                                                <td className="px-4 py-4 text-right text-sm font-medium">
                                                     <button
                                                         onClick={() => setEditingReleaseId(release.id)}
                                                         className="text-indigo-600 hover:text-indigo-900 mr-4"
