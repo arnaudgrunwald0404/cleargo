@@ -3,7 +3,7 @@ import type { MappedLaunchData } from '../aha/mapping';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 export interface Launch {
@@ -30,12 +30,12 @@ export interface Launch {
     scheduled_ga_dev_date: string | null;
     modified_rice_score: any | null;
     wsjf_score: any | null;
-    product_value: any | null;
     gtm_link: string | null;
     activation_process: string | null;
     new_org_setup: string | null;
     existing_org_setup: string | null;
     pricing_model: string | null;
+    aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     created_at: string;
     updated_at: string;
 }
@@ -79,14 +79,28 @@ export async function upsertLaunchFromAha(
         tags: launchData.tags,
         modified_rice_score: launchData.modified_rice_score,
         wsjf_score: launchData.wsjf_score,
-        product_value: launchData.product_value,
         gtm_link: launchData.gtm_link,
         activation_process: launchData.activation_process,
         new_org_setup: launchData.new_org_setup,
         existing_org_setup: launchData.existing_org_setup,
         pricing_model: launchData.pricing_model,
+        // aha_fields already contains all standard fields and custom fields from mapEpicToLaunch
+        aha_fields: launchData.aha_fields || null,
         updated_at: new Date().toISOString(),
     };
+
+    // Resolve launch date from release schedule if release name is present
+    if (launchData.aha_release_name) {
+        const { data: releaseSchedule } = await supabase
+            .from('release_schedule')
+            .select('launch_date')
+            .eq('release_name', launchData.aha_release_name)
+            .single();
+
+        if (releaseSchedule) {
+            upsertData.target_launch_date = releaseSchedule.launch_date;
+        }
+    }
 
     if (ownerId) {
         upsertData.owner_id = ownerId;
@@ -169,9 +183,13 @@ export async function instantiateCriteriaForLaunch(
     if (criteriaError) throw criteriaError;
 
     const applicableCriteria = criteria.filter((c) => {
+        // ALL criteria apply to all tiers
         if (c.tier_applicability === 'ALL') return true;
+        // TIER_1_ONLY applies only to TIER_1
         if (c.tier_applicability === 'TIER_1_ONLY' && tier === 'TIER_1') return true;
+        // TIER_1_AND_2 applies to TIER_1 and TIER_2
         if (c.tier_applicability === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) return true;
+        // For TIER_3, only ALL criteria apply (already handled above)
         return false;
     });
 

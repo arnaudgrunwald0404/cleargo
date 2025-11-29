@@ -76,7 +76,6 @@ export interface MappedLaunchData {
     tags: string[];
     modified_rice_score: any | null;
     wsjf_score: any | null;
-    product_value: any | null;
     gtm_link: string | null;
     activation_process: string | null;
     new_org_setup: string | null;
@@ -153,7 +152,6 @@ export async function mapEpicToLaunch(
         tags: epic.tags ?? [],
         modified_rice_score: getCustomFieldValue(epic, 'modified_rice'),
         wsjf_score: getCustomFieldValue(epic, 'wsjf'),
-        product_value: getCustomFieldValue(epic, 'product_value'),
         gtm_link: getCustomFieldValue(epic, 'gtm_link'),
         activation_process: getCustomFieldValue(epic, 'activation_process'),
         new_org_setup: getCustomFieldValue(epic, 'new_org_setup'),
