@@ -27,7 +27,18 @@ export function getCustomFieldKey(fieldAlias: string): string {
 
 export function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): any {
     const key = getCustomFieldKey(fieldAlias);
-    return epic.custom_fields?.[key]?.value ?? null;
+    
+    // AHA API returns custom_fields as an array, not an object
+    // Handle both array and object formats for compatibility
+    if (Array.isArray(epic.custom_fields)) {
+        const field = epic.custom_fields.find((f: any) => f?.key === key);
+        return field?.value ?? null;
+    } else if (epic.custom_fields && typeof epic.custom_fields === 'object') {
+        // Fallback for object format (if AHA changes their API)
+        return epic.custom_fields[key]?.value ?? null;
+    }
+    
+    return null;
 }
 
 export function mapTierFromAha(ahaValue: string | null): string {
@@ -71,9 +82,62 @@ export interface MappedLaunchData {
     new_org_setup: string | null;
     existing_org_setup: string | null;
     pricing_model: string | null;
+    aha_release_name: string | null;
+    aha_fields?: Record<string, any>; // Dynamic AHA fields (standard and custom) from configured list
 }
 
-export function mapEpicToLaunch(epic: AhaEpic): MappedLaunchData {
+export async function mapEpicToLaunch(
+    epic: AhaEpic,
+    fieldsToLoad?: string[]
+): Promise<MappedLaunchData> {
+    // Standard fields from AHA epic
+    const standardFields: Record<string, any> = {
+        id: epic.id,
+        reference_num: epic.reference_num || epic.id,
+        name: epic.name,
+        url: epic.url,
+        workflow_status: epic.workflow_status?.name || null,
+        assigned_to_user: epic.assigned_to_user ? {
+            id: epic.assigned_to_user.id,
+            name: epic.assigned_to_user.name,
+            email: epic.assigned_to_user.email,
+        } : null,
+        tags: epic.tags || [],
+        release: epic.release ? {
+            id: epic.release.id,
+            reference_num: epic.release.reference_num,
+            name: epic.release.name,
+        } : null,
+    };
+
+    // Extract dynamic custom fields if fieldsToLoad is provided
+    const customFields: Record<string, any> = {};
+    if (fieldsToLoad && Array.isArray(fieldsToLoad)) {
+        for (const fieldAlias of fieldsToLoad) {
+            try {
+                const value = getCustomFieldValue(epic, fieldAlias);
+                if (value !== null && value !== undefined) {
+                    customFields[fieldAlias] = value;
+                }
+            } catch (error) {
+                // Field alias not found in config, skip it
+                console.warn(`Field alias "${fieldAlias}" not found in AHA config, skipping`);
+            }
+        }
+    }
+
+    // Store the extracted release name in standard fields for easy access
+    const releaseName = extractReleaseName(epic);
+    if (releaseName) {
+        standardFields.aha_release_name = releaseName;
+    }
+
+    // Structure: { standard_fields: {...}, custom_fields: {...} }
+    const ahaFields: Record<string, any> = {
+        standard_fields: standardFields,
+        custom_fields: customFields,
+    };
+
     return {
         aha_id: epic.reference_num || epic.id,
         aha_url: epic.url,
@@ -95,7 +159,16 @@ export function mapEpicToLaunch(epic: AhaEpic): MappedLaunchData {
         new_org_setup: getCustomFieldValue(epic, 'new_org_setup'),
         existing_org_setup: getCustomFieldValue(epic, 'existing_org_setup'),
         pricing_model: getCustomFieldValue(epic, 'pricing_model'),
+        aha_release_name: releaseName,
+        aha_fields: ahaFields,
     };
+}
+
+function extractReleaseName(epic: AhaEpic): string | null {
+    if (!epic.release?.name) return null;
+    // Extract YYYY.MM from release name (e.g. "Release 2025.11" -> "2025.11")
+    const match = epic.release.name.match(/(\d{4}\.\d{2})/);
+    return match ? match[1] : null;
 }
 
 export function shouldProcessEpic(epic: AhaEpic): boolean {

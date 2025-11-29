@@ -7,15 +7,11 @@
     },
     "dev_backlog_pod": {
       "label": "Dev Backlog/Pod",
-      "key": "dev_backlog_pod"
+      "key": "dev_roadmap"
     },
     "launch_tier": {
       "label": "Launch Tier",
       "key": "gtm_visibility"
-    },
-    "launch_candidate": {
-      "label": "Launch Candidate",
-      "key": "launch_candidate"
     },
     "estimated_ga_release_pm_owned": {
       "label": "Estimated GA Release (PM Owned)",
@@ -31,7 +27,7 @@
     },
     "csm_priority": {
       "label": "CSM Priority",
-      "key": "csm_priority"
+      "key": "csm_top20"
     },
     "modified_rice": {
       "label": "Modified RICE",
@@ -40,10 +36,6 @@
     "wsjf": {
       "label": "WSJF",
       "key": "wsjf"
-    },
-    "product_value": {
-      "label": "Product value",
-      "key": "product_value"
     },
     "gtm_link": {
       "label": "Product Marketing/GTM Link",
@@ -64,6 +56,30 @@
     "pricing_model": {
       "label": "Pricing Model",
       "key": "pricing_model"
+    },
+    "primary_goal": {
+      "label": "Primary Goal - '25/'26",
+      "key": "primary_goal"
+    },
+    "modernization_effort": {
+      "label": "Modernization Effort",
+      "key": "modernization_effort"
+    },
+    "analytics_enablement": {
+      "label": "Analytics Enablement",
+      "key": "analytics_enablement"
+    },
+    "t_shirt_est": {
+      "label": "T-Shirt Est.",
+      "key": "tshirt_estimate"
+    },
+    "reason_for_release_change": {
+      "label": "Reason for Release Change",
+      "key": "reason_for_release_change"
+    },
+    "release_target_after_pod_planning": {
+      "label": "Release Target after Pod Planning",
+      "key": "release_bundle_original_target"
     },
     "launch_readiness_status": {
       "label": "Launch Readiness Status",

@@ -22,7 +22,13 @@ export interface AhaEpic {
     };
     assigned_to_user?: AhaUser;
     tags?: string[];
-    custom_fields?: Record<string, AhaCustomField>;
+    // AHA API returns custom_fields as an array, but we support both formats
+    custom_fields?: AhaCustomField[] | Record<string, AhaCustomField>;
+    release?: {
+        id: string;
+        reference_num: string;
+        name: string;
+    };
 }
 
 export interface AhaWebhookPayload {
