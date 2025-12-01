@@ -10,22 +10,21 @@ export default async function HomePage({
 }: {
   searchParams: { [key: string]: string | string[] | undefined };
 }) {
-  // If there's an OAuth code parameter, redirect to the callback handler
+  const supabase = createClient();
+  
+  // If there's an OAuth code parameter, exchange it for a session
   if (searchParams?.code) {
-    const params = new URLSearchParams();
-    Object.entries(searchParams).forEach(([key, value]) => {
-      if (value) {
-        if (Array.isArray(value)) {
-          value.forEach(v => params.append(key, v));
-        } else {
-          params.set(key, value);
-        }
+    const code = Array.isArray(searchParams.code) ? searchParams.code[0] : searchParams.code;
+    if (code) {
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) {
+        // Redirect to home page without the code parameter after successful exchange
+        redirect('/');
       }
-    });
-    redirect(`/auth/callback?${params.toString()}`);
+      // If there's an error, continue to show the page (will show welcome page)
+    }
   }
 
-  const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const email = user?.email;
   const role = email ? await resolveRole(email) : null;
