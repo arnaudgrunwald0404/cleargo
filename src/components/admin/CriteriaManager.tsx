@@ -559,13 +559,14 @@ export function CriteriaManager() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Checkbox
-                        label="Gate"
                         size="xs"
                         checked={!!c.gate}
                         onChange={(e) => {
                           e.stopPropagation();
                           submitEdit(c.id, { gate: e.currentTarget.checked });
                         }}
+                        aria-label="Gate"
+                        title="Gate"
                       />
                     </td>
                     <td
