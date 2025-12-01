@@ -12,6 +12,7 @@ export interface Launch {
     target_launch_date?: string;
     status: LaunchStatus;
     readiness_score?: number;
+    readiness_status?: string;
     risk_level?: LaunchRisk;
     owner_id?: string;
     business_priority?: string;
