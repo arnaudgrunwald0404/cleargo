@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppSettings } from "@/lib/settings-db";
-import { Drawer, TextInput, Select, Checkbox, Button, Group, Stack, MultiSelect } from "@mantine/core";
+import { Drawer, TextInput, Select, Checkbox, Button, Group, Stack, MultiSelect, Menu, NumberInput, Modal } from "@mantine/core";
+import { IconPencil, IconCheck, IconTrash, IconX, IconGripVertical, IconMail, IconMailOpened } from "@tabler/icons-react";
 import { CriteriaManager } from "@/components/admin/CriteriaManager";
+import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { RichText } from "@/components/admin/RichText";
 
 export default function AdminSettingsPage() {
     const [loading, setLoading] = useState(true);
@@ -30,7 +33,7 @@ export default function AdminSettingsPage() {
     const [bulkImportLoading, setBulkImportLoading] = useState(false);
 
     // Navigation state
-    const [activeSection, setActiveSection] = useState<string>("general");
+    const [activeSection, setActiveSection] = useState<string>("users");
 
     // Release schedule state
     const [releases, setReleases] = useState<any[]>([]);
@@ -49,6 +52,31 @@ export default function AdminSettingsPage() {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{aha_id: string; name: string; error: string}>} | null>(null);
 
+    // Launch stages state
+    const [launchStages, setLaunchStages] = useState<Array<{id: number; name: string; sort_order: number; duration_days: number | null; details: string | null}>>([]);
+    const [launchStagesLoading, setLaunchStagesLoading] = useState(false);
+    const [editingStageDrawerOpen, setEditingStageDrawerOpen] = useState(false);
+    const [editingStageId, setEditingStageId] = useState<number | null>(null);
+    const [editingStageName, setEditingStageName] = useState("");
+    const [editingStageDuration, setEditingStageDuration] = useState("");
+    const [editingStageDetails, setEditingStageDetails] = useState("");
+    const [draggedStageId, setDraggedStageId] = useState<number | null>(null);
+
+    // Email templates state
+    const [emailTemplates, setEmailTemplates] = useState({
+        invite_subject: "",
+        invite_html: "",
+        remind_subject: "",
+        remind_html: "",
+        update_criteria_subject: "",
+        update_criteria_html: "",
+    });
+    const [emailTemplatesLoading, setEmailTemplatesLoading] = useState(false);
+    const [emailTemplatesSaving, setEmailTemplatesSaving] = useState(false);
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewType, setPreviewType] = useState<"invite" | "remind" | "update_criteria">("invite");
+    const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
+
     useEffect(() => {
         fetchSettings();
         fetchUsers();
@@ -56,6 +84,8 @@ export default function AdminSettingsPage() {
         fetchPods();
         fetchAhaFields();
         fetchLaunchReleaseDates();
+        fetchLaunchStages();
+        fetchEmailTemplates();
     }, []);
 
     const fetchLaunchReleaseDates = async () => {
@@ -69,6 +99,144 @@ export default function AdminSettingsPage() {
             console.error("Failed to fetch launch releases:", error);
         } finally {
             setLaunchReleasesLoading(false);
+        }
+    };
+
+    const fetchLaunchStages = async () => {
+        setLaunchStagesLoading(true);
+        try {
+            const res = await fetch("/api/launch-stages");
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                console.error("Failed to fetch launch stages:", errorData);
+                setError(errorData.error || "Failed to fetch launch stages");
+                return;
+            }
+            const data = await res.json();
+            console.log("Fetched launch stages:", data.stages?.length || 0, "stages");
+            setLaunchStages(data.stages || []);
+        } catch (error: any) {
+            console.error("Failed to fetch launch stages:", error);
+            setError(error.message || "Failed to fetch launch stages");
+        } finally {
+            setLaunchStagesLoading(false);
+        }
+    };
+
+    const handleAddStage = async () => {
+        if (!editingStageName) {
+            alert("Please enter a stage name");
+            return;
+        }
+        try {
+            const sortOrder = launchStages.length > 0 
+                ? Math.max(...launchStages.map(s => s.sort_order)) + 1 
+                : 1;
+            const res = await fetch("/api/launch-stages", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    name: editingStageName,
+                    sort_order: sortOrder,
+                    duration_days: editingStageDuration ? parseInt(editingStageDuration) : null,
+                    details: editingStageDetails || null,
+                }),
+            });
+            if (!res.ok) throw new Error("Failed to add stage");
+            setEditingStageDrawerOpen(false);
+            setEditingStageId(null);
+            setEditingStageName("");
+            setEditingStageDuration("");
+            setEditingStageDetails("");
+            fetchLaunchStages();
+        } catch (error: any) {
+            alert(`Error: ${error.message}`);
+        }
+    };
+
+    const handleDeleteStage = async (id: number) => {
+        if (!confirm("Delete this launch stage?")) return;
+        try {
+            const res = await fetch(`/api/launch-stages/${id}`, { method: "DELETE" });
+            if (!res.ok) throw new Error("Failed to delete stage");
+            fetchLaunchStages();
+        } catch (error: any) {
+            alert(`Error: ${error.message}`);
+        }
+    };
+
+    const handleReorderStages = async (draggedId: number, targetId: number, targetIndex: number) => {
+        const draggedIndex = launchStages.findIndex(s => s.id === draggedId);
+        if (draggedIndex === -1 || draggedIndex === targetIndex) return;
+
+        // Create new array with reordered stages
+        const newStages = [...launchStages];
+        const [draggedStage] = newStages.splice(draggedIndex, 1);
+        newStages.splice(targetIndex, 0, draggedStage);
+
+        // Only update stages that actually changed position
+        const updates = newStages
+            .map((stage, index) => ({
+                id: stage.id,
+                newSortOrder: index + 1,
+                oldSortOrder: stage.sort_order
+            }))
+            .filter(update => update.newSortOrder !== update.oldSortOrder)
+            .map(({ id, newSortOrder }) => ({
+                id,
+                sort_order: newSortOrder
+            }));
+
+        // If nothing changed, return early
+        if (updates.length === 0) return;
+
+        // Optimistically update UI
+        setLaunchStages(newStages.map((stage, index) => ({
+            ...stage,
+            sort_order: index + 1
+        })));
+
+        // Update affected stages
+        try {
+            const results = await Promise.all(updates.map(async (update) => {
+                const res = await fetch("/api/launch-stages", {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(update),
+                });
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || `Failed to update stage ${update.id}: ${res.statusText}`);
+                }
+                return res.json();
+            }));
+            // Refresh to ensure consistency
+            fetchLaunchStages();
+        } catch (error: any) {
+            console.error("Failed to reorder stages:", error);
+            alert("Failed to reorder stages: " + (error.message || error));
+            // Revert on error
+            fetchLaunchStages();
+        }
+    };
+
+    const handleUpdateStage = async (id: number, name: string, durationDays: number | null, details: string | null) => {
+        try {
+            const res = await fetch("/api/launch-stages", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    id,
+                    name,
+                    duration_days: durationDays,
+                    details,
+                }),
+            });
+            if (!res.ok) throw new Error("Failed to update stage");
+            setEditingStageId(null);
+            fetchLaunchStages();
+        } catch (error: any) {
+            alert(`Error: ${error.message}`);
         }
     };
 
@@ -87,6 +255,138 @@ export default function AdminSettingsPage() {
             setAhaFieldsLoading(false);
         }
     };
+
+    const fetchEmailTemplates = async () => {
+        setEmailTemplatesLoading(true);
+        try {
+            const res = await fetch("/api/settings/email-templates");
+            if (!res.ok) throw new Error("Failed to fetch email templates");
+            const data = await res.json();
+            
+            // Default templates
+            const defaultInviteSubject = 'Welcome to ClearGO';
+            const defaultInviteHtml = `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">{{greeting}}</h2>
+    <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+        You've been invited to join ClearGO. Click the button below to get started.
+    </p>
+    <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
+        <p style="color: #374151; font-weight: 600; margin-bottom: 12px; font-size: 15px;">What is ClearGO?</p>
+        <ul style="color: #4b5563; line-height: 1.8; margin: 0; padding-left: 20px;">
+            <li>Track and manage launch readiness across all your products and initiatives</li>
+            <li>Collaborate with your team to ensure successful launches with clear criteria and decision gates</li>
+            <li>Get real-time visibility into launch status, risks, and readiness scores</li>
+        </ul>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{inviteLink}}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+            Accept Invitation
+        </a>
+    </div>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+        This link expires in 30 minutes and can be used once. If you didn't request this invitation, you can safely ignore this email.
+    </p>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 10px;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="{{inviteLink}}" style="color: #4f46e5; word-break: break-all;">{{inviteLink}}</a>
+    </p>
+</div>`;
+
+            const defaultRemindSubject = 'Reminder: Join ClearGO';
+            const defaultRemindHtml = `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">{{greeting}}</h2>
+    <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+        This is a reminder that you have an invitation to join ClearGO. Click the button below to accept your invitation.
+    </p>
+    <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
+        <p style="color: #374151; font-weight: 600; margin-bottom: 12px; font-size: 15px;">What is ClearGO?</p>
+        <ul style="color: #4b5563; line-height: 1.8; margin: 0; padding-left: 20px;">
+            <li>Track and manage launch readiness across all your products and initiatives</li>
+            <li>Collaborate with your team to ensure successful launches with clear criteria and decision gates</li>
+            <li>Get real-time visibility into launch status, risks, and readiness scores</li>
+        </ul>
+    </div>
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{inviteLink}}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+            Accept Invitation
+        </a>
+    </div>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+        This link expires in 30 minutes and can be used once. If you've already joined, you can safely ignore this email.
+    </p>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 10px;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="{{inviteLink}}" style="color: #4f46e5; word-break: break-all;">{{inviteLink}}</a>
+    </p>
+</div>`;
+
+            const defaultUpdateCriteriaSubject = 'Action Required: Update Criteria in ClearGO';
+            const defaultUpdateCriteriaHtml = `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">{{greeting}}</h2>
+    <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+        You have criteria that require your attention in ClearGO. Please review and update as needed.
+    </p>
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="{{actionLink}}" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+            View Criteria
+        </a>
+    </div>
+    <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+        If the button doesn't work, copy and paste this link into your browser:<br>
+        <a href="{{actionLink}}" style="color: #4f46e5; word-break: break-all;">{{actionLink}}</a>
+    </p>
+</div>`;
+
+            setEmailTemplates({
+                invite_subject: data.invite_subject || defaultInviteSubject,
+                invite_html: data.invite_html || defaultInviteHtml,
+                remind_subject: data.remind_subject || defaultRemindSubject,
+                remind_html: data.remind_html || defaultRemindHtml,
+                update_criteria_subject: data.update_criteria_subject || defaultUpdateCriteriaSubject,
+                update_criteria_html: data.update_criteria_html || defaultUpdateCriteriaHtml,
+            });
+        } catch (error: any) {
+            console.error("Failed to fetch email templates:", error);
+        } finally {
+            setEmailTemplatesLoading(false);
+        }
+    };
+
+    const autoSaveEmailTemplates = async () => {
+        setEmailTemplatesSaving(true);
+        try {
+            const res = await fetch("/api/settings/email-templates", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    email_template_invite_subject: emailTemplates.invite_subject || null,
+                    email_template_invite_html: emailTemplates.invite_html || null,
+                    email_template_remind_subject: emailTemplates.remind_subject || null,
+                    email_template_remind_html: emailTemplates.remind_html || null,
+                    email_template_update_criteria_subject: emailTemplates.update_criteria_subject || null,
+                    email_template_update_criteria_html: emailTemplates.update_criteria_html || null,
+                }),
+            });
+            if (!res.ok) throw new Error("Failed to save email templates");
+        } catch (error: any) {
+            console.error("Failed to auto-save email templates:", error);
+            setError("Failed to save email templates. Please try again.");
+        } finally {
+            setEmailTemplatesSaving(false);
+        }
+    };
+
+    // Auto-save email templates with debouncing (2 seconds after last change)
+    useEffect(() => {
+        if (emailTemplatesLoading) return; // Don't auto-save on initial load
+        
+        const timer = setTimeout(() => {
+            autoSaveEmailTemplates();
+        }, 2000); // Wait 2 seconds after last change
+
+        return () => clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [emailTemplates.invite_subject, emailTemplates.invite_html, emailTemplates.remind_subject, emailTemplates.remind_html, emailTemplates.update_criteria_subject, emailTemplates.update_criteria_html]);
 
     const fetchUsers = async () => {
         setUsersLoading(true);
@@ -371,7 +671,7 @@ export default function AdminSettingsPage() {
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
 
 
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                         {error}
@@ -418,6 +718,17 @@ export default function AdminSettingsPage() {
                                 </li>
                                 <li>
                                     <button
+                                        onClick={() => setActiveSection("launch-stages")}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "launch-stages"
+                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                            : "text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                    >
+                                        Launch Stages
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
                                         onClick={() => setActiveSection("criteria")}
                                         className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "criteria"
                                             ? "bg-indigo-50 text-indigo-700 font-medium"
@@ -425,6 +736,17 @@ export default function AdminSettingsPage() {
                                             }`}
                                     >
                                         ClearCo Criteria
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        onClick={() => setActiveSection("email-templates")}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "email-templates"
+                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                            : "text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                    >
+                                        Email Templates
                                     </button>
                                 </li>
                                 <li>
@@ -444,6 +766,341 @@ export default function AdminSettingsPage() {
 
                     {/* Main Content */}
                     <div className="flex-1 min-w-0">
+                        {activeSection === "email-templates" && (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                                            <IconMail className="w-6 h-6 text-white" />
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-gray-900">Email Templates</h2>
+                                            <p className="text-sm text-gray-500">Customize email templates for different notification types</p>
+                                        </div>
+                                    </div>
+
+                                    {emailTemplatesLoading ? (
+                                        <div className="text-center py-8 text-gray-500">Loading templates...</div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            {/* Template Type Navigation */}
+                                            <div className="border-b border-gray-200">
+                                                <nav className="flex space-x-1" aria-label="Tabs">
+                                                    <button
+                                                        onClick={() => setActiveTemplateType("invite")}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                                                            activeTemplateType === "invite"
+                                                                ? "border-indigo-500 text-indigo-600"
+                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                        }`}
+                                                    >
+                                                        Invite
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setActiveTemplateType("remind")}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                                                            activeTemplateType === "remind"
+                                                                ? "border-indigo-500 text-indigo-600"
+                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                        }`}
+                                                    >
+                                                        Reminder
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setActiveTemplateType("update_criteria")}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                                                            activeTemplateType === "update_criteria"
+                                                                ? "border-indigo-500 text-indigo-600"
+                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                        }`}
+                                                    >
+                                                        Update Criteria
+                                                    </button>
+                                                </nav>
+                                            </div>
+
+                                            {/* Active Template Editor */}
+                                            {activeTemplateType === "invite" && (
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                            Subject Line
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={emailTemplates.invite_subject}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, invite_subject: e.target.value })}
+                                                            placeholder="Welcome to ClearGO"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">Leave empty to use default subject</p>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <label className="block text-sm font-medium text-gray-700">
+                                                                HTML Template
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPreviewType("invite");
+                                                                    setPreviewOpen(true);
+                                                                }}
+                                                                className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                                                            >
+                                                                Preview
+                                                            </button>
+                                                        </div>
+                                                        <textarea
+                                                            value={emailTemplates.invite_html}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, invite_html: e.target.value })}
+                                                            placeholder="Leave empty to use default template"
+                                                            rows={16}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}inviteLink{"}"}{"}"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {activeTemplateType === "remind" && (
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                            Subject Line
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={emailTemplates.remind_subject}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, remind_subject: e.target.value })}
+                                                            placeholder="Reminder: Join ClearGO"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">Leave empty to use default subject</p>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <label className="block text-sm font-medium text-gray-700">
+                                                                HTML Template
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPreviewType("remind");
+                                                                    setPreviewOpen(true);
+                                                                }}
+                                                                className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                                                            >
+                                                                Preview
+                                                            </button>
+                                                        </div>
+                                                        <textarea
+                                                            value={emailTemplates.remind_html}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, remind_html: e.target.value })}
+                                                            placeholder="Leave empty to use default template"
+                                                            rows={16}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}inviteLink{"}"}{"}"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {activeTemplateType === "update_criteria" && (
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                            Subject Line
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            value={emailTemplates.update_criteria_subject}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, update_criteria_subject: e.target.value })}
+                                                            placeholder="Action Required: Update Criteria in ClearGO"
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">Leave empty to use default subject</p>
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <label className="block text-sm font-medium text-gray-700">
+                                                                HTML Template
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPreviewType("update_criteria");
+                                                                    setPreviewOpen(true);
+                                                                }}
+                                                                className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                                                            >
+                                                                Preview
+                                                            </button>
+                                                        </div>
+                                                        <textarea
+                                                            value={emailTemplates.update_criteria_html}
+                                                            onChange={(e) => setEmailTemplates({ ...emailTemplates, update_criteria_html: e.target.value })}
+                                                            placeholder="Leave empty to use default template"
+                                                            rows={16}
+                                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
+                                                        />
+                                                        <p className="mt-1 text-xs text-gray-500">
+                                                            Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}actionLink{"}"}{"}"}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-200">
+                                                {emailTemplatesSaving && (
+                                                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                                                        <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                        Saving...
+                                                    </span>
+                                                )}
+                                                {!emailTemplatesSaving && emailTemplatesLoading === false && (
+                                                    <span className="text-sm text-green-600">All changes saved</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Email Preview Modal */}
+                        <Modal
+                            opened={previewOpen}
+                            onClose={() => setPreviewOpen(false)}
+                            title={`Email Preview - ${
+                                previewType === "invite" ? "Invite" 
+                                : previewType === "remind" ? "Reminder"
+                                : "Update Criteria"
+                            }`}
+                            size="xl"
+                        >
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Subject Line
+                                    </label>
+                                    <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
+                                        {previewType === "invite" 
+                                            ? (emailTemplates.invite_subject || "Welcome to ClearGO")
+                                            : previewType === "remind"
+                                            ? (emailTemplates.remind_subject || "Reminder: Join ClearGO")
+                                            : (emailTemplates.update_criteria_subject || "Action Required: Update Criteria in ClearGO")
+                                        }
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Email Preview
+                                    </label>
+                                    <div className="border border-gray-300 rounded-lg overflow-hidden">
+                                        <div 
+                                            className="bg-white p-4"
+                                            dangerouslySetInnerHTML={{
+                                                __html: (() => {
+                                                    const html = previewType === "invite" 
+                                                        ? emailTemplates.invite_html 
+                                                        : previewType === "remind"
+                                                        ? emailTemplates.remind_html
+                                                        : emailTemplates.update_criteria_html;
+                                                    
+                                                    if (!html) {
+                                                        return previewType === "invite"
+                                                            ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                                                <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
+                                                                <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+                                                                    You've been invited to join ClearGO. Click the button below to get started.
+                                                                </p>
+                                                                <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
+                                                                    <p style="color: #374151; font-weight: 600; margin-bottom: 12px; font-size: 15px;">What is ClearGO?</p>
+                                                                    <ul style="color: #4b5563; line-height: 1.8; margin: 0; padding-left: 20px;">
+                                                                        <li>Track and manage launch readiness across all your products and initiatives</li>
+                                                                        <li>Collaborate with your team to ensure successful launches with clear criteria and decision gates</li>
+                                                                        <li>Get real-time visibility into launch status, risks, and readiness scores</li>
+                                                                    </ul>
+                                                                </div>
+                                                                <div style="text-align: center; margin: 30px 0;">
+                                                                    <a href="https://example.com/invite-link" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+                                                                        Accept Invitation
+                                                                    </a>
+                                                                </div>
+                                                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+                                                                    This link expires in 30 minutes and can be used once. If you didn't request this invitation, you can safely ignore this email.
+                                                                </p>
+                                                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 10px;">
+                                                                    If the button doesn't work, copy and paste this link into your browser:<br>
+                                                                    <a href="https://example.com/invite-link" style="color: #4f46e5; word-break: break-all;">https://example.com/invite-link</a>
+                                                                </p>
+                                                            </div>`
+                                                            : previewType === "remind"
+                                                            ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                                                <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
+                                                                <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+                                                                    This is a reminder that you have an invitation to join ClearGO. Click the button below to accept your invitation.
+                                                                </p>
+                                                                <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
+                                                                    <p style="color: #374151; font-weight: 600; margin-bottom: 12px; font-size: 15px;">What is ClearGO?</p>
+                                                                    <ul style="color: #4b5563; line-height: 1.8; margin: 0; padding-left: 20px;">
+                                                                        <li>Track and manage launch readiness across all your products and initiatives</li>
+                                                                        <li>Collaborate with your team to ensure successful launches with clear criteria and decision gates</li>
+                                                                        <li>Get real-time visibility into launch status, risks, and readiness scores</li>
+                                                                    </ul>
+                                                                </div>
+                                                                <div style="text-align: center; margin: 30px 0;">
+                                                                    <a href="https://example.com/invite-link" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+                                                                        Accept Invitation
+                                                                    </a>
+                                                                </div>
+                                                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+                                                                    This link expires in 30 minutes and can be used once. If you've already joined, you can safely ignore this email.
+                                                                </p>
+                                                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 10px;">
+                                                                    If the button doesn't work, copy and paste this link into your browser:<br>
+                                                                    <a href="https://example.com/invite-link" style="color: #4f46e5; word-break: break-all;">https://example.com/invite-link</a>
+                                                                </p>
+                                                            </div>`
+                                                            : `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                                                <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
+                                                                <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+                                                                    You have criteria that require your attention in ClearGO. Please review and update as needed.
+                                                                </p>
+                                                                <div style="text-align: center; margin: 30px 0;">
+                                                                    <a href="https://example.com/action-link" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600; transition: background-color 0.2s;">
+                                                                        View Criteria
+                                                                    </a>
+                                                                </div>
+                                                                <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+                                                                    If the button doesn't work, copy and paste this link into your browser:<br>
+                                                                    <a href="https://example.com/action-link" style="color: #4f46e5; word-break: break-all;">https://example.com/action-link</a>
+                                                                </p>
+                                                            </div>`;
+                                                    }
+                                                    
+                                                    // Replace placeholders with sample data
+                                                    return html
+                                                        .replace(/\{\{firstName\}\}/g, "John")
+                                                        .replace(/\{\{greeting\}\}/g, "Hi John,")
+                                                        .replace(/\{\{inviteLink\}\}/g, "https://example.com/invite-link")
+                                                        .replace(/\{\{actionLink\}\}/g, "https://example.com/action-link");
+                                                })()
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
+                                    <strong>Note:</strong> This preview uses sample data (firstName: "John", inviteLink: "https://example.com/invite-link"). Actual emails will use real recipient data.
+                                </div>
+                            </div>
+                        </Modal>
+
                         {activeSection === "general" && (
                             <form onSubmit={handleSave} className="space-y-6">
                                 {/* Readiness Thresholds */}
@@ -636,8 +1293,214 @@ export default function AdminSettingsPage() {
                                 launchReleases={launchReleases}
                                 launchReleasesLoading={launchReleasesLoading}
                                 onRefresh={fetchLaunchReleaseDates}
+                                onRefreshReleases={fetchReleases}
                             />
                         )}
+
+                        {activeSection === "launch-stages" && (
+                            <div className="space-y-6">
+                                {/* Launch Stages Table */}
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                    <div className="flex items-center justify-between mb-6">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
+                                                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                                </svg>
+                                            </div>
+                                            <div>
+                                                <h2 className="text-lg font-semibold text-gray-900">Launch Stages</h2>
+                                                <p className="text-sm text-gray-500">Configure launch stages and their durations</p>
+                                            </div>
+                                        </div>
+                                        {!launchStagesLoading && launchStages.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    setEditingStageId(null);
+                                                    setEditingStageName("");
+                                                    setEditingStageDuration("");
+                                                    setEditingStageDetails("");
+                                                    setEditingStageDrawerOpen(true);
+                                                }}
+                                                className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                                                title="Add New Stage"
+                                            >
+                                                +Add
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {launchStagesLoading ? (
+                                        <div className="text-center py-8 text-gray-500">Loading...</div>
+                                    ) : launchStages.length === 0 ? (
+                                        <div className="text-center py-8">
+                                            <p className="text-gray-500 mb-4">No launch stages found.</p>
+                                            <p className="text-sm text-gray-400">The migration may not have inserted the initial data. Check the database or add stages manually.</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                                                <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                                                    <colgroup>
+                                                        <col className="w-12" />
+                                                        <col className="w-16" />
+                                                        <col className="w-auto" />
+                                                        <col className="w-32" />
+                                                        <col className="w-auto" />
+                                                        <col className="w-32" />
+                                                    </colgroup>
+                                                    <thead className="bg-purple-100">
+                                                        <tr>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-12"></th>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-16">Rank</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Stage Name</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Duration (days)</th>
+                                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Details</th>
+                                                            <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-16">Actions</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-purple-200">
+                                                        {launchStages.map((stage, index) => (
+                                                            <tr 
+                                                                key={stage.id} 
+                                                                onDragOver={(e) => {
+                                                                    e.preventDefault();
+                                                                    e.dataTransfer.dropEffect = "move";
+                                                                    if (draggedStageId !== stage.id) {
+                                                                        e.currentTarget.classList.add("bg-purple-100");
+                                                                    }
+                                                                }}
+                                                                onDragLeave={(e) => {
+                                                                    e.currentTarget.classList.remove("bg-purple-100");
+                                                                }}
+                                                                onDrop={async (e) => {
+                                                                    e.preventDefault();
+                                                                    e.currentTarget.classList.remove("bg-purple-100");
+                                                                    if (draggedStageId && draggedStageId !== stage.id) {
+                                                                        await handleReorderStages(draggedStageId, stage.id, index);
+                                                                    }
+                                                                    setDraggedStageId(null);
+                                                                }}
+                                                                className={`hover:bg-purple-50 transition-colors ${draggedStageId === stage.id ? "opacity-50" : ""}`}
+                                                            >
+                                                                <td 
+                                                                    className="px-2 py-3 whitespace-nowrap w-12 cursor-move"
+                                                                    draggable
+                                                                    onDragStart={(e) => {
+                                                                        setDraggedStageId(stage.id);
+                                                                        e.dataTransfer.effectAllowed = "move";
+                                                                    }}
+                                                                    onDragEnd={() => {
+                                                                        setDraggedStageId(null);
+                                                                    }}
+                                                                >
+                                                                    <div className="flex items-center justify-center text-gray-400">
+                                                                        <IconGripVertical className="w-5 h-5" />
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-3 whitespace-nowrap w-16">
+                                                                    <span className="font-medium text-gray-900">{stage.sort_order}</span>
+                                                                </td>
+                                                                <td className="px-4 py-3">
+                                                                    <span className="font-medium text-gray-900">{stage.name}</span>
+                                                                </td>
+                                                                <td className="px-4 py-3 whitespace-nowrap w-32">
+                                                                    <span className="text-gray-700">
+                                                                        {stage.duration_days !== null ? `${stage.duration_days} days` : "N/A"}
+                                                                    </span>
+                                                                </td>
+                                                                <td 
+                                                                    className="px-4 py-3"
+                                                                    onDragStart={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <RichText
+                                                                        value={stage.details || ""}
+                                                                        onChange={() => {}}
+                                                                        readOnly={true}
+                                                                    />
+                                                                </td>
+                                                                <td 
+                                                                    className="px-4 py-3 whitespace-nowrap w-16"
+                                                                    onDragStart={(e) => e.stopPropagation()}
+                                                                >
+                                                                    <div className="flex justify-end">
+                                                                        <button
+                                                                            onClick={() => {
+                                                                                setEditingStageId(stage.id);
+                                                                                setEditingStageName(stage.name);
+                                                                                setEditingStageDuration(stage.duration_days?.toString() || "");
+                                                                                setEditingStageDetails(stage.details || "");
+                                                                                setEditingStageDrawerOpen(true);
+                                                                            }}
+                                                                            className="p-1.5 rounded hover:bg-gray-100 text-gray-600 transition-colors"
+                                                                            title="Edit"
+                                                                            onDragStart={(e) => e.stopPropagation()}
+                                                                        >
+                                                                            <IconPencil className="w-4 h-4" />
+                                                                        </button>
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+
+                                {/* Chart */}
+                                <LaunchStagesChart stages={launchStages} />
+                            </div>
+                        )}
+
+                        {/* Edit Stage Drawer */}
+                        <EditStageDrawer
+                            opened={editingStageDrawerOpen}
+                            onClose={() => {
+                                setEditingStageDrawerOpen(false);
+                                setEditingStageId(null);
+                                setEditingStageName("");
+                                setEditingStageDuration("");
+                                setEditingStageDetails("");
+                            }}
+                            stageId={editingStageId}
+                            stageName={editingStageName}
+                            setStageName={setEditingStageName}
+                            stageDuration={editingStageDuration}
+                            setStageDuration={setEditingStageDuration}
+                            stageDetails={editingStageDetails}
+                            setStageDetails={setEditingStageDetails}
+                            onSave={() => {
+                                if (editingStageId !== null) {
+                                    // Editing existing stage
+                                    handleUpdateStage(
+                                        editingStageId,
+                                        editingStageName,
+                                        editingStageDuration ? parseInt(editingStageDuration) : null,
+                                        editingStageDetails || null
+                                    );
+                                    setEditingStageDrawerOpen(false);
+                                    setEditingStageId(null);
+                                    setEditingStageName("");
+                                    setEditingStageDuration("");
+                                    setEditingStageDetails("");
+                                } else {
+                                    // Adding new stage
+                                    handleAddStage();
+                                }
+                            }}
+                            onDelete={() => {
+                                if (editingStageId !== null) {
+                                    handleDeleteStage(editingStageId);
+                                    setEditingStageDrawerOpen(false);
+                                    setEditingStageId(null);
+                                    setEditingStageName("");
+                                    setEditingStageDuration("");
+                                    setEditingStageDetails("");
+                                }
+                            }}
+                        />
 
                         {activeSection === "users" && (
                             <UserManagementSection
@@ -1100,7 +1963,6 @@ function UserManagementSection({
         email: "",
         first_name: "",
         last_name: "",
-        title: "",
         roles: [] as string[],
         is_active: true,
     });
@@ -1116,7 +1978,7 @@ function UserManagementSection({
                 }),
             });
             if (!res.ok) throw new Error("Failed to create user");
-            setNewUser({ email: "", first_name: "", last_name: "", title: "", roles: [], is_active: true });
+            setNewUser({ email: "", first_name: "", last_name: "", roles: [], is_active: true });
             setShowAddUser(false);
             onRefresh();
         } catch (error: any) {
@@ -1169,6 +2031,50 @@ function UserManagementSection({
             const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
             if (!res.ok) throw new Error("Failed to delete user");
             onRefresh();
+        } catch (error: any) {
+            alert(`Error: ${error.message}`);
+        }
+    };
+
+    const handleInviteUser = async (id: string, type: "invite" | "remind" = "invite") => {
+        try {
+            const res = await fetch(`/api/users/${id}/invite`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ type }),
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || "Failed to send invitation");
+            }
+            const data = await res.json();
+            alert(`Success: ${data.message}`);
+        } catch (error: any) {
+            alert(`Error: ${error.message}`);
+        }
+    };
+
+    const handleBulkInvite = async (type: "invite" | "remind" = "invite") => {
+        if (selectedUserIds.size === 0) {
+            alert("Please select at least one user");
+            return;
+        }
+        if (!confirm(`${type === "invite" ? "Invite" : "Remind"} ${selectedUserIds.size} user(s)?`)) return;
+        try {
+            const res = await fetch("/api/users/bulk-invite", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userIds: Array.from(selectedUserIds),
+                    type,
+                }),
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || "Failed to send invitations");
+            }
+            const data = await res.json();
+            alert(`Success: ${data.sent} invitation(s) sent${data.failed > 0 ? `, ${data.failed} failed` : ""}`);
         } catch (error: any) {
             alert(`Error: ${error.message}`);
         }
@@ -1328,13 +2234,23 @@ function UserManagementSection({
                             />
                         </label>
                         {selectedUserIds.size > 0 && (
-                            <button
-                                type="button"
-                                onClick={handleBulkDelete}
-                                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
-                            >
-                                Delete Selected ({selectedUserIds.size})
-                            </button>
+                            <>
+                                <button
+                                    type="button"
+                                    onClick={() => handleBulkInvite("invite")}
+                                    className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors flex items-center gap-2"
+                                >
+                                    <IconMail className="w-4 h-4" />
+                                    Invite Selected ({selectedUserIds.size})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleBulkDelete}
+                                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors"
+                                >
+                                    Delete Selected ({selectedUserIds.size})
+                                </button>
+                            </>
                         )}
                     </div>
                 </div>
@@ -1365,36 +2281,51 @@ function UserManagementSection({
                 {showAddUser && (
                     <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                         <h3 className="font-medium text-gray-900 mb-4">Add New User</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            <input
-                                type="email"
-                                placeholder="Email *"
-                                value={newUser.email}
-                                onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                                className="px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                            <input
-                                type="text"
-                                placeholder="First Name"
-                                value={newUser.first_name}
-                                onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
-                                className="px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                            <input
-                                type="text"
-                                placeholder="Last Name"
-                                value={newUser.last_name}
-                                onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
-                                className="px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                            <input
-                                type="text"
-                                placeholder="Title"
-                                value={newUser.title}
-                                onChange={(e) => setNewUser({ ...newUser, title: e.target.value })}
-                                className="px-3 py-2 border border-gray-300 rounded-lg"
-                            />
-                            <div className="col-span-2 flex gap-2">
+                        <div className="space-y-4">
+                            <div className="grid grid-cols-2 gap-4">
+                                <input
+                                    type="email"
+                                    placeholder="Email *"
+                                    value={newUser.email}
+                                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
+                                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <MultiSelect
+                                    data={ROLES}
+                                    value={newUser.roles}
+                                    onChange={(value) => setNewUser({ ...newUser, roles: value })}
+                                    placeholder="Select roles"
+                                    styles={{
+                                        input: {
+                                            minHeight: 'calc(2.5rem + 4px)',
+                                            height: 'calc(2.5rem + 4px)',
+                                            fontSize: '1rem',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                        }
+                                    }}
+                                    classNames={{
+                                        input: 'text-base'
+                                    }}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <input
+                                    type="text"
+                                    placeholder="First Name"
+                                    value={newUser.first_name}
+                                    onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value })}
+                                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                                <input
+                                    type="text"
+                                    placeholder="Last Name"
+                                    value={newUser.last_name}
+                                    onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value })}
+                                    className="px-3 py-2 border border-gray-300 rounded-lg"
+                                />
+                            </div>
+                            <div className="flex gap-2">
                                 <button
                                     type="button"
                                     onClick={handleAddUser}
@@ -1417,11 +2348,20 @@ function UserManagementSection({
                 {loading ? (
                     <div className="text-center py-8 text-gray-500">Loading users...</div>
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                            <thead className="bg-gray-50">
+                    <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                        <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                            <colgroup>
+                                <col className="w-12" />
+                                <col className="w-auto" />
+                                <col className="w-auto" />
+                                <col className="w-auto" />
+                                <col className="w-auto" />
+                                <col className="w-32" />
+                                <col className="w-40" />
+                            </colgroup>
+                            <thead className="bg-purple-100">
                                 <tr>
-                                    <th className="px-4 py-3">
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-12">
                                         <input
                                             type="checkbox"
                                             checked={selectedUserIds.size === users.length && users.length > 0}
@@ -1434,19 +2374,18 @@ function UserManagementSection({
                                             }}
                                         />
                                     </th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">First Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Name</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Title</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Roles</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Last Logged In</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">First Name</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Last Name</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Email</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Roles</th>
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Last Logged In</th>
+                                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-40">Actions</th>
                                 </tr>
                             </thead>
-                            <tbody className="bg-white divide-y divide-gray-200">
+                            <tbody className="bg-white divide-y divide-purple-200">
                                 {users.map((user) => (
-                                    <tr key={user.id} className="hover:bg-gray-50">
-                                        <td className="px-4 py-4">
+                                    <tr key={user.id} className="hover:bg-purple-50 transition-colors">
+                                        <td className="px-4 py-3">
                                             <input
                                                 type="checkbox"
                                                 checked={selectedUserIds.has(user.id)}
@@ -1461,11 +2400,10 @@ function UserManagementSection({
                                                 }}
                                             />
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-900">{user.first_name || "—"}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-900">{user.last_name || "—"}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">{user.email}</td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">{user.title || "—"}</td>
-                                        <td className="px-6 py-4 text-sm">
+                                        <td className="px-4 py-3 text-sm text-gray-900">{user.first_name || "—"}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-900">{user.last_name || "—"}</td>
+                                        <td className="px-4 py-3 text-sm text-gray-700">{user.email}</td>
+                                        <td className="px-4 py-3 text-sm">
                                             <div className="flex flex-wrap gap-1">
                                                 {(user.roles || [user.role || "OTHER"]).map((role: string) => (
                                                     <span key={role} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
@@ -1474,24 +2412,30 @@ function UserManagementSection({
                                                 ))}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-600">
+                                        <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
                                             {user.last_logged_in
                                                 ? new Date(user.last_logged_in).toLocaleDateString()
                                                 : "Never"}
                                         </td>
-                                        <td className="px-6 py-4 text-right text-sm font-medium">
-                                            <button
-                                                onClick={() => setEditingUserId(user.id)}
-                                                className="text-indigo-600 hover:text-indigo-900 mr-4"
-                                            >
-                                                Edit
-                                            </button>
-                                            <button
-                                                onClick={() => handleDeleteUser(user.id)}
-                                                className="text-red-600 hover:text-red-900"
-                                            >
-                                                Delete
-                                            </button>
+                                        <td className="px-4 py-3 whitespace-nowrap w-40">
+                                            <div className="flex justify-end gap-1">
+                                                {!user.last_logged_in && (
+                                                    <button
+                                                        onClick={() => handleInviteUser(user.id, "invite")}
+                                                        className="p-1.5 rounded hover:bg-blue-50 text-blue-600 transition-colors"
+                                                        title="Invite"
+                                                    >
+                                                        <IconMail className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                                <button
+                                                    onClick={() => setEditingUserId(user.id)}
+                                                    className="p-1.5 rounded hover:bg-gray-100 text-gray-600 transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <IconPencil className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </td>
                                     </tr>
                                 ))}
@@ -1515,6 +2459,10 @@ function UserManagementSection({
                         if (!res.ok) throw new Error("Failed to update");
                         setEditingUserId(null);
                         onRefresh();
+                    }}
+                    onDelete={async () => {
+                        await handleDeleteUser(editingUser.id);
+                        setEditingUserId(null);
                     }}
                 />
             )}
@@ -1635,6 +2583,7 @@ function ReleaseScheduleSection({
     launchReleases,
     launchReleasesLoading,
     onRefresh,
+    onRefreshReleases,
 }: {
     releases: any[];
     loading: boolean;
@@ -1650,6 +2599,7 @@ function ReleaseScheduleSection({
     launchReleases: Array<{releaseName: string; launchDate: string | null}>;
     launchReleasesLoading: boolean;
     onRefresh: () => void;
+    onRefreshReleases: () => Promise<void>;
 }) {
     const formatDateForDisplay = (dateString: string) => {
         if (!dateString) return "";
@@ -1683,8 +2633,9 @@ function ReleaseScheduleSection({
                 const errorData = await res.json();
                 throw new Error(errorData.error || "Failed to create release mapping");
             }
-            // Refresh the page to show updated mappings
-            window.location.reload();
+            // Refresh both the releases list and launch releases to show updated mappings
+            await onRefreshReleases();
+            await onRefresh();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
         }
@@ -1927,17 +2878,18 @@ function EditUserDrawer({
     opened,
     onClose,
     onSave,
+    onDelete,
 }: {
     user: any;
     opened: boolean;
     onClose: () => void;
     onSave: (patch: any) => Promise<void>;
+    onDelete: () => Promise<void>;
 }) {
     const [patch, setPatch] = useState({
         email: user.email || "",
         first_name: user.first_name || "",
         last_name: user.last_name || "",
-        title: user.title || "",
         roles: user.roles || [user.role || "OTHER"],
         is_active: user.is_active !== false,
     });
@@ -1945,24 +2897,125 @@ function EditUserDrawer({
     return (
         <Drawer opened={opened} onClose={onClose} title="Edit User" position="right" size="xl" padding="lg">
             <Stack gap="md">
-                <TextInput label="Email" value={patch.email} onChange={(e) => setPatch({ ...patch, email: e.target.value })} required />
-                <TextInput label="First Name" value={patch.first_name} onChange={(e) => setPatch({ ...patch, first_name: e.target.value })} />
-                <TextInput label="Last Name" value={patch.last_name} onChange={(e) => setPatch({ ...patch, last_name: e.target.value })} />
-                <TextInput label="Title" value={patch.title} onChange={(e) => setPatch({ ...patch, title: e.target.value })} />
-                <MultiSelect
-                    label="Roles"
-                    data={ROLES}
-                    value={patch.roles}
-                    onChange={(value) => setPatch({ ...patch, roles: value })}
-                />
+                <Group grow>
+                    <TextInput label="Email" value={patch.email} onChange={(e) => setPatch({ ...patch, email: e.target.value })} required />
+                    <MultiSelect
+                        label="Roles"
+                        data={ROLES}
+                        value={patch.roles}
+                        onChange={(value) => setPatch({ ...patch, roles: value })}
+                        styles={{
+                            input: {
+                                minHeight: 'calc(2.5rem + 4px)',
+                                height: 'calc(2.5rem + 4px)',
+                                fontSize: '1rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                            }
+                        }}
+                        classNames={{
+                            input: 'text-base'
+                        }}
+                    />
+                </Group>
+                <Group grow>
+                    <TextInput label="First Name" value={patch.first_name} onChange={(e) => setPatch({ ...patch, first_name: e.target.value })} />
+                    <TextInput label="Last Name" value={patch.last_name} onChange={(e) => setPatch({ ...patch, last_name: e.target.value })} />
+                </Group>
                 <Checkbox
                     label="Active"
                     checked={patch.is_active}
                     onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
                 />
+                <Group justify="space-between" mt="xl">
+                    <Button 
+                        variant="outline" 
+                        color="red" 
+                        leftSection={<IconTrash size={16} />}
+                        onClick={async () => {
+                            if (confirm("Are you sure you want to delete this user?")) {
+                                await onDelete();
+                            }
+                        }}
+                    >
+                        Delete
+                    </Button>
+                    <Group>
+                        <Button variant="outline" onClick={onClose}>Cancel</Button>
+                        <Button onClick={() => onSave(patch)}>Save Changes</Button>
+                    </Group>
+                </Group>
+            </Stack>
+        </Drawer>
+    );
+}
+
+function EditStageDrawer({
+    opened,
+    onClose,
+    stageId,
+    stageName,
+    setStageName,
+    stageDuration,
+    setStageDuration,
+    stageDetails,
+    setStageDetails,
+    onSave,
+    onDelete,
+}: {
+    opened: boolean;
+    onClose: () => void;
+    stageId: number | null;
+    stageName: string;
+    setStageName: (name: string) => void;
+    stageDuration: string;
+    setStageDuration: (duration: string) => void;
+    stageDetails: string;
+    setStageDetails: (details: string) => void;
+    onSave: () => void;
+    onDelete: () => void;
+}) {
+    const isAdding = stageId === null;
+    
+    return (
+        <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Launch Stage" : "Edit Launch Stage"} position="right" size="xl" padding="lg">
+            <Stack gap="md">
+                <TextInput
+                    label="Stage Name"
+                    value={stageName}
+                    onChange={(e) => setStageName(e.target.value)}
+                    required
+                    placeholder="e.g., GTM Access"
+                />
+                <NumberInput
+                    label="Duration (days)"
+                    value={stageDuration ? parseInt(stageDuration) : undefined}
+                    onChange={(value) => setStageDuration(value?.toString() || "")}
+                    placeholder="Enter number of days"
+                    allowDecimal={false}
+                    min={0}
+                />
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Details</label>
+                    <RichText
+                        value={stageDetails}
+                        onChange={setStageDetails}
+                        placeholder="Enter details..."
+                        rows={10}
+                    />
+                </div>
                 <Group justify="flex-end" mt="xl">
-                    <Button variant="outline" onClick={onClose}>Cancel</Button>
-                    <Button onClick={() => onSave(patch)}>Save Changes</Button>
+                    {!isAdding && (
+                        <Button variant="outline" color="red" onClick={onDelete}>
+                            Delete
+                        </Button>
+                    )}
+                    <Button variant="outline" onClick={onClose}>
+                        Cancel
+                    </Button>
+                    <Button onClick={onSave}>
+                        {isAdding ? "Add" : "Save"}
+                    </Button>
                 </Group>
             </Stack>
         </Drawer>

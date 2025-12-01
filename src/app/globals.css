@@ -40,3 +40,28 @@ body {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
 }
+
+/* Status dropdown option colors */
+.status-option[data-value="NOT_SET"] {
+  background-color: #F3F4F6 !important;
+  color: #1F2937 !important;
+}
+
+.status-option[data-value="GO"] {
+  background-color: #D1FAE5 !important;
+  color: #065F46 !important;
+}
+
+.status-option[data-value="CONDITIONAL"] {
+  background-color: #FEF3C7 !important;
+  color: #92400E !important;
+}
+
+.status-option[data-value="NO_GO"] {
+  background-color: #FEE2E2 !important;
+  color: #991B1B !important;
+}
+
+.status-option[data-hovered] {
+  opacity: 0.9;
+}

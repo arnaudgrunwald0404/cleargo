@@ -1,8 +1,14 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { AhaConfig, AhaEpic } from './types';
+import { getCustomFields } from './client';
 
 let cachedConfig: AhaConfig | null = null;
+
+// Cache for custom field definitions (field key -> options map)
+let fieldDefinitionsCache: Map<string, Map<string, string>> | null = null;
+let fieldDefinitionsCacheTime: number = 0;
+const FIELD_DEFINITIONS_CACHE_TTL = 60 * 60 * 1000; // 1 hour
 
 export function loadAhaConfig(): AhaConfig {
     if (cachedConfig) return cachedConfig;
@@ -25,20 +31,86 @@ export function getCustomFieldKey(fieldAlias: string): string {
     return field.key;
 }
 
-export function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): any {
+/**
+ * Fetches and caches custom field definitions to map option codes to labels
+ */
+async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, string> | null> {
+    const now = Date.now();
+    
+    // Return cached data if still valid
+    if (fieldDefinitionsCache && (now - fieldDefinitionsCacheTime) < FIELD_DEFINITIONS_CACHE_TTL) {
+        return fieldDefinitionsCache.get(fieldKey) || null;
+    }
+    
+    try {
+        // Fetch all custom field definitions
+        const response = await getCustomFields();
+        const definitions = response.custom_field_definitions || [];
+        
+        // Build cache: field key -> (option code -> option label)
+        const newCache = new Map<string, Map<string, string>>();
+        
+        for (const def of definitions) {
+            if (def.key && def.options && Array.isArray(def.options)) {
+                const optionsMap = new Map<string, string>();
+                for (const option of def.options) {
+                    // Options can be objects with name/value or just strings
+                    if (typeof option === 'object' && option.name && option.value) {
+                        optionsMap.set(String(option.value), option.name);
+                    } else if (typeof option === 'object' && option.name) {
+                        optionsMap.set(String(option.name), option.name);
+                    } else if (typeof option === 'string') {
+                        optionsMap.set(option, option);
+                    }
+                }
+                if (optionsMap.size > 0) {
+                    newCache.set(def.key, optionsMap);
+                }
+            }
+        }
+        
+        fieldDefinitionsCache = newCache;
+        fieldDefinitionsCacheTime = now;
+        
+        return newCache.get(fieldKey) || null;
+    } catch (error) {
+        console.error(`Error fetching field definitions for ${fieldKey}:`, error);
+        return null;
+    }
+}
+
+export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Promise<any> {
     const key = getCustomFieldKey(fieldAlias);
     
     // AHA API returns custom_fields as an array, not an object
     // Handle both array and object formats for compatibility
+    let field: any = null;
     if (Array.isArray(epic.custom_fields)) {
-        const field = epic.custom_fields.find((f: any) => f?.key === key);
-        return field?.value ?? null;
+        field = epic.custom_fields.find((f: any) => f?.key === key);
     } else if (epic.custom_fields && typeof epic.custom_fields === 'object') {
-        // Fallback for object format (if AHA changes their API)
-        return epic.custom_fields[key]?.value ?? null;
+        field = epic.custom_fields[key];
     }
     
-    return null;
+    if (!field) return null;
+    
+    const value = field.value;
+    
+    // For select fields, Aha may return value as an object with name property (the option label)
+    if (value && typeof value === 'object' && !Array.isArray(value) && value.name) {
+        return value.name; // Return the option label
+    }
+    
+    // If value is a string, it might be a code for a select field
+    // Try to fetch the field definition to map code to label
+    if (typeof value === 'string' && value.trim()) {
+        const optionsMap = await getFieldDefinitionOptions(key);
+        if (optionsMap && optionsMap.has(value)) {
+            return optionsMap.get(value); // Return the mapped label
+        }
+    }
+    
+    // Return value as-is (could be number, boolean, string, etc.)
+    return value ?? null;
 }
 
 export function mapTierFromAha(ahaValue: string | null): string {
@@ -114,7 +186,7 @@ export async function mapEpicToLaunch(
     if (fieldsToLoad && Array.isArray(fieldsToLoad)) {
         for (const fieldAlias of fieldsToLoad) {
             try {
-                const value = getCustomFieldValue(epic, fieldAlias);
+                const value = await getCustomFieldValue(epic, fieldAlias);
                 if (value !== null && value !== undefined) {
                     customFields[fieldAlias] = value;
                 }
@@ -153,31 +225,31 @@ export async function mapEpicToLaunch(
         aha_id: epic.reference_num || epic.id,
         aha_url: epic.url,
         name: epic.name,
-        tier: mapTierFromAha(getCustomFieldValue(epic, 'launch_tier')),
-        target_launch_date: normalizeReleaseValue(getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
-        scheduled_ga_dev_date: normalizeReleaseValue(getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
+        tier: mapTierFromAha(await getCustomFieldValue(epic, 'launch_tier')),
+        target_launch_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
+        scheduled_ga_dev_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
         owner_email: epic.assigned_to_user?.email ?? null,
-        product_component: getCustomFieldValue(epic, 'components'),
-        pod: getCustomFieldValue(epic, 'dev_backlog_pod'),
-        business_priority: getCustomFieldValue(epic, 'business_priority'),
-        csm_priority: getCustomFieldValue(epic, 'csm_priority'),
+        product_component: await getCustomFieldValue(epic, 'components'),
+        pod: await getCustomFieldValue(epic, 'dev_backlog_pod'),
+        business_priority: await getCustomFieldValue(epic, 'business_priority'),
+        csm_priority: await getCustomFieldValue(epic, 'csm_priority'),
         tags: epic.tags ?? [],
-        modified_rice_score: getCustomFieldValue(epic, 'modified_rice'),
-        wsjf_score: getCustomFieldValue(epic, 'wsjf'),
-        gtm_link: getCustomFieldValue(epic, 'gtm_link'),
-        activation_process: getCustomFieldValue(epic, 'activation_process'),
-        new_org_setup: getCustomFieldValue(epic, 'new_org_setup'),
-        existing_org_setup: getCustomFieldValue(epic, 'existing_org_setup'),
-        pricing_model: getCustomFieldValue(epic, 'pricing_model'),
+        modified_rice_score: await getCustomFieldValue(epic, 'modified_rice'),
+        wsjf_score: await getCustomFieldValue(epic, 'wsjf'),
+        gtm_link: await getCustomFieldValue(epic, 'gtm_link'),
+        activation_process: await getCustomFieldValue(epic, 'activation_process'),
+        new_org_setup: await getCustomFieldValue(epic, 'new_org_setup'),
+        existing_org_setup: await getCustomFieldValue(epic, 'existing_org_setup'),
+        pricing_model: await getCustomFieldValue(epic, 'pricing_model'),
         aha_release_name: releaseName,
         aha_fields: ahaFields,
     };
 }
 
 
-export function shouldProcessEpic(epic: AhaEpic): boolean {
+export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
     // Filter: (Launch Candidate == true) OR (tags contains "LaunchConsole")
-    const isLaunchCandidate = getCustomFieldValue(epic, 'launch_candidate') === true;
+    const isLaunchCandidate = await getCustomFieldValue(epic, 'launch_candidate') === true;
     const hasLaunchTag = epic.tags?.includes('LaunchConsole') ?? false;
 
     return isLaunchCandidate || hasLaunchTag;

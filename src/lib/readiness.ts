@@ -29,8 +29,7 @@ export async function recomputeLaunchReadiness(launchId: string) {
             *,
             criterion:criterion_id (
                 gate,
-                tier_applicability,
-                weight
+                tier_applicability
             )
         `)
         .eq('launch_id', launchId);

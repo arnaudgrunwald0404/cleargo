@@ -3,6 +3,7 @@
 export interface AhaCustomField {
     key: string;
     value: any;
+    name?: string; // Label/display name for select fields
     type?: string;
 }
 

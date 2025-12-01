@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Apply filter: only process if launch candidate or has LaunchConsole tag
-        if (!shouldProcessEpic(epic)) {
+        if (!(await shouldProcessEpic(epic))) {
             console.log('⏭️  Skipping: Epic does not match filter criteria', {
                 epic_id: epic.id,
                 tags: epic.tags,

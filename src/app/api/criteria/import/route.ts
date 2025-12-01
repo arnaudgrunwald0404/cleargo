@@ -1,4 +1,4 @@
-                                                                                            import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
@@ -78,20 +78,40 @@ export async function POST(req: NextRequest) {
         }
 
         const buffer = await file.arrayBuffer();
+
         const workbook = XLSX.read(buffer, { type: "array" });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Use array of arrays
+
+        // Fetch launch stages to map names to IDs
+        const { data: launchStages, error: stagesError } = await supabase
+            .from('launch_stages')
+            .select('id, name');
+        
+        if (stagesError) {
+            console.error('[Import] Error fetching launch stages:', stagesError);
+            return NextResponse.json({ error: "Failed to fetch launch stages", details: stagesError.message }, { status: 500 });
+        }
+
+        // Create a map from launch stage name to ID
+        const launchStageMap = new Map<string, number>();
+        (launchStages || []).forEach((stage: { id: number; name: string }) => {
+            launchStageMap.set(stage.name.toLowerCase().trim(), stage.id);
+        });
+        
+        console.log(`[Import] Loaded ${launchStageMap.size} launch stages for mapping`);
 
         const criteria: CreateCriterionInput[] = [];
         const errors: Array<{ row: number; label: string; error: string }> = [];
         let currentCategory: string = "";
         let sortOrder = 0;
 
-        // Start from row 19 (index 18) - row 18 is headers
-        const startRowIndex = 18; // Row 19 in Excel (0-indexed), skipping header row 18
+        // Start from row 19 (index 18) - data starts on row 19
+        const startRowIndex = 18; // Row 19 in Excel (0-indexed)
 
-        console.log(`[Import] Starting data parse from row ${startRowIndex + 1} (row 19, skipping header row 18)`);
+        console.log(`[Import] Starting data parse from row ${startRowIndex + 1} (row 19)`);
+        console.log(`[Import] Column mapping: A=index 0 (Category), B=index 1 (Criteria), C=index 2 (Stakeholder), D=index 3 (Ready By), F=index 5 (GO), G=index 6 (Conditional Go), H=index 7 (No Go)`);
 
         for (let i = startRowIndex; i < rows.length; i++) {
             const row = rows[i];
@@ -103,13 +123,20 @@ export async function POST(req: NextRequest) {
             }
 
             // Get values from columns, handling undefined/null/empty strings
+            // Column A (index 0): Category
             const colA = row[0] ? row[0].toString().trim() : "";
+            // Column B (index 1): Criteria/Label
             const colB = row[1] ? row[1].toString().trim() : "";
+            // Column C (index 2): Stakeholder/Decision Owner Email
             const colC = row[2] ? row[2].toString().trim() : "";
-            // Columns E, F, G: Status definitions (GO, CONDITIONAL GO, NO GO)
-            const colE = row[4] ? row[4].toString().trim() : "";
+            // Column D (index 3): Ready By - the timing by which the criteria needs to be rated
+            const colD = row[3] ? row[3].toString().trim() : "";
+            // Column F (index 5): GO definition
             const colF = row[5] ? row[5].toString().trim() : "";
+            // Column G (index 6): CONDITIONAL GO definition
             const colG = row[6] ? row[6].toString().trim() : "";
+            // Column H (index 7): NO GO definition
+            const colH = row[7] ? row[7].toString().trim() : "";
 
             // Label should be in column B (index 1), skip if empty
             if (!colB) {
@@ -166,19 +193,35 @@ export async function POST(req: NextRequest) {
             // If no category has been set yet, use "OTHER" as fallback
             const category = (currentCategory || "OTHER") as CriterionCategory;
 
-            // Convert empty strings to null for status definitions
-            const statusGo = colE || null;
-            const statusConditional = colF || null;
-            const statusNoGo = colG || null;
+            // Column D (index 3): Ready By - Rating timing (look up launch stage ID by name)
+            let ratingTimingId: number | null = null;
+            if (colD) {
+                const stageNameLower = colD.toLowerCase().trim();
+                const stageId = launchStageMap.get(stageNameLower);
+                if (stageId) {
+                    ratingTimingId = stageId;
+                } else {
+                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in launch_stages table`);
+                    // Still continue, but rating_timing will be null
+                }
+            }
+            
+            // Status definitions: GO is in Column F (index 5), CONDITIONAL GO is in Column G (index 6), NO GO is in Column H (index 7)
+            const statusGo = colF || null;
+            const statusConditional = colG || null;
+            const statusNoGo = colH || null;
+            
+            console.log(`[Import] Row ${rowNumber}: Ready By (D, index 3)="${colD}" -> rating_timing_id=${ratingTimingId}, GO (F, index 5)="${colF}", Conditional Go (G, index 6)="${colG}", No Go (H, index 7)="${colH}"`);
 
             try {
                 criteria.push({
                     label: label,
                     description: undefined,
                     category: category,
-                    gate: false, // Template doesn't specify gate
+                    gate: false, // Default to false, no source column for gate
                     tier_applicability: "ALL", // Default
                     decision_owner_email: decisionOwnerEmail,
+                    rating_timing: ratingTimingId,
                     status_definition_go: statusGo,
                     status_definition_conditional: statusConditional,
                     status_definition_no_go: statusNoGo,
@@ -186,7 +229,7 @@ export async function POST(req: NextRequest) {
                     is_active: true
                 });
                 const statusDefs = [statusGo ? "GO" : "", statusConditional ? "CONDITIONAL" : "", statusNoGo ? "NO_GO" : ""].filter(Boolean).join(", ");
-                console.log(`[Import] Row ${rowNumber}: Added "${label}" with category "${currentCategory}" -> "${category}"${statusDefs ? `, status definitions: ${statusDefs}` : ""}`);
+                console.log(`[Import] Row ${rowNumber}: Added "${label}" with category "${currentCategory}" -> "${category}", rating_timing_id=${ratingTimingId}${statusDefs ? `, status definitions: ${statusDefs}` : ""}`);
             } catch (e: any) {
                 errors.push({ row: rowNumber, label, error: e.message });
                 console.error(`[Import] Error processing row ${rowNumber} (${label}):`, e.message);

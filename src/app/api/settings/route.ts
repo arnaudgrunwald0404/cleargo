@@ -37,15 +37,27 @@ export async function PATCH(req: NextRequest) {
         // For MVP, we'll proceed.
 
         const body = await req.json();
+        console.log("PATCH /api/settings - Request body:", JSON.stringify(body, null, 2));
 
         // Validate body if necessary (e.g. ensure thresholds are 0-1)
 
         const updated = await updateSettings(body);
         return NextResponse.json(updated);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error updating settings:", error);
+        console.error("Error details:", {
+            message: error?.message,
+            code: error?.code,
+            details: error?.details,
+            hint: error?.hint,
+            stack: error?.stack
+        });
         return NextResponse.json(
-            { error: "Failed to update settings" },
+            { 
+                error: "Failed to update settings",
+                details: error?.message || String(error),
+                code: error?.code || null
+            },
             { status: 500 }
         );
     }

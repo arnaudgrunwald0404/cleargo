@@ -97,7 +97,8 @@ export async function getLaunches() {
         .select(`
       *,
       product:product_id (name),
-      owner:owner_id (name, email)
+      owner:owner_id (name, email),
+      aha_fields
     `)
         .order('created_at', { ascending: false });
 
@@ -116,12 +117,17 @@ export async function getLaunch(id: string) {
         .select(`
       *,
       product:product_id (name),
-      owner:owner_id (name, email)
+      owner:owner_id (name, email),
+      aha_fields
     `)
         .eq('id', id)
         .single();
 
     if (error) {
+        // Return null for "not found" errors instead of throwing
+        if (error.code === 'PGRST116') {
+            return null;
+        }
         throw error;
     }
 

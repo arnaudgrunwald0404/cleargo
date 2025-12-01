@@ -3,9 +3,16 @@ import { useEffect, useState } from "react";
 import { Launch, CreateLaunchDTO, LaunchTier } from "@/types/launches";
 import Link from "next/link";
 
+interface ReleaseGroup {
+    releaseName: string;
+    releaseDate: string | null;
+    launches: Launch[];
+}
+
 export default function LaunchesPage() {
     const [launches, setLaunches] = useState<Launch[]>([]);
     const [products, setProducts] = useState<any[]>([]);
+    const [releaseSchedule, setReleaseSchedule] = useState<Array<{release_name: string; launch_date: string | null}>>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreate, setShowCreate] = useState(false);
@@ -30,9 +37,10 @@ export default function LaunchesPage() {
     async function loadData() {
         try {
             setLoading(true);
-            const [launchesRes, productsRes] = await Promise.all([
+            const [launchesRes, productsRes, releasesRes] = await Promise.all([
                 fetch("/api/launches"),
-                fetch("/api/products")
+                fetch("/api/products"),
+                fetch("/api/releases")
             ]);
 
             if (!launchesRes.ok) throw new Error("Failed to fetch launches");
@@ -43,6 +51,11 @@ export default function LaunchesPage() {
             if (productsRes.ok) {
                 const productsData = await productsRes.json();
                 setProducts(productsData);
+            }
+
+            if (releasesRes.ok) {
+                const releasesData = await releasesRes.json();
+                setReleaseSchedule(releasesData || []);
             }
         } catch (e: any) {
             setError(e.message);
@@ -85,10 +98,85 @@ export default function LaunchesPage() {
         return true;
     });
 
-    if (loading) return <div className="p-8">Loading...</div>;
+    // Extract release name from launch's aha_fields
+    const getReleaseName = (launch: Launch): string | null => {
+        if (!launch.aha_fields || typeof launch.aha_fields !== 'object') return null;
+        const fields = launch.aha_fields as any;
+        
+        // Check standard fields
+        if (fields.standard_fields && typeof fields.standard_fields === 'object') {
+            const standardFields = fields.standard_fields;
+            const releaseName = standardFields?.aha_release_name || 
+                              standardFields?.release?.name || null;
+            if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
+                return releaseName.trim();
+            }
+        }
+        
+        // Check custom fields
+        if (fields.custom_fields && typeof fields.custom_fields === 'object') {
+            const customFields = fields.custom_fields;
+            const releaseName = customFields?.release_target_after_pod_planning;
+            if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
+                return releaseName.trim();
+            }
+        }
+        
+        return null;
+    };
+
+    // Create a map of release names to dates from release schedule
+    const releaseDateMap = new Map<string, string | null>();
+    releaseSchedule.forEach(release => {
+        if (release.release_name) {
+            releaseDateMap.set(release.release_name, release.launch_date);
+        }
+    });
+
+    // Group launches by release
+    const releaseGroupsMap = new Map<string, Launch[]>();
+    const ungroupedLaunches: Launch[] = [];
+
+    filteredLaunches.forEach(launch => {
+        const releaseName = getReleaseName(launch);
+        if (releaseName) {
+            if (!releaseGroupsMap.has(releaseName)) {
+                releaseGroupsMap.set(releaseName, []);
+            }
+            releaseGroupsMap.get(releaseName)!.push(launch);
+        } else {
+            ungroupedLaunches.push(launch);
+        }
+    });
+
+    // Convert to array and sort by release date
+    const releaseGroups: ReleaseGroup[] = Array.from(releaseGroupsMap.entries()).map(([releaseName, launches]) => ({
+        releaseName,
+        releaseDate: releaseDateMap.get(releaseName) || null,
+        launches
+    }));
+
+    // Sort release groups by date (ascending), with null dates at the end
+    releaseGroups.sort((a, b) => {
+        if (!a.releaseDate && !b.releaseDate) return 0;
+        if (!a.releaseDate) return 1;
+        if (!b.releaseDate) return -1;
+        return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
+    });
+
+    // Add ungrouped launches as a separate group at the end
+    if (ungroupedLaunches.length > 0) {
+        releaseGroups.push({
+            releaseName: "Ungrouped",
+            releaseDate: null,
+            launches: ungroupedLaunches
+        });
+    }
+
+    if (loading) return <div className="pt-24 p-8">Loading...</div>;
 
     return (
-        <div className="p-8 max-w-6xl mx-auto">
+        <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center mb-8">
                 <h1 className="text-2xl font-bold">Launches</h1>
                 <button
@@ -142,6 +230,103 @@ export default function LaunchesPage() {
             </div>
 
             {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
+
+            {releaseGroups.length === 0 ? (
+                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                    <div className="px-4 py-8 text-center text-gray-500">
+                        No launches found matching filters.
+                    </div>
+                </div>
+            ) : (
+                <div className="space-y-8">
+                    {releaseGroups.map((group, groupIndex) => (
+                        <div key={groupIndex} className="space-y-2">
+                            <h2 className="text-lg font-semibold text-gray-900">
+                                {group.releaseName}
+                                {group.releaseDate && (
+                                    <span className="ml-2 text-base font-normal text-gray-600">
+                                        - {new Date(group.releaseDate).toLocaleDateString()}
+                                    </span>
+                                )}
+                            </h2>
+                            <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                                <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                                    <colgroup>
+                                        <col className="w-auto" />
+                                        <col className="w-24" />
+                                        <col className="w-auto" />
+                                        <col className="w-32" />
+                                        <col className="w-24" />
+                                        <col className="w-24" />
+                                        <col className="w-24" />
+                                        <col className="w-24" />
+                                    </colgroup>
+                                    <thead className="bg-purple-100">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Name</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Tier</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Product</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Date</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Readiness</th>
+                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Risk</th>
+                                            <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-24">Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-purple-200">
+                                        {group.launches.map(launch => (
+                                            <tr key={launch.id} className="hover:bg-purple-50 transition-colors">
+                                                <td className="px-4 py-3">
+                                                    <Link href={`/launches/${launch.id}`} className="font-medium text-gray-900 hover:text-blue-600">
+                                                        {launch.name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                    <span className={`px-2 py-1 rounded text-xs font-medium ${launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
+                                                        launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
+                                                            'bg-gray-100 text-gray-800'
+                                                        }`}>
+                                                        {launch.tier.replace('_', ' ')}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-700">
+                                                    {(launch as any).product?.name || '-'}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
+                                                    {launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                    <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        {launch.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 font-mono text-sm text-gray-700 whitespace-nowrap w-24">
+                                                    {launch.readiness_score ? `${Math.round(launch.readiness_score * 100)}%` : '-'}
+                                                </td>
+                                                <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                    {launch.risk_level && (
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${launch.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                            launch.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
+                                                                'bg-green-100 text-green-800'
+                                                            }`}>
+                                                            {launch.risk_level}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-right whitespace-nowrap w-24">
+                                                    <Link href={`/launches/${launch.id}`} className="text-sm text-gray-600 hover:text-gray-900">
+                                                        View
+                                                    </Link>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {showCreate && (
                 <div className="bg-white p-6 rounded shadow mb-8 border">
@@ -218,78 +403,6 @@ export default function LaunchesPage() {
                 </div>
             )}
 
-            <div className="bg-white rounded shadow overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 border-b">
-                        <tr>
-                            <th className="p-4 font-medium text-gray-500">Name</th>
-                            <th className="p-4 font-medium text-gray-500">Tier</th>
-                            <th className="p-4 font-medium text-gray-500">Product</th>
-                            <th className="p-4 font-medium text-gray-500">Date</th>
-                            <th className="p-4 font-medium text-gray-500">Status</th>
-                            <th className="p-4 font-medium text-gray-500">Readiness</th>
-                            <th className="p-4 font-medium text-gray-500">Risk</th>
-                            <th className="p-4 font-medium text-gray-500">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y">
-                        {filteredLaunches.length === 0 ? (
-                            <tr>
-                                <td colSpan={8} className="p-8 text-center text-gray-500">
-                                    No launches found matching filters.
-                                </td>
-                            </tr>
-                        ) : (
-                            filteredLaunches.map(launch => (
-                                <tr key={launch.id} className="hover:bg-gray-50">
-                                    <td className="p-4 font-medium">
-                                        <Link href={`/launches/${launch.id}`} className="text-blue-600 hover:underline">
-                                            {launch.name}
-                                        </Link>
-                                    </td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
-                                            launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
-                                                'bg-gray-100 text-gray-800'
-                                            }`}>
-                                            {launch.tier.replace('_', ' ')}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-gray-600">
-                                        {(launch as any).product?.name || '-'}
-                                    </td>
-                                    <td className="p-4 text-gray-600">
-                                        {launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : '-'}
-                                    </td>
-                                    <td className="p-4">
-                                        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                                            {launch.status}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 font-mono text-sm">
-                                        {launch.readiness_score ? `${Math.round(launch.readiness_score * 100)}%` : '-'}
-                                    </td>
-                                    <td className="p-4">
-                                        {launch.risk_level && (
-                                            <span className={`px-2 py-1 rounded text-xs font-medium ${launch.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
-                                                launch.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
-                                                    'bg-green-100 text-green-800'
-                                                }`}>
-                                                {launch.risk_level}
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="p-4">
-                                        <Link href={`/launches/${launch.id}`} className="text-gray-500 hover:text-gray-700">
-                                            View
-                                        </Link>
-                                    </td>
-                                </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
         </div>
     );
 }
