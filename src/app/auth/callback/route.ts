@@ -112,6 +112,10 @@ export async function GET(request: NextRequest) {
                     sameSite: 'lax' as const,
                     path: '/',
                 }
+                // Log maxAge/expires if present
+                if (options?.maxAge) {
+                    console.log('⏰ Cookie maxAge:', name, options.maxAge, 'seconds')
+                }
                 redirectResponse.cookies.set(name, value, cookieOptions)
                 console.log('🟡 Cookie copied to redirect:', name, 'Options:', JSON.stringify(cookieOptions))
             })

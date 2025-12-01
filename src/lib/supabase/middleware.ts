@@ -17,20 +17,32 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
+                    console.log('🔄 Middleware - Cookies being set/updated:', cookiesToSet.map(c => ({ name: c.name, hasValue: !!c.value, action: c.value ? 'set' : 'clear' })))
                     cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
                     response = NextResponse.next({
                         request,
                     })
-                    cookiesToSet.forEach(({ name, value, options }) =>
+                    cookiesToSet.forEach(({ name, value, options }) => {
                         response.cookies.set(name, value, options)
-                    )
+                        if (!value) {
+                            console.log('⚠️ Middleware - Cookie being cleared:', name)
+                        }
+                    })
                 },
             },
         }
     )
 
     // refreshing the auth token
-    await supabase.auth.getUser()
+    const { data: { user }, error } = await supabase.auth.getUser()
+    
+    if (error) {
+        console.log('⚠️ Middleware - getUser() error (may clear cookies):', error.message)
+    } else if (user) {
+        console.log('✅ Middleware - User session valid')
+    } else {
+        console.log('ℹ️ Middleware - No user session')
+    }
 
     return response
 }
