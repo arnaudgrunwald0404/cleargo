@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type') as EmailOtpType | null
     const next = searchParams.get('next') ?? '/'
     const code = searchParams.get('code')
-    
+
     console.log('🔍 OAuth Callback - Code:', code ? 'present' : 'missing')
     console.log('🔍 Request URL:', request.url)
     console.log('🔍 Request origin:', request.nextUrl.origin)
@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     console.log('🔍 Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
     console.log('🔍 App URL:', process.env.NEXT_PUBLIC_APP_URL)
     console.log('🔍 Expected redirect URL:', `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/callback`)
-    
+
     // Check for domain mismatch
     const requestHost = request.headers.get('host')
     const expectedHost = process.env.NEXT_PUBLIC_APP_URL ? new URL(process.env.NEXT_PUBLIC_APP_URL).host : null
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
             headers: request.headers,
         },
     })
-    
+
     // Store cookies with their options for later copying
     const storedCookies: Array<{ name: string; value: string; options?: any }> = []
 
@@ -73,13 +73,20 @@ export async function GET(request: NextRequest) {
         if (!error) {
             // Create redirect and copy cookies with their original options
             const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+            const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
             storedCookies.forEach(({ name, value, options }) => {
-                redirectResponse.cookies.set(name, value, options || {
+                const cookieOptions = options || {
                     httpOnly: true,
-                    secure: true,
-                    sameSite: 'lax',
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax' as const,
                     path: '/',
-                })
+                }
+                // Don't set domain for localhost
+                if (cookieDomain && !cookieDomain.includes('localhost')) {
+                    cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                }
+                redirectResponse.cookies.set(name, value, cookieOptions)
+                console.log('🍪 OTP Cookie set:', name, 'Domain:', cookieOptions.domain || 'default')
             })
             return redirectResponse
         } else {
@@ -89,37 +96,42 @@ export async function GET(request: NextRequest) {
         }
     } else if (code) {
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-        
+
         if (error) {
             console.error('Code exchange error:', error)
             const errorUrl = new URL('/?error=auth_failed', request.url)
             errorUrl.searchParams.set('message', error.message)
             return NextResponse.redirect(errorUrl)
         }
-        
+
         if (data?.session) {
             // Successfully exchanged code for session
             console.log('✅ Session created successfully')
             console.log('📦 Stored cookies count:', storedCookies.length)
             console.log('🍪 Cookies to copy:', storedCookies.map(c => ({ name: c.name, hasValue: !!c.value, options: c.options })))
-            
+
             // Create redirect response and copy all cookies with their original options
             const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+            const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
             storedCookies.forEach(({ name, value, options }) => {
                 const cookieOptions = options || {
                     httpOnly: true,
-                    secure: true,
+                    secure: process.env.NODE_ENV === 'production',
                     sameSite: 'lax' as const,
                     path: '/',
+                }
+                // Don't set domain for localhost
+                if (cookieDomain && !cookieDomain.includes('localhost')) {
+                    cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
                 }
                 // Log maxAge/expires if present
                 if (options?.maxAge) {
                     console.log('⏰ Cookie maxAge:', name, options.maxAge, 'seconds')
                 }
                 redirectResponse.cookies.set(name, value, cookieOptions)
-                console.log('🟡 Cookie copied to redirect:', name, 'Options:', JSON.stringify(cookieOptions))
+                console.log('🟡 Cookie copied to redirect:', name, 'Domain:', cookieOptions.domain || 'default', 'Options:', JSON.stringify(cookieOptions))
             })
-            
+
             // Log final cookie headers
             console.log('📋 Final redirect response cookies:', redirectResponse.cookies.getAll().map(c => c.name))
             return redirectResponse
