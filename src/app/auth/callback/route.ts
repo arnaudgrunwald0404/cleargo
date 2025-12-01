@@ -1,7 +1,6 @@
 import { type EmailOtpType } from '@supabase/supabase-js'
 import { type NextRequest, NextResponse } from 'next/server'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
 export const dynamic = 'force-dynamic';
 
@@ -12,25 +11,27 @@ export async function GET(request: NextRequest) {
     const next = searchParams.get('next') ?? '/'
     const code = searchParams.get('code')
 
-    const cookieStore = cookies()
-    const response = NextResponse.redirect(new URL(next, request.url))
+    let response = NextResponse.redirect(new URL(next, request.url))
 
-    // Create Supabase client with proper cookie handling for route handlers
+    // Create Supabase client using request cookies (like middleware pattern)
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
-                get(name: string) {
-                    return cookieStore.get(name)?.value
+                getAll() {
+                    return request.cookies.getAll()
                 },
-                set(name: string, value: string, options: CookieOptions) {
-                    cookieStore.set({ name, value, ...options })
-                    response.cookies.set({ name, value, ...options })
-                },
-                remove(name: string, options: CookieOptions) {
-                    cookieStore.set({ name, value: '', ...options })
-                    response.cookies.set({ name, value: '', ...options })
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value }) => {
+                        request.cookies.set(name, value)
+                    })
+                    response = NextResponse.redirect(new URL(next, request.url), {
+                        headers: request.headers,
+                    })
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        response.cookies.set(name, value, options)
+                    })
                 },
             },
         }
