@@ -10,6 +10,21 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type') as EmailOtpType | null
     const next = searchParams.get('next') ?? '/'
     const code = searchParams.get('code')
+    
+    console.log('🔍 OAuth Callback - Code:', code ? 'present' : 'missing')
+    console.log('🔍 Request URL:', request.url)
+    console.log('🔍 Request origin:', request.nextUrl.origin)
+    console.log('🔍 Request host:', request.headers.get('host'))
+    console.log('🔍 Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL)
+    console.log('🔍 App URL:', process.env.NEXT_PUBLIC_APP_URL)
+    console.log('🔍 Expected redirect URL:', `${process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin}/auth/callback`)
+    
+    // Check for domain mismatch
+    const requestHost = request.headers.get('host')
+    const expectedHost = process.env.NEXT_PUBLIC_APP_URL ? new URL(process.env.NEXT_PUBLIC_APP_URL).host : null
+    if (expectedHost && requestHost !== expectedHost) {
+        console.warn('⚠️ Domain mismatch detected:', { requestHost, expectedHost })
+    }
 
     let response = NextResponse.next({
         request: {
@@ -32,6 +47,7 @@ export async function GET(request: NextRequest) {
                 setAll(cookiesToSet) {
                     // Store cookies with their options
                     storedCookies.length = 0
+                    console.log('🔵 Supabase setting cookies:', cookiesToSet.map(c => ({ name: c.name, hasValue: !!c.value, options: c.options })))
                     cookiesToSet.forEach(({ name, value, options }) => {
                         storedCookies.push({ name, value, options })
                         request.cookies.set(name, value)
@@ -42,6 +58,7 @@ export async function GET(request: NextRequest) {
                     })
                     cookiesToSet.forEach(({ name, value, options }) => {
                         response.cookies.set(name, value, options)
+                        console.log('🟢 Cookie set on response:', name, 'Options:', JSON.stringify(options))
                     })
                 },
             },
@@ -82,16 +99,25 @@ export async function GET(request: NextRequest) {
         
         if (data?.session) {
             // Successfully exchanged code for session
+            console.log('✅ Session created successfully')
+            console.log('📦 Stored cookies count:', storedCookies.length)
+            console.log('🍪 Cookies to copy:', storedCookies.map(c => ({ name: c.name, hasValue: !!c.value, options: c.options })))
+            
             // Create redirect response and copy all cookies with their original options
             const redirectResponse = NextResponse.redirect(new URL(next, request.url))
             storedCookies.forEach(({ name, value, options }) => {
-                redirectResponse.cookies.set(name, value, options || {
+                const cookieOptions = options || {
                     httpOnly: true,
                     secure: true,
-                    sameSite: 'lax',
+                    sameSite: 'lax' as const,
                     path: '/',
-                })
+                }
+                redirectResponse.cookies.set(name, value, cookieOptions)
+                console.log('🟡 Cookie copied to redirect:', name, 'Options:', JSON.stringify(cookieOptions))
             })
+            
+            // Log final cookie headers
+            console.log('📋 Final redirect response cookies:', redirectResponse.cookies.getAll().map(c => c.name))
             return redirectResponse
         } else {
             console.error('No session returned from code exchange')
