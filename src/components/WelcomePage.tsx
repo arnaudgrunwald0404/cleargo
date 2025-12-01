@@ -5,7 +5,7 @@ import { IconTable, IconCalculator, IconRefresh, IconBell } from '@tabler/icons-
 import { createClient } from '@/lib/supabase/client';
 import { useRef, useEffect } from 'react';
 
-function SSOButton({ children, ...props }: React.ComponentPropsWithRef<typeof Button>) {
+function SSOButton({ children, ...props }: React.ComponentPropsWithRef<typeof Button> & { children?: React.ReactNode }) {
   const supabase = createClient();
   
   const handleClick = async () => {
