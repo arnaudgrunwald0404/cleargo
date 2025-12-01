@@ -16,6 +16,9 @@ export async function GET(request: NextRequest) {
             headers: request.headers,
         },
     })
+    
+    // Store cookies with their options for later copying
+    const storedCookies: Array<{ name: string; value: string; options?: any }> = []
 
     // Create Supabase client using request cookies (like middleware pattern)
     const supabase = createServerClient(
@@ -27,7 +30,10 @@ export async function GET(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
+                    // Store cookies with their options
+                    storedCookies.length = 0
                     cookiesToSet.forEach(({ name, value, options }) => {
+                        storedCookies.push({ name, value, options })
                         request.cookies.set(name, value)
                     })
                     // Create new response with cookies set
@@ -48,10 +54,10 @@ export async function GET(request: NextRequest) {
             token_hash,
         })
         if (!error) {
-            // Create redirect and copy cookies
+            // Create redirect and copy cookies with their original options
             const redirectResponse = NextResponse.redirect(new URL(next, request.url))
-            response.cookies.getAll().forEach((cookie) => {
-                redirectResponse.cookies.set(cookie.name, cookie.value, {
+            storedCookies.forEach(({ name, value, options }) => {
+                redirectResponse.cookies.set(name, value, options || {
                     httpOnly: true,
                     secure: true,
                     sameSite: 'lax',
@@ -76,10 +82,10 @@ export async function GET(request: NextRequest) {
         
         if (data?.session) {
             // Successfully exchanged code for session
-            // Create redirect response and copy all cookies with proper settings
+            // Create redirect response and copy all cookies with their original options
             const redirectResponse = NextResponse.redirect(new URL(next, request.url))
-            response.cookies.getAll().forEach((cookie) => {
-                redirectResponse.cookies.set(cookie.name, cookie.value, {
+            storedCookies.forEach(({ name, value, options }) => {
+                redirectResponse.cookies.set(name, value, options || {
                     httpOnly: true,
                     secure: true,
                     sameSite: 'lax',
