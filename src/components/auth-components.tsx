@@ -9,10 +9,14 @@ export function SignIn({
     const supabase = createClient();
 
     const handleSignIn = async () => {
+        const redirectTo = process.env.NEXT_PUBLIC_APP_URL 
+            ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+            : `${location.origin}/auth/callback`;
+        
         await supabase.auth.signInWithOAuth({
             provider: provider || "google",
             options: {
-                redirectTo: `${location.origin}/auth/callback`,
+                redirectTo,
                 queryParams: {
                     prompt: 'select_account',
                 },

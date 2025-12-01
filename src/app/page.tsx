@@ -1,8 +1,30 @@
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import { WelcomePage } from "@/components/WelcomePage";
+import { redirect } from "next/navigation";
 
-export default async function HomePage() {
+export const dynamic = 'force-dynamic';
+
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: { [key: string]: string | string[] | undefined };
+}) {
+  // If there's an OAuth code parameter, redirect to the callback handler
+  if (searchParams?.code) {
+    const params = new URLSearchParams();
+    Object.entries(searchParams).forEach(([key, value]) => {
+      if (value) {
+        if (Array.isArray(value)) {
+          value.forEach(v => params.append(key, v));
+        } else {
+          params.set(key, value);
+        }
+      }
+    });
+    redirect(`/auth/callback?${params.toString()}`);
+  }
+
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   const email = user?.email;

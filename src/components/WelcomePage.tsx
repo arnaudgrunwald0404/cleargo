@@ -9,10 +9,14 @@ function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
   
   const handleClick = async () => {
+    const redirectTo = process.env.NEXT_PUBLIC_APP_URL 
+      ? `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`
+      : `${location.origin}/auth/callback`;
+    
     await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${location.origin}/auth/callback`,
+        redirectTo,
         queryParams: {
           prompt: 'select_account',
         },
