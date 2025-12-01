@@ -27,6 +27,16 @@ export async function POST(req: NextRequest) {
     const role = await resolveRole(user.email);
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
+    // Capability check: users.invite.send
+    const { data: me } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+    const { canRolesPerform } = await import("@/lib/permissions");
+    const ok = await canRolesPerform((me?.roles as string[]) || [], "users.invite.send");
+    if (!ok) return forbid();
+
     // Get sending user's profile to construct sender name
     const { data: sendingUser } = await supabase
       .from("app_user")

@@ -22,6 +22,8 @@ export interface AppSettings {
     email_template_update_criteria_subject?: string | null;
     email_template_update_criteria_html?: string | null;
     updated_at: string;
+    // Capability-based permissions: capability id -> array of roles allowed
+    permissions?: Record<string, string[]>;
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -62,6 +64,7 @@ export async function getSettings(): Promise<AppSettings> {
                 'release_target_after_pod_planning'
             ],
             updated_at: new Date().toISOString(),
+            permissions: {},
         };
     }
     

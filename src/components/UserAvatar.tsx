@@ -62,7 +62,7 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
                             src={imageUrl}
                             alt={userEmail}
                             radius="xl"
-                            size={40}
+                            size={32}
                             color={getColor(userEmail)}
                         >
                             {getInitials(userEmail)}

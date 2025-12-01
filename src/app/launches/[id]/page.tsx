@@ -428,7 +428,7 @@ export default function LaunchDetailPage() {
                     <div className="grid grid-cols-4 gap-6">
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
-                            <div className="text-2xl font-bold text-gray-900">{launch.readiness_score ? `${Math.round(launch.readiness_score * 100)}%` : '0%'}</div>
+                            <div className="text-2xl font-bold text-gray-900">{matrix.length === 0 ? 'N/A' : (typeof launch.readiness_score === 'number' ? `${Math.round(launch.readiness_score * 100)}%` : 'N/A')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Risk Level</div>
@@ -457,7 +457,7 @@ export default function LaunchDetailPage() {
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{launch.readiness_status || 'Not set'}</div>
+                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (launch.readiness_status || 'Not set')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Owner</div>

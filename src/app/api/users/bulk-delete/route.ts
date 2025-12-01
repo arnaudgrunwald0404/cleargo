@@ -18,6 +18,16 @@ export async function POST(req: NextRequest) {
   const role = await resolveRole(user.email);
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
+  // Capability check: users.delete
+  const { data: me } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+  const { canRolesPerform } = await import("@/lib/permissions");
+  const ok = await canRolesPerform((me?.roles as string[]) || [], "users.delete");
+  if (!ok) return forbid();
+
   const body = await req.json();
   const parsed = bulkDeleteSchema.safeParse(body);
   if (!parsed.success) {

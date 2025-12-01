@@ -22,6 +22,16 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const role = await resolveRole(user.email);
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
+  // Capability check: users.update
+  const { data: me } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+  const { canRolesPerform } = await import("@/lib/permissions");
+  const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "users.update");
+  if (!canUpdate) return forbid();
+
   const body = await req.json();
   const parsed = updateUserSchema.safeParse(body);
   if (!parsed.success) {
@@ -57,6 +67,16 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+
+  // Capability check: users.delete
+  const { data: me } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+  const { canRolesPerform } = await import("@/lib/permissions");
+  const canDelete = await canRolesPerform((me?.roles as string[]) || [], "users.delete");
+  if (!canDelete) return forbid();
 
   const { error } = await supabase
     .from("app_user")

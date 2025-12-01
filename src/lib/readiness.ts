@@ -35,7 +35,20 @@ export async function recomputeLaunchReadiness(launchId: string) {
         .eq('launch_id', launchId);
 
     if (statusError) throw statusError;
-    if (!statuses || statuses.length === 0) return;
+    if (!statuses || statuses.length === 0) {
+        // No applicable criteria → mark as not evaluated to avoid misleading GO/100%
+        await supabase
+            .from('launch')
+            .update({
+                readiness_score: null,
+                readiness_status: 'NOT_EVALUATED',
+                // Preserve risk_level if present; default to LOW
+                risk_level: launch?.risk_level || 'LOW',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', launchId);
+        return;
+    }
 
     // 2. Compute Score
     // Score = (Sum of GO + CONDITIONAL) / Total Applicable Criteria (excluding Gates?)

@@ -178,7 +178,12 @@ export default function LaunchesPage() {
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center mb-8">
-                <h1 className="text-2xl font-bold">Launches</h1>
+                <div>
+                    <h1 className="text-2xl font-bold">Launches</h1>
+                    <p className="text-sm text-gray-600 mt-1">
+                        Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
+                    </p>
+                </div>
                 <button
                     onClick={() => setShowCreate(!showCreate)}
                     className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"

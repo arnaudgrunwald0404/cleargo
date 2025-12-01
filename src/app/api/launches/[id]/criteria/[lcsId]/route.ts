@@ -29,6 +29,42 @@ export async function PATCH(
         const body = await req.json();
         const { status, notes, condition, condition_due_date, condition_owner_id } = body;
 
+        // Fetch existing to detect assignee change
+        const { data: existing, error: fetchErr } = await supabase
+            .from('launch_criterion_status')
+            .select('id, condition_owner_id')
+            .eq('id', params.lcsId)
+            .eq('launch_id', params.id)
+            .single();
+        if (fetchErr || !existing) {
+            console.error('Failed to fetch existing criterion status', fetchErr);
+            return NextResponse.json({ error: 'Criterion status not found' }, { status: 404 });
+        }
+        // Load current user's roles
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('id', appUser.id)
+            .single();
+
+        // Check permission to update criterion status in general
+        {
+            const { canRolesPerform } = await import('@/lib/permissions');
+            const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'criteria.status.update');
+            if (!canUpdate) {
+                return NextResponse.json({ error: 'Forbidden: cannot update criterion status' }, { status: 403 });
+            }
+        }
+
+        // If changing assigned owner, require stronger permission
+        if (typeof condition_owner_id !== 'undefined' && condition_owner_id !== existing.condition_owner_id) {
+            const { canRolesPerform } = await import('@/lib/permissions');
+            const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.assignee.override');
+            if (!ok) {
+                return NextResponse.json({ error: 'Forbidden: cannot override criterion assignee' }, { status: 403 });
+            }
+        }
+
         console.log('Updating criterion status:', { 
             lcsId: params.lcsId, 
             launchId: params.id, 

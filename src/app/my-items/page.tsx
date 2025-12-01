@@ -46,10 +46,6 @@ export default function MyItemsPage() {
 
     return (
         <div className="px-8 pt-24 pb-8 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <Link href="/" className="text-blue-600 hover:underline">← Back to Home</Link>
-            </div>
-
             <h1 className="text-2xl font-bold mb-6">My Items</h1>
 
             {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}

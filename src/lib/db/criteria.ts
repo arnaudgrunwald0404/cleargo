@@ -36,7 +36,10 @@ export async function updateCriteria(id: string, patch: UpdateCriterionInput): P
         .select()
         .single();
 
-    if (error) return null;
+    if (error) {
+        // Surface errors so API routes can return useful messages
+        throw error;
+    }
     return data;
 }
 

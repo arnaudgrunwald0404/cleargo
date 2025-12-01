@@ -39,6 +39,32 @@ export async function PATCH(
         }
 
         const body = await req.json();
+
+        // Load current launch to compare changes
+        const current = await getLaunch(resolvedParams.id);
+        if (!current) {
+            return NextResponse.json({ error: 'Launch not found' }, { status: 404 });
+        }
+
+        // Load caller roles
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const roles = (me?.roles as string[]) || [];
+
+        // Enforce capability-based rules
+        const { canRolesPerform } = await import('@/lib/permissions');
+        if (typeof body.tier !== 'undefined' && body.tier !== current.tier) {
+            const ok = await canRolesPerform(roles, 'launch.tier.update');
+            if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update launch tier' }, { status: 403 });
+        }
+        if (typeof body.risk_level !== 'undefined' && body.risk_level !== current.risk_level) {
+            const ok = await canRolesPerform(roles, 'launch.risk.update');
+            if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update launch risk level' }, { status: 403 });
+        }
+
         const launch = await updateLaunch(resolvedParams.id, body);
 
         // Trigger write-back to Aha! if launch has aha_id
@@ -72,6 +98,17 @@ export async function DELETE(
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+
+        // Check capability to delete launch
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const roles = (me?.roles as string[]) || [];
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform(roles, 'launch.delete');
+        if (!ok) return NextResponse.json({ error: 'Forbidden: cannot delete launch' }, { status: 403 });
 
         await deleteLaunch(resolvedParams.id);
         return NextResponse.json({ success: true });

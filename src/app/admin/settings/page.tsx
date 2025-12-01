@@ -33,7 +33,14 @@ export default function AdminSettingsPage() {
     const [bulkImportLoading, setBulkImportLoading] = useState(false);
 
     // Navigation state
-    const [activeSection, setActiveSection] = useState<string>("users");
+const [activeSection, setActiveSection] = useState<string>("users");
+
+    // Permissions state
+    const [permissionsLoading, setPermissionsLoading] = useState(false);
+    const [permissionsSaving, setPermissionsSaving] = useState(false);
+    const [rolesList, setRolesList] = useState<string[]>([]);
+    const [capabilities, setCapabilities] = useState<Array<{ id: string; label: string; description: string }>>([]);
+    const [rules, setRules] = useState<Record<string, string[]>>({});
 
     // Release schedule state
     const [releases, setReleases] = useState<any[]>([]);
@@ -77,7 +84,7 @@ export default function AdminSettingsPage() {
     const [previewType, setPreviewType] = useState<"invite" | "remind" | "update_criteria">("invite");
     const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
 
-    useEffect(() => {
+useEffect(() => {
         fetchSettings();
         fetchUsers();
         fetchReleases();
@@ -86,6 +93,7 @@ export default function AdminSettingsPage() {
         fetchLaunchReleaseDates();
         fetchLaunchStages();
         fetchEmailTemplates();
+        fetchPermissions();
     }, []);
 
     const fetchLaunchReleaseDates = async () => {
@@ -373,6 +381,40 @@ export default function AdminSettingsPage() {
             setError("Failed to save email templates. Please try again.");
         } finally {
             setEmailTemplatesSaving(false);
+        }
+    };
+
+    // Permissions API
+    const fetchPermissions = async () => {
+        setPermissionsLoading(true);
+        try {
+            const res = await fetch("/api/settings/permissions");
+            if (!res.ok) throw new Error("Failed to fetch permissions");
+            const data = await res.json();
+            setRolesList(data.roles || []);
+            setCapabilities(data.capabilities || []);
+            setRules(data.overrides && Object.keys(data.overrides).length > 0 ? data.overrides : (data.rules || {}));
+        } catch (e) {
+            console.error("Failed to fetch permissions", e);
+        } finally {
+            setPermissionsLoading(false);
+        }
+    };
+
+    const autoSavePermissions = async (mapping: Record<string, string[]>) => {
+        setPermissionsSaving(true);
+        try {
+            const res = await fetch("/api/settings/permissions", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ rules: mapping }),
+            });
+            if (!res.ok) throw new Error("Failed to save permissions");
+        } catch (e) {
+            console.error("Failed to save permissions", e);
+            setError("Failed to save permissions");
+        } finally {
+            setPermissionsSaving(false);
         }
     };
 
@@ -667,10 +709,9 @@ export default function AdminSettingsPage() {
         );
     }
 
-    return (
+    return null;
+        /*
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-
-
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
@@ -692,6 +733,17 @@ export default function AdminSettingsPage() {
                                             }`}
                                     >
                                         User Management
+                                    </button>
+                                </li>
+                                <li>
+                                    <button
+                                        onClick={() => setActiveSection("permissions")}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "permissions"
+                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                            : "text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                    >
+                                        Permissions
                                     </button>
                                 </li>
                                 <li>
@@ -961,6 +1013,82 @@ export default function AdminSettingsPage() {
                                                 )}
                                                 {!emailTemplatesSaving && emailTemplatesLoading === false && (
                                                     <span className="text-sm text-green-600">All changes saved</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Permissions Section */}
+                        {activeSection === "permissions" && (
+                            <div className="space-y-6">
+                                <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                                    <div className="flex items-center gap-3 mb-6">
+                                        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
+                                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+                                            </svg>
+                                        </div>
+                                        <div>
+                                            <h2 className="text-lg font-semibold text-gray-900">Permissions</h2>
+                                            <p className="text-sm text-gray-500">Define which roles can perform each action</p>
+                                        </div>
+                                    </div>
+
+                                    {permissionsLoading ? (
+                                        <div className="text-center py-8 text-gray-500">Loading...</div>
+                                    ) : (
+                                        <div className="space-y-6">
+                                            <div className="overflow-x-auto -mx-4 sm:mx-0">
+                                                <table className="min-w-full divide-y divide-gray-200">
+                                                    <thead>
+                                                        <tr>
+                                                            <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capability</th>
+                                                            {rolesList.map((r) => (
+                                                                <th key={r} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">{r}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="bg-white divide-y divide-gray-200">
+                                                        {capabilities.map((cap) => (
+                                                            <tr key={cap.id}>
+                                                                <td className="px-4 py-2 text-sm">
+                                                                    <div className="font-medium text-gray-900">{cap.label}</div>
+                                                                    <div className="text-xs text-gray-500">{cap.description}</div>
+                                                                </td>
+                                                                {rolesList.map((r) => {
+                                                                    const enabled = (rules[cap.id] || []).includes(r);
+                                                                    return (
+                                                                        <td key={`${cap.id}-${r}`} className="px-4 py-2 text-center">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={enabled}
+                                                                                onChange={(e) => {
+                                                                                    const next = { ...rules } as Record<string, string[]>;
+                                                                                    const current = new Set(next[cap.id] || []);
+                                                                                    if (e.target.checked) current.add(r); else current.delete(r);
+                                                                                    next[cap.id] = Array.from(current);
+                                                                                    setRules(next);
+                                                                                    autoSavePermissions(next);
+                                                                                }}
+                                                                            />
+                                                                        </td>
+                                                                    );
+                                                                })}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+
+                                            <div className="flex items-center justify-end gap-3 pt-2">
+                                                {permissionsSaving && (
+                                                    <span className="text-sm text-gray-500 flex items-center gap-2">
+                                                        <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                                                        Saving...
+                                                    </span>
                                                 )}
                                             </div>
                                         </div>

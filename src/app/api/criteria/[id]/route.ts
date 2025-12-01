@@ -16,6 +16,7 @@ const updateSchema = z.object({
   status_definition_no_go: z.string().nullable().optional(),
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),
+  rating_timing: z.number().int().nullable().optional(),
 });
 
 function forbid() {
@@ -52,9 +53,16 @@ export async function PUT(
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
-  const updated = await updateCriteria(params.id, parsed.data as any);
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ item: updated });
+  try {
+    const updated = await updateCriteria(params.id, parsed.data as any);
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ item: updated });
+  } catch (e: any) {
+    const code = e?.code || e?.status || undefined;
+    const status = code === 'PGRST116' ? 404 : 500;
+    const error = code === 'PGRST116' ? 'Not found' : 'Update failed';
+    return NextResponse.json({ error, code, details: e?.message || String(e) }, { status });
+  }
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
@@ -69,7 +77,14 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!parsed.success) {
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
-  const updated = await updateCriteria(params.id, parsed.data as any);
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ item: updated });
+  try {
+    const updated = await updateCriteria(params.id, parsed.data as any);
+    if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ item: updated });
+  } catch (e: any) {
+    const code = e?.code || e?.status || undefined;
+    const status = code === 'PGRST116' ? 404 : 500;
+    const error = code === 'PGRST116' ? 'Not found' : 'Update failed';
+    return NextResponse.json({ error, code, details: e?.message || String(e) }, { status });
+  }
 }
