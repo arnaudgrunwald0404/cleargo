@@ -23,6 +23,11 @@ const geistMono = Roboto_Mono({
 export const metadata: Metadata = {
   title: "ClearGO",
   description: "Launch Readiness Console",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default async function RootLayout({
