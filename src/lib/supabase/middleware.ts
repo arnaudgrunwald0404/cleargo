@@ -34,14 +34,25 @@ export async function updateSession(request: NextRequest) {
     )
 
     // refreshing the auth token
-    const { data: { user }, error } = await supabase.auth.getUser()
+    // Only refresh if there are existing auth cookies to avoid clearing cookies on callback
+    const existingAuthCookies = request.cookies.getAll().filter(c => 
+        c.name.startsWith('sb-') || c.name.includes('auth-token') || c.name.includes('access-token')
+    )
     
-    if (error) {
-        console.log('⚠️ Middleware - getUser() error (may clear cookies):', error.message)
-    } else if (user) {
-        console.log('✅ Middleware - User session valid')
+    if (existingAuthCookies.length > 0) {
+        const { data: { user }, error } = await supabase.auth.getUser()
+        
+        if (error) {
+            // Only log if it's not a "missing session" error (which is normal for unauthenticated requests)
+            if (!error.message.includes('Auth session missing')) {
+                console.log('⚠️ Middleware - getUser() error:', error.message)
+            }
+        } else if (user) {
+            console.log('✅ Middleware - User session valid')
+        }
     } else {
-        console.log('ℹ️ Middleware - No user session')
+        // No auth cookies present, skip getUser() to avoid unnecessary cookie clearing
+        console.log('ℹ️ Middleware - No auth cookies, skipping getUser()')
     }
 
     return response
