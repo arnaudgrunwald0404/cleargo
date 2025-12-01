@@ -11,7 +11,11 @@ export async function GET(request: NextRequest) {
     const next = searchParams.get('next') ?? '/'
     const code = searchParams.get('code')
 
-    let response = NextResponse.redirect(new URL(next, request.url))
+    let response = NextResponse.next({
+        request: {
+            headers: request.headers,
+        },
+    })
 
     // Create Supabase client using request cookies (like middleware pattern)
     const supabase = createServerClient(
@@ -23,11 +27,12 @@ export async function GET(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value }) => {
+                    cookiesToSet.forEach(({ name, value, options }) => {
                         request.cookies.set(name, value)
                     })
-                    response = NextResponse.redirect(new URL(next, request.url), {
-                        headers: request.headers,
+                    // Create new response with cookies set
+                    response = NextResponse.next({
+                        request,
                     })
                     cookiesToSet.forEach(({ name, value, options }) => {
                         response.cookies.set(name, value, options)
@@ -43,7 +48,17 @@ export async function GET(request: NextRequest) {
             token_hash,
         })
         if (!error) {
-            return response
+            // Create redirect and copy cookies
+            const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+            response.cookies.getAll().forEach((cookie) => {
+                redirectResponse.cookies.set(cookie.name, cookie.value, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'lax',
+                    path: '/',
+                })
+            })
+            return redirectResponse
         } else {
             console.error('OTP verification error:', error)
             const errorUrl = new URL('/?error=auth_failed', request.url)
@@ -60,8 +75,18 @@ export async function GET(request: NextRequest) {
         }
         
         if (data?.session) {
-            // Successfully exchanged code for session, cookies are set via the supabase client
-            return response
+            // Successfully exchanged code for session
+            // Create redirect response and copy all cookies with proper settings
+            const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+            response.cookies.getAll().forEach((cookie) => {
+                redirectResponse.cookies.set(cookie.name, cookie.value, {
+                    httpOnly: true,
+                    secure: true,
+                    sameSite: 'lax',
+                    path: '/',
+                })
+            })
+            return redirectResponse
         } else {
             console.error('No session returned from code exchange')
             const errorUrl = new URL('/?error=auth_failed', request.url)
