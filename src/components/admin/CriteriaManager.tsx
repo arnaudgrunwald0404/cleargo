@@ -754,7 +754,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           <TextInput
             label="Enter Custom Email/Placeholder"
             placeholder="e.g., email@example.com or [name of pod's product manager]"
-            value={isCustomEmail ? patch.decision_owner_email : ""}
+            value={isCustomEmail ? (patch.decision_owner_email ?? "") : ""}
             onChange={(e) => {
               const value = e.target.value;
               setPatch({ ...patch, decision_owner_email: value || undefined });

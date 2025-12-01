@@ -5,7 +5,7 @@ import { IconTable, IconCalculator, IconRefresh, IconBell } from '@tabler/icons-
 import { createClient } from '@/lib/supabase/client';
 import { useRef, useEffect } from 'react';
 
-function SSOButton({ children, ...props }: React.ComponentPropsWithRef<typeof Button> & { children?: React.ReactNode }) {
+function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
   
   const handleClick = async () => {
@@ -21,7 +21,7 @@ function SSOButton({ children, ...props }: React.ComponentPropsWithRef<typeof Bu
   };
 
   return (
-    <Button onClick={handleClick} {...props}>
+    <Button onClick={handleClick} {...buttonProps}>
       {children}
     </Button>
   );
