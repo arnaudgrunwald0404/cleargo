@@ -15,9 +15,25 @@ export interface Launch {
     readiness_status?: string;
     risk_level?: LaunchRisk;
     owner_id?: string;
+    owner_email?: string;
     business_priority?: string;
     csm_priority?: string;
     tags?: string[];
+    product_component?: string;
+    pod?: string;
+    console_url?: string;
+    last_go_no_go_decision_date?: string;
+    scheduled_ga_dev_date?: string;
+    modified_rice_score?: any;
+    wsjf_score?: any;
+    gtm_link?: string;
+    activation_process?: string;
+    new_org_setup?: string;
+    existing_org_setup?: string;
+    pricing_model?: string;
+    aha_fields?: Record<string, any> | null;
+    product?: { name: string };
+    owner?: { name?: string; email?: string };
     created_at: string;
     updated_at: string;
 }
