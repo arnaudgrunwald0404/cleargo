@@ -554,14 +554,34 @@ export function CriteriaManager() {
                       <div className="text-gray-500 text-xs mt-0.5">{c.category}</div>
                       {c.description && <div className="text-gray-400 text-xs mt-1">{c.description}</div>}
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      {c.gate ? (
-                        <span className="px-2 py-1 text-xs font-medium bg-red-100 text-red-700 rounded-full">Gate</span>
-                      ) : (
-                        <span className="text-sm text-gray-400">—</span>
-                      )}
+                    <td
+                      className="px-4 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Checkbox
+                        label="Gate"
+                        size="xs"
+                        checked={!!c.gate}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          submitEdit(c.id, { gate: e.currentTarget.checked });
+                        }}
+                      />
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600">{c.tier_applicability}</td>
+                    <td
+                      className="px-4 py-4 whitespace-nowrap text-sm text-gray-600"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Select
+                        value={c.tier_applicability}
+                        onChange={(value) => {
+                          if (!value) return;
+                          submitEdit(c.id, { tier_applicability: value });
+                        }}
+                        data={TIERS}
+                        size="xs"
+                      />
+                    </td>
                     <td className="px-4 py-4 whitespace-nowrap">
                       {c.is_active ? (
                         <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Active</span>
