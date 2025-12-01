@@ -11,7 +11,7 @@ export default async function HomePage({
   searchParams: { [key: string]: string | string[] | undefined };
 }) {
   const supabase = createClient();
-  
+
   // If there's an OAuth code parameter, exchange it for a session
   if (searchParams?.code) {
     const code = Array.isArray(searchParams.code) ? searchParams.code[0] : searchParams.code;
@@ -86,12 +86,12 @@ export default async function HomePage({
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       {/* Hero Section */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="text-center mb-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+        <div className="mb-12">
           <h2 className="text-4xl font-bold text-gray-900 mb-4">
             Welcome back, <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">{displayName}</span>
           </h2>
-          <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+          <p className="text-lg text-gray-600 max-w-2xl">
             Manage your product launches, track readiness criteria, and ensure successful go-to-market execution.
           </p>
         </div>

@@ -45,7 +45,7 @@ export default function MyItemsPage() {
     if (loading) return <div className="p-8">Loading...</div>;
 
     return (
-        <div className="p-8 max-w-6xl mx-auto">
+        <div className="px-8 pt-24 pb-8 max-w-6xl mx-auto">
             <div className="mb-6">
                 <Link href="/" className="text-blue-600 hover:underline">← Back to Home</Link>
             </div>
@@ -85,9 +85,9 @@ export default function MyItemsPage() {
                                     </td>
                                     <td className="p-4">
                                         <span className={`px-2 py-1 rounded text-xs font-medium ${item.status === 'GO' ? 'bg-green-100 text-green-800' :
-                                                item.status === 'NO_GO' ? 'bg-red-100 text-red-800' :
-                                                    item.status === 'CONDITIONAL' ? 'bg-yellow-100 text-yellow-800' :
-                                                        'bg-gray-100 text-gray-800'
+                                            item.status === 'NO_GO' ? 'bg-red-100 text-red-800' :
+                                                item.status === 'CONDITIONAL' ? 'bg-yellow-100 text-yellow-800' :
+                                                    'bg-gray-100 text-gray-800'
                                             }`}>
                                             {item.status}
                                         </span>

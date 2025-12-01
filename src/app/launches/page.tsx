@@ -12,7 +12,7 @@ interface ReleaseGroup {
 export default function LaunchesPage() {
     const [launches, setLaunches] = useState<Launch[]>([]);
     const [products, setProducts] = useState<any[]>([]);
-    const [releaseSchedule, setReleaseSchedule] = useState<Array<{release_name: string; launch_date: string | null}>>([]);
+    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showCreate, setShowCreate] = useState(false);
@@ -102,17 +102,17 @@ export default function LaunchesPage() {
     const getReleaseName = (launch: Launch): string | null => {
         if (!launch.aha_fields || typeof launch.aha_fields !== 'object') return null;
         const fields = launch.aha_fields as any;
-        
+
         // Check standard fields
         if (fields.standard_fields && typeof fields.standard_fields === 'object') {
             const standardFields = fields.standard_fields;
-            const releaseName = standardFields?.aha_release_name || 
-                              standardFields?.release?.name || null;
+            const releaseName = standardFields?.aha_release_name ||
+                standardFields?.release?.name || null;
             if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
                 return releaseName.trim();
             }
         }
-        
+
         // Check custom fields
         if (fields.custom_fields && typeof fields.custom_fields === 'object') {
             const customFields = fields.custom_fields;
@@ -121,7 +121,7 @@ export default function LaunchesPage() {
                 return releaseName.trim();
             }
         }
-        
+
         return null;
     };
 
@@ -231,178 +231,182 @@ export default function LaunchesPage() {
 
             {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
 
-            {releaseGroups.length === 0 ? (
-                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                    <div className="px-4 py-8 text-center text-gray-500">
-                        No launches found matching filters.
+            {
+                releaseGroups.length === 0 ? (
+                    <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                        <div className="px-4 py-8 text-center text-gray-500">
+                            No launches found matching filters.
+                        </div>
                     </div>
-                </div>
-            ) : (
-                <div className="space-y-8">
-                    {releaseGroups.map((group, groupIndex) => (
-                        <div key={groupIndex} className="space-y-2">
-                            <h2 className="text-lg font-semibold text-gray-900">
-                                {group.releaseName}
-                                {group.releaseDate && (
-                                    <span className="ml-2 text-base font-normal text-gray-600">
-                                        - {new Date(group.releaseDate).toLocaleDateString()}
-                                    </span>
-                                )}
-                            </h2>
-                            <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                                <table className="min-w-full divide-y divide-purple-200 table-fixed">
-                                    <colgroup>
-                                        <col className="w-auto" />
-                                        <col className="w-24" />
-                                        <col className="w-auto" />
-                                        <col className="w-32" />
-                                        <col className="w-24" />
-                                        <col className="w-24" />
-                                        <col className="w-24" />
-                                        <col className="w-24" />
-                                    </colgroup>
-                                    <thead className="bg-purple-100">
-                                        <tr>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Name</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Tier</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Product</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Date</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Readiness</th>
-                                            <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Risk</th>
-                                            <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-24">Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="bg-white divide-y divide-purple-200">
-                                        {group.launches.map(launch => (
-                                            <tr key={launch.id} className="hover:bg-purple-50 transition-colors">
-                                                <td className="px-4 py-3">
-                                                    <Link href={`/launches/${launch.id}`} className="font-medium text-gray-900 hover:text-blue-600">
-                                                        {launch.name}
-                                                    </Link>
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                    <span className={`px-2 py-1 rounded text-xs font-medium ${launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
-                                                        launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
-                                                            'bg-gray-100 text-gray-800'
-                                                        }`}>
-                                                        {launch.tier.replace('_', ' ')}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-700">
-                                                    {(launch as any).product?.name || '-'}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
-                                                    {launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : '-'}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                    <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                        {launch.status}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 font-mono text-sm text-gray-700 whitespace-nowrap w-24">
-                                                    {launch.readiness_score ? `${Math.round(launch.readiness_score * 100)}%` : '-'}
-                                                </td>
-                                                <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                    {launch.risk_level && (
-                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${launch.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
-                                                            launch.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
-                                                                'bg-green-100 text-green-800'
-                                                            }`}>
-                                                            {launch.risk_level}
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 text-right whitespace-nowrap w-24">
-                                                    <Link href={`/launches/${launch.id}`} className="text-sm text-gray-600 hover:text-gray-900">
-                                                        View
-                                                    </Link>
-                                                </td>
+                ) : (
+                    <div className="space-y-8">
+                        {releaseGroups.map((group, groupIndex) => (
+                            <div key={groupIndex} className="space-y-2">
+                                <h2 className="text-lg font-semibold text-gray-900">
+                                    {group.releaseName}
+                                    {group.releaseDate && (
+                                        <span className="ml-2 text-base font-normal text-gray-600">
+                                            - {new Date(group.releaseDate).toLocaleDateString()}
+                                        </span>
+                                    )}
+                                </h2>
+                                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                                    <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                                        <colgroup>
+                                            <col className="w-auto" />
+                                            <col className="w-24" />
+                                            <col className="w-auto" />
+                                            <col className="w-32" />
+                                            <col className="w-24" />
+                                            <col className="w-24" />
+                                            <col className="w-24" />
+                                            <col className="w-24" />
+                                        </colgroup>
+                                        <thead className="bg-purple-100">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Name</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Tier</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Product</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Date</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Readiness</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Risk</th>
+                                                <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-24">Action</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-purple-200">
+                                            {group.launches.map(launch => (
+                                                <tr key={launch.id} className="hover:bg-purple-50 transition-colors">
+                                                    <td className="px-4 py-3">
+                                                        <Link href={`/launches/${launch.id}`} className="font-medium text-gray-900 hover:text-blue-600">
+                                                            {launch.name}
+                                                        </Link>
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
+                                                            launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
+                                                                'bg-gray-100 text-gray-800'
+                                                            }`}>
+                                                            {launch.tier.replace('_', ' ')}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-700">
+                                                        {(launch as any).product?.name || '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
+                                                        {launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                            {launch.status}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-4 py-3 font-mono text-sm text-gray-700 whitespace-nowrap w-24">
+                                                        {launch.readiness_score ? `${Math.round(launch.readiness_score * 100)}%` : '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                        {launch.risk_level && (
+                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${launch.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                                launch.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
+                                                                    'bg-green-100 text-green-800'
+                                                                }`}>
+                                                                {launch.risk_level}
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right whitespace-nowrap w-24">
+                                                        <Link href={`/launches/${launch.id}`} className="text-sm text-gray-600 hover:text-gray-900">
+                                                            View
+                                                        </Link>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                        </div>
-                    ))}
-                </div>
-            )}
+                        ))}
+                    </div>
+                )
+            }
 
-            {showCreate && (
-                <div className="bg-white p-6 rounded shadow mb-8 border">
-                    <h2 className="text-xl font-semibold mb-4">Create New Launch</h2>
-                    <form onSubmit={handleCreate} className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-medium mb-1">Launch Name</label>
-                            <input
-                                type="text"
-                                required
-                                value={formData.name}
-                                onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                className="w-full p-2 border rounded"
-                            />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
+            {
+                showCreate && (
+                    <div className="bg-white p-6 rounded shadow mb-8 border">
+                        <h2 className="text-xl font-semibold mb-4">Create New Launch</h2>
+                        <form onSubmit={handleCreate} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium mb-1">Tier</label>
-                                <select
-                                    value={formData.tier}
-                                    onChange={e => setFormData({ ...formData, tier: e.target.value as LaunchTier })}
-                                    className="w-full p-2 border rounded"
-                                >
-                                    <option value="TIER_1">Tier 1 (Strategic)</option>
-                                    <option value="TIER_2">Tier 2 (Major)</option>
-                                    <option value="TIER_3">Tier 3 (Minor)</option>
-                                </select>
-                            </div>
-
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Product</label>
-                                <select
-                                    value={formData.product_id || ""}
-                                    onChange={e => setFormData({ ...formData, product_id: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                >
-                                    <option value="">Select Product...</option>
-                                    {products.map(p => (
-                                        <option key={p.id} value={p.id}>{p.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Target Date</label>
-                                <input
-                                    type="date"
-                                    value={formData.target_launch_date || ""}
-                                    onChange={e => setFormData({ ...formData, target_launch_date: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Aha ID (Optional)</label>
+                                <label className="block text-sm font-medium mb-1">Launch Name</label>
                                 <input
                                     type="text"
-                                    value={formData.aha_id || ""}
-                                    onChange={e => setFormData({ ...formData, aha_id: e.target.value })}
+                                    required
+                                    value={formData.name}
+                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
                                     className="w-full p-2 border rounded"
                                 />
                             </div>
-                        </div>
 
-                        <button
-                            type="submit"
-                            className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
-                        >
-                            Create Launch
-                        </button>
-                    </form>
-                </div>
-            )}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Tier</label>
+                                    <select
+                                        value={formData.tier}
+                                        onChange={e => setFormData({ ...formData, tier: e.target.value as LaunchTier })}
+                                        className="w-full p-2 border rounded"
+                                    >
+                                        <option value="TIER_1">Tier 1 (Strategic)</option>
+                                        <option value="TIER_2">Tier 2 (Major)</option>
+                                        <option value="TIER_3">Tier 3 (Minor)</option>
+                                    </select>
+                                </div>
 
-        </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Product</label>
+                                    <select
+                                        value={formData.product_id || ""}
+                                        onChange={e => setFormData({ ...formData, product_id: e.target.value })}
+                                        className="w-full p-2 border rounded"
+                                    >
+                                        <option value="">Select Product...</option>
+                                        {products.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Target Date</label>
+                                    <input
+                                        type="date"
+                                        value={formData.target_launch_date || ""}
+                                        onChange={e => setFormData({ ...formData, target_launch_date: e.target.value })}
+                                        className="w-full p-2 border rounded"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium mb-1">Aha ID (Optional)</label>
+                                    <input
+                                        type="text"
+                                        value={formData.aha_id || ""}
+                                        onChange={e => setFormData({ ...formData, aha_id: e.target.value })}
+                                        className="w-full p-2 border rounded"
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
+                            >
+                                Create Launch
+                            </button>
+                        </form>
+                    </div>
+                )
+            }
+
+        </div >
     );
 }

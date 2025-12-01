@@ -128,7 +128,7 @@ export default function AccountPage() {
     }
 
     return (
-        <Container size="sm" py="xl">
+        <Container size="sm" className="pt-24 pb-8">
             <Paper shadow="sm" radius="md" p="xl" withBorder>
                 <Title order={2} mb="lg">Account Details</Title>
 

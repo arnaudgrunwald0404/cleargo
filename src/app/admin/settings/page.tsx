@@ -41,19 +41,19 @@ export default function AdminSettingsPage() {
     const [releaseNameInput, setReleaseNameInput] = useState("");
     const [releaseDateInput, setReleaseDateInput] = useState("");
     const [editingReleaseId, setEditingReleaseId] = useState<number | string | null>(null);
-    const [launchReleases, setLaunchReleases] = useState<Array<{releaseName: string; launchDate: string | null}>>([]);
+    const [launchReleases, setLaunchReleases] = useState<Array<{ releaseName: string; launchDate: string | null }>>([]);
     const [launchReleasesLoading, setLaunchReleasesLoading] = useState(false);
 
     // AHA fields state
-    const [availableAhaFields, setAvailableAhaFields] = useState<Array<{alias: string; label: string; key: string | null; type?: string}>>([]);
+    const [availableAhaFields, setAvailableAhaFields] = useState<Array<{ alias: string; label: string; key: string | null; type?: string }>>([]);
     const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
     const [draggedFieldAlias, setDraggedFieldAlias] = useState<string | null>(null);
     const [ahaFieldsSaving, setAhaFieldsSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
-    const [syncResult, setSyncResult] = useState<{success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{aha_id: string; name: string; error: string}>} | null>(null);
+    const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null>(null);
 
     // Launch stages state
-    const [launchStages, setLaunchStages] = useState<Array<{id: number; name: string; sort_order: number; duration_days: number | null; details: string | null}>>([]);
+    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>([]);
     const [launchStagesLoading, setLaunchStagesLoading] = useState(false);
     const [editingStageDrawerOpen, setEditingStageDrawerOpen] = useState(false);
     const [editingStageId, setEditingStageId] = useState<number | null>(null);
@@ -129,8 +129,8 @@ export default function AdminSettingsPage() {
             return;
         }
         try {
-            const sortOrder = launchStages.length > 0 
-                ? Math.max(...launchStages.map(s => s.sort_order)) + 1 
+            const sortOrder = launchStages.length > 0
+                ? Math.max(...launchStages.map(s => s.sort_order)) + 1
                 : 1;
             const res = await fetch("/api/launch-stages", {
                 method: "POST",
@@ -262,7 +262,7 @@ export default function AdminSettingsPage() {
             const res = await fetch("/api/settings/email-templates");
             if (!res.ok) throw new Error("Failed to fetch email templates");
             const data = await res.json();
-            
+
             // Default templates
             const defaultInviteSubject = 'Welcome to ClearGO';
             const defaultInviteHtml = `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -379,7 +379,7 @@ export default function AdminSettingsPage() {
     // Auto-save email templates with debouncing (2 seconds after last change)
     useEffect(() => {
         if (emailTemplatesLoading) return; // Don't auto-save on initial load
-        
+
         const timer = setTimeout(() => {
             autoSaveEmailTemplates();
         }, 2000); // Wait 2 seconds after last change
@@ -624,7 +624,7 @@ export default function AdminSettingsPage() {
     const updatePodMapping = async (pod: string, userEmail: string | null) => {
         if (!settings) return;
         const mapping = settings.pod_product_manager_mapping || {};
-        
+
         let updatedSettings: AppSettings;
         if (userEmail) {
             updatedSettings = {
@@ -788,31 +788,28 @@ export default function AdminSettingsPage() {
                                                 <nav className="flex space-x-1" aria-label="Tabs">
                                                     <button
                                                         onClick={() => setActiveTemplateType("invite")}
-                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                                                            activeTemplateType === "invite"
-                                                                ? "border-indigo-500 text-indigo-600"
-                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                        }`}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTemplateType === "invite"
+                                                            ? "border-indigo-500 text-indigo-600"
+                                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                            }`}
                                                     >
                                                         Invite
                                                     </button>
                                                     <button
                                                         onClick={() => setActiveTemplateType("remind")}
-                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                                                            activeTemplateType === "remind"
-                                                                ? "border-indigo-500 text-indigo-600"
-                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                        }`}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTemplateType === "remind"
+                                                            ? "border-indigo-500 text-indigo-600"
+                                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                            }`}
                                                     >
                                                         Reminder
                                                     </button>
                                                     <button
                                                         onClick={() => setActiveTemplateType("update_criteria")}
-                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                                                            activeTemplateType === "update_criteria"
-                                                                ? "border-indigo-500 text-indigo-600"
-                                                                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                                                        }`}
+                                                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTemplateType === "update_criteria"
+                                                            ? "border-indigo-500 text-indigo-600"
+                                                            : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                                            }`}
                                                     >
                                                         Update Criteria
                                                     </button>
@@ -976,11 +973,10 @@ export default function AdminSettingsPage() {
                         <Modal
                             opened={previewOpen}
                             onClose={() => setPreviewOpen(false)}
-                            title={`Email Preview - ${
-                                previewType === "invite" ? "Invite" 
+                            title={`Email Preview - ${previewType === "invite" ? "Invite"
                                 : previewType === "remind" ? "Reminder"
-                                : "Update Criteria"
-                            }`}
+                                    : "Update Criteria"
+                                }`}
                             size="xl"
                         >
                             <div className="space-y-4">
@@ -989,11 +985,11 @@ export default function AdminSettingsPage() {
                                         Subject Line
                                     </label>
                                     <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-                                        {previewType === "invite" 
+                                        {previewType === "invite"
                                             ? (emailTemplates.invite_subject || "Welcome to ClearGO")
                                             : previewType === "remind"
-                                            ? (emailTemplates.remind_subject || "Reminder: Join ClearGO")
-                                            : (emailTemplates.update_criteria_subject || "Action Required: Update Criteria in ClearGO")
+                                                ? (emailTemplates.remind_subject || "Reminder: Join ClearGO")
+                                                : (emailTemplates.update_criteria_subject || "Action Required: Update Criteria in ClearGO")
                                         }
                                     </div>
                                 </div>
@@ -1002,16 +998,16 @@ export default function AdminSettingsPage() {
                                         Email Preview
                                     </label>
                                     <div className="border border-gray-300 rounded-lg overflow-hidden">
-                                        <div 
+                                        <div
                                             className="bg-white p-4"
                                             dangerouslySetInnerHTML={{
                                                 __html: (() => {
-                                                    const html = previewType === "invite" 
-                                                        ? emailTemplates.invite_html 
+                                                    const html = previewType === "invite"
+                                                        ? emailTemplates.invite_html
                                                         : previewType === "remind"
-                                                        ? emailTemplates.remind_html
-                                                        : emailTemplates.update_criteria_html;
-                                                    
+                                                            ? emailTemplates.remind_html
+                                                            : emailTemplates.update_criteria_html;
+
                                                     if (!html) {
                                                         return previewType === "invite"
                                                             ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -1041,7 +1037,7 @@ export default function AdminSettingsPage() {
                                                                 </p>
                                                             </div>`
                                                             : previewType === "remind"
-                                                            ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                                                ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                                                                 <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
                                                                 <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
                                                                     This is a reminder that you have an invitation to join ClearGO. Click the button below to accept your invitation.
@@ -1067,7 +1063,7 @@ export default function AdminSettingsPage() {
                                                                     <a href="https://example.com/invite-link" style="color: #4f46e5; word-break: break-all;">https://example.com/invite-link</a>
                                                                 </p>
                                                             </div>`
-                                                            : `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                                                : `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                                                                 <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
                                                                 <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
                                                                     You have criteria that require your attention in ClearGO. Please review and update as needed.
@@ -1083,7 +1079,7 @@ export default function AdminSettingsPage() {
                                                                 </p>
                                                             </div>`;
                                                     }
-                                                    
+
                                                     // Replace placeholders with sample data
                                                     return html
                                                         .replace(/\{\{firstName\}\}/g, "John")
@@ -1361,8 +1357,8 @@ export default function AdminSettingsPage() {
                                                     </thead>
                                                     <tbody className="bg-white divide-y divide-purple-200">
                                                         {launchStages.map((stage, index) => (
-                                                            <tr 
-                                                                key={stage.id} 
+                                                            <tr
+                                                                key={stage.id}
                                                                 onDragOver={(e) => {
                                                                     e.preventDefault();
                                                                     e.dataTransfer.dropEffect = "move";
@@ -1383,7 +1379,7 @@ export default function AdminSettingsPage() {
                                                                 }}
                                                                 className={`hover:bg-purple-50 transition-colors ${draggedStageId === stage.id ? "opacity-50" : ""}`}
                                                             >
-                                                                <td 
+                                                                <td
                                                                     className="px-2 py-3 whitespace-nowrap w-12 cursor-move"
                                                                     draggable
                                                                     onDragStart={(e) => {
@@ -1409,17 +1405,17 @@ export default function AdminSettingsPage() {
                                                                         {stage.duration_days !== null ? `${stage.duration_days} days` : "N/A"}
                                                                     </span>
                                                                 </td>
-                                                                <td 
+                                                                <td
                                                                     className="px-4 py-3"
                                                                     onDragStart={(e) => e.stopPropagation()}
                                                                 >
                                                                     <RichText
                                                                         value={stage.details || ""}
-                                                                        onChange={() => {}}
+                                                                        onChange={() => { }}
                                                                         readOnly={true}
                                                                     />
                                                                 </td>
-                                                                <td 
+                                                                <td
                                                                     className="px-4 py-3 whitespace-nowrap w-16"
                                                                     onDragStart={(e) => e.stopPropagation()}
                                                                 >
@@ -1576,11 +1572,10 @@ export default function AdminSettingsPage() {
                                         </button>
                                     </div>
                                     {syncResult && (
-                                        <div className={`mb-6 p-4 rounded-lg border ${
-                                            syncResult.failed > 0 
-                                                ? 'bg-yellow-50 border-yellow-200 text-yellow-800' 
-                                                : 'bg-green-50 border-green-200 text-green-800'
-                                        }`}>
+                                        <div className={`mb-6 p-4 rounded-lg border ${syncResult.failed > 0
+                                            ? 'bg-yellow-50 border-yellow-200 text-yellow-800'
+                                            : 'bg-green-50 border-green-200 text-green-800'
+                                            }`}>
                                             <div className="flex items-start gap-2">
                                                 {syncResult.failed > 0 ? (
                                                     <svg className="w-5 h-5 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1618,7 +1613,7 @@ export default function AdminSettingsPage() {
                                         <div className="space-y-6">
                                             {/* Description */}
                                             <p className="text-sm text-gray-600">
-                                                Select the fields that should be loaded from AHA and stored with each launch. 
+                                                Select the fields that should be loaded from AHA and stored with each launch.
                                                 Standard fields (like ID, Name, Release) are always available and cannot be deselected. Custom fields can be added or removed without schema changes.
                                             </p>
 
@@ -1721,86 +1716,86 @@ export default function AdminSettingsPage() {
                                                                     .map((alias, index) => {
                                                                         const field = availableAhaFields.find(f => f.alias === alias);
                                                                         if (!field) return null;
-                                                                    return (
-                                                                        <tr
-                                                                            key={alias}
-                                                                            draggable
-                                                                            onDragStart={(e) => {
-                                                                                setDraggedFieldAlias(alias);
-                                                                                e.dataTransfer.effectAllowed = "move";
-                                                                            }}
-                                                                            onDragOver={(e) => {
-                                                                                e.preventDefault();
-                                                                                e.dataTransfer.dropEffect = "move";
-                                                                                if (draggedFieldAlias !== alias) {
-                                                                                    e.currentTarget.classList.add("bg-blue-100");
-                                                                                }
-                                                                            }}
-                                                                            onDragLeave={(e) => {
-                                                                                e.currentTarget.classList.remove("bg-blue-100");
-                                                                            }}
-                                                                            onDrop={(e) => {
-                                                                                e.preventDefault();
-                                                                                e.currentTarget.classList.remove("bg-blue-100");
-                                                                                if (draggedFieldAlias && draggedFieldAlias !== alias) {
-                                                                                    const currentFields = settings.aha_fields_to_load || [];
-                                                                                    const draggedIndex = currentFields.indexOf(draggedFieldAlias);
-                                                                                    const targetIndex = currentFields.indexOf(alias);
-                                                                                    
-                                                                                    if (draggedIndex !== -1 && targetIndex !== -1) {
-                                                                                        const newFields = [...currentFields];
-                                                                                        const [draggedItem] = newFields.splice(draggedIndex, 1);
-                                                                                        newFields.splice(targetIndex, 0, draggedItem);
-                                                                                        
-                                                                                        setSettings({
-                                                                                            ...settings,
-                                                                                            aha_fields_to_load: newFields,
-                                                                                        });
-                                                                                        autoSaveAhaFields(newFields);
+                                                                        return (
+                                                                            <tr
+                                                                                key={alias}
+                                                                                draggable
+                                                                                onDragStart={(e) => {
+                                                                                    setDraggedFieldAlias(alias);
+                                                                                    e.dataTransfer.effectAllowed = "move";
+                                                                                }}
+                                                                                onDragOver={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.dataTransfer.dropEffect = "move";
+                                                                                    if (draggedFieldAlias !== alias) {
+                                                                                        e.currentTarget.classList.add("bg-blue-100");
                                                                                     }
-                                                                                }
-                                                                                setDraggedFieldAlias(null);
-                                                                            }}
-                                                                            className={`cursor-move hover:bg-indigo-50 transition-colors ${draggedFieldAlias === alias ? "opacity-50" : ""}`}
-                                                                        >
-                                                                            <td className="px-4 py-3 whitespace-nowrap">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-                                                                                    </svg>
-                                                                                    <input
-                                                                                        type="checkbox"
-                                                                                        checked={true}
-                                                                                        onChange={(e) => {
-                                                                                            const currentFields = settings.aha_fields_to_load || [];
-                                                                                            const newFields = currentFields.filter(f => f !== alias);
+                                                                                }}
+                                                                                onDragLeave={(e) => {
+                                                                                    e.currentTarget.classList.remove("bg-blue-100");
+                                                                                }}
+                                                                                onDrop={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.currentTarget.classList.remove("bg-blue-100");
+                                                                                    if (draggedFieldAlias && draggedFieldAlias !== alias) {
+                                                                                        const currentFields = settings.aha_fields_to_load || [];
+                                                                                        const draggedIndex = currentFields.indexOf(draggedFieldAlias);
+                                                                                        const targetIndex = currentFields.indexOf(alias);
+
+                                                                                        if (draggedIndex !== -1 && targetIndex !== -1) {
+                                                                                            const newFields = [...currentFields];
+                                                                                            const [draggedItem] = newFields.splice(draggedIndex, 1);
+                                                                                            newFields.splice(targetIndex, 0, draggedItem);
+
                                                                                             setSettings({
                                                                                                 ...settings,
                                                                                                 aha_fields_to_load: newFields,
                                                                                             });
                                                                                             autoSaveAhaFields(newFields);
-                                                                                        }}
-                                                                                        onClick={(e) => e.stopPropagation()}
-                                                                                        className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
-                                                                                    />
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap">
-                                                                                <span className="font-medium text-gray-900">{field.label}</span>
-                                                                            </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap">
-                                                                                <code className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-700">{field.alias}</code>
-                                                                            </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                                                {field.type === 'standard' ? (
-                                                                                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Standard</span>
-                                                                                ) : (
-                                                                                    <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">Custom</span>
-                                                                                )}
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
+                                                                                        }
+                                                                                    }
+                                                                                    setDraggedFieldAlias(null);
+                                                                                }}
+                                                                                className={`cursor-move hover:bg-indigo-50 transition-colors ${draggedFieldAlias === alias ? "opacity-50" : ""}`}
+                                                                            >
+                                                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                                                                        </svg>
+                                                                                        <input
+                                                                                            type="checkbox"
+                                                                                            checked={true}
+                                                                                            onChange={(e) => {
+                                                                                                const currentFields = settings.aha_fields_to_load || [];
+                                                                                                const newFields = currentFields.filter(f => f !== alias);
+                                                                                                setSettings({
+                                                                                                    ...settings,
+                                                                                                    aha_fields_to_load: newFields,
+                                                                                                });
+                                                                                                autoSaveAhaFields(newFields);
+                                                                                            }}
+                                                                                            onClick={(e) => e.stopPropagation()}
+                                                                                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                                                                                        />
+                                                                                    </div>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                                                    <span className="font-medium text-gray-900">{field.label}</span>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 whitespace-nowrap">
+                                                                                    <code className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-700">{field.alias}</code>
+                                                                                </td>
+                                                                                <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                                                    {field.type === 'standard' ? (
+                                                                                        <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Standard</span>
+                                                                                    ) : (
+                                                                                        <span className="px-2 py-1 text-xs font-medium bg-purple-100 text-purple-700 rounded">Custom</span>
+                                                                                    )}
+                                                                                </td>
+                                                                            </tr>
+                                                                        );
+                                                                    })}
                                                             </tbody>
                                                         </table>
                                                     ) : (
@@ -2165,7 +2160,7 @@ function UserManagementSection({
                                     {pods.map((pod: string) => {
                                         const currentMapping = settings.pod_product_manager_mapping || {};
                                         const currentEmail = currentMapping[pod] || "";
-                                        
+
                                         return (
                                             <tr key={pod} className="hover:bg-gray-50">
                                                 <td className="px-6 py-4 whitespace-nowrap">
@@ -2475,7 +2470,7 @@ function ReleaseWithoutDateRow({
     formatDateForInput,
     handleMapReleaseName,
 }: {
-    launchRelease: {releaseName: string; launchDate: string | null};
+    launchRelease: { releaseName: string; launchDate: string | null };
     formatDateForInput: (date: string) => string;
     handleMapReleaseName: (releaseName: string, launchDate: string) => Promise<void>;
 }) {
@@ -2596,7 +2591,7 @@ function ReleaseScheduleSection({
     editingReleaseId: number | string | null;
     setEditingReleaseId: (id: number | string | null) => void;
     onUpdate: (id: number, releaseName: string, launchDate: string) => void;
-    launchReleases: Array<{releaseName: string; launchDate: string | null}>;
+    launchReleases: Array<{ releaseName: string; launchDate: string | null }>;
     launchReleasesLoading: boolean;
     onRefresh: () => void;
     onRefreshReleases: () => Promise<void>;
@@ -2928,9 +2923,9 @@ function EditUserDrawer({
                     onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
                 />
                 <Group justify="space-between" mt="xl">
-                    <Button 
-                        variant="outline" 
-                        color="red" 
+                    <Button
+                        variant="outline"
+                        color="red"
                         leftSection={<IconTrash size={16} />}
                         onClick={async () => {
                             if (confirm("Are you sure you want to delete this user?")) {
@@ -2976,7 +2971,7 @@ function EditStageDrawer({
     onDelete: () => void;
 }) {
     const isAdding = stageId === null;
-    
+
     return (
         <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Launch Stage" : "Edit Launch Stage"} position="right" size="xl" padding="lg">
             <Stack gap="md">
