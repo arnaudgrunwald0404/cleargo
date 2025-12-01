@@ -4,6 +4,11 @@ import { rateLimit } from '@/lib/rate-limit';
 import { NextResponse } from 'next/server';
 
 export async function middleware(request: NextRequest) {
+    // Skip middleware for auth callback to avoid interfering with cookie setting
+    if (request.nextUrl.pathname === '/auth/callback') {
+        return NextResponse.next()
+    }
+    
     // Rate limiting for API routes
     if (request.nextUrl.pathname.startsWith('/api/')) {
         const ip = request.ip || request.headers.get('x-forwarded-for') || 'unknown';
