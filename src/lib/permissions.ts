@@ -10,7 +10,18 @@ export type CapabilityId =
   | "users.invite.send"
   | "users.create"
   | "users.update"
-  | "users.delete";
+  | "users.delete"
+  | "criteria.create"
+  | "criteria.update"
+  | "criteria.delete"
+  | "criteria.import"
+  | "launchStages.manage"
+  | "releases.manage"
+  | "settings.update"
+  | "settings.emailTemplates.read"
+  | "settings.emailTemplates.update"
+  | "settings.ahaFields.read"
+  | "settings.ahaFields.sync";
 
 export type Capability = {
   id: CapabilityId;
@@ -64,6 +75,61 @@ export const CAPABILITIES: Capability[] = [
     label: "Delete Users",
     description: "Allow deleting users (single or bulk).",
   },
+  {
+    id: "criteria.create",
+    label: "Create Criteria",
+    description: "Allow creating readiness criteria definitions.",
+  },
+  {
+    id: "criteria.update",
+    label: "Update Criteria",
+    description: "Allow updating readiness criteria definitions.",
+  },
+  {
+    id: "criteria.delete",
+    label: "Delete Criteria",
+    description: "Allow deleting readiness criteria definitions.",
+  },
+  {
+    id: "criteria.import",
+    label: "Import Criteria",
+    description: "Allow importing criteria in bulk.",
+  },
+  {
+    id: "launchStages.manage",
+    label: "Manage Launch Stages",
+    description: "Allow creating, updating, and deleting launch stages.",
+  },
+  {
+    id: "releases.manage",
+    label: "Manage Release Schedule",
+    description: "Allow creating/updating/deleting release schedule entries.",
+  },
+  {
+    id: "settings.update",
+    label: "Update Settings",
+    description: "Allow changing application-wide settings.",
+  },
+  {
+    id: "settings.emailTemplates.read",
+    label: "Read Email Templates",
+    description: "Allow reading email template settings.",
+  },
+  {
+    id: "settings.emailTemplates.update",
+    label: "Update Email Templates",
+    description: "Allow updating email template settings.",
+  },
+  {
+    id: "settings.ahaFields.read",
+    label: "Read AHA Fields Config",
+    description: "Allow reading AHA fields configuration.",
+  },
+  {
+    id: "settings.ahaFields.sync",
+    label: "Synchronize AHA Fields",
+    description: "Allow triggering synchronization from AHA to launches.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -76,6 +142,17 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "users.create": ["PRODUCT_OPS", "CPO"],
   "users.update": ["PRODUCT_OPS", "CPO"],
   "users.delete": ["PRODUCT_OPS", "CPO"],
+  "criteria.create": ["PRODUCT_OPS", "CPO"],
+  "criteria.update": ["PRODUCT_OPS", "CPO"],
+  "criteria.delete": ["PRODUCT_OPS", "CPO"],
+  "criteria.import": ["PRODUCT_OPS", "CPO"],
+  "launchStages.manage": ["PRODUCT_OPS", "CPO"],
+  "releases.manage": ["PRODUCT_OPS", "CPO"],
+  "settings.update": ["PRODUCT_OPS", "CPO"],
+  "settings.emailTemplates.read": ["PRODUCT_OPS", "CPO"],
+  "settings.emailTemplates.update": ["PRODUCT_OPS", "CPO"],
+  "settings.ahaFields.read": ["PRODUCT_OPS", "CPO"],
+  "settings.ahaFields.sync": ["PRODUCT_OPS", "CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

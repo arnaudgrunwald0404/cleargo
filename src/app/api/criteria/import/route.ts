@@ -36,6 +36,15 @@ export async function POST(req: NextRequest) {
             }
             const role = await resolveRole(user.email);
             if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
+            // Capability: criteria.import
+            const { data: me } = await supabase
+              .from('app_user')
+              .select('roles')
+              .eq('email', user.email)
+              .single();
+            const { canRolesPerform } = await import('@/lib/permissions');
+            const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.import');
+            if (!ok) return new NextResponse('Forbidden', { status: 403 });
         } catch (authError) {
             console.error('[Import] Auth error:', authError);
             return NextResponse.json({
@@ -68,6 +77,14 @@ export async function POST(req: NextRequest) {
         if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
         const role = await resolveRole(user.email);
         if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
+        const { data: me2 } = await supabase
+          .from('app_user')
+          .select('roles')
+          .eq('email', user.email)
+          .single();
+        const { canRolesPerform: can } = await import('@/lib/permissions');
+        const ok2 = await can((me2?.roles as string[]) || [], 'criteria.import');
+        if (!ok2) return new NextResponse('Forbidden', { status: 403 });
 
         const formData = await req.formData();
         const file = formData.get("file") as File;

@@ -29,8 +29,8 @@ export async function POST(
             );
         }
 
-        // Instantiate criteria for this launch
-        await instantiateCriteriaForLaunch(launch.id, launch.tier);
+        // Instantiate criteria for this launch using the same SSR client (guarantees same project)
+        await instantiateCriteriaForLaunch(launch.id, launch.tier, supabase as any);
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

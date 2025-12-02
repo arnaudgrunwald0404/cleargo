@@ -25,6 +25,8 @@ export default function LaunchDetailPage() {
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
+    const [instantiationFailed, setInstantiationFailed] = useState(false);
+    const [instantiating, setInstantiating] = useState(false);
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -54,12 +56,28 @@ export default function LaunchDetailPage() {
             // Ensure criteria are instantiated for this launch (especially ALL criteria)
             // This will backfill any missing criteria that should apply
             try {
-                await fetch(`/api/launches/${id}/instantiate-criteria`, {
+                const resp = await fetch(`/api/launches/${id}/instantiate-criteria`, {
                     method: 'POST',
                 });
+                if (!resp.ok) {
+                    setInstantiationFailed(true);
+                    notifications.show({
+                        title: 'Could not populate criteria',
+                        message: 'We were unable to instantiate criteria for this launch. You can retry below.',
+                        color: 'orange',
+                    });
+                } else {
+                    setInstantiationFailed(false);
+                }
             } catch (e) {
                 // Non-fatal if instantiation fails
                 console.warn('Failed to instantiate criteria:', e);
+                setInstantiationFailed(true);
+                notifications.show({
+                    title: 'Could not populate criteria',
+                    message: 'Network or server error. You can retry below.',
+                    color: 'orange',
+                });
             }
 
             // Fetch matrix
@@ -81,6 +99,12 @@ export default function LaunchDetailPage() {
 
             if (matrixError) throw matrixError;
 
+            // Fetch all ACTIVE criteria to display non-applicable ones as "Not required"
+            const { data: allActiveCriteria } = await supabase
+                .from('criterion')
+                .select('*')
+                .eq('is_active', true);
+
             // Deduplicate by criterion_id (keep the most recently updated one)
             const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
                 const existing = acc.find((a: any) => a.criterion_id === item.criterion_id);
@@ -98,8 +122,47 @@ export default function LaunchDetailPage() {
                 return acc;
             }, []);
 
+            const statusByCriterion = new Map<string, any>(
+                deduplicated.map((it: any) => [it.criterion_id, it])
+            );
+
+            // Helper for applicability
+            const applies = (app: 'ALL'|'TIER_1_ONLY'|'TIER_1_AND_2', tier: 'TIER_1'|'TIER_2'|'TIER_3') =>
+                app === 'ALL' ||
+                (app === 'TIER_1_ONLY' && tier === 'TIER_1') ||
+                (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2'));
+
+            // Merge: existing statuses + synthetic rows for non-applicable active criteria
+            const merged: any[] = [...deduplicated];
+            (allActiveCriteria || []).forEach((c: any) => {
+                if (!statusByCriterion.has(c.id)) {
+                    const notReq = c?.tier_applicability
+                        ? !applies(c.tier_applicability as any, (data.tier as any))
+                        : false;
+                    if (notReq) {
+                        merged.push({
+                            id: `virtual-${c.id}`,
+                            criterion_id: c.id,
+                            status: 'NOT_SET',
+                            current_status_notes: null,
+                            last_updated_at: null,
+                            criterion: c,
+                            notRequired: true,
+                        });
+                    }
+                }
+            });
+
+            // Annotate applicability for existing statuses
+            const withApplicability = merged.map((item: any) => ({
+                ...item,
+                notRequired: item.notRequired === true || (item?.criterion?.tier_applicability
+                    ? !applies(item.criterion.tier_applicability as any, (data.tier as any))
+                    : false),
+            }));
+
             // Sort by criterion sort_order
-            const sorted = deduplicated.sort((a: any, b: any) =>
+            const sorted = withApplicability.sort((a: any, b: any) =>
                 (a.criterion?.sort_order || 0) - (b.criterion?.sort_order || 0)
             );
 
@@ -228,7 +291,8 @@ export default function LaunchDetailPage() {
                 return {
                     ...item,
                     approverEmail,
-                    approverInfo: approverEmail ? userInfoMap[approverEmail] : null
+                    approverInfo: approverEmail ? userInfoMap[approverEmail] : null,
+                    notRequired: item.notRequired === true,
                 };
             });
 
@@ -336,6 +400,22 @@ export default function LaunchDetailPage() {
             });
         } finally {
             setUpdatingTier(false);
+        }
+    }
+
+    async function retryInstantiate() {
+        if (!id) return;
+        setInstantiating(true);
+        try {
+            const resp = await fetch(`/api/launches/${id}/instantiate-criteria`, { method: 'POST' });
+            if (!resp.ok) throw new Error('Instantiate failed');
+            setInstantiationFailed(false);
+            notifications.show({ title: 'Criteria populated', message: 'Applicable criteria were added to this launch.', color: 'green' });
+            await loadData();
+        } catch (e: any) {
+            notifications.show({ title: 'Retry failed', message: e?.message || 'Could not populate criteria', color: 'red' });
+        } finally {
+            setInstantiating(false);
         }
     }
 
@@ -487,8 +567,15 @@ export default function LaunchDetailPage() {
             <div className="mb-8">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Readiness Matrix</h2>
                 {matrix.length === 0 ? (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800">
-                        No criteria found. This might be because no criteria matched the launch tier ({launch.tier}) or none are active.
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
+                        <div>
+                            No criteria configured. Add criteria in <Link href="/admin/settings" className="text-yellow-800 underline hover:text-yellow-900">Admin → Settings</Link>.
+                        </div>
+                        {instantiationFailed && (
+                            <Button size="xs" variant="outline" onClick={retryInstantiate} loading={instantiating} className="border-yellow-600 text-yellow-800 hover:bg-yellow-100">
+                                Retry populate criteria
+                            </Button>
+                        )}
                     </div>
                 ) : (
                     <Matrix launchId={launch.id} items={matrix} onUpdate={loadData} />

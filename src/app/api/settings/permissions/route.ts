@@ -3,6 +3,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { createClient } from "@/lib/supabase/server";
 import { ALL_ROLES, Role } from "@/lib/roles-constants";
+import { CAPABILITIES, DEFAULT_RULES } from "@/lib/permissions";
+import { getSettings, updateSettings } from "@/lib/settings-db";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +40,16 @@ async function writeMapping(mapping: Record<string, Role>) {
 export async function GET() {
   try {
     const mapping = await readMapping();
-    return NextResponse.json({ mapping, roles: ALL_ROLES });
+    const settings = await getSettings();
+    const overrides = (settings.permissions || {}) as Record<string, string[]>;
+
+    return NextResponse.json({
+      roles: ALL_ROLES,
+      capabilities: CAPABILITIES,
+      rules: DEFAULT_RULES,
+      overrides,
+      mapping,
+    });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to read permissions" }, { status: 500 });
   }
@@ -51,20 +62,65 @@ export async function PATCH(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const body = await req.json();
-    const mapping = body?.mapping as Record<string, Role> | undefined;
-    if (!mapping || typeof mapping !== "object") {
-      return NextResponse.json({ error: "Invalid body: expected { mapping }" }, { status: 400 });
-    }
 
-    // Validate roles
-    for (const [email, role] of Object.entries(mapping)) {
-      if (!ALL_ROLES.includes(role as Role)) {
-        return NextResponse.json({ error: `Invalid role for ${email}: ${role}` }, { status: 400 });
+    // Two supported shapes:
+    // 1) { rules: Record<capabilityId, Role[]> } -> update settings.permissions
+    // 2) { mapping: Record<email, Role> } -> update roles.json mapping (legacy)
+
+    if (body?.rules && typeof body.rules === "object") {
+      // Authorization: require capability 'settings.update'
+      const { data: me } = await supabase
+        .from('app_user')
+        .select('roles')
+        .eq('email', user.email)
+        .single();
+      const { canRolesPerform } = await import('@/lib/permissions');
+      const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.update');
+      if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
+      // Validate capability ids and roles
+      const validCaps: Set<string> = new Set(CAPABILITIES.map(c => c.id as string));
+      const entries = Object.entries(body.rules as Record<import('@/lib/permissions').CapabilityId, string[]>);
+      for (const [cap, roles] of entries) {
+        if (!validCaps.has(cap)) {
+          return NextResponse.json({ error: `Invalid capability id: ${cap}` }, { status: 400 });
+        }
+        if (!Array.isArray(roles) || roles.some(r => !ALL_ROLES.includes(r as Role))) {
+          return NextResponse.json({ error: `Invalid roles for ${cap}` }, { status: 400 });
+        }
       }
+
+      // Persist overrides in app_settings.permissions
+      const updated = await updateSettings({ permissions: body.rules });
+
+      return NextResponse.json({
+        roles: ALL_ROLES,
+        capabilities: CAPABILITIES,
+        rules: DEFAULT_RULES,
+        overrides: updated.permissions || {},
+      });
     }
 
-    const saved = await writeMapping(mapping);
-    return NextResponse.json({ mapping: saved, roles: ALL_ROLES });
+    if (body?.mapping && typeof body.mapping === "object") {
+      // Validate roles for mapping
+      for (const [email, role] of Object.entries(body.mapping as Record<string, Role>)) {
+        if (!ALL_ROLES.includes(role as Role)) {
+          return NextResponse.json({ error: `Invalid role for ${email}: ${role}` }, { status: 400 });
+        }
+      }
+      const saved = await writeMapping(body.mapping as Record<string, Role>);
+      // Also return current capability state for convenience
+      const settings = await getSettings();
+      return NextResponse.json({
+        roles: ALL_ROLES,
+        capabilities: CAPABILITIES,
+        rules: DEFAULT_RULES,
+        overrides: settings.permissions || {},
+        mapping: saved,
+      });
+    }
+
+    return NextResponse.json({ error: "Invalid body: expected { rules } or { mapping }" }, { status: 400 });
   } catch (error: any) {
     return NextResponse.json({ error: error.message || "Failed to save permissions" }, { status: 500 });
   }

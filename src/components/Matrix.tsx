@@ -13,6 +13,7 @@ type MatrixItem = {
         last_name?: string;
         avatar_url?: string;
     } | null;
+    notRequired?: boolean;
     criterion: {
         id: string;
         label: string;
@@ -230,9 +231,9 @@ export default function Matrix({ launchId, items, onUpdate }: Props) {
                                         }
                                         
                                         return (
-                                            <tr key={item.id} className={`hover:bg-purple-50 transition-colors ${isOverall ? 'cursor-pointer' : ''}`} onClick={isOverall ? () => toggleCategory(cat) : undefined}>
+                                            <tr key={item.id} className={`hover:bg-purple-50 transition-colors ${isOverall ? 'cursor-pointer' : ''} ${item.notRequired ? 'opacity-60' : ''}`} onClick={isOverall ? () => toggleCategory(cat) : undefined}>
                                         <td className="px-4 py-3">
-                                            <div className="font-medium text-gray-900 flex items-center gap-2">
+                                            <div className={`font-medium flex items-center gap-2 ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
                                                 {isOverall && (
                                                     <span className="text-gray-500">
                                                         {collapsed ? (
@@ -246,35 +247,42 @@ export default function Matrix({ launchId, items, onUpdate }: Props) {
                                                 {item.criterion.gate && (
                                                     <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
                                                 )}
+                                                {item.notRequired && (
+                                                    <span className="ml-2 bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full">Not required</span>
+                                                )}
                                             </div>
                                             {item.criterion.description && (
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
                                         <td className="px-4 py-3 whitespace-nowrap" style={{ width: '160px' }}>
-                                            <Select
-                                                value={item.status}
-                                                onChange={(value) => {
-                                                    if (value && value !== item.status) {
-                                                        handleStatusChange(item.id, value);
-                                                    }
-                                                }}
-                                                disabled={savingItems.has(item.id)}
-                                                data={STATUS_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
-                                                styles={{
-                                                    input: {
-                                                        fontSize: '0.875rem',
-                                                        fontWeight: 500,
-                                                        padding: '0.25rem 0.5rem',
-                                                        border: 'none',
-                                                        ...getStatusColor(item.status)
-                                                    },
-                                                }}
-                                                classNames={{
-                                                    option: 'status-option',
-                                                }}
-                                                size="xs"
-                                            />
+                                            {item.notRequired ? (
+                                                <div className="text-xs font-medium text-gray-500">Not required</div>
+                                            ) : (
+                                                <Select
+                                                    value={item.status}
+                                                    onChange={(value) => {
+                                                        if (value && value !== item.status) {
+                                                            handleStatusChange(item.id, value);
+                                                        }
+                                                    }}
+                                                    disabled={savingItems.has(item.id)}
+                                                    data={STATUS_OPTIONS.map(opt => ({ value: opt.value, label: opt.label }))}
+                                                    styles={{
+                                                        input: {
+                                                            fontSize: '0.875rem',
+                                                            fontWeight: 500,
+                                                            padding: '0.25rem 0.5rem',
+                                                            border: 'none',
+                                                            ...getStatusColor(item.status)
+                                                        },
+                                                    }}
+                                                    classNames={{
+                                                        option: 'status-option',
+                                                    }}
+                                                    size="xs"
+                                                />
+                                            )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '200px' }}>
                                             {item.approverEmail ? (

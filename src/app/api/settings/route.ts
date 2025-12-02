@@ -33,8 +33,15 @@ export async function PATCH(req: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
-        // TODO: Add strict role check here (e.g. must be PRODUCT_OPS or ADMIN)
-        // For MVP, we'll proceed.
+        // Capability: settings.update
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.update');
+        if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await req.json();
         console.log("PATCH /api/settings - Request body:", JSON.stringify(body, null, 2));

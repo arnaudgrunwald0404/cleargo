@@ -180,7 +180,7 @@ describe('Readiness Calculation Logic', () => {
         it('should return HIGH risk if close to launch with NO_GO verdict', () => {
             const targetDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000); // 10 days from now
             const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus = 'NO_GO';
+            const readinessStatus: string = 'NO_GO';
 
             let riskLevel = 'LOW';
             if (daysToLaunch < 14) {
@@ -195,7 +195,7 @@ describe('Readiness Calculation Logic', () => {
         it('should return MEDIUM risk if moderately close to launch with NO_GO', () => {
             const targetDate = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000); // 20 days from now
             const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus = 'NO_GO';
+            const readinessStatus: string = 'NO_GO';
 
             let riskLevel = 'LOW';
             if (daysToLaunch < 14) {
@@ -212,7 +212,7 @@ describe('Readiness Calculation Logic', () => {
         it('should return LOW risk if far from launch', () => {
             const targetDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days from now
             const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus = 'GO';
+            const readinessStatus: string = 'GO';
 
             let riskLevel = 'LOW';
             if (daysToLaunch < 14) {
@@ -229,7 +229,7 @@ describe('Readiness Calculation Logic', () => {
         it('should return MEDIUM risk if close to launch even with GO but low score', () => {
             const targetDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
             const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus = 'GO';
+            const readinessStatus: string = 'GO';
             const readinessScore = 0.91; // Just above threshold
 
             let riskLevel = 'LOW';

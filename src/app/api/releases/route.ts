@@ -38,6 +38,16 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
+        // Capability: releases.manage
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
+        if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
         const body = await request.json();
 
         const { release_name, launch_date } = body;

@@ -24,6 +24,14 @@ export async function GET(req: NextRequest) {
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+    const { data: me } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+    const { canRolesPerform } = await import('@/lib/permissions');
+    const canRead = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.read');
+    if (!canRead) return forbid();
 
     const settings = await getSettings();
 
@@ -51,6 +59,14 @@ export async function PATCH(req: NextRequest) {
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+    const { data: me } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+    const { canRolesPerform } = await import('@/lib/permissions');
+    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.update');
+    if (!canUpdate) return forbid();
 
     const body = await req.json();
     const parsed = emailTemplateSchema.safeParse(body);

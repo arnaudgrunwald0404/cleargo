@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MappedLaunchData } from '../aha/mapping';
 
 const supabase = createClient(
@@ -125,7 +126,7 @@ export async function upsertLaunchFromAha(
 
     // Update console_url after we have the ID
     if (data && !data.console_url) {
-        const consoleUrl = `${appUrl}/launch/${data.id}`;
+        const consoleUrl = `${appUrl}/launches/${data.id}`;
         const { data: updated, error: updateError } = await supabase
             .from('launch')
             .update({ console_url: consoleUrl })
@@ -176,10 +177,14 @@ export async function getFallbackProductOpsUser(): Promise<string> {
 
 export async function instantiateCriteriaForLaunch(
     launchId: string,
-    tier: string
+    tier: string,
+    client?: SupabaseClient
 ): Promise<void> {
+    // Prefer the passed-in client (SSR client for this request) to ensure we hit the same project
+    const sb = client ?? supabase;
+
     // Get all active criteria applicable to this tier
-    const { data: criteria, error: criteriaError } = await supabase
+    const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
         .select('id, tier_applicability')
         .eq('is_active', true);
@@ -198,7 +203,7 @@ export async function instantiateCriteriaForLaunch(
     });
 
     // Check if criteria already exist for this launch
-    const { data: existing } = await supabase
+    const { data: existing } = await sb
         .from('launch_criterion_status')
         .select('criterion_id')
         .eq('launch_id', launchId);
@@ -216,7 +221,7 @@ export async function instantiateCriteriaForLaunch(
         }));
 
     if (newRecords.length > 0) {
-        const { error: insertError } = await supabase
+        const { error: insertError } = await sb
             .from('launch_criterion_status')
             .insert(newRecords);
 

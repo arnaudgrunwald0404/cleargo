@@ -15,6 +15,16 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Capability: settings.ahaFields.read
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.read');
+        if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
         const configPath = join(process.cwd(), 'config', 'aha-custom-fields.json');
         const configData = readFileSync(configPath, 'utf-8');
         const config = JSON.parse(configData);

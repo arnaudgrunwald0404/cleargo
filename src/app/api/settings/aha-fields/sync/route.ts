@@ -17,6 +17,16 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Capability: settings.ahaFields.sync
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.sync');
+        if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
         // Get current settings to determine which fields to load
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];

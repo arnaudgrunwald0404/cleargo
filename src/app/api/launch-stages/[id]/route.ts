@@ -15,6 +15,16 @@ export async function DELETE(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Capability: launchStages.manage
+        const { data: me } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+        if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
         const id = parseInt(params.id);
         if (isNaN(id)) {
             return NextResponse.json(

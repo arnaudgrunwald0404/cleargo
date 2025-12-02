@@ -65,7 +65,20 @@ export async function recomputeLaunchReadiness(launchId: string) {
     let gateNoGoCount = 0;
     let unresolvedConditionsCount = 0;
 
+    // Helper to determine applicability by tier
+    const applies = (app: 'ALL'|'TIER_1_ONLY'|'TIER_1_AND_2', tier: 'TIER_1'|'TIER_2'|'TIER_3') =>
+        app === 'ALL' ||
+        (app === 'TIER_1_ONLY' && tier === 'TIER_1') ||
+        (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2'));
+
     for (const s of statuses) {
+        // Skip non-applicable criteria entirely for scoring/verdict
+        const tier = (launch?.tier as any) || 'TIER_3';
+        const applicability = s.criterion?.tier_applicability as any;
+        if (applicability && !applies(applicability, tier)) {
+            continue;
+        }
+
         const isGate = s.criterion?.gate;
 
         // Verdict checks
@@ -95,6 +108,20 @@ export async function recomputeLaunchReadiness(launchId: string) {
     }
 
     const readinessScore = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
+
+    // If no applicable criteria contributed to the score and no gate violations/conditions, mark as NOT_EVALUATED
+    if (maxPossibleScore === 0 && gateNoGoCount === 0 && unresolvedConditionsCount === 0) {
+        await supabase
+            .from('launch')
+            .update({
+                readiness_score: null,
+                readiness_status: 'NOT_EVALUATED',
+                risk_level: launch?.risk_level || 'LOW',
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', launchId);
+        return;
+    }
 
     // 3. Compute Verdict (Readiness Status)
     // "any gate NO_GO → NO_GO; else unresolved pre-launch conditions on gates → CONDITIONAL; else tier thresholds..."
