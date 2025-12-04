@@ -34,11 +34,20 @@ export async function DELETE(
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.delete
-  const { data: me } = await supabase
+  const { data: me, error: userError } = await supabase
     .from("app_user")
     .select("roles")
     .eq("email", user.email)
     .single();
+  
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  }
+  if (userError) {
+    throw userError;
+  }
+  
   const { canRolesPerform } = await import("@/lib/permissions");
   const canDelete = await canRolesPerform((me?.roles as string[]) || [], "criteria.delete");
   if (!canDelete) return forbid();
@@ -59,11 +68,20 @@ export async function PUT(
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  const { data: me } = await supabase
+  const { data: me, error: userError } = await supabase
     .from("app_user")
     .select("roles")
     .eq("email", user.email)
     .single();
+  
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  }
+  if (userError) {
+    throw userError;
+  }
+  
   const { canRolesPerform } = await import("@/lib/permissions");
   const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
   if (!canUpdate) return forbid();
@@ -93,11 +111,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  const { data: me } = await supabase
+  const { data: me, error: userError } = await supabase
     .from("app_user")
     .select("roles")
     .eq("email", user.email)
     .single();
+  
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  }
+  if (userError) {
+    throw userError;
+  }
+  
   const { canRolesPerform } = await import("@/lib/permissions");
   const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
   if (!canUpdate) return forbid();

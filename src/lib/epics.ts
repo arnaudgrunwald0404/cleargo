@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
-import { CreateLaunchDTO, Launch } from '@/types/launches';
+import { CreateEpicDTO, Epic } from '@/types/epics';
 
-export async function instantiateLaunchMatrix(launchId: string, tier: string) {
+export async function instantiateEpicMatrix(epicId: string, tier: string) {
     const supabase = createClient();
 
     // 1. Fetch all active criteria
@@ -41,30 +41,30 @@ export async function instantiateLaunchMatrix(launchId: string, tier: string) {
         return;
     }
 
-    // 3. Prepare rows for launch_criterion_status
+    // 3. Prepare rows for epic_criterion_status
     const rows = applicableCriteria.map((c) => ({
-        launch_id: launchId,
+        epic_id: epicId,
         criterion_id: c.id,
         status: 'NOT_SET',
     }));
 
     // 4. Insert rows
     const { error: insertError } = await supabase
-        .from('launch_criterion_status')
+        .from('epic_criterion_status')
         .insert(rows);
 
     if (insertError) {
         console.error('Error instantiating matrix:', insertError);
-        throw new Error('Failed to insert launch criteria');
+        throw new Error('Failed to insert epic criteria');
     }
 }
 
-export async function createLaunch(data: CreateLaunchDTO): Promise<Launch> {
+export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
     const supabase = createClient();
 
-    // 1. Insert Launch
-    const { data: launch, error } = await supabase
-        .from('launch')
+    // 1. Insert Epic
+    const { data: epic, error } = await supabase
+        .from('epic')
         .insert({
             name: data.name,
             tier: data.tier,
@@ -79,45 +79,47 @@ export async function createLaunch(data: CreateLaunchDTO): Promise<Launch> {
         .single();
 
     if (error) {
-        console.error('Error creating launch:', error);
+        console.error('Error creating epic:', error);
         throw error;
     }
 
     // 2. Instantiate Matrix
-    await instantiateLaunchMatrix(launch.id, launch.tier);
+    await instantiateEpicMatrix(epic.id, epic.tier);
 
-    return launch as Launch;
+    return epic as Epic;
 }
 
-export async function getLaunches() {
+export async function getEpics() {
     const supabase = createClient();
 
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select(`
       *,
       product:product_id (name),
-      owner:owner_id (name, email),
+      owner:app_user!owner_id (name, email),
       aha_fields
     `)
         .order('created_at', { ascending: false });
 
     if (error) {
+        console.error('Error fetching epics from database:', error);
         throw error;
     }
 
+    console.log('Fetched epics from database:', data?.length || 0);
     return data;
 }
 
-export async function getLaunch(id: string) {
+export async function getEpic(id: string) {
     const supabase = createClient();
 
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select(`
       *,
       product:product_id (name),
-      owner:owner_id (name, email),
+      owner:app_user!owner_id (name, email),
       aha_fields
     `)
         .eq('id', id)
@@ -134,11 +136,11 @@ export async function getLaunch(id: string) {
     return data;
 }
 
-export async function updateLaunch(id: string, updates: Partial<CreateLaunchDTO>) {
+export async function updateEpic(id: string, updates: Partial<CreateEpicDTO>) {
     const supabase = createClient();
 
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .update(updates)
         .eq('id', id)
         .select()
@@ -151,11 +153,11 @@ export async function updateLaunch(id: string, updates: Partial<CreateLaunchDTO>
     return data;
 }
 
-export async function deleteLaunch(id: string) {
+export async function deleteEpic(id: string) {
     const supabase = createClient();
 
     const { error } = await supabase
-        .from('launch')
+        .from('epic')
         .delete()
         .eq('id', id);
 
@@ -163,3 +165,4 @@ export async function deleteLaunch(id: string) {
         throw error;
     }
 }
+

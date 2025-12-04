@@ -18,7 +18,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
     const links = [
         { link: '/', label: 'Home' },
-        { link: '/launches', label: 'Launches' },
+        { link: '/epics', label: 'Epics' },
+        { link: '/meetings', label: 'Meetings' },
         { link: '/my-items', label: 'My Items' },
         { link: '/admin/settings', label: 'Settings' },
     ];

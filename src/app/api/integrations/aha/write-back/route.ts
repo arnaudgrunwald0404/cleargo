@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { writeBackLaunchReadiness } from '@/lib/aha/write-back';
+import { writeBackEpicReadiness } from '@/lib/aha/write-back';
 import { createClient } from '@/lib/supabase/server';
 import { resolveRole } from '@/lib/roles';
 
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
         }
 
         // Trigger write-back
-        await writeBackLaunchReadiness(launchId);
+        await writeBackEpicReadiness(launchId);
 
         return NextResponse.json({ message: 'Write-back completed successfully' }, { status: 200 });
 

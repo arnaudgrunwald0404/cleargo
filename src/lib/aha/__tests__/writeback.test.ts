@@ -2,7 +2,7 @@
  * Integration tests for Aha! Write-back
  */
 
-import { writeBackLaunchReadiness } from '../write-back';
+import { writeBackEpicReadiness } from '../write-back';
 import { createClient } from '@supabase/supabase-js';
 
 // Mock Supabase
@@ -59,7 +59,7 @@ describe('Aha! Write-back Integration', () => {
             json: async () => ({}),
         } as Response);
 
-        await writeBackLaunchReadiness('123');
+        await writeBackEpicReadiness('123');
 
         expect(global.fetch).toHaveBeenCalledWith(
             expect.stringContaining('/api/v1/epics/E-123'),
@@ -76,7 +76,7 @@ describe('Aha! Write-back Integration', () => {
             error: { message: 'Not found' },
         });
 
-        await expect(writeBackLaunchReadiness('999')).rejects.toThrow();
+        await expect(writeBackEpicReadiness('999')).rejects.toThrow();
         expect(global.fetch).not.toHaveBeenCalled();
     });
 });

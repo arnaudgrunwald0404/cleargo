@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { recomputeLaunchReadiness } from '../src/lib/readiness';
+import { recomputeEpicReadiness } from '../src/lib/readiness';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -63,7 +63,7 @@ async function main() {
 
     // 3. Trigger Readiness Recomputation (Initial)
     console.log('Triggering initial recomputation...');
-    await recomputeLaunchReadiness(launch.id);
+    await recomputeEpicReadiness(launch.id);
 
     // 4. Update Status to NO_GO to trigger alerts
     console.log('Updating status to NO_GO...');
@@ -81,7 +81,7 @@ async function main() {
             .eq('id', lcs.id);
 
         console.log('Triggering recomputation (should send alerts)...');
-        await recomputeLaunchReadiness(launch.id);
+        await recomputeEpicReadiness(launch.id);
     }
 
     console.log('Verification script completed. Check logs for "Slack notification sent" and "Email sent".');

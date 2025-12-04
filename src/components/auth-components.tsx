@@ -48,11 +48,12 @@ export function SignIn({
 }
 
 export function SignOut(props: React.ComponentPropsWithRef<"button">) {
-    const supabase = createClient();
-
     const handleSignOut = async () => {
-        await supabase.auth.signOut();
-        window.location.reload();
+        try {
+            await fetch('/auth/signout', { method: 'POST', credentials: 'include' });
+        } finally {
+            window.location.href = '/';
+        }
     };
 
     return (

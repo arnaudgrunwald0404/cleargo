@@ -31,9 +31,9 @@ export async function createSnapshot(
 
     if (launchError) throw new Error(`Error fetching launch: ${launchError.message}`);
 
-    // 2. Fetch all criteria statuses for this launch
+    // 2. Fetch all criteria statuses for this epic
     const { data: criteriaStatuses, error: criteriaError } = await supabase
-        .from('launch_criterion_status')
+        .from('epic_criterion_status')
         .select(`
       *,
       criterion:criterion_id (
@@ -44,7 +44,7 @@ export async function createSnapshot(
         decision_owner_email
       )
     `)
-        .eq('launch_id', launchId);
+        .eq('epic_id', launchId);
 
     if (criteriaError) throw new Error(`Error fetching criteria: ${criteriaError.message}`);
 
@@ -63,7 +63,7 @@ export async function createSnapshot(
     const { data: snapshot, error: snapshotError } = await supabase
         .from('decision_snapshot')
         .insert({
-            launch_id: launchId,
+            epic_id: launchId,
             decision_type: decisionType,
             verdict: verdict,
             notes: notes,
@@ -88,7 +88,7 @@ export async function getSnapshots(launchId: string) {
         email
       )
     `)
-        .eq('launch_id', launchId)
+        .eq('epic_id', launchId)
         .order('taken_at', { ascending: false });
 
     if (error) throw new Error(`Error fetching snapshots: ${error.message}`);

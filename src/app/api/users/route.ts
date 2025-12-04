@@ -67,11 +67,20 @@ export async function POST(req: NextRequest) {
   if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.create
-  const { data: me } = await supabase
+  const { data: me, error: userError } = await supabase
     .from("app_user")
     .select("roles")
     .eq("email", user.email)
     .single();
+  
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  }
+  if (userError) {
+    throw userError;
+  }
+  
   const { canRolesPerform } = await import("@/lib/permissions");
   const canCreate = await canRolesPerform((me?.roles as string[]) || [], "users.create");
   if (!canCreate) return forbid();

@@ -15,21 +15,21 @@ interface Snapshot {
 }
 
 interface SnapshotListProps {
-    launchId: string;
+    epicId: string;
     refreshTrigger: number; // Increment to refresh list
 }
 
-export default function SnapshotList({ launchId, refreshTrigger }: SnapshotListProps) {
+export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListProps) {
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         fetchSnapshots();
-    }, [launchId, refreshTrigger]);
+    }, [epicId, refreshTrigger]);
 
     const fetchSnapshots = async () => {
         try {
-            const res = await fetch(`/api/launches/${launchId}/snapshots`);
+            const res = await fetch(`/api/epics/${epicId}/snapshots`);
             if (res.ok) {
                 const data = await res.json();
                 setSnapshots(data);

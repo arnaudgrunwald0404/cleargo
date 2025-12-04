@@ -1,16 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createLaunch, getLaunches } from '@/lib/launches';
+import { createEpic, getEpics } from '@/lib/epics';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const launches = await getLaunches();
-        return NextResponse.json(launches);
+        const supabase = createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const epics = await getEpics();
+        return NextResponse.json(epics);
     } catch (error) {
-        console.error('Error fetching launches:', error);
-        return NextResponse.json({ error: 'Failed to fetch launches' }, { status: 500 });
+        console.error('Error fetching epics:', error);
+        return NextResponse.json({ error: 'Failed to fetch epics' }, { status: 500 });
     }
 }
 
@@ -33,12 +38,12 @@ export async function POST(req: NextRequest) {
         // Set owner to current user if not provided? 
         // Or maybe the UI sends it.
         // For now, let's allow the body to specify, but default to current user if logic requires.
-        // But the `createLaunch` DTO allows `owner_id`.
+        // But the `createEpic` DTO allows `owner_id`.
 
-        const launch = await createLaunch(body);
-        return NextResponse.json(launch, { status: 201 });
+        const epic = await createEpic(body);
+        return NextResponse.json(epic, { status: 201 });
     } catch (error) {
-        console.error('Error creating launch:', error);
-        return NextResponse.json({ error: 'Failed to create launch' }, { status: 500 });
+        console.error('Error creating epic:', error);
+        return NextResponse.json({ error: 'Failed to create epic' }, { status: 500 });
     }
 }

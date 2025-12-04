@@ -1,17 +1,18 @@
 import { createClient } from '@/lib/supabase/server';
-import { Launch, LaunchStatus } from '@/types/launches';
+import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { SlackNotificationPayload } from '@/types/slack';
 import { sendEmailNotification } from '@/lib/email/notifications';
 
-export async function recomputeLaunchReadiness(launchId: string) {
+export async function recomputeEpicReadiness(epicId: string) {
     const supabase = createClient();
 
-    // 1. Fetch launch data and criteria statuses
-    const { data: launch, error: launchError } = await supabase
+    // 1. Fetch epic data and criteria statuses
+    // TODO: After migration 0018 is applied, change back to 'epic' table
+    const { data: epic, error: epicError } = await supabase
         .from('launch')
         .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email')
-        .eq('id', launchId)
+        .eq('id', epicId)
         .single();
 
     // ... (rest of function)
@@ -21,10 +22,10 @@ export async function recomputeLaunchReadiness(launchId: string) {
     // 7. Trigger Aha! Write-back
     // ...
 
-    if (launchError) throw launchError;
+    if (epicError) throw epicError;
 
     const { data: statuses, error: statusError } = await supabase
-        .from('launch_criterion_status')
+        .from('epic_criterion_status')
         .select(`
             *,
             criterion:criterion_id (
@@ -32,21 +33,22 @@ export async function recomputeLaunchReadiness(launchId: string) {
                 tier_applicability
             )
         `)
-        .eq('launch_id', launchId);
+        .eq('epic_id', epicId);
 
     if (statusError) throw statusError;
     if (!statuses || statuses.length === 0) {
         // No applicable criteria → mark as not evaluated to avoid misleading GO/100%
+        // TODO: After migration 0018 is applied, change back to 'epic' table
         await supabase
             .from('launch')
             .update({
                 readiness_score: null,
                 readiness_status: 'NOT_EVALUATED',
                 // Preserve risk_level if present; default to LOW
-                risk_level: launch?.risk_level || 'LOW',
+                risk_level: epic?.risk_level || 'LOW',
                 updated_at: new Date().toISOString()
             })
-            .eq('id', launchId);
+            .eq('id', epicId);
         return;
     }
 
@@ -73,7 +75,7 @@ export async function recomputeLaunchReadiness(launchId: string) {
 
     for (const s of statuses) {
         // Skip non-applicable criteria entirely for scoring/verdict
-        const tier = (launch?.tier as any) || 'TIER_3';
+        const tier = (epic?.tier as any) || 'TIER_3';
         const applicability = s.criterion?.tier_applicability as any;
         if (applicability && !applies(applicability, tier)) {
             continue;
@@ -112,14 +114,14 @@ export async function recomputeLaunchReadiness(launchId: string) {
     // If no applicable criteria contributed to the score and no gate violations/conditions, mark as NOT_EVALUATED
     if (maxPossibleScore === 0 && gateNoGoCount === 0 && unresolvedConditionsCount === 0) {
         await supabase
-            .from('launch')
+            .from('epic')
             .update({
                 readiness_score: null,
                 readiness_status: 'NOT_EVALUATED',
-                risk_level: launch?.risk_level || 'LOW',
+                risk_level: epic?.risk_level || 'LOW',
                 updated_at: new Date().toISOString()
             })
-            .eq('id', launchId);
+            .eq('id', epicId);
         return;
     }
 
@@ -132,8 +134,8 @@ export async function recomputeLaunchReadiness(launchId: string) {
     } else {
         // Check thresholds (mocked for now, should come from settings)
         // T1: 0.9, T2: 0.8, T3: 0.7
-        // We need to know the launch tier.
-        const tier = launch?.tier || 'TIER_3';
+        // We need to know the epic tier.
+        const tier = epic?.tier || 'TIER_3';
 
         // TODO: Fetch from app_settings
         const thresholds: Record<string, number> = { 'TIER_1': 0.9, 'TIER_2': 0.8, 'TIER_3': 0.7 };
@@ -151,8 +153,8 @@ export async function recomputeLaunchReadiness(launchId: string) {
     // 4. Compute Risk
     // "HIGH if close to launch and below thresholds or gates not GO"
     let riskLevel = 'LOW';
-    if (launch?.target_launch_date) {
-        const daysToLaunch = Math.ceil((new Date(launch.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (epic?.target_launch_date) {
+        const daysToLaunch = Math.ceil((new Date(epic.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
 
         if (daysToLaunch < 14) {
             if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {
@@ -165,7 +167,8 @@ export async function recomputeLaunchReadiness(launchId: string) {
         }
     }
 
-    // 5. Update Launch
+    // 5. Update Epic
+    // TODO: After migration 0018 is applied, change back to 'epic' table
     await supabase
         .from('launch')
         .update({
@@ -174,52 +177,52 @@ export async function recomputeLaunchReadiness(launchId: string) {
             risk_level: riskLevel,
             updated_at: new Date().toISOString()
         })
-        .eq('id', launchId);
+        .eq('id', epicId);
 
     // 6. Send Notifications if changed
-    if (launch.readiness_status && launch.readiness_status !== readinessStatus) {
+    if (epic.readiness_status && epic.readiness_status !== readinessStatus) {
         const metadata = {
-            launchName: launch.name,
-            oldStatus: launch.readiness_status,
+            epicName: epic.name,
+            oldStatus: epic.readiness_status,
             newStatus: readinessStatus,
-            launchUrl: launch.console_url || `http://localhost:3000/launches/${launch.id}`
+            epicUrl: epic.console_url || `http://localhost:3000/epics/${epic.id}`
         };
 
         await sendSlackNotification({
             type: 'launch_status_change',
             priority: 'high',
-            launch_id: launch.id,
+            launch_id: epic.id,
             metadata
         }).catch(console.error);
 
-        if (launch.owner_email) {
+        if (epic.owner_email) {
             await sendEmailNotification({
                 type: 'launch_status_change',
-                recipientEmail: launch.owner_email,
+                recipientEmail: epic.owner_email,
                 metadata
             });
         }
     }
 
-    if (launch.risk_level && launch.risk_level !== riskLevel && (riskLevel === 'HIGH' || riskLevel === 'MEDIUM')) {
+    if (epic.risk_level && epic.risk_level !== riskLevel && (riskLevel === 'HIGH' || riskLevel === 'MEDIUM')) {
         const metadata = {
-            launchName: launch.name,
+            epicName: epic.name,
             riskLevel: riskLevel,
-            launchUrl: launch.console_url || `http://localhost:3000/launches/${launch.id}`,
+            epicUrl: epic.console_url || `http://localhost:3000/epics/${epic.id}`,
             reason: "Readiness score dropped or launch date approaching with unresolved items."
         };
 
         await sendSlackNotification({
             type: 'launch_risk_alert',
             priority: 'high',
-            launch_id: launch.id,
+            launch_id: epic.id,
             metadata
         }).catch(console.error);
 
-        if (launch.owner_email) {
+        if (epic.owner_email) {
             await sendEmailNotification({
                 type: 'launch_risk_alert',
-                recipientEmail: launch.owner_email,
+                recipientEmail: epic.owner_email,
                 metadata
             });
         }
@@ -227,8 +230,8 @@ export async function recomputeLaunchReadiness(launchId: string) {
 
     // 7. Trigger Aha! Write-back
     try {
-        const { writeBackLaunchReadiness } = await import('@/lib/aha/write-back');
-        await writeBackLaunchReadiness(launchId);
+        const { writeBackEpicReadiness } = await import('@/lib/aha/write-back');
+        await writeBackEpicReadiness(epicId);
     } catch (error) {
         console.error('Failed to trigger Aha! write-back:', error);
     }

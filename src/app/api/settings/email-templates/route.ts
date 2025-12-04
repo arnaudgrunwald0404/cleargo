@@ -24,11 +24,20 @@ export async function GET(req: NextRequest) {
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
-    const { data: me } = await supabase
+    const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
       .eq('email', user.email)
       .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
     const { canRolesPerform } = await import('@/lib/permissions');
     const canRead = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.read');
     if (!canRead) return forbid();
@@ -59,11 +68,20 @@ export async function PATCH(req: NextRequest) {
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
-    const { data: me } = await supabase
+    const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
       .eq('email', user.email)
       .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
     const { canRolesPerform } = await import('@/lib/permissions');
     const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.update');
     if (!canUpdate) return forbid();

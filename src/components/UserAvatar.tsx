@@ -33,8 +33,11 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
 
 
     const handleSignOut = async () => {
-        await supabase.auth.signOut();
-        router.refresh();
+        try {
+            await fetch('/auth/signout', { method: 'POST', credentials: 'include' });
+        } finally {
+            router.push('/');
+        }
     };
 
     const getInitials = (email: string) => {

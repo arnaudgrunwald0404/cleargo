@@ -116,6 +116,40 @@ export default function GeneralSection({ settings, setSettings }: Props) {
           <p className="text-xs text-gray-500 mt-1">Format: DAY_HH_MM (e.g., MON_09_00)</p>
         </div>
       </div>
+
+      {/* Google Calendar Check-in Keywords */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Google Calendar Check-in Keywords</h2>
+            <p className="text-sm text-gray-500">Keywords to identify check-in meetings in calendar events</p>
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Keywords (comma-separated)</label>
+          <input
+            type="text"
+            value={(settings.check_in_keywords || []).join(", ")}
+            onChange={(e) => {
+              const keywords = e.target.value
+                .split(",")
+                .map((k) => k.trim())
+                .filter((k) => k.length > 0);
+              setSettings({ ...settings, check_in_keywords: keywords });
+            }}
+            placeholder="check-in, checkin, standup, sync, stand-up, status update"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Calendar events matching these keywords will be automatically detected as check-in meetings
+          </p>
+        </div>
+      </div>
     </>
   );
 }

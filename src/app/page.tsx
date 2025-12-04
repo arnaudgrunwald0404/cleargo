@@ -49,9 +49,9 @@ export default async function HomePage({
 
   const navigationCards = [
     {
-      title: "Launches",
-      description: "View and manage all product launches",
-      href: "/launches",
+      title: "Epics",
+      description: "View and manage all epics",
+      href: "/epics",
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -92,7 +92,7 @@ export default async function HomePage({
             Welcome back, <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">{displayName}</span>
           </h2>
           <p className="text-lg text-gray-600 max-w-2xl">
-            Manage your product launches, track readiness criteria, and ensure successful go-to-market execution.
+            Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
           </p>
         </div>
 
@@ -138,7 +138,7 @@ export default async function HomePage({
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Active Launches</p>
+                <p className="text-sm font-medium text-gray-600">Active Epics</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">—</p>
               </div>
               <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -166,7 +166,7 @@ export default async function HomePage({
           <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">High Risk Launches</p>
+                <p className="text-sm font-medium text-gray-600">High Risk Epics</p>
                 <p className="text-2xl font-bold text-gray-900 mt-1">—</p>
               </div>
               <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">

@@ -57,7 +57,7 @@ export interface AhaConfig {
     fields: Record<string, CustomFieldConfig>;
 }
 
-export interface LaunchReadinessData {
+export interface EpicReadinessData {
     readiness_status: string | null;
     readiness_score: number | null;
     risk_level: string | null;

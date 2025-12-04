@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { recomputeLaunchReadiness } from '@/lib/readiness';
+import { recomputeEpicReadiness } from '@/lib/readiness';
 
 export async function PATCH(
     req: NextRequest,
@@ -31,10 +31,10 @@ export async function PATCH(
 
         // Fetch existing to detect assignee change
         const { data: existing, error: fetchErr } = await supabase
-            .from('launch_criterion_status')
+            .from('epic_criterion_status')
             .select('id, condition_owner_id')
             .eq('id', params.lcsId)
-            .eq('launch_id', params.id)
+            .eq('epic_id', params.id)
             .single();
         if (fetchErr || !existing) {
             console.error('Failed to fetch existing criterion status', fetchErr);
@@ -67,7 +67,7 @@ export async function PATCH(
 
         console.log('Updating criterion status:', { 
             lcsId: params.lcsId, 
-            launchId: params.id, 
+            epicId: params.id, 
             status,
             appUserId: appUser.id,
             body 
@@ -75,7 +75,7 @@ export async function PATCH(
 
         // Update the status
         const { data, error } = await supabase
-            .from('launch_criterion_status')
+            .from('epic_criterion_status')
             .update({
                 status,
                 current_status_notes: notes,
@@ -86,7 +86,7 @@ export async function PATCH(
                 last_updated_by: appUser.id
             })
             .eq('id', params.lcsId)
-            .eq('launch_id', params.id) // Security check
+            .eq('epic_id', params.id) // Security check
             .select()
             .single();
 
@@ -101,7 +101,7 @@ export async function PATCH(
         }
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
-        await recomputeLaunchReadiness(params.id);
+        await recomputeEpicReadiness(params.id);
 
         return NextResponse.json(data);
     } catch (error: any) {

@@ -37,11 +37,20 @@ export async function POST(req: NextRequest) {
             const role = await resolveRole(user.email);
             if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
             // Capability: criteria.import
-            const { data: me } = await supabase
+            const { data: me, error: userError } = await supabase
               .from('app_user')
               .select('roles')
               .eq('email', user.email)
               .single();
+            
+            // Handle case where user doesn't exist in app_user table
+            if (userError && userError.code === 'PGRST116') {
+              return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+            }
+            if (userError) {
+              throw userError;
+            }
+            
             const { canRolesPerform } = await import('@/lib/permissions');
             const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.import');
             if (!ok) return new NextResponse('Forbidden', { status: 403 });
@@ -77,11 +86,20 @@ export async function POST(req: NextRequest) {
         if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
         const role = await resolveRole(user.email);
         if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
-        const { data: me2 } = await supabase
+        const { data: me2, error: userError2 } = await supabase
           .from('app_user')
           .select('roles')
           .eq('email', user.email)
           .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError2 && userError2.code === 'PGRST116') {
+          return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError2) {
+          throw userError2;
+        }
+        
         const { canRolesPerform: can } = await import('@/lib/permissions');
         const ok2 = await can((me2?.roles as string[]) || [], 'criteria.import');
         if (!ok2) return new NextResponse('Forbidden', { status: 403 });

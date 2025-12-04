@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getEpic } from '@/lib/aha/client';
-import { mapEpicToLaunch } from '@/lib/aha/mapping';
-import { upsertLaunchFromAha, getUserByEmail, getFallbackProductOpsUser } from '@/lib/db/launches';
+import { mapEpicToEpic } from '@/lib/aha/mapping';
+import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
@@ -18,11 +18,20 @@ export async function POST(req: NextRequest) {
         }
 
         // Capability: settings.ahaFields.sync
-        const { data: me } = await supabase
+        const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
             .eq('email', user.email)
             .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+            throw userError;
+        }
+        
         const { canRolesPerform } = await import('@/lib/permissions');
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.sync');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -31,20 +40,20 @@ export async function POST(req: NextRequest) {
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];
 
-        // Fetch all launches that have an aha_id
-        const { data: launches, error: launchesError } = await supabase
-            .from('launch')
+        // Fetch all epics that have an aha_id
+        const { data: epics, error: epicsError } = await supabase
+            .from('epic')
             .select('id, aha_id, name')
             .not('aha_id', 'is', null);
 
-        if (launchesError) {
-            throw new Error(`Failed to fetch launches: ${launchesError.message}`);
+        if (epicsError) {
+            throw new Error(`Failed to fetch epics: ${epicsError.message}`);
         }
 
-        if (!launches || launches.length === 0) {
+        if (!epics || epics.length === 0) {
             return NextResponse.json({
                 success: true,
-                message: 'No launches found to synchronize',
+                message: 'No epics found to synchronize',
                 synced: 0,
                 failed: 0,
                 total: 0,
@@ -55,21 +64,21 @@ export async function POST(req: NextRequest) {
         let failed = 0;
         const errors: Array<{ aha_id: string; name: string; error: string }> = [];
 
-        // Process each launch
-        for (const launch of launches) {
-            if (!launch.aha_id) continue;
+        // Process each epic
+        for (const epicRecord of epics) {
+            if (!epicRecord.aha_id) continue;
 
             try {
                 // Fetch epic from AHA
-                const epic = await getEpic(launch.aha_id);
+                const epic = await getEpic(epicRecord.aha_id);
                 
-                // Map epic to launch data with current fieldsToLoad
-                const launchData = await mapEpicToLaunch(epic, fieldsToLoad);
-
+                // Map epic to epic data with current fieldsToLoad
+                const epicData = await mapEpicToEpic(epic, fieldsToLoad);
+                
                 // Resolve owner
                 let ownerId: string | null = null;
-                if (launchData.owner_email) {
-                    const user = await getUserByEmail(launchData.owner_email);
+                if (epicData.owner_email) {
+                    const user = await getUserByEmail(epicData.owner_email);
                     if (user) {
                         ownerId = user.id;
                     } else {
@@ -78,16 +87,16 @@ export async function POST(req: NextRequest) {
                 } else {
                     ownerId = await getFallbackProductOpsUser();
                 }
-
-                // Update launch with new aha_fields
-                await upsertLaunchFromAha(launchData, ownerId);
+                
+                // Update epic with new aha_fields
+                await upsertEpicFromAha(epicData, ownerId);
                 synced++;
             } catch (error: any) {
-                console.error(`Failed to sync launch ${launch.aha_id}:`, error);
+                console.error(`Failed to sync epic ${epicRecord.aha_id}:`, error);
                 failed++;
                 errors.push({
-                    aha_id: launch.aha_id,
-                    name: launch.name,
+                    aha_id: epicRecord.aha_id,
+                    name: epicRecord.name,
                     error: error.message || 'Unknown error',
                 });
             }
@@ -95,10 +104,10 @@ export async function POST(req: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Synchronized ${synced} launch${synced !== 1 ? 'es' : ''}`,
+            message: `Synchronized ${synced} epic${synced !== 1 ? 's' : ''}`,
             synced,
             failed,
-            total: launches.length,
+            total: epics.length,
             errors: errors.length > 0 ? errors : undefined,
         });
     } catch (error: any) {
@@ -109,4 +118,6 @@ export async function POST(req: NextRequest) {
         );
     }
 }
+
+
 

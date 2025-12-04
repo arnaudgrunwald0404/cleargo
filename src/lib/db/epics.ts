@@ -1,13 +1,13 @@
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { MappedLaunchData } from '../aha/mapping';
+import type { MappedEpicData } from '../aha/mapping';
 
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-export interface Launch {
+export interface Epic {
     id: string;
     aha_id: string | null;
     aha_url: string | null;
@@ -41,7 +41,8 @@ export interface Launch {
     updated_at: string;
 }
 
-export async function getLaunchByAhaId(ahaId: string): Promise<Launch | null> {
+export async function getEpicByAhaId(ahaId: string): Promise<Epic | null> {
+    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
         .from('launch')
         .select('*')
@@ -56,50 +57,53 @@ export async function getLaunchByAhaId(ahaId: string): Promise<Launch | null> {
     return data;
 }
 
-export async function upsertLaunchFromAha(
-    launchData: MappedLaunchData,
+export async function upsertEpicFromAha(
+    epicData: MappedEpicData,
     ownerId: string | null = null
-): Promise<Launch> {
+): Promise<Epic> {
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
-    // First, check if launch exists
-    const existing = await getLaunchByAhaId(launchData.aha_id);
+    // First, check if epic exists
+    const existing = await getEpicByAhaId(epicData.aha_id);
 
     const upsertData: any = {
-        aha_id: launchData.aha_id,
-        aha_url: launchData.aha_url,
-        name: launchData.name,
-        tier: launchData.tier,
-        target_launch_date: launchData.target_launch_date,
-        scheduled_ga_dev_date: launchData.scheduled_ga_dev_date,
-        owner_email: launchData.owner_email,
-        product_component: launchData.product_component,
-        pod: launchData.pod,
-        business_priority: launchData.business_priority,
-        csm_priority: launchData.csm_priority,
-        tags: launchData.tags,
-        modified_rice_score: launchData.modified_rice_score,
-        wsjf_score: launchData.wsjf_score,
-        gtm_link: launchData.gtm_link,
-        activation_process: launchData.activation_process,
-        new_org_setup: launchData.new_org_setup,
-        existing_org_setup: launchData.existing_org_setup,
-        pricing_model: launchData.pricing_model,
-        // aha_fields already contains all standard fields and custom fields from mapEpicToLaunch
-        aha_fields: launchData.aha_fields || null,
+        aha_id: epicData.aha_id,
+        aha_url: epicData.aha_url,
+        name: epicData.name,
+        tier: epicData.tier,
+        target_launch_date: epicData.target_launch_date,
+        scheduled_ga_dev_date: epicData.scheduled_ga_dev_date,
+        owner_email: epicData.owner_email,
+        product_component: epicData.product_component,
+        pod: epicData.pod,
+        business_priority: epicData.business_priority,
+        csm_priority: epicData.csm_priority,
+        tags: epicData.tags,
+        modified_rice_score: epicData.modified_rice_score,
+        wsjf_score: epicData.wsjf_score,
+        gtm_link: epicData.gtm_link,
+        activation_process: epicData.activation_process,
+        new_org_setup: epicData.new_org_setup,
+        existing_org_setup: epicData.existing_org_setup,
+        pricing_model: epicData.pricing_model,
+        // aha_fields already contains all standard fields and custom fields from mapEpicToEpic
+        aha_fields: epicData.aha_fields || null,
         updated_at: new Date().toISOString(),
     };
 
     // Resolve launch date from release schedule if release name is present
     // Note: target_launch_date is now text, so we convert dates to ISO string format
-    if (launchData.aha_release_name) {
-        const { data: releaseSchedule } = await supabase
+    if (epicData.aha_release_name) {
+        // Use maybeSingle() to avoid PGRST116 error when release doesn't exist
+        const { data: releaseSchedule, error: releaseError } = await supabase
             .from('release_schedule')
             .select('launch_date')
-            .eq('release_name', launchData.aha_release_name)
-            .single();
+            .eq('release_name', epicData.aha_release_name)
+            .maybeSingle();
 
-        if (releaseSchedule?.launch_date) {
+        if (releaseError) {
+            console.warn('Error fetching release schedule:', releaseError);
+        } else if (releaseSchedule?.launch_date) {
             // Convert date to ISO string if it's a Date object, otherwise use as-is (already string)
             upsertData.target_launch_date = releaseSchedule.launch_date instanceof Date 
                 ? releaseSchedule.launch_date.toISOString().split('T')[0] 
@@ -111,11 +115,12 @@ export async function upsertLaunchFromAha(
         upsertData.owner_id = ownerId;
     }
 
-    // Only set console_url for new launches
+    // Only set console_url for new epics
     if (!existing) {
         upsertData.status = 'PLANNED';
     }
 
+    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
         .from('launch')
         .upsert(upsertData, { onConflict: 'aha_id' })
@@ -126,7 +131,7 @@ export async function upsertLaunchFromAha(
 
     // Update console_url after we have the ID
     if (data && !data.console_url) {
-        const consoleUrl = `${appUrl}/launches/${data.id}`;
+        const consoleUrl = `${appUrl}/epics/${data.id}`;
         const { data: updated, error: updateError } = await supabase
             .from('launch')
             .update({ console_url: consoleUrl })
@@ -175,13 +180,21 @@ export async function getFallbackProductOpsUser(): Promise<string> {
     return user.id;
 }
 
-export async function instantiateCriteriaForLaunch(
-    launchId: string,
+export async function instantiateCriteriaForEpic(
+    epicId: string,
     tier: string,
     client?: SupabaseClient
 ): Promise<void> {
     // Prefer the passed-in client (SSR client for this request) to ensure we hit the same project
     const sb = client ?? supabase;
+
+    // Validate inputs
+    if (!epicId) {
+        throw new Error('Epic ID is required');
+    }
+    if (!tier) {
+        throw new Error(`Epic tier is required (epicId: ${epicId})`);
+    }
 
     // Get all active criteria applicable to this tier
     const { data: criteria, error: criteriaError } = await sb
@@ -189,7 +202,15 @@ export async function instantiateCriteriaForLaunch(
         .select('id, tier_applicability')
         .eq('is_active', true);
 
-    if (criteriaError) throw criteriaError;
+    if (criteriaError) {
+        console.error('Error fetching criteria:', criteriaError);
+        throw new Error(`Failed to fetch criteria: ${criteriaError.message}`);
+    }
+
+    if (!criteria || criteria.length === 0) {
+        console.warn(`No active criteria found for instantiation (epicId: ${epicId}, tier: ${tier})`);
+        return; // Nothing to instantiate
+    }
 
     const applicableCriteria = criteria.filter((c) => {
         // ALL criteria apply to all tiers
@@ -202,35 +223,49 @@ export async function instantiateCriteriaForLaunch(
         return false;
     });
 
-    // Check if criteria already exist for this launch
-    const { data: existing } = await sb
-        .from('launch_criterion_status')
+    console.log(`Found ${applicableCriteria.length} applicable criteria for epic ${epicId} (tier: ${tier})`);
+
+    // Check if criteria already exist for this epic
+    const { data: existing, error: existingError } = await sb
+        .from('epic_criterion_status')
         .select('criterion_id')
-        .eq('launch_id', launchId);
+        .eq('epic_id', epicId);
+
+    if (existingError) {
+        console.error('Error checking existing criteria:', existingError);
+        throw new Error(`Failed to check existing criteria: ${existingError.message}`);
+    }
 
     const existingCriterionIds = new Set(existing?.map((e) => e.criterion_id) ?? []);
 
-    // Create launch_criterion_status records for new criteria only
+    // Create epic_criterion_status records for new criteria only
     const newRecords = applicableCriteria
         .filter((c) => !existingCriterionIds.has(c.id))
         .map((c) => ({
-            launch_id: launchId,
+            epic_id: epicId,
             criterion_id: c.id,
             status: 'NOT_SET',
             last_updated_at: new Date().toISOString(),
         }));
 
     if (newRecords.length > 0) {
+        console.log(`Inserting ${newRecords.length} new criteria records for epic ${epicId}`);
         const { error: insertError } = await sb
-            .from('launch_criterion_status')
+            .from('epic_criterion_status')
             .insert(newRecords);
 
-        if (insertError) throw insertError;
+        if (insertError) {
+            console.error('Error inserting criteria:', insertError);
+            throw new Error(`Failed to insert criteria: ${insertError.message}`);
+        }
+        console.log(`Successfully instantiated ${newRecords.length} criteria for epic ${epicId}`);
+    } else {
+        console.log(`No new criteria to insert for epic ${epicId} (all applicable criteria already exist)`);
     }
 }
 
-export async function updateLaunchReadiness(
-    launchId: string,
+export async function updateEpicReadiness(
+    epicId: string,
     readinessData: {
         readiness_status: string | null;
         readiness_score: number | null;
@@ -238,6 +273,7 @@ export async function updateLaunchReadiness(
         last_go_no_go_decision_date?: string | null;
     }
 ): Promise<void> {
+    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { error } = await supabase
         .from('launch')
         .update({
@@ -247,7 +283,8 @@ export async function updateLaunchReadiness(
             last_go_no_go_decision_date: readinessData.last_go_no_go_decision_date,
             updated_at: new Date().toISOString(),
         })
-        .eq('id', launchId);
+        .eq('id', epicId);
 
     if (error) throw error;
 }
+

@@ -133,7 +133,7 @@ export function mapTierToAha(dbValue: string): string {
     }
 }
 
-export interface MappedLaunchData {
+export interface MappedEpicData {
     aha_id: string;
     aha_url: string;
     name: string;
@@ -157,10 +157,10 @@ export interface MappedLaunchData {
     aha_fields?: Record<string, any>; // Dynamic AHA fields (standard and custom) from configured list
 }
 
-export async function mapEpicToLaunch(
+export async function mapEpicToEpic(
     epic: AhaEpic,
     fieldsToLoad?: string[]
-): Promise<MappedLaunchData> {
+): Promise<MappedEpicData> {
     // Standard fields from AHA epic
     const standardFields: Record<string, any> = {
         id: epic.id,

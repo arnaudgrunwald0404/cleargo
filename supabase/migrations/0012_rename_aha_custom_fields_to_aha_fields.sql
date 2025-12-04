@@ -14,3 +14,5 @@ COMMENT ON COLUMN launch.aha_fields IS 'Dynamic AHA fields (standard and custom)
 -- Recreate the index with the new column name
 CREATE INDEX IF NOT EXISTS idx_launch_aha_fields ON launch USING gin(aha_fields);
 
+
+

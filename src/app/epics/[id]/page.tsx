@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Launch } from "@/types/launches";
+import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
@@ -9,13 +9,17 @@ import { Button, Select, Avatar } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
-import LaunchFieldsSidebar from "@/components/LaunchFieldsSidebar";
+import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 
-export default function LaunchDetailPage() {
+export default function EpicDetailPage() {
     const params = useParams();
-    const id = params.id as string;
+    const id = params?.id as string | undefined;
+    
+    if (!id) {
+        return <div className="pt-24 p-8">Invalid epic ID</div>;
+    }
 
-    const [launch, setLaunch] = useState<Launch | null>(null);
+    const [epic, setEpic] = useState<Epic | null>(null);
     const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -41,29 +45,25 @@ export default function LaunchDetailPage() {
         return colors[Math.abs(hash) % colors.length];
     };
 
-    useEffect(() => {
-        if (id) loadData();
-    }, [id]);
-
     async function loadData() {
         try {
-            // Fetch launch
-            const res = await fetch(`/api/launches/${id}`);
-            if (!res.ok) throw new Error("Failed to fetch launch");
+            // Fetch epic
+            const res = await fetch(`/api/epics/${id}`);
+            if (!res.ok) throw new Error("Failed to fetch epic");
             const data = await res.json();
-            setLaunch(data);
+            setEpic(data);
 
-            // Ensure criteria are instantiated for this launch (especially ALL criteria)
+            // Ensure criteria are instantiated for this epic (especially ALL criteria)
             // This will backfill any missing criteria that should apply
             try {
-                const resp = await fetch(`/api/launches/${id}/instantiate-criteria`, {
+                const resp = await fetch(`/api/epics/${id}/instantiate-criteria`, {
                     method: 'POST',
                 });
                 if (!resp.ok) {
                     setInstantiationFailed(true);
                     notifications.show({
                         title: 'Could not populate criteria',
-                        message: 'We were unable to instantiate criteria for this launch. You can retry below.',
+                        message: 'We were unable to instantiate criteria for this epic. You can retry below.',
                         color: 'orange',
                     });
                 } else {
@@ -85,7 +85,7 @@ export default function LaunchDetailPage() {
             // Let's use Supabase client for read-only (or authenticated read)
             const supabase = createClient();
             const { data: matrixData, error: matrixError } = await supabase
-                .from('launch_criterion_status')
+                .from('epic_criterion_status')
                 .select(`
                     *,
                     criterion:criterion_id (
@@ -93,17 +93,25 @@ export default function LaunchDetailPage() {
                         decision_owner_email
                     )
                 `)
-                .eq('launch_id', id)
+                .eq('epic_id', id)
                 .order('criterion(sort_order)'); // This might fail if sort_order is not on the join? 
             // Supabase join sorting syntax is tricky. Let's sort in JS.
 
             if (matrixError) throw matrixError;
 
             // Fetch all ACTIVE criteria to display non-applicable ones as "Not required"
-            const { data: allActiveCriteria } = await supabase
-                .from('criterion')
-                .select('*')
-                .eq('is_active', true);
+            // Use API route instead of direct Supabase query to ensure proper authentication
+            let allActiveCriteria: any[] = [];
+            try {
+                const criteriaRes = await fetch('/api/criteria');
+                if (criteriaRes.ok) {
+                    const criteriaData = await criteriaRes.json();
+                    // Filter to only active criteria
+                    allActiveCriteria = (criteriaData.items || []).filter((c: any) => c.is_active === true);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch criteria:', e);
+            }
 
             // Deduplicate by criterion_id (keep the most recently updated one)
             const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
@@ -136,20 +144,20 @@ export default function LaunchDetailPage() {
             const merged: any[] = [...deduplicated];
             (allActiveCriteria || []).forEach((c: any) => {
                 if (!statusByCriterion.has(c.id)) {
-                    const notReq = c?.tier_applicability
-                        ? !applies(c.tier_applicability as any, (data.tier as any))
-                        : false;
-                    if (notReq) {
-                        merged.push({
-                            id: `virtual-${c.id}`,
-                            criterion_id: c.id,
-                            status: 'NOT_SET',
-                            current_status_notes: null,
-                            last_updated_at: null,
-                            criterion: c,
-                            notRequired: true,
-                        });
-                    }
+                    const isApplicable = c?.tier_applicability
+                        ? applies(c.tier_applicability as any, (data.tier as any))
+                        : true;
+                    const notReq = !isApplicable;
+                    // Add all criteria that don't have status rows yet (both applicable and non-applicable)
+                    merged.push({
+                        id: `virtual-${c.id}`,
+                        criterion_id: c.id,
+                        status: 'NOT_SET',
+                        current_status_notes: null,
+                        last_updated_at: null,
+                        criterion: c,
+                        notRequired: notReq,
+                    });
                 }
             });
 
@@ -212,13 +220,17 @@ export default function LaunchDetailPage() {
             const releaseName = getReleaseName();
             if (releaseName) {
                 // Fetch release date from release schedule
-                const { data: releaseSchedule } = await supabase
+                // Use maybeSingle() to avoid PGRST116 error when release doesn't exist
+                const { data: releaseSchedule, error: releaseError } = await supabase
                     .from('release_schedule')
                     .select('launch_date')
                     .eq('release_name', releaseName)
-                    .single();
+                    .maybeSingle();
                 
-                if (releaseSchedule?.launch_date) {
+                if (releaseError) {
+                    console.warn('Error fetching release schedule:', releaseError);
+                    setReleaseDate(null);
+                } else if (releaseSchedule?.launch_date) {
                     setReleaseDate(releaseSchedule.launch_date);
                 } else {
                     setReleaseDate(null);
@@ -338,17 +350,27 @@ export default function LaunchDetailPage() {
             
             // Fetch PM owner info if email is available
             if (pmEmail) {
-                const { data: pmUser } = await supabase
+                // Normalize email to lowercase for consistent lookup
+                const normalizedEmail = pmEmail.toLowerCase().trim();
+                const { data: pmUser, error: pmUserError } = await supabase
                     .from('app_user')
                     .select('first_name, last_name, email, avatar_url')
-                    .eq('email', pmEmail)
-                    .single();
+                    .eq('email', normalizedEmail)
+                    .maybeSingle();
+                
+                if (pmUserError && pmUserError.code !== 'PGRST116') {
+                    // Log non-"not found" errors but continue
+                    console.warn('Error fetching PM owner info:', pmUserError);
+                }
                 
                 if (pmUser) {
+                    const fullName = [pmUser.first_name, pmUser.last_name]
+                        .filter(Boolean)
+                        .join(' ')
+                        .trim();
+                    
                     setPmOwner({
-                        name: pmUser.first_name || pmUser.last_name 
-                            ? `${pmUser.first_name || ''} ${pmUser.last_name || ''}`.trim()
-                            : undefined,
+                        name: fullName || undefined,
                         email: pmUser.email,
                         avatar_url: pmUser.avatar_url || undefined
                     });
@@ -367,32 +389,59 @@ export default function LaunchDetailPage() {
         }
     }
 
+    useEffect(() => {
+        if (id) loadData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id]);
+
+    if (loading) {
+        return <div className="pt-24 p-8">Loading...</div>;
+    }
+    if (error) {
+        return <div className="pt-24 p-8 text-red-600">Error: {error}</div>;
+    }
+    if (!epic) {
+        return <div className="pt-24 p-8">Epic not found</div>;
+    }
+
     async function handleTierUpdate(newTier: string | null) {
-        if (!newTier || !launch || newTier === launch.tier) return;
+        console.log('handleTierUpdate called with:', newTier, 'current tier:', epic?.tier);
+        if (!newTier || !epic || newTier === epic.tier) {
+            console.log('Early return: newTier=', newTier, 'epic=', epic, 'newTier === epic.tier', epic ? newTier === epic.tier : false);
+            return;
+        }
 
         setUpdatingTier(true);
         try {
-            const res = await fetch(`/api/launches/${id}`, {
+            console.log('Sending PATCH request to update tier:', newTier);
+            const res = await fetch(`/api/epics/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tier: newTier }),
             });
 
-            if (!res.ok) throw new Error('Failed to update tier');
+            console.log('Response status:', res.status, 'ok:', res.ok);
 
-            const updatedLaunch = await res.json();
-            setLaunch(updatedLaunch);
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to update tier' }));
+                console.error('API error:', errorData);
+                throw new Error(errorData.error || `HTTP ${res.status}: Failed to update tier`);
+            }
+
+            const updatedEpic = await res.json();
+            console.log('Updated epic:', updatedEpic);
+            setEpic(updatedEpic);
 
             notifications.show({
                 title: 'Tier updated',
-                message: `Launch tier has been updated to ${newTier.replace('_', ' ')}`,
+                message: `Epic tier has been updated to ${newTier.replace('_', ' ')}`,
                 color: 'green',
             });
 
             // Reload matrix data as tier change may affect criteria
             await loadData();
         } catch (error: any) {
-            console.error(error);
+            console.error('Error updating tier:', error);
             notifications.show({
                 title: 'Error',
                 message: error.message || 'Failed to update tier',
@@ -407,10 +456,10 @@ export default function LaunchDetailPage() {
         if (!id) return;
         setInstantiating(true);
         try {
-            const resp = await fetch(`/api/launches/${id}/instantiate-criteria`, { method: 'POST' });
+            const resp = await fetch(`/api/epics/${id}/instantiate-criteria`, { method: 'POST' });
             if (!resp.ok) throw new Error('Instantiate failed');
             setInstantiationFailed(false);
-            notifications.show({ title: 'Criteria populated', message: 'Applicable criteria were added to this launch.', color: 'green' });
+            notifications.show({ title: 'Criteria populated', message: 'Applicable criteria were added to this epic.', color: 'green' });
             await loadData();
         } catch (e: any) {
             notifications.show({ title: 'Retry failed', message: e?.message || 'Could not populate criteria', color: 'red' });
@@ -420,28 +469,31 @@ export default function LaunchDetailPage() {
     }
 
     async function handleRiskLevelUpdate(newRiskLevel: string | null) {
-        if (!newRiskLevel || !launch || newRiskLevel === launch.risk_level) return;
+        if (!newRiskLevel || !epic || newRiskLevel === epic.risk_level) return;
 
         setUpdatingRiskLevel(true);
         try {
-            const res = await fetch(`/api/launches/${id}`, {
+            const res = await fetch(`/api/epics/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ risk_level: newRiskLevel }),
             });
 
-            if (!res.ok) throw new Error('Failed to update risk level');
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to update risk level' }));
+                throw new Error(errorData.error || `HTTP ${res.status}: Failed to update risk level`);
+            }
 
-            const updatedLaunch = await res.json();
-            setLaunch(updatedLaunch);
+            const updatedEpic = await res.json();
+            setEpic(updatedEpic);
 
             notifications.show({
                 title: 'Risk level updated',
-                message: `Launch risk level has been updated to ${newRiskLevel}`,
+                message: `Epic risk level has been updated to ${newRiskLevel}`,
                 color: 'green',
             });
         } catch (error: any) {
-            console.error(error);
+            console.error('Error updating risk level:', error);
             notifications.show({
                 title: 'Error',
                 message: error.message || 'Failed to update risk level',
@@ -452,27 +504,23 @@ export default function LaunchDetailPage() {
         }
     }
 
-    if (loading) return <div className="pt-24 p-8">Loading...</div>;
-    if (error) return <div className="pt-24 p-8 text-red-600">Error: {error}</div>;
-    if (!launch) return <div className="pt-24 p-8">Launch not found</div>;
-
     return (
         <div className="flex">
             <div className="flex-1 pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6">
-                    <Link href="/launches" className="text-blue-600 hover:text-blue-800 hover:underline">← Back to Launches</Link>
+                    <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline">← Back to Epics</Link>
                 </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
                 <div className="flex justify-between items-start mb-6">
                     <div className="flex-1">
-                        <h1 className="text-3xl font-bold text-gray-900 mb-4">{launch.name}</h1>
+                        <h1 className="text-3xl font-bold text-gray-900 mb-4">{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
                             <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
-                                {(launch as any).product?.name || 'No Product'}
+                                {(epic as any).product?.name || 'No Product'}
                             </span>
                             <Select
-                                value={launch.tier}
+                                value={epic.tier}
                                 onChange={handleTierUpdate}
                                 data={[
                                     { value: 'TIER_1', label: 'Tier 1 (Major)' },
@@ -484,14 +532,14 @@ export default function LaunchDetailPage() {
                                 style={{ width: 150 }}
                             />
                             <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
-                                {launch.status}
+                                {epic.status}
                             </span>
                         </div>
                     </div>
                     <div className="text-right ml-6 flex-shrink-0">
                         <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Date</div>
                         <div className="text-lg font-semibold text-gray-900 mb-4">
-                            {releaseDate ? new Date(releaseDate).toLocaleDateString() : (launch.target_launch_date ? new Date(launch.target_launch_date).toLocaleDateString() : 'Not set')}
+                            {releaseDate ? new Date(releaseDate).toLocaleDateString() : (epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set')}
                         </div>
                         <Button 
                             size="xs" 
@@ -508,12 +556,12 @@ export default function LaunchDetailPage() {
                     <div className="grid grid-cols-4 gap-6">
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
-                            <div className="text-2xl font-bold text-gray-900">{matrix.length === 0 ? 'N/A' : (typeof launch.readiness_score === 'number' ? `${Math.round(launch.readiness_score * 100)}%` : 'N/A')}</div>
+                            <div className="text-2xl font-bold text-gray-900">{matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Risk Level</div>
                             <Select
-                                value={launch.risk_level || 'LOW'}
+                                value={epic.risk_level || 'LOW'}
                                 onChange={handleRiskLevelUpdate}
                                 data={[
                                     { value: 'LOW', label: 'Low' },
@@ -530,14 +578,14 @@ export default function LaunchDetailPage() {
                                         padding: '0.25rem 0.5rem',
                                         height: 'auto',
                                         minHeight: 'auto',
-                                        color: launch.risk_level === 'HIGH' ? '#dc2626' : launch.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
+                                        color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
                                     }
                                 }}
                             />
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (launch.readiness_status || 'Not set')}</div>
+                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'Not set')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Owner</div>
@@ -578,23 +626,25 @@ export default function LaunchDetailPage() {
                         )}
                     </div>
                 ) : (
-                    <Matrix launchId={launch.id} items={matrix} onUpdate={loadData} />
+                    <>
+                        <Matrix epicId={epic.id} items={matrix} onUpdate={loadData} />
+                    </>
                 )}
             </div>
 
             <div className="mb-8">
                 <h2 className="text-xl font-semibold text-gray-900 mb-4">Decision History</h2>
-                <SnapshotList launchId={launch.id} refreshTrigger={refreshSnapshots} />
+                <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
             </div>
 
             <SnapshotModal
-                launchId={launch.id}
+                epicId={epic.id}
                 opened={snapshotModalOpen}
                 onClose={() => setSnapshotModalOpen(false)}
                 onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
             />
             </div>
-            <LaunchFieldsSidebar launch={launch} />
+            <EpicFieldsSidebar epic={epic} />
         </div>
     );
 }

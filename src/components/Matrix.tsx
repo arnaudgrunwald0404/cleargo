@@ -52,12 +52,12 @@ const getAvatarColor = (email: string) => {
 };
 
 type Props = {
-    launchId: string;
+    epicId: string;
     items: MatrixItem[];
     onUpdate: () => void;
 };
 
-export default function Matrix({ launchId, items, onUpdate }: Props) {
+export default function Matrix({ epicId, items, onUpdate }: Props) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
@@ -132,8 +132,8 @@ export default function Matrix({ launchId, items, onUpdate }: Props) {
         setSavingItems(prev => new Set(prev).add(id));
         
         try {
-            console.log('Updating status:', { launchId, id, newStatus });
-            const res = await fetch(`/api/launches/${launchId}/criteria/${id}`, {
+            console.log('Updating status:', { epicId, id, newStatus });
+            const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status: newStatus })

@@ -25,3 +25,5 @@ COMMENT ON COLUMN app_user.roles IS 'Array of user roles';
 COMMENT ON COLUMN app_user.last_logged_in IS 'Last login timestamp from auth.users';
 
 
+
+

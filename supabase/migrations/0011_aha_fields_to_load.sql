@@ -17,3 +17,5 @@ COMMENT ON COLUMN launch.aha_custom_fields IS 'Dynamic AHA custom fields stored 
 -- Create index on aha_custom_fields for efficient queries
 CREATE INDEX IF NOT EXISTS idx_launch_aha_custom_fields ON launch USING gin(aha_custom_fields);
 
+
+

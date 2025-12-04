@@ -110,12 +110,12 @@ useEffect(() => {
     const fetchLaunchReleaseDates = async () => {
         setLaunchReleasesLoading(true);
         try {
-            const res = await fetch("/api/launches/release-dates");
-            if (!res.ok) throw new Error("Failed to fetch launch releases");
+            const res = await fetch("/api/epics/release-dates");
+            if (!res.ok) throw new Error("Failed to fetch epic releases");
             const data = await res.json();
             setLaunchReleases(data.releases || []);
         } catch (error: any) {
-            console.error("Failed to fetch launch releases:", error);
+            console.error("Failed to fetch epic releases:", error);
         } finally {
             setLaunchReleasesLoading(false);
         }

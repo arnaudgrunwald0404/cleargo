@@ -21,6 +21,7 @@ export interface AppSettings {
     email_template_remind_html?: string | null;
     email_template_update_criteria_subject?: string | null;
     email_template_update_criteria_html?: string | null;
+    check_in_keywords?: string[]; // Keywords to identify check-in meetings
     updated_at: string;
     // Capability-based permissions: capability id -> array of roles allowed
     permissions?: Record<string, string[]>;

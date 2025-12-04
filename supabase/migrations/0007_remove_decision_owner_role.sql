@@ -5,3 +5,5 @@ ALTER TABLE criterion
   DROP COLUMN IF EXISTS decision_owner_role;
 
 
+
+

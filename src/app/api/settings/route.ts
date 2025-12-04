@@ -34,11 +34,20 @@ export async function PATCH(req: NextRequest) {
         }
 
         // Capability: settings.update
-        const { data: me } = await supabase
+        const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
             .eq('email', user.email)
             .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+            throw userError;
+        }
+        
         const { canRolesPerform } = await import('@/lib/permissions');
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.update');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

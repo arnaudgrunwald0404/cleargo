@@ -291,7 +291,7 @@ export function buildLeadershipDigestMessage(data: {
         name: string;
         id: string;
         tier: string;
-        target_date: string;
+        target_release_date: string;
     }>;
     total_active: number;
 }): { text: string; blocks: SlackBlock[] } {
@@ -365,7 +365,7 @@ export function buildLeadershipDigestMessage(data: {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_date}`,
+                    text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_release_date}`,
                 },
             });
         });
@@ -473,7 +473,7 @@ export function buildLaunchUnfurl(data: {
     readiness_status: string;
     readiness_score: number;
     risk_level: string;
-    target_date: string;
+    target_release_date: string;
     gate_summary: string;
 }): SlackBlock[] {
     const riskEmoji = data.risk_level === 'High' ? '🔴' : data.risk_level === 'Medium' ? '🟡' : '🟢';
@@ -483,7 +483,7 @@ export function buildLaunchUnfurl(data: {
             type: 'section',
             text: {
                 type: 'mrkdwn',
-                text: `*${data.launch_name}*\n${data.tier} • Target: ${data.target_date}`,
+                text: `*${data.launch_name}*\n${data.tier} • Target: ${data.target_release_date}`,
             },
         },
         {

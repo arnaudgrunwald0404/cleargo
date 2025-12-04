@@ -11,14 +11,14 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
-            // Fetch all synchronized launches (those with aha_id) and their AHA fields
+            // Fetch all synchronized epics (those with aha_id) and their AHA fields
             const { data, error } = await supabase
-                .from("launch")
+                .from("epic")
                 .select("aha_fields, target_launch_date")
                 .not("aha_id", "is", null);
 
         if (error) {
-            console.error("Error fetching launches:", error);
+            console.error("Error fetching epics:", error);
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
@@ -28,11 +28,11 @@ export async function GET() {
         const releaseNames = new Set<string>();
         const releaseDateMap = new Map<string, string>(); // Map release name to launch date
 
-        console.log(`Processing ${data?.length || 0} synchronized launches for release names`);
+        console.log(`Processing ${data?.length || 0} synchronized epics for release names`);
 
-        (data || []).forEach((launch) => {
-            if (launch.aha_fields && typeof launch.aha_fields === 'object') {
-                const fields = launch.aha_fields as any;
+        (data || []).forEach((epic) => {
+            if (epic.aha_fields && typeof epic.aha_fields === 'object') {
+                const fields = epic.aha_fields as any;
                 
                 // Check standard fields (new structure)
                 if (fields.standard_fields && typeof fields.standard_fields === 'object') {
@@ -43,8 +43,8 @@ export async function GET() {
                                                 standardFields?.release?.name || null;
                     if (standardReleaseName && typeof standardReleaseName === 'string' && standardReleaseName.trim()) {
                         releaseNames.add(standardReleaseName.trim());
-                        if (!releaseDateMap.has(standardReleaseName.trim()) && launch.target_launch_date) {
-                            releaseDateMap.set(standardReleaseName.trim(), launch.target_launch_date);
+                        if (!releaseDateMap.has(standardReleaseName.trim()) && epic.target_launch_date) {
+                            releaseDateMap.set(standardReleaseName.trim(), epic.target_launch_date);
                         }
                     }
                 }
@@ -57,8 +57,8 @@ export async function GET() {
                     const customReleaseName = customFields?.release_target_after_pod_planning;
                     if (customReleaseName && typeof customReleaseName === 'string' && customReleaseName.trim()) {
                         releaseNames.add(customReleaseName.trim());
-                        if (!releaseDateMap.has(customReleaseName.trim()) && launch.target_launch_date) {
-                            releaseDateMap.set(customReleaseName.trim(), launch.target_launch_date);
+                        if (!releaseDateMap.has(customReleaseName.trim()) && epic.target_launch_date) {
+                            releaseDateMap.set(customReleaseName.trim(), epic.target_launch_date);
                         }
                     }
                 }
@@ -69,8 +69,8 @@ export async function GET() {
                     const standardReleaseName = fields?.aha_release_name;
                     if (standardReleaseName && typeof standardReleaseName === 'string' && standardReleaseName.trim()) {
                         releaseNames.add(standardReleaseName.trim());
-                        if (!releaseDateMap.has(standardReleaseName.trim()) && launch.target_launch_date) {
-                            releaseDateMap.set(standardReleaseName.trim(), launch.target_launch_date);
+                        if (!releaseDateMap.has(standardReleaseName.trim()) && epic.target_launch_date) {
+                            releaseDateMap.set(standardReleaseName.trim(), epic.target_launch_date);
                         }
                     }
                     
@@ -78,8 +78,8 @@ export async function GET() {
                     const customReleaseName = fields?.release_target_after_pod_planning;
                     if (customReleaseName && typeof customReleaseName === 'string' && customReleaseName.trim()) {
                         releaseNames.add(customReleaseName.trim());
-                        if (!releaseDateMap.has(customReleaseName.trim()) && launch.target_launch_date) {
-                            releaseDateMap.set(customReleaseName.trim(), launch.target_launch_date);
+                        if (!releaseDateMap.has(customReleaseName.trim()) && epic.target_launch_date) {
+                            releaseDateMap.set(customReleaseName.trim(), epic.target_launch_date);
                         }
                     }
                 }
@@ -98,7 +98,7 @@ export async function GET() {
 
         return NextResponse.json({ releases: releaseData });
     } catch (error: any) {
-        console.error("Error in GET /api/launches/release-dates:", error);
+        console.error("Error in GET /api/epics/release-dates:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }

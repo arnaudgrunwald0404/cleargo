@@ -15,11 +15,20 @@ export async function PATCH(
         }
         
         // Capability: releases.manage
-        const { data: me } = await supabase
+        const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
             .eq('email', user.email)
             .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+            throw userError;
+        }
+        
         const { canRolesPerform } = await import('@/lib/permissions');
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -56,8 +65,16 @@ export async function PATCH(
             .single();
 
         if (error) {
+            // Handle case where release doesn't exist (PGRST116)
+            if (error.code === 'PGRST116') {
+                return NextResponse.json({ error: 'Release not found' }, { status: 404 });
+            }
             console.error("Error updating release:", error);
             return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        if (!data) {
+            return NextResponse.json({ error: 'Release not found' }, { status: 404 });
         }
 
         return NextResponse.json(data);
@@ -81,11 +98,20 @@ export async function DELETE(
         }
 
         // Capability: releases.manage
-        const { data: me } = await supabase
+        const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
             .eq('email', user.email)
             .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+            throw userError;
+        }
+        
         const { canRolesPerform } = await import('@/lib/permissions');
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

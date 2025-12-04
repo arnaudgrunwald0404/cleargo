@@ -90,7 +90,7 @@ export default function AuditLogViewer() {
                         data={[
                             { value: 'launch', label: 'Launch' },
                             { value: 'criterion', label: 'Criterion' },
-                            { value: 'launch_criterion_status', label: 'Criterion Status' },
+                            { value: 'epic_criterion_status', label: 'Criterion Status' },
                             { value: 'product', label: 'Product' },
                         ]}
                         value={entityTypeFilter}

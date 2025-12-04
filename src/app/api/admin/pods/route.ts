@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
     const supabase = createClient();
-    // Fetch distinct pod values from launch table
+    // Fetch distinct pod values from epic table
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select('pod')
         .neq('pod', null)
         .order('pod', { ascending: true });

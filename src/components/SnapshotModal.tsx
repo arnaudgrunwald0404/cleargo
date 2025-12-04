@@ -3,13 +3,13 @@ import { Button, Modal, Select, Textarea, Group } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 
 interface SnapshotModalProps {
-    launchId: string;
+    epicId: string;
     opened: boolean;
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export default function SnapshotModal({ launchId, opened, onClose, onSuccess }: SnapshotModalProps) {
+export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: SnapshotModalProps) {
     const [decisionType, setDecisionType] = useState<string | null>('GO_NO_GO_MEETING');
     const [verdict, setVerdict] = useState<string | null>('GO');
     const [notes, setNotes] = useState('');
@@ -20,7 +20,7 @@ export default function SnapshotModal({ launchId, opened, onClose, onSuccess }: 
 
         setSubmitting(true);
         try {
-            const res = await fetch(`/api/launches/${launchId}/snapshots`, {
+            const res = await fetch(`/api/epics/${epicId}/snapshots`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

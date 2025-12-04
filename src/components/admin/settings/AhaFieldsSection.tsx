@@ -118,7 +118,7 @@ export default function AhaFieldsSection({
           <div className="space-y-6">
             <p className="text-sm text-gray-600">
               Select the fields that should be loaded from AHA and stored with each launch.
-              Standard fields (like ID, Name, Release) are always available and cannot be deselected. Custom fields can be added or removed without schema changes.
+              Standard fields (like ID, Name, Release) are always available from AHA. Custom fields can be added or removed without schema changes.
             </p>
 
             {/* Selected fields (draggable) */}
@@ -218,6 +218,65 @@ export default function AhaFieldsSection({
                   </table>
                 ) : (
                   <div className="text-sm text-gray-400 italic text-center py-4">No fields selected. Select fields from the list below.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Unselected Standard Fields */}
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900 mb-3">
+                Available Standard Fields ({availableAhaFields.filter((f) => f.type === "standard" && !settings.aha_fields_to_load?.includes(f.alias)).length})
+              </h3>
+              <div className="border-2 border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+                {availableAhaFields.filter((f) => f.type === "standard" && !settings.aha_fields_to_load?.includes(f.alias)).length > 0 ? (
+                  <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                    <colgroup>
+                      <col className="w-16" />
+                      <col className="w-auto" />
+                      <col className="w-auto" />
+                      <col className="w-24" />
+                    </colgroup>
+                    <thead className="bg-gray-100">
+                      <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 w-16"></th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Label</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-700">Alias</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 w-24">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {availableAhaFields
+                        .filter((field) => field.type === "standard" && !settings.aha_fields_to_load?.includes(field.alias))
+                        .map((field) => (
+                          <tr key={field.alias} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={false}
+                                onChange={() => {
+                                  const currentFields = settings.aha_fields_to_load || [];
+                                  const newFields = [...currentFields, field.alias];
+                                  setSettings({ ...settings, aha_fields_to_load: newFields });
+                                  onAutoSaveFields(newFields);
+                                }}
+                                className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500 cursor-pointer"
+                              />
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="font-medium text-gray-900">{field.label}</span>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <code className="bg-gray-100 px-2 py-1 rounded text-xs text-gray-700">{field.alias}</code>
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap w-24">
+                              <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">Standard</span>
+                            </td>
+                          </tr>
+                        ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-sm text-gray-400 italic text-center py-4">All standard fields are selected.</div>
                 )}
               </div>
             </div>

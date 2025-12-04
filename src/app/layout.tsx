@@ -8,6 +8,7 @@ import { Notifications } from '@mantine/notifications';
 import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
+import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
 
 const geistSans = Inter({
@@ -35,21 +36,36 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  const email = user?.email;
+  let email: string | null = null;
+  let avatarUrl: string | null = null;
+  let role: Role | null = null;
 
-  let avatarUrl = null;
-  if (email) {
-    const { data: profile } = await supabase
-      .from('app_user')
-      .select('avatar_url')
-      .eq('email', email)
-      .single();
-    avatarUrl = profile?.avatar_url;
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    email = user?.email || null;
+
+    if (email) {
+      try {
+        const { data: profile } = await supabase
+          .from('app_user')
+          .select('avatar_url')
+          .eq('email', email)
+          .single();
+        avatarUrl = profile?.avatar_url || null;
+      } catch {
+        // Continue without avatar URL
+      }
+
+      try {
+        role = await resolveRole(email);
+      } catch {
+        // Continue without role
+      }
+    }
+  } catch {
+    // Continue rendering without user data
   }
-
-  const role = email ? await resolveRole(email) : null;
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

@@ -41,3 +41,5 @@ END $$;
 -- Update the comment
 COMMENT ON COLUMN launch.aha_fields IS 'Dynamic AHA fields (standard and custom) stored as JSONB. Format: {"standard_fields": {...}, "custom_fields": {...}}. Allows adding/removing fields without schema changes.';
 
+
+

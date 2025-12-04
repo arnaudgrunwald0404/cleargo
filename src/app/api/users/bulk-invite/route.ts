@@ -28,21 +28,36 @@ export async function POST(req: NextRequest) {
     if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
     // Capability check: users.invite.send
-    const { data: me } = await supabase
+    const { data: me, error: userError } = await supabase
       .from("app_user")
       .select("roles")
       .eq("email", user.email)
       .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
     const { canRolesPerform } = await import("@/lib/permissions");
     const ok = await canRolesPerform((me?.roles as string[]) || [], "users.invite.send");
     if (!ok) return forbid();
 
     // Get sending user's profile to construct sender name
-    const { data: sendingUser } = await supabase
+    const { data: sendingUser, error: sendingUserError } = await supabase
       .from("app_user")
       .select("first_name, last_name")
       .eq("email", user.email)
       .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (sendingUserError && sendingUserError.code === 'PGRST116') {
+      // Use default sender name if user profile not found
+      console.warn('Sending user profile not found, using default sender name');
+    }
 
     // Construct sender name: "First via ClearGO <email@domain.com>"
     const senderName = sendingUser?.first_name

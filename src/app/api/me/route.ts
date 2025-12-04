@@ -49,6 +49,10 @@ export async function PATCH(req: NextRequest) {
         .single();
 
     if (error) {
+        // Handle case where user profile doesn't exist yet
+        if (error.code === 'PGRST116') {
+            return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+        }
         console.error("Error updating profile:", error);
         return NextResponse.json({ error: "Failed to update profile", details: error.message }, { status: 500 });
     }
@@ -71,7 +75,11 @@ export async function GET(req: NextRequest) {
         .single();
 
     if (error) {
-        return NextResponse.json({ error: "Failed to fetch profile" }, { status: 500 });
+        // Handle case where user profile doesn't exist yet
+        if (error.code === 'PGRST116') {
+            return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+        }
+        return NextResponse.json({ error: "Failed to fetch profile", details: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ user: profile });

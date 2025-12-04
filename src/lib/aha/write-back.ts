@@ -1,14 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { updateEpicCustomFields } from './client';
 import { buildWriteBackPayload } from './mapping';
-import type { LaunchReadinessData } from './types';
+import type { EpicReadinessData } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-interface LaunchWithReadiness {
+interface EpicWithReadiness {
     id: string;
     aha_id: string | null;
     readiness_status: string | null;
@@ -34,10 +34,10 @@ interface LastSyncedValues {
 const lastSyncCache = new Map<string, LastSyncedValues>();
 
 function hasChanges(
-    launchId: string,
+    epicId: string,
     current: LastSyncedValues
 ): boolean {
-    const last = lastSyncCache.get(launchId);
+    const last = lastSyncCache.get(epicId);
 
     if (!last) return true; // First sync
 
@@ -52,63 +52,64 @@ function hasChanges(
     );
 }
 
-function updateSyncCache(launchId: string, data: LastSyncedValues): void {
-    lastSyncCache.set(launchId, { ...data });
+function updateSyncCache(epicId: string, data: LastSyncedValues): void {
+    lastSyncCache.set(epicId, { ...data });
 }
 
-export async function writeBackLaunchReadiness(launchId: string): Promise<void> {
-    // Fetch launch with all write-back fields
-    const { data: launch, error } = await supabase
+export async function writeBackEpicReadiness(epicId: string): Promise<void> {
+    // Fetch epic with all write-back fields
+    // TODO: After migration 0018 is applied, change back to 'epic' table
+    const { data: epic, error } = await supabase
         .from('launch')
         .select('id, aha_id, readiness_status, readiness_score, risk_level, last_go_no_go_decision_date, console_url, tier, target_launch_date')
-        .eq('id', launchId)
+        .eq('id', epicId)
         .single();
 
     if (error) {
-        throw new Error(`Failed to fetch launch: ${error.message}`);
+        throw new Error(`Failed to fetch epic: ${error.message}`);
     }
 
-    if (!launch.aha_id) {
-        console.warn(`Launch ${launchId} has no aha_id, skipping write-back`);
+    if (!epic.aha_id) {
+        console.warn(`Epic ${epicId} has no aha_id, skipping write-back`);
         return;
     }
 
-    const launchData: LastSyncedValues = {
-        readiness_status: launch.readiness_status,
-        readiness_score: launch.readiness_score,
-        risk_level: launch.risk_level,
-        last_go_no_go_decision_date: launch.last_go_no_go_decision_date,
-        console_url: launch.console_url,
-        tier: launch.tier,
-        target_launch_date: launch.target_launch_date,
+    const epicData: LastSyncedValues = {
+        readiness_status: epic.readiness_status,
+        readiness_score: epic.readiness_score,
+        risk_level: epic.risk_level,
+        last_go_no_go_decision_date: epic.last_go_no_go_decision_date,
+        console_url: epic.console_url,
+        tier: epic.tier,
+        target_launch_date: epic.target_launch_date,
     };
 
     // Check if values have changed since last sync (idempotency)
-    if (!hasChanges(launchId, launchData)) {
-        console.log(`No changes detected for launch ${launchId}, skipping write-back`);
+    if (!hasChanges(epicId, epicData)) {
+        console.log(`No changes detected for epic ${epicId}, skipping write-back`);
         return;
     }
 
     // Build custom fields payload
-    const customFields = buildWriteBackPayload(launchData);
+    const customFields = buildWriteBackPayload(epicData);
 
     if (Object.keys(customFields).length === 0) {
-        console.log(`No fields to write back for launch ${launchId}`);
+        console.log(`No fields to write back for epic ${epicId}`);
         return;
     }
 
     try {
         // Write back to Aha
-        await updateEpicCustomFields(launch.aha_id, customFields);
+        await updateEpicCustomFields(epic.aha_id, customFields);
 
         // Update cache
-        updateSyncCache(launchId, launchData);
+        updateSyncCache(epicId, epicData);
 
         // Log success
-        console.log(`Successfully wrote back ${Object.keys(customFields).length} fields for launch ${launchId} (aha_id: ${launch.aha_id})`);
+        console.log(`Successfully wrote back ${Object.keys(customFields).length} fields for epic ${epicId} (aha_id: ${epic.aha_id})`);
 
     } catch (error) {
-        console.error(`Failed to write back to Aha for launch ${launchId}:`, error);
+        console.error(`Failed to write back to Aha for epic ${epicId}:`, error);
         throw error;
     }
 }

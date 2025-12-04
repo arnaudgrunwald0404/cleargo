@@ -2,14 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEpic } from '@/lib/aha/client';
 import type { AhaWebhookPayload } from '@/lib/aha/types';
 import { verifyWebhookSignature } from '@/lib/aha/webhook-validator';
-import { mapEpicToLaunch, shouldProcessEpic } from '@/lib/aha/mapping';
+import { mapEpicToEpic, shouldProcessEpic } from '@/lib/aha/mapping';
 import {
-    upsertLaunchFromAha,
+    upsertEpicFromAha,
     getUserByEmail,
     getFallbackProductOpsUser,
-    instantiateCriteriaForLaunch,
-    getLaunchByAhaId,
-} from '@/lib/db/launches';
+    instantiateCriteriaForEpic,
+    getEpicByAhaId,
+} from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
 export async function POST(req: NextRequest) {
@@ -93,26 +93,26 @@ export async function POST(req: NextRequest) {
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];
 
-        // Map Aha epic to launch data with configured fields
-        const launchData = await mapEpicToLaunch(epic, fieldsToLoad);
+        // Map Aha epic to epic data with configured fields
+        const epicData = await mapEpicToEpic(epic, fieldsToLoad);
         
         // Log pod field and AHA fields to verify they're being loaded
         console.log('📦 Fields loaded:', {
-            pod: launchData.pod,
-            has_aha_fields: !!launchData.aha_fields,
-            aha_fields: launchData.aha_fields,
+            pod: epicData.pod,
+            has_aha_fields: !!epicData.aha_fields,
+            aha_fields: epicData.aha_fields,
             fields_to_load: fieldsToLoad
         });
 
         // Resolve owner
         let ownerId: string | null = null;
-        if (launchData.owner_email) {
-            const user = await getUserByEmail(launchData.owner_email);
+        if (epicData.owner_email) {
+            const user = await getUserByEmail(epicData.owner_email);
             if (user) {
                 ownerId = user.id;
             } else {
                 // Fallback to Product Ops user
-                console.warn(`Owner not found: ${launchData.owner_email}, using fallback`);
+                console.warn(`Owner not found: ${epicData.owner_email}, using fallback`);
                 ownerId = await getFallbackProductOpsUser();
             }
         } else {
@@ -120,29 +120,29 @@ export async function POST(req: NextRequest) {
             ownerId = await getFallbackProductOpsUser();
         }
 
-        // Check if this is a new launch
-        const existingLaunch = await getLaunchByAhaId(launchData.aha_id);
-        const isNewLaunch = !existingLaunch;
+        // Check if this is a new epic
+        const existingEpic = await getEpicByAhaId(epicData.aha_id);
+        const isNewEpic = !existingEpic;
 
-        // Upsert launch
-        const launch = await upsertLaunchFromAha(launchData, ownerId);
-        console.log(`${isNewLaunch ? '🆕' : '🔄'} Launch ${isNewLaunch ? 'created' : 'updated'}:`, {
-            launch_id: launch.id,
-            aha_id: launch.aha_id,
-            name: launch.name,
-            tier: launch.tier
+        // Upsert epic
+        const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+        console.log(`${isNewEpic ? '🆕' : '🔄'} Epic ${isNewEpic ? 'created' : 'updated'}:`, {
+            epic_id: savedEpic.id,
+            aha_id: savedEpic.aha_id,
+            name: savedEpic.name,
+            tier: savedEpic.tier
         });
 
-        // For new launches, instantiate criteria
-        if (isNewLaunch) {
-            await instantiateCriteriaForLaunch(launch.id, launch.tier);
-            console.log('✅ Criteria instantiated for new launch');
+        // For new epics, instantiate criteria
+        if (isNewEpic) {
+            await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+            console.log('✅ Criteria instantiated for new epic');
         }
 
         return NextResponse.json({
-            message: isNewLaunch ? 'Launch created' : 'Launch updated',
-            launch_id: launch.id,
-            aha_id: launch.aha_id,
+            message: isNewEpic ? 'Epic created' : 'Epic updated',
+            epic_id: savedEpic.id,
+            aha_id: savedEpic.aha_id,
         }, { status: 200 });
 
     } catch (error) {
