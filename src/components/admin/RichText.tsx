@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { IconBold, IconItalic, IconList, IconListNumbers } from "@tabler/icons-react";
+import { IconBold, IconItalic, IconList, IconListNumbers, IconLink } from "@tabler/icons-react";
 
 interface RichTextProps {
     value: string;
@@ -106,6 +106,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
         
         // Execute the command
         let command = "";
+        let promptForInput = false;
         switch (format) {
             case "bold":
                 command = "bold";
@@ -119,9 +120,21 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
             case "orderedList":
                 command = "insertOrderedList";
                 break;
+            case "createLink":
+                promptForInput = true;
+                break;
         }
         
-        if (command) {
+        if (promptForInput && format === "createLink") {
+            const url = prompt("Enter URL:");
+            if (url) {
+                const success = document.execCommand("createLink", false, url);
+                if (success) {
+                    handleInput();
+                }
+            }
+            setTimeout(() => editor.focus(), 0);
+        } else if (command) {
             const success = document.execCommand(command, false);
             if (success) {
                 handleInput();
@@ -134,7 +147,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
     if (readOnly) {
         return (
             <div
-                className="text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2"
+                className="text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
                 dangerouslySetInnerHTML={{ __html: value || "" }}
                 style={{
                     whiteSpace: "pre-wrap",
@@ -196,6 +209,19 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
                     title="Numbered List"
                 >
                     <IconListNumbers className="w-4 h-4 text-gray-700" />
+                </button>
+                <div className="w-px h-4 bg-gray-300 mx-1" />
+                <button
+                    type="button"
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        saveSelection();
+                    }}
+                    onClick={(e) => formatText(e, "createLink")}
+                    className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                    title="Insert Link"
+                >
+                    <IconLink className="w-4 h-4 text-gray-700" />
                 </button>
             </div>
 

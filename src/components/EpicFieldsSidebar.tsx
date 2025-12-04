@@ -1,6 +1,7 @@
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { IconPencil } from "@tabler/icons-react";
+import { UserDisplay } from "./UserDisplay";
 
 type EpicFieldsSidebarProps = {
     epic: any;
@@ -60,9 +61,33 @@ const FIELD_ORDER = [
 ];
 
 export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
+    const [assignedUserInfo, setAssignedUserInfo] = useState<{
+        first_name?: string | null;
+        last_name?: string | null;
+        avatar_url?: string | null;
+    } | null>(null);
+    
     const ahaFields = epic?.aha_fields || {};
     const standardFields = ahaFields.standard_fields || {};
     const customFields = ahaFields.custom_fields || {};
+    
+    // Fetch user info for assigned_to_user if email is available using API endpoint
+    // This works even without authentication, allowing email-to-name translation
+    useEffect(() => {
+        const assignedToUser = standardFields.assigned_to_user;
+        if (assignedToUser?.email) {
+            fetch(`/api/users/by-email?emails=${encodeURIComponent(assignedToUser.email)}`)
+                .then(res => res.ok ? res.json() : null)
+                .then(userMap => {
+                    if (userMap && userMap[assignedToUser.email.toLowerCase()]) {
+                        setAssignedUserInfo(userMap[assignedToUser.email.toLowerCase()]);
+                    }
+                })
+                .catch(() => {
+                    // User not found or API error, that's okay
+                });
+        }
+    }, [standardFields.assigned_to_user]);
     
     // Extract writable fields from epic object (excluding hidden fields)
     const writableFields: Record<string, any> = {};
@@ -173,8 +198,17 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
                 return value.join(', ');
             }
             // Handle nested objects (e.g., assigned_to_user, release)
-            if (fieldKey === 'assigned_to_user' && value.name) {
-                return value.name || value.email || '-';
+            if (fieldKey === 'assigned_to_user' && value.email) {
+                return (
+                    <UserDisplay
+                        email={value.email}
+                        firstName={assignedUserInfo?.first_name}
+                        lastName={assignedUserInfo?.last_name}
+                        avatarUrl={assignedUserInfo?.avatar_url}
+                        name={value.name}
+                        size="sm"
+                    />
+                );
             }
             if (fieldKey === 'release' && value.name) {
                 return value.name;

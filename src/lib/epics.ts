@@ -97,7 +97,7 @@ export async function getEpics() {
         .select(`
       *,
       product:product_id (name),
-      owner:app_user!owner_id (name, email),
+      owner:app_user!owner_id (name, email, first_name, last_name, avatar_url),
       aha_fields
     `)
         .order('created_at', { ascending: false });
@@ -119,7 +119,7 @@ export async function getEpic(id: string) {
         .select(`
       *,
       product:product_id (name),
-      owner:app_user!owner_id (name, email),
+      owner:app_user!owner_id (name, email, first_name, last_name, avatar_url),
       aha_fields
     `)
         .eq('id', id)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Table, Badge, Text, Group, Paper } from '@mantine/core';
+import { UserDisplay } from './UserDisplay';
 
 interface Snapshot {
     id: string;
@@ -10,6 +11,9 @@ interface Snapshot {
     creator: {
         name: string;
         email: string;
+        first_name?: string | null;
+        last_name?: string | null;
+        avatar_url?: string | null;
     };
     snapshot_data: any;
 }
@@ -74,7 +78,14 @@ export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListPro
                                 </Badge>
                             </Table.Td>
                             <Table.Td>
-                                <Text size="sm">{snap.creator?.name || snap.creator?.email || 'Unknown'}</Text>
+                                <UserDisplay
+                                    email={snap.creator?.email}
+                                    firstName={snap.creator?.first_name}
+                                    lastName={snap.creator?.last_name}
+                                    avatarUrl={snap.creator?.avatar_url}
+                                    name={snap.creator?.name}
+                                    size="sm"
+                                />
                             </Table.Td>
                             <Table.Td>
                                 <Text size="sm" lineClamp={2} title={snap.notes}>{snap.notes || '-'}</Text>

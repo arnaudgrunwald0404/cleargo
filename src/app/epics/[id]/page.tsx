@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
@@ -29,8 +29,10 @@ export default function EpicDetailPage() {
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
+    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
+    const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -90,7 +92,8 @@ export default function EpicDetailPage() {
                     *,
                     criterion:criterion_id (
                         *,
-                        decision_owner_email
+                        decision_owner_email,
+                        rating_timing
                     )
                 `)
                 .eq('epic_id', id)
@@ -239,6 +242,20 @@ export default function EpicDetailPage() {
                 setReleaseDate(null);
             }
             
+            // Fetch launch stages to calculate Go/NoGo date
+            try {
+                const { data: stagesData, error: stagesError } = await supabase
+                    .from('launch_stages')
+                    .select('id, name, sort_order, duration_days')
+                    .order('sort_order', { ascending: true });
+                
+                if (!stagesError && stagesData) {
+                    setLaunchStages(stagesData);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch launch stages:', e);
+            }
+            
             // Debug logging
             if (pod) {
                 console.log('Pod value:', pod);
@@ -268,26 +285,52 @@ export default function EpicDetailPage() {
                 }
             });
             
-            // Fetch user info for all approver emails
+            // Fetch user info for all approver emails using API endpoint
+            // This works even without authentication, allowing email-to-name translation
             const userInfoMap: Record<string, { first_name?: string; last_name?: string; avatar_url?: string }> = {};
             if (approverEmails.size > 0) {
-                const { data: users } = await supabase
-                    .from('app_user')
-                    .select('email, first_name, last_name, avatar_url')
-                    .in('email', Array.from(approverEmails));
-                
-                if (users) {
-                    users.forEach(user => {
-                        if (user.email) {
-                            userInfoMap[user.email] = {
-                                first_name: user.first_name || undefined,
-                                last_name: user.last_name || undefined,
-                                avatar_url: user.avatar_url || undefined
-                            };
-                        }
-                    });
+                try {
+                    const emailsParam = Array.from(approverEmails).join(',');
+                    const userInfoRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(emailsParam)}`);
+                    if (userInfoRes.ok) {
+                        const fetchedUserMap = await userInfoRes.json();
+                        // Merge fetched user info into userInfoMap
+                        Object.keys(fetchedUserMap).forEach(email => {
+                            userInfoMap[email.toLowerCase()] = fetchedUserMap[email];
+                        });
+                    }
+                } catch (e) {
+                    console.warn('Failed to fetch user info from API:', e);
                 }
             }
+            
+            // Calculate due dates for criteria based on rating_timing and launch stages
+            const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
+            const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
+                if (!targetDate || !ratingTimingId || launchStages.length === 0) {
+                    return null;
+                }
+                
+                // Find the launch stage for this criterion
+                const targetStage = launchStages.find(stage => stage.id === ratingTimingId);
+                if (!targetStage) {
+                    return null;
+                }
+                
+                // Sum durations of all stages that come BEFORE the target stage
+                const stagesBeforeTarget = launchStages.filter(stage => 
+                    stage.sort_order < targetStage.sort_order && stage.duration_days !== null
+                );
+                const totalDaysBefore = stagesBeforeTarget.reduce((sum, stage) => 
+                    sum + (stage.duration_days || 0), 0
+                );
+                
+                // Calculate due date: target date minus days before target stage
+                const dueDate = new Date(targetDate);
+                dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+                
+                return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
+            };
             
             const resolvedMatrix = sorted.map((item: any) => {
                 const criterionEmail = item.criterion?.decision_owner_email;
@@ -300,11 +343,15 @@ export default function EpicDetailPage() {
                     }
                 }
                 
+                // Calculate due date based on rating_timing if not already set
+                const calculatedDueDate = item.condition_due_date || calculateDueDate(item.criterion?.rating_timing);
+                
                 return {
                     ...item,
                     approverEmail,
                     approverInfo: approverEmail ? userInfoMap[approverEmail] : null,
                     notRequired: item.notRequired === true,
+                    condition_due_date: calculatedDueDate || item.condition_due_date,
                 };
             });
 
@@ -348,34 +395,38 @@ export default function EpicDetailPage() {
                 }
             }
             
-            // Fetch PM owner info if email is available
+            // Fetch PM owner info if email is available using API endpoint
             if (pmEmail) {
                 // Normalize email to lowercase for consistent lookup
                 const normalizedEmail = pmEmail.toLowerCase().trim();
-                const { data: pmUser, error: pmUserError } = await supabase
-                    .from('app_user')
-                    .select('first_name, last_name, email, avatar_url')
-                    .eq('email', normalizedEmail)
-                    .maybeSingle();
-                
-                if (pmUserError && pmUserError.code !== 'PGRST116') {
-                    // Log non-"not found" errors but continue
-                    console.warn('Error fetching PM owner info:', pmUserError);
-                }
-                
-                if (pmUser) {
-                    const fullName = [pmUser.first_name, pmUser.last_name]
-                        .filter(Boolean)
-                        .join(' ')
-                        .trim();
-                    
-                    setPmOwner({
-                        name: fullName || undefined,
-                        email: pmUser.email,
-                        avatar_url: pmUser.avatar_url || undefined
-                    });
-                } else {
-                    // If user not found in app_user, use email
+                try {
+                    const pmUserRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(normalizedEmail)}`);
+                    if (pmUserRes.ok) {
+                        const pmUserMap = await pmUserRes.json();
+                        const pmUser = pmUserMap[normalizedEmail];
+                        
+                        if (pmUser) {
+                            const fullName = [pmUser.first_name, pmUser.last_name]
+                                .filter(Boolean)
+                                .join(' ')
+                                .trim();
+                            
+                            setPmOwner({
+                                name: fullName || undefined,
+                                email: pmEmail,
+                                avatar_url: pmUser.avatar_url || undefined
+                            });
+                        } else {
+                            // If user not found, use email
+                            setPmOwner({ email: pmEmail });
+                        }
+                    } else {
+                        // If API call failed, use email
+                        setPmOwner({ email: pmEmail });
+                    }
+                } catch (e) {
+                    console.warn('Error fetching PM owner info:', e);
+                    // If error, use email
                     setPmOwner({ email: pmEmail });
                 }
             } else {
@@ -507,8 +558,14 @@ export default function EpicDetailPage() {
     return (
         <div className="flex">
             <div className="flex-1 pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="mb-6">
+                <div className="mb-6 flex justify-between items-center">
                     <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline">← Back to Epics</Link>
+                    <Button 
+                        size="xs" 
+                        onClick={() => setSnapshotModalOpen(true)}
+                    >
+                        Take Snapshot
+                    </Button>
                 </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
@@ -516,9 +573,15 @@ export default function EpicDetailPage() {
                     <div className="flex-1">
                         <h1 className="text-3xl font-bold text-gray-900 mb-4">{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
-                            <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
-                                {(epic as any).product?.name || 'No Product'}
-                            </span>
+                        {(() => {
+                                const ahaFields = (epic as any)?.aha_fields || {};
+                                const pod = (epic as any)?.pod || ahaFields?.custom_fields?.dev_backlog_pod || null;
+                                return pod ? (
+                                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                        {String(pod).trim()}
+                                    </span>
+                                ) : null;
+                            })()}
                             <Select
                                 value={epic.tier}
                                 onChange={handleTierUpdate}
@@ -534,21 +597,48 @@ export default function EpicDetailPage() {
                             <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
                                 {epic.status}
                             </span>
+                           
                         </div>
                     </div>
-                    <div className="text-right ml-6 flex-shrink-0">
-                        <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Date</div>
-                        <div className="text-lg font-semibold text-gray-900 mb-4">
-                            {releaseDate ? new Date(releaseDate).toLocaleDateString() : (epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set')}
+                    <div className="ml-6 flex-shrink-0">
+                        <div className="flex gap-6 items-center">
+                            {(() => {
+                                const targetDate = releaseDate || epic.target_launch_date;
+                                if (targetDate) {
+                                    // Calculate total duration from all launch stages (excluding NULL durations)
+                                    let totalDurationDays = 0;
+                                    
+                                    if (launchStages.length > 0) {
+                                        totalDurationDays = launchStages
+                                            .filter(stage => stage.duration_days !== null)
+                                            .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                                    }
+                                    
+                                    // Fallback to 63 days (14+21+28) if launch stages aren't loaded yet
+                                    if (totalDurationDays === 0) {
+                                        totalDurationDays = 63;
+                                    }
+                                    
+                                    const goNoGoDate = new Date(targetDate);
+                                    goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
+                                    return (
+                                        <div className="text-right">
+                                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Approx Go/NoGo Date</div>
+                                            <div className="text-lg font-semibold text-gray-900">
+                                                {goNoGoDate.toLocaleDateString()}
+                                            </div>
+                                        </div>
+                                    );
+                                }
+                                return null;
+                            })()}
+                            <div className="text-right">
+                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Release Date</div>
+                                <div className="text-lg font-semibold text-gray-900">
+                                    {releaseDate ? new Date(releaseDate).toLocaleDateString() : (epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set')}
+                                </div>
+                            </div>
                         </div>
-                        <Button 
-                            size="xs" 
-                            variant="outline" 
-                            onClick={() => setSnapshotModalOpen(true)}
-                            className="border-blue-600 text-blue-600 hover:bg-blue-50"
-                        >
-                            Take Snapshot
-                        </Button>
                     </div>
                 </div>
 
@@ -557,6 +647,10 @@ export default function EpicDetailPage() {
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
                             <div className="text-2xl font-bold text-gray-900">{matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}</div>
+                        </div>
+                        <div>
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
+                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'Not set')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Risk Level</div>
@@ -584,10 +678,6 @@ export default function EpicDetailPage() {
                             />
                         </div>
                         <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'Not set')}</div>
-                        </div>
-                        <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Owner</div>
                             <div className="text-sm text-gray-900">
                                 {pmOwner && pmOwner.email ? (
@@ -613,7 +703,36 @@ export default function EpicDetailPage() {
             </div>
 
             <div className="mb-8">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Readiness Matrix</h2>
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-gray-900">Readiness Matrix</h2>
+                    {matrix.length > 0 && (
+                        <Group gap="xs">
+                            <Badge
+                                variant={criterionFilter === 'all' ? 'filled' : 'outline'}
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setCriterionFilter('all')}
+                            >
+                                All
+                            </Badge>
+                            <Badge
+                                variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
+                                color="red"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setCriterionFilter('overdue')}
+                            >
+                                Criterion Overdue
+                            </Badge>
+                            <Badge
+                                variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
+                                color="orange"
+                                style={{ cursor: 'pointer' }}
+                                onClick={() => setCriterionFilter('too_soon')}
+                            >
+                                Criterion Due Soon
+                            </Badge>
+                        </Group>
+                    )}
+                </div>
                 {matrix.length === 0 ? (
                     <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
                         <div>
@@ -627,7 +746,32 @@ export default function EpicDetailPage() {
                     </div>
                 ) : (
                     <>
-                        <Matrix epicId={epic.id} items={matrix} onUpdate={loadData} />
+                        {(() => {
+                            const today = new Date();
+                            today.setHours(0, 0, 0, 0);
+                            const fourteenDaysFromNow = new Date(today);
+                            fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
+                            
+                            const filteredMatrix = matrix.filter((item: any) => {
+                                if (criterionFilter === 'all') return true;
+                                
+                                const dueDate = item.condition_due_date;
+                                if (!dueDate) return false;
+                                
+                                const due = new Date(dueDate);
+                                due.setHours(0, 0, 0, 0);
+                                
+                                if (criterionFilter === 'overdue') {
+                                    return due < today;
+                                } else if (criterionFilter === 'too_soon') {
+                                    return due >= today && due <= fourteenDaysFromNow;
+                                }
+                                
+                                return true;
+                            });
+                            
+                            return <Matrix epicId={epic.id} items={filteredMatrix} onUpdate={loadData} />;
+                        })()}
                     </>
                 )}
             </div>
@@ -648,3 +792,4 @@ export default function EpicDetailPage() {
         </div>
     );
 }
+

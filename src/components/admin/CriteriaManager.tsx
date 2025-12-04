@@ -2,6 +2,8 @@
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar } from "@mantine/core";
+import { createClient } from "@/lib/supabase/client";
+import { UserDisplay } from "../UserDisplay";
 
 type Item = {
   id: string;
@@ -66,6 +68,11 @@ export function CriteriaManager() {
   const [importPreview, setImportPreview] = useState<{ preview: any[], count: number } | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [launchStages, setLaunchStages] = useState<LaunchStage[]>([]);
+  const [userInfoMap, setUserInfoMap] = useState<Record<string, {
+    first_name?: string | null;
+    last_name?: string | null;
+    avatar_url?: string | null;
+  }>>({});
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -170,11 +177,42 @@ export function CriteriaManager() {
         ]);
         
         const criteriaData = await criteriaRes.json();
-        setItems(criteriaData.items || []);
+        const loadedItems = criteriaData.items || [];
+        setItems(loadedItems);
         
         if (stagesRes.ok) {
           const stagesData = await stagesRes.json();
           setLaunchStages(stagesData.stages || []);
+        }
+        
+        // Fetch user info for all decision_owner_email values
+        const emails = new Set<string>();
+        loadedItems.forEach((item: Item) => {
+          if (item.decision_owner_email && !item.decision_owner_email.includes('[') && !item.decision_owner_email.includes('pod')) {
+            emails.add(item.decision_owner_email);
+          }
+        });
+        
+        if (emails.size > 0) {
+          const supabase = createClient();
+          const { data: users } = await supabase
+            .from('app_user')
+            .select('email, first_name, last_name, avatar_url')
+            .in('email', Array.from(emails));
+          
+          if (users) {
+            const userMap: Record<string, { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }> = {};
+            users.forEach(user => {
+              if (user.email) {
+                userMap[user.email] = {
+                  first_name: user.first_name || null,
+                  last_name: user.last_name || null,
+                  avatar_url: user.avatar_url || null
+                };
+              }
+            });
+            setUserInfoMap(userMap);
+          }
         }
       } catch (e: any) {
         setError("Failed to load criteria");
@@ -389,7 +427,19 @@ export function CriteriaManager() {
                                 <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
                                 <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
                                 <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600">{item.decision_owner_email || <span className="text-gray-400">—</span>}</td>
+                                <td className="px-3 py-2 text-sm text-gray-600">
+                                  {item.decision_owner_email ? (
+                                    <UserDisplay
+                                      email={item.decision_owner_email}
+                                      firstName={userInfoMap[item.decision_owner_email]?.first_name}
+                                      lastName={userInfoMap[item.decision_owner_email]?.last_name}
+                                      avatarUrl={userInfoMap[item.decision_owner_email]?.avatar_url}
+                                      size="sm"
+                                    />
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </td>
                                 <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_go || ""}>
                                   {item.status_definition_go || <span className="text-gray-400">—</span>}
                                 </td>

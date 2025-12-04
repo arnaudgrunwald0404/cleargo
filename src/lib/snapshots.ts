@@ -85,7 +85,10 @@ export async function getSnapshots(launchId: string) {
       *,
       creator:created_by (
         name,
-        email
+        email,
+        first_name,
+        last_name,
+        avatar_url
       )
     `)
         .eq('epic_id', launchId)

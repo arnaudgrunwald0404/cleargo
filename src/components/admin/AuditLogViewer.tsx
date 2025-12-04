@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { Table, Select, Button, Group, Text, Pagination, Paper, Badge } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { UserDisplay } from '../UserDisplay';
 
 interface AuditLog {
     id: string;
@@ -13,6 +14,9 @@ interface AuditLog {
     actor: {
         name: string;
         email: string;
+        first_name?: string | null;
+        last_name?: string | null;
+        avatar_url?: string | null;
     };
 }
 
@@ -59,13 +63,19 @@ export default function AuditLogViewer() {
 
     const exportToCSV = () => {
         const headers = ['Date', 'Actor', 'Entity Type', 'Entity ID', 'Changes'];
-        const rows = logs.map(log => [
-            new Date(log.taken_at).toLocaleString(),
-            log.actor?.name || log.actor?.email || 'Unknown',
-            log.entity_type,
-            log.entity_id,
-            JSON.stringify(log.json_diff),
-        ]);
+        const rows = logs.map(log => {
+            const actor = log.actor;
+            const actorName = actor?.name || 
+                (actor?.first_name && actor?.last_name ? `${actor.first_name} ${actor.last_name}`.trim() : 
+                actor?.first_name || actor?.last_name || actor?.email || 'Unknown');
+            return [
+                new Date(log.taken_at).toLocaleString(),
+                actorName,
+                log.entity_type,
+                log.entity_id,
+                JSON.stringify(log.json_diff),
+            ];
+        });
 
         const csvContent = [
             headers.join(','),
@@ -127,7 +137,14 @@ export default function AuditLogViewer() {
                                         <Text size="sm">{new Date(log.taken_at).toLocaleString()}</Text>
                                     </Table.Td>
                                     <Table.Td>
-                                        <Text size="sm">{log.actor?.name || log.actor?.email || 'Unknown'}</Text>
+                                        <UserDisplay
+                                            email={log.actor?.email}
+                                            firstName={log.actor?.first_name}
+                                            lastName={log.actor?.last_name}
+                                            avatarUrl={log.actor?.avatar_url}
+                                            name={log.actor?.name}
+                                            size="sm"
+                                        />
                                     </Table.Td>
                                     <Table.Td>
                                         <Badge variant="light">{log.entity_type}</Badge>

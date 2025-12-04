@@ -27,7 +27,10 @@ export async function GET(req: NextRequest) {
                 *,
                 actor:actor_id (
                     name,
-                    email
+                    email,
+                    first_name,
+                    last_name,
+                    avatar_url
                 )
             `, { count: 'exact' });
 

@@ -1,12 +1,16 @@
 "use client";
 import { useState } from "react";
-import { Select, Avatar } from "@mantine/core";
-import { IconChevronDown, IconChevronRight } from "@tabler/icons-react";
+import { Select, Avatar, Modal, Button, Group } from "@mantine/core";
+import { IconChevronDown, IconChevronRight, IconPencil } from "@tabler/icons-react";
+import { UserDisplay } from "./UserDisplay";
+import { RichText } from "./admin/RichText";
 
 type MatrixItem = {
     id: string;
     status: string;
     current_status_notes?: string;
+    condition_due_date?: string | null;
+    last_updated_at?: string | null;
     approverEmail?: string | null;
     approverInfo?: {
         first_name?: string;
@@ -62,6 +66,9 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+    const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
+    const [editingNotes, setEditingNotes] = useState<string>("");
+    const [savingNotes, setSavingNotes] = useState(false);
 
     // Merge optimistic updates with actual items
     const itemsWithOptimistic = items.map(item => ({
@@ -188,6 +195,43 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
         });
     };
 
+    const handleEditNotes = (item: MatrixItem) => {
+        setEditingNotesId(item.id);
+        setEditingNotes(item.current_status_notes || "");
+    };
+
+    const handleSaveNotes = async () => {
+        if (!editingNotesId) return;
+        
+        setSavingNotes(true);
+        try {
+            const res = await fetch(`/api/epics/${epicId}/criteria/${editingNotesId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ notes: editingNotes })
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to update notes' }));
+                throw new Error(errorData.error || `Failed to update notes: ${res.status}`);
+            }
+            
+            setEditingNotesId(null);
+            setEditingNotes("");
+            onUpdate(); // Refresh parent to get latest data
+        } catch (e: any) {
+            console.error('Failed to update notes:', e);
+            alert(`Failed to update notes: ${e.message || e}`);
+        } finally {
+            setSavingNotes(false);
+        }
+    };
+
+    const handleCancelEditNotes = () => {
+        setEditingNotesId(null);
+        setEditingNotes("");
+    };
+
     const isCollapsed = (cat: string) => collapsedCategories.has(cat);
     const hasOverall = (cat: string) => categoryOverallItems[cat] !== null;
 
@@ -211,6 +255,7 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '160px' }} />
                                     <col style={{ width: '200px' }} />
+                                    <col style={{ width: '120px' }} />
                                     <col style={{ width: 'auto' }} />
                                 </colgroup>
                                 <thead className="bg-purple-100">
@@ -218,6 +263,7 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Criterion</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '160px', textTransform: 'none' }}>Status</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '200px' }}>Approver</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Notes</th>
                                     </tr>
                                 </thead>
@@ -246,9 +292,6 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                                                 {item.criterion.label}
                                                 {item.criterion.gate && (
                                                     <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
-                                                )}
-                                                {item.notRequired && (
-                                                    <span className="ml-2 bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full">Not required</span>
                                                 )}
                                             </div>
                                             {item.criterion.description && (
@@ -286,32 +329,48 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '200px' }}>
                                             {item.approverEmail ? (
-                                                item.approverInfo ? (
-                                                    <div className="flex items-center gap-2">
-                                                        <Avatar
-                                                            src={item.approverInfo.avatar_url}
-                                                            alt={item.approverEmail}
-                                                            radius="xl"
-                                                            size={24}
-                                                            color={getAvatarColor(item.approverEmail)}
-                                                        >
-                                                            {getInitials(item.approverEmail)}
-                                                        </Avatar>
-                                                        <span>
-                                                            {[item.approverInfo.first_name, item.approverInfo.last_name]
-                                                                .filter(Boolean)
-                                                                .join(' ') || item.approverEmail}
-                                                        </span>
-                                                    </div>
-                                                ) : (
-                                                    item.approverEmail
-                                                )
+                                                <UserDisplay
+                                                    email={item.approverEmail}
+                                                    firstName={item.approverInfo?.first_name}
+                                                    lastName={item.approverInfo?.last_name}
+                                                    avatarUrl={item.approverInfo?.avatar_url}
+                                                    size="sm"
+                                                />
+                                            ) : (
+                                                '-'
+                                            )}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap" style={{ width: '120px' }}>
+                                            {item.last_updated_at ? (
+                                                new Date(item.last_updated_at).toLocaleDateString()
                                             ) : (
                                                 '-'
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700">
-                                            {item.current_status_notes || '-'}
+                                            <div className="flex items-start gap-2">
+                                                <div className="flex-1">
+                                                    {item.current_status_notes ? (
+                                                        <div 
+                                                            className="[&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                                                            dangerouslySetInnerHTML={{ __html: item.current_status_notes }}
+                                                            style={{
+                                                                whiteSpace: "pre-wrap",
+                                                                wordBreak: "break-word",
+                                                            }}
+                                                        />
+                                                    ) : (
+                                                        <span className="text-gray-400">-</span>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleEditNotes(item)}
+                                                    className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0"
+                                                    title="Edit notes"
+                                                >
+                                                    <IconPencil className="w-4 h-4" />
+                                                </button>
+                                            </div>
                                         </td>
                                             </tr>
                                         );
@@ -322,6 +381,31 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                     </div>
                 );
             })}
+            
+            {/* Notes Editing Modal */}
+            <Modal
+                opened={editingNotesId !== null}
+                onClose={handleCancelEditNotes}
+                title="Edit Notes"
+                size="xl"
+            >
+                <div className="space-y-4">
+                    <RichText
+                        value={editingNotes}
+                        onChange={setEditingNotes}
+                        placeholder="Enter notes with formatting, links, and bullet points..."
+                        rows={10}
+                    />
+                    <Group justify="flex-end" mt="xl">
+                        <Button variant="outline" onClick={handleCancelEditNotes}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleSaveNotes} loading={savingNotes}>
+                            Save
+                        </Button>
+                    </Group>
+                </div>
+            </Modal>
         </div>
     );
 }

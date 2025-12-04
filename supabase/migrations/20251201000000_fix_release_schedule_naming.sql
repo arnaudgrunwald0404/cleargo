@@ -53,3 +53,4 @@ DROP POLICY IF EXISTS "Allow write access to authenticated users" ON public.rele
 CREATE POLICY "Allow write access to authenticated users" ON public.release_schedule
     FOR ALL TO authenticated USING (true);
 
+
