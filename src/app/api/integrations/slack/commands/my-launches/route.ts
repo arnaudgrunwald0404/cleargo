@@ -42,64 +42,172 @@ export async function POST(request: NextRequest) {
             trigger_id: formData.get('trigger_id') || '',
         };
 
-        // TODO: Look up user by Slack user_id or user_name
-        // TODO: Query launches where user is owner or decision owner
+        // Look up user by Slack user_id
+        const supabase = (await import('@/lib/supabase/server')).createClient();
 
-        // Placeholder response
-        return NextResponse.json({
-            response_type: 'ephemeral',
-            blocks: [
-                {
-                    type: 'header',
-                    text: {
-                        type: 'plain_text',
-                        text: '🚀 My Launches',
-                        emoji: true,
-                    },
+        const { data: appUser, error: userError } = await supabase
+            .from('app_user')
+            .select('id, email, first_name, last_name')
+            .eq('slack_handle', payload.user_id)
+            .single();
+
+        if (userError || !appUser) {
+            return NextResponse.json({
+                response_type: 'ephemeral',
+                text: `👋 Hi! I couldn't find your account linked to this Slack user. Please make sure your Slack handle is synced in the Launch Console.`,
+            });
+        }
+
+        // Query launches where user is owner
+        const { data: ownedLaunches, error: launchesError } = await supabase
+            .from('launch')
+            .select('id, name, tier, readiness_status, readiness_score, risk_level, target_launch_date')
+            .eq('owner_id', appUser.id)
+            .order('target_launch_date', { ascending: true })
+            .limit(5);
+
+        // Query criteria where user is decision owner
+        const { data: criteriaStatuses, error: criteriaError } = await supabase
+            .from('epic_criterion_status')
+            .select(`
+                id,
+                status,
+                last_updated_at,
+                epic:epic_id (
+                    id,
+                    name
+                ),
+                criterion:criterion_id (
+                    id,
+                    label
+                )
+            `)
+            .eq('decision_owner_id', appUser.id)
+            .in('status', ['NOT_SET', 'CONDITIONAL'])
+            .limit(5);
+
+        const launches = ownedLaunches || [];
+        const criteria = criteriaStatuses || [];
+
+        // Build response blocks
+        const blocks: any[] = [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: `🚀 My Launches`,
+                    emoji: true,
                 },
-                {
+            },
+        ];
+
+        // Add owned launches section
+        if (launches.length > 0) {
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: '*Launches you own:*',
+                },
+            });
+
+            for (const launch of launches) {
+                const statusEmoji = launch.readiness_status === 'GO' ? '✅' :
+                    launch.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
+                const riskEmoji = launch.risk_level === 'HIGH' ? '🔴' :
+                    launch.risk_level === 'MEDIUM' ? '🟡' : '🟢';
+                const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
+
+                blocks.push({
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: 'Here are the launches you\'re involved with:',
+                        text: `${statusEmoji} *${launch.name}* (${launch.tier})\n${riskEmoji} Risk: ${launch.risk_level} | Score: ${score}%`,
                     },
+                    accessory: {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'View Details',
+                            emoji: true,
+                        },
+                        url: `${APP_URL}/launch/${launch.id}`,
+                    },
+                });
+            }
+        } else {
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: '_You don\'t own any launches yet._',
                 },
-                {
-                    type: 'divider',
+            });
+        }
+
+        blocks.push({ type: 'divider' });
+
+        // Add criteria section
+        if (criteria.length > 0) {
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*Criteria awaiting your decision (${criteria.length}):*`,
                 },
-                {
-                    type: 'context',
-                    elements: [
-                        {
+            });
+
+            for (const criterion of criteria) {
+                const epic = Array.isArray(criterion.epic) ? criterion.epic[0] : criterion.epic;
+                const criterionData = Array.isArray(criterion.criterion) ? criterion.criterion[0] : criterion.criterion;
+
+                if (epic && criterionData) {
+                    const daysSinceUpdate = Math.floor(
+                        (Date.now() - new Date(criterion.last_updated_at).getTime()) / (1000 * 60 * 60 * 24)
+                    );
+                    const staleIndicator = daysSinceUpdate > 14 ? '⏰ ' : '';
+
+                    blocks.push({
+                        type: 'section',
+                        text: {
                             type: 'mrkdwn',
-                            text: '🚧 This feature is under development. Your launches will appear here soon.',
+                            text: `${staleIndicator}*${criterionData.label}*\nLaunch: ${epic.name} | Status: ${criterion.status}`,
                         },
-                    ],
+                    });
+                }
+            }
+        }
+
+        blocks.push({ type: 'divider' });
+
+        // Add action buttons
+        blocks.push({
+            type: 'actions',
+            elements: [
+                {
+                    type: 'button',
+                    text: {
+                        type: 'plain_text',
+                        text: 'View Portfolio Dashboard',
+                        emoji: true,
+                    },
+                    url: `${APP_URL}/portfolio`,
                 },
                 {
-                    type: 'actions',
-                    elements: [
-                        {
-                            type: 'button',
-                            text: {
-                                type: 'plain_text',
-                                text: 'View Portfolio Dashboard',
-                                emoji: true,
-                            },
-                            url: `${APP_URL}/portfolio`,
-                        },
-                        {
-                            type: 'button',
-                            text: {
-                                type: 'plain_text',
-                                text: 'View My Items',
-                                emoji: true,
-                            },
-                            url: `${APP_URL}/my-items`,
-                        },
-                    ],
+                    type: 'button',
+                    text: {
+                        type: 'plain_text',
+                        text: 'View My Items',
+                        emoji: true,
+                    },
+                    url: `${APP_URL}/my-items`,
                 },
             ],
+        });
+
+        return NextResponse.json({
+            response_type: 'ephemeral',
+            blocks,
         });
     } catch (error) {
         console.error('Slack command error:', error);

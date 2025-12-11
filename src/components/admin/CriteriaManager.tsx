@@ -175,16 +175,16 @@ export function CriteriaManager() {
           fetch("/api/criteria"),
           fetch("/api/launch-stages")
         ]);
-        
+
         const criteriaData = await criteriaRes.json();
         const loadedItems = criteriaData.items || [];
         setItems(loadedItems);
-        
+
         if (stagesRes.ok) {
           const stagesData = await stagesRes.json();
           setLaunchStages(stagesData.stages || []);
         }
-        
+
         // Fetch user info for all decision_owner_email values
         const emails = new Set<string>();
         loadedItems.forEach((item: Item) => {
@@ -192,14 +192,14 @@ export function CriteriaManager() {
             emails.add(item.decision_owner_email);
           }
         });
-        
+
         if (emails.size > 0) {
           const supabase = createClient();
           const { data: users } = await supabase
             .from('app_user')
             .select('email, first_name, last_name, avatar_url')
             .in('email', Array.from(emails));
-          
+
           if (users) {
             const userMap: Record<string, { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }> = {};
             users.forEach(user => {
@@ -361,102 +361,123 @@ export function CriteriaManager() {
               </div>
             </div>
 
-          <div className="flex gap-3 items-center mb-4">
-            <input
-              type="file"
-              accept=".xlsx"
-              onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-              className="flex-1 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
-            />
-            <button
-              onClick={handlePreviewImport}
-              disabled={!importFile || importLoading}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {importLoading ? "Processing..." : "Preview Import"}
-            </button>
-          </div>
-
-          {importError && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {importError}
+            <div className="flex gap-3 items-center mb-4">
+              <input
+                type="file"
+                accept=".xlsx"
+                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                className="flex-1 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
+              />
+              <button
+                onClick={handlePreviewImport}
+                disabled={!importFile || importLoading}
+                className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {importLoading ? "Processing..." : "Preview Import"}
+              </button>
             </div>
-          )}
 
-          {importPreview && (
-            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-              <h3 className="font-semibold text-gray-900 mb-2">Preview ({importPreview.count} items)</h3>
-              <div className="max-h-96 overflow-y-auto mb-4">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-8"></th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Timing</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stakeholder</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GO Definition</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CONDITIONAL GO</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">NO GO</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {Object.entries(groupedPreview).map(([category, { overall, details }]) => {
-                      const isExpanded = expandedCategories.has(category);
-                      const hasDetails = details.length > 0;
-                      const showOverall = overall.length > 0;
+            {importError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                {importError}
+              </div>
+            )}
 
-                      return (
-                        <React.Fragment key={category}>
-                          {showOverall ? overall.map((item: any, i: number) => (
-                            <React.Fragment key={`${category}-overall-${i}`}>
-                              <tr className="bg-gray-50 hover:bg-gray-100">
-                                <td className="px-3 py-2">
-                                  {hasDetails && (
-                                    <button
-                                      onClick={() => toggleCategory(category)}
-                                      className="text-gray-500 hover:text-gray-700 transition-transform"
-                                      style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                                    >
-                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                      </svg>
-                                    </button>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
-                                <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600">
-                                  {item.decision_owner_email ? (
-                                    <UserDisplay
-                                      email={item.decision_owner_email}
-                                      firstName={userInfoMap[item.decision_owner_email]?.first_name}
-                                      lastName={userInfoMap[item.decision_owner_email]?.last_name}
-                                      avatarUrl={userInfoMap[item.decision_owner_email]?.avatar_url}
-                                      size="sm"
-                                    />
-                                  ) : (
-                                    <span className="text-gray-400">—</span>
-                                  )}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_go || ""}>
-                                  {item.status_definition_go || <span className="text-gray-400">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_conditional || ""}>
-                                  {item.status_definition_conditional || <span className="text-gray-400">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_no_go || ""}>
-                                  {item.status_definition_no_go || <span className="text-gray-400">—</span>}
-                                </td>
-                              </tr>
-                              {isExpanded && hasDetails && details.map((detailItem: any, j: number) => (
+            {importPreview && (
+              <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                <h3 className="font-semibold text-gray-900 mb-2">Preview ({importPreview.count} items)</h3>
+                <div className="max-h-96 overflow-y-auto mb-4">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-100 sticky top-0">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-8"></th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Timing</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stakeholder</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GO Definition</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CONDITIONAL GO</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">NO GO</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {Object.entries(groupedPreview).map(([category, { overall, details }]) => {
+                        const isExpanded = expandedCategories.has(category);
+                        const hasDetails = details.length > 0;
+                        const showOverall = overall.length > 0;
+
+                        return (
+                          <React.Fragment key={category}>
+                            {showOverall ? overall.map((item: any, i: number) => (
+                              <React.Fragment key={`${category}-overall-${i}`}>
+                                <tr className="bg-gray-50 hover:bg-gray-100">
+                                  <td className="px-3 py-2">
+                                    {hasDetails && (
+                                      <button
+                                        onClick={() => toggleCategory(category)}
+                                        className="text-gray-500 hover:text-gray-700 transition-transform"
+                                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                                      >
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                      </button>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
+                                  <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">
+                                    {item.decision_owner_email ? (
+                                      <UserDisplay
+                                        email={item.decision_owner_email}
+                                        firstName={userInfoMap[item.decision_owner_email]?.first_name}
+                                        lastName={userInfoMap[item.decision_owner_email]?.last_name}
+                                        avatarUrl={userInfoMap[item.decision_owner_email]?.avatar_url}
+                                        size="sm"
+                                      />
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_go || ""}>
+                                    {item.status_definition_go || <span className="text-gray-400">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_conditional || ""}>
+                                    {item.status_definition_conditional || <span className="text-gray-400">—</span>}
+                                  </td>
+                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_no_go || ""}>
+                                    {item.status_definition_no_go || <span className="text-gray-400">—</span>}
+                                  </td>
+                                </tr>
+                                {isExpanded && hasDetails && details.map((detailItem: any, j: number) => (
+                                  <tr key={`${category}-detail-${j}`} className="bg-white">
+                                    <td className="px-3 py-2"></td>
+                                    <td className="px-3 py-2 text-sm text-gray-500 pl-8">{detailItem.category}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.label}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
+                                      {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_conditional || ""}>
+                                      {detailItem.status_definition_conditional || <span className="text-gray-400">—</span>}
+                                    </td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_no_go || ""}>
+                                      {detailItem.status_definition_no_go || <span className="text-gray-400">—</span>}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            )) : (
+                              // No overall item - show all details directly without collapse
+                              details.map((detailItem: any, j: number) => (
                                 <tr key={`${category}-detail-${j}`} className="bg-white">
                                   <td className="px-3 py-2"></td>
-                                  <td className="px-3 py-2 text-sm text-gray-500 pl-8">{detailItem.category}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.label}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getLaunchStageName(detailItem.rating_timing)}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.category}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-900">{detailItem.label}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
                                     {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
                                   </td>
@@ -467,52 +488,31 @@ export function CriteriaManager() {
                                     {detailItem.status_definition_no_go || <span className="text-gray-400">—</span>}
                                   </td>
                                 </tr>
-                              ))}
-                            </React.Fragment>
-                          )) : (
-                            // No overall item - show all details directly without collapse
-                            details.map((detailItem: any, j: number) => (
-                              <tr key={`${category}-detail-${j}`} className="bg-white">
-                                <td className="px-3 py-2"></td>
-                                <td className="px-3 py-2 text-sm text-gray-600">{detailItem.category}</td>
-                                <td className="px-3 py-2 text-sm text-gray-900">{detailItem.label}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(detailItem.rating_timing)}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
-                                  {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_conditional || ""}>
-                                  {detailItem.status_definition_conditional || <span className="text-gray-400">—</span>}
-                                </td>
-                                <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_no_go || ""}>
-                                  {detailItem.status_definition_no_go || <span className="text-gray-400">—</span>}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </React.Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              ))
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={handleCommitImport}
+                    disabled={importLoading}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50"
+                  >
+                    {importLoading ? "Importing..." : "Confirm & Import"}
+                  </button>
+                  <button
+                    onClick={() => setImportPreview(null)}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
-              <div className="flex gap-3">
-                <button
-                  onClick={handleCommitImport}
-                  disabled={importLoading}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50"
-                >
-                  {importLoading ? "Importing..." : "Confirm & Import"}
-                </button>
-                <button
-                  onClick={() => setImportPreview(null)}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+            )}
           </div>
         </div>
 
@@ -549,7 +549,7 @@ export function CriteriaManager() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label/Category</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gate</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tier</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Active</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ready by</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
                 </tr>
               </thead>
@@ -583,8 +583,8 @@ export function CriteriaManager() {
                       }
                     }}
                   >
-                    <td 
-                      className="px-4 py-4 whitespace-nowrap text-gray-400 cursor-move" 
+                    <td
+                      className="px-4 py-4 whitespace-nowrap text-gray-400 cursor-move"
                       onClick={(e) => e.stopPropagation()}
                       draggable
                       onDragStart={(e) => {
@@ -633,12 +633,22 @@ export function CriteriaManager() {
                         size="xs"
                       />
                     </td>
-                    <td className="px-4 py-4 whitespace-nowrap">
-                      {c.is_active ? (
-                        <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-700 rounded-full">Active</span>
-                      ) : (
-                        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full">Inactive</span>
-                      )}
+                    <td
+                      className="px-4 py-4 whitespace-nowrap text-sm text-gray-600"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Select
+                        value={c.rating_timing?.toString() || launchStages[0]?.id.toString() || ""}
+                        onChange={(value) => {
+                          if (value) {
+                            submitEdit(c.id, { rating_timing: Number(value) });
+                          }
+                        }}
+                        data={launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
+                        size="xs"
+                        allowDeselect={false}
+                        comboboxProps={{ width: 250, position: 'bottom-start' }}
+                      />
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-center">
                       <svg className="w-5 h-5 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">

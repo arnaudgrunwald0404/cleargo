@@ -9,7 +9,7 @@ import { CriteriaManager } from "@/components/admin/CriteriaManager";
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
 import { RichText } from "@/components/admin/RichText";
 import { DEFAULT_EMAIL_TEMPLATES } from "@/lib/constants/settings";
-import { getPermissions, getUsers, getPods, getReleases, addRelease, deleteRelease, updateRelease, getSettings, patchSettings, getAhaFields, syncAhaFields, patchEmailTemplates, getLaunchStages, addLaunchStage, updateLaunchStage, deleteLaunchStage } from "@/lib/services/settingsService";
+import { getPermissions, getUsers, getPods, getReleases, addRelease, deleteRelease, updateRelease, getSettings, patchSettings, getAhaFields, syncAhaFields, patchEmailTemplates, getLaunchStages, addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
 import EmailTemplatesSection from "@/components/admin/settings/EmailTemplatesSection";
 import PermissionsSection from "@/components/admin/settings/PermissionsSection";
 import GeneralSection from "@/components/admin/settings/GeneralSection";
@@ -43,7 +43,7 @@ export default function AdminSettingsPage() {
     const [bulkImportLoading, setBulkImportLoading] = useState(false);
 
     // Navigation state
-const [activeSection, setActiveSection] = useState<string>("users");
+    const [activeSection, setActiveSection] = useState<string>("users");
 
     // Permissions state
     const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -52,6 +52,7 @@ const [activeSection, setActiveSection] = useState<string>("users");
     const [capabilities, setCapabilities] = useState<Array<{ id: string; label: string; description: string }>>([]);
     const [rules, setRules] = useState<Record<string, string[]>>({});
     const [defaultRules, setDefaultRules] = useState<Record<string, string[]>>({});
+    const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
 
     // Release schedule state
     const [releases, setReleases] = useState<any[]>([]);
@@ -95,7 +96,7 @@ const [activeSection, setActiveSection] = useState<string>("users");
     const [previewType, setPreviewType] = useState<"invite" | "remind" | "update_criteria">("invite");
     const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
 
-useEffect(() => {
+    useEffect(() => {
         fetchSettings();
         fetchUsers();
         fetchReleases();
@@ -105,7 +106,20 @@ useEffect(() => {
         fetchLaunchStages();
         fetchEmailTemplates();
         fetchPermissions();
+        fetchCurrentUser();
     }, []);
+
+    const fetchCurrentUser = async () => {
+        try {
+            const res = await fetch("/api/me");
+            if (res.ok) {
+                const data = await res.json();
+                setCurrentUserRoles(data.user?.roles || []);
+            }
+        } catch (error) {
+            console.error("Failed to fetch current user:", error);
+        }
+    };
 
     const fetchLaunchReleaseDates = async () => {
         setLaunchReleasesLoading(true);
@@ -180,34 +194,18 @@ useEffect(() => {
         const [draggedStage] = newStages.splice(draggedIndex, 1);
         newStages.splice(targetIndex, 0, draggedStage);
 
-        // Only update stages that actually changed position
-        const updates = newStages
-            .map((stage, index) => ({
-                id: stage.id,
-                newSortOrder: index + 1,
-                oldSortOrder: stage.sort_order
-            }))
-            .filter(update => update.newSortOrder !== update.oldSortOrder)
-            .map(({ id, newSortOrder }) => ({
-                id,
-                sort_order: newSortOrder
-            }));
-
-        // If nothing changed, return early
-        if (updates.length === 0) return;
-
-        // Optimistically update UI
-        setLaunchStages(newStages.map((stage, index) => ({
+        // Update sort_order for all stages
+        const reorderedStages = newStages.map((stage, index) => ({
             ...stage,
             sort_order: index + 1
-        })));
+        }));
 
-        // Update affected stages
+        // Optimistically update UI
+        setLaunchStages(reorderedStages);
+
+        // Update via API
         try {
-            const results = await Promise.all(updates.map(async (update) => {
-                const res = await updateLaunchStage(update);
-                return res;
-            }));
+            await reorderLaunchStages(reorderedStages);
             // Refresh to ensure consistency
             fetchLaunchStages();
         } catch (error: any) {
@@ -740,6 +738,13 @@ useEffect(() => {
 
                     {/* Main Content */}
                     <div className="flex-1 min-w-0">
+                        {activeSection === "general" && (
+                            <GeneralSection
+                                settings={settings}
+                                setSettings={setSettings}
+                                currentUserRoles={currentUserRoles}
+                            />
+                        )}
                         {activeSection === "email-templates" && (
                             <EmailTemplatesSection
                                 emailTemplates={emailTemplates}
@@ -897,9 +902,8 @@ useEffect(() => {
                             </div>
                         </Modal>
 
-{activeSection === "general" && (
+                        {activeSection === "general" && (
                             <form onSubmit={handleSave} className="space-y-6">
-                                <GeneralSection settings={settings} setSettings={setSettings} />
                                 <IntegrationsSection settings={settings} setSettings={setSettings} />
 
                                 {/* Save Button */}
@@ -945,7 +949,7 @@ useEffect(() => {
                             />
                         )}
 
-{activeSection === "launch-stages" && (
+                        {activeSection === "launch-stages" && (
                             <LaunchStagesSection
                                 stages={launchStages}
                                 loading={launchStagesLoading}
@@ -968,8 +972,8 @@ useEffect(() => {
                             />
                         )}
 
-{/* Edit Stage Drawer moved into LaunchStagesSection */}
-{/* EditStageDrawer moved into LaunchStagesSection */}
+                        {/* Edit Stage Drawer moved into LaunchStagesSection */}
+                        {/* EditStageDrawer moved into LaunchStagesSection */}
 
                         {activeSection === "users" && (
                             <UserManagementSection
@@ -1004,7 +1008,7 @@ useEffect(() => {
                             <CriteriaManager />
                         )}
 
-{activeSection === "aha-fields" && (
+                        {activeSection === "aha-fields" && (
                             <AhaFieldsSection
                                 settings={settings}
                                 setSettings={setSettings}

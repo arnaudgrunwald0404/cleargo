@@ -1,0 +1,70 @@
+display_information:
+  name: ClearGO
+  description: Launch readiness tracking, notifications, and collaboration for product launches
+  background_color: "#2c3e50"
+
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: ClearGO
+    always_online: true
+  slash_commands:
+    - command: /launch-status
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/launch-status
+      description: Get the current status of a launch
+      usage_hint: "[launch-name or aha-id]"
+      should_escape: false
+    - command: /my-launches
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/my-launches
+      description: View launches you own or are involved with
+      should_escape: false
+    - command: /launch-summary
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/launch-summary
+      description: Get a summary of all active launches
+      usage_hint: "[tier] [risk-level]"
+      should_escape: false
+    - command: /update-criterion
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/update-criterion
+      description: Update a criterion status for a launch
+      usage_hint: "[launch-id] [criterion-id] [status]"
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - chat:write
+      - chat:write.public
+      - chat:write.customize
+      - users:read
+      - users:read.email
+      - channels:read
+      - groups:read
+      - im:read
+      - mpim:read
+      - commands
+      - im:write
+      - im:history
+      - app_mentions:read
+      - files:write
+      - reactions:write
+      - links:read
+      - links:write
+
+settings:
+  event_subscriptions:
+    request_url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/events
+    bot_events:
+      - app_home_opened
+      - app_mention
+      - message.im
+      - link_shared
+      - team_join
+  interactivity:
+    is_enabled: true
+    request_url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/interactions
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

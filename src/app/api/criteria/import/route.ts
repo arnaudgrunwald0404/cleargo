@@ -13,58 +13,39 @@ export async function POST(req: NextRequest) {
     // Debug header
     const debugHeaders = { 'X-Debug-Handler': 'CriteriaImport' };
 
-    // Development bypass: allow testing without Google OAuth
-    const url = req.nextUrl;
-    const bypass = url.searchParams.get('bypassAuth') === 'true';
-    console.log(`[Import] Debug: bypass=${bypass}, NODE_ENV=${process.env.NODE_ENV}`);
-
-    if (bypass && process.env.NODE_ENV === 'development') {
-        console.log('[Import] Bypass auth enabled for development');
-    } else {
-        try {
-            const supabase = createClient();
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user?.email) {
-                return NextResponse.json({
-                    error: "Unauthorized (No User)",
-                    debug: {
-                        bypass,
-                        nodeEnv: process.env.NODE_ENV,
-                        isDev: process.env.NODE_ENV === 'development'
-                    }
-                }, { status: 401, headers: debugHeaders });
-            }
-            const role = await resolveRole(user.email);
-            if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
-            // Capability: criteria.import
-            const { data: me, error: userError } = await supabase
-              .from('app_user')
-              .select('roles')
-              .eq('email', user.email)
-              .single();
-            
-            // Handle case where user doesn't exist in app_user table
-            if (userError && userError.code === 'PGRST116') {
-              return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-            }
-            if (userError) {
-              throw userError;
-            }
-            
-            const { canRolesPerform } = await import('@/lib/permissions');
-            const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.import');
-            if (!ok) return new NextResponse('Forbidden', { status: 403 });
-        } catch (authError) {
-            console.error('[Import] Auth error:', authError);
+    try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user?.email) {
             return NextResponse.json({
-                error: "Unauthorized",
-                debug: {
-                    bypass,
-                    nodeEnv: process.env.NODE_ENV,
-                    isDev: process.env.NODE_ENV === 'development'
-                }
-            }, { status: 401 });
+                error: "Unauthorized (No User)"
+            }, { status: 401, headers: debugHeaders });
         }
+        const role = await resolveRole(user.email);
+        if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
+        // Capability: criteria.import
+        const { data: me, error: userError } = await supabase
+          .from('app_user')
+          .select('roles')
+          .eq('email', user.email)
+          .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+          return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+          throw userError;
+        }
+        
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.import');
+        if (!ok) return new NextResponse('Forbidden', { status: 403 });
+    } catch (authError) {
+        console.error('[Import] Auth error:', authError);
+        return NextResponse.json({
+            error: "Unauthorized"
+        }, { status: 401 });
     }
     try {
         const cookieStore = await cookies();

@@ -95,10 +95,22 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
+        // Log all cookies to debug PKCE code_verifier issue
+        const allCookies = request.cookies.getAll()
+        const codeVerifierCookie = allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
+        console.log('🔍 All cookies:', allCookies.map(c => c.name))
+        console.log('🔍 Code verifier cookie:', codeVerifierCookie ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value } : 'NOT FOUND')
+        
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (error) {
-            console.error('Code exchange error:', error)
+            console.error('❌ Code exchange error:', error)
+            console.error('❌ Error details:', {
+                message: error.message,
+                status: error.status,
+                codeVerifierPresent: !!codeVerifierCookie,
+                allCookieNames: allCookies.map(c => c.name)
+            })
             const errorUrl = new URL('/?error=auth_failed', request.url)
             errorUrl.searchParams.set('message', error.message)
             return NextResponse.redirect(errorUrl)

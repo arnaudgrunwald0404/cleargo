@@ -31,6 +31,7 @@ export function createClient() {
                 persistSession: true,
                 autoRefreshToken: false, // let middleware refresh on navigation
                 detectSessionInUrl: false, // we exchange the code on the server
+                flowType: 'pkce', // Explicitly use PKCE flow for OAuth
             },
         }
     )

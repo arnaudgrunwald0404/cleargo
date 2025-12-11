@@ -25,6 +25,7 @@ export interface AppSettings {
     updated_at: string;
     // Capability-based permissions: capability id -> array of roles allowed
     permissions?: Record<string, string[]>;
+    aha_tags?: string[]; // Tags that trigger inclusion in Launch Console
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -66,9 +67,10 @@ export async function getSettings(): Promise<AppSettings> {
             ],
             updated_at: new Date().toISOString(),
             permissions: {},
+            aha_tags: ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'],
         };
     }
-    
+
     // Ensure aha_fields_to_load has a default value if missing
     if (!data.aha_fields_to_load || (Array.isArray(data.aha_fields_to_load) && data.aha_fields_to_load.length === 0)) {
         data.aha_fields_to_load = [
@@ -80,8 +82,14 @@ export async function getSettings(): Promise<AppSettings> {
             't_shirt_est',
             'progress',
             'reason_for_release_change',
+            'reason_for_release_change',
             'release_target_after_pod_planning'
         ];
+    }
+
+    // Ensure aha_tags has a default value if missing
+    if (!data.aha_tags || (Array.isArray(data.aha_tags) && data.aha_tags.length === 0)) {
+        data.aha_tags = ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
     }
 
     return data as AppSettings;

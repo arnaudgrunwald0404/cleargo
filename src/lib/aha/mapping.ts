@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { AhaConfig, AhaEpic } from './types';
 import { getCustomFields } from './client';
+import { getSettings } from '@/lib/settings-db';
 
 let cachedConfig: AhaConfig | null = null;
 
@@ -36,20 +37,20 @@ export function getCustomFieldKey(fieldAlias: string): string {
  */
 async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, string> | null> {
     const now = Date.now();
-    
+
     // Return cached data if still valid
     if (fieldDefinitionsCache && (now - fieldDefinitionsCacheTime) < FIELD_DEFINITIONS_CACHE_TTL) {
         return fieldDefinitionsCache.get(fieldKey) || null;
     }
-    
+
     try {
         // Fetch all custom field definitions
         const response = await getCustomFields();
         const definitions = response.custom_field_definitions || [];
-        
+
         // Build cache: field key -> (option code -> option label)
         const newCache = new Map<string, Map<string, string>>();
-        
+
         for (const def of definitions) {
             if (def.key && def.options && Array.isArray(def.options)) {
                 const optionsMap = new Map<string, string>();
@@ -68,10 +69,10 @@ async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, 
                 }
             }
         }
-        
+
         fieldDefinitionsCache = newCache;
         fieldDefinitionsCacheTime = now;
-        
+
         return newCache.get(fieldKey) || null;
     } catch (error) {
         console.error(`Error fetching field definitions for ${fieldKey}:`, error);
@@ -81,7 +82,7 @@ async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, 
 
 export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Promise<any> {
     const key = getCustomFieldKey(fieldAlias);
-    
+
     // AHA API returns custom_fields as an array, not an object
     // Handle both array and object formats for compatibility
     let field: any = null;
@@ -90,16 +91,16 @@ export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Pr
     } else if (epic.custom_fields && typeof epic.custom_fields === 'object') {
         field = epic.custom_fields[key];
     }
-    
+
     if (!field) return null;
-    
+
     const value = field.value;
-    
+
     // For select fields, Aha may return value as an object with name property (the option label)
     if (value && typeof value === 'object' && !Array.isArray(value) && value.name) {
         return value.name; // Return the option label
     }
-    
+
     // If value is a string, it might be a code for a select field
     // Try to fetch the field definition to map code to label
     if (typeof value === 'string' && value.trim()) {
@@ -108,7 +109,7 @@ export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Pr
             return optionsMap.get(value); // Return the mapped label
         }
     }
-    
+
     // Return value as-is (could be number, boolean, string, etc.)
     return value ?? null;
 }
@@ -247,10 +248,14 @@ export async function mapEpicToEpic(
 }
 
 
+
 export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
-    // Filter: (Launch Candidate == true) OR (tags contains "LaunchConsole")
+    // Filter: (Launch Candidate == true) OR (tags contains any of the allowed tags from settings)
+    const settings = await getSettings();
+    const ALLOWED_TAGS = settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
+
     const isLaunchCandidate = await getCustomFieldValue(epic, 'launch_candidate') === true;
-    const hasLaunchTag = epic.tags?.includes('LaunchConsole') ?? false;
+    const hasLaunchTag = epic.tags?.some(tag => ALLOWED_TAGS.includes(tag)) ?? false;
 
     return isLaunchCandidate || hasLaunchTag;
 }

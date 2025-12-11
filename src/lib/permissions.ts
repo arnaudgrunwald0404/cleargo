@@ -21,7 +21,8 @@ export type CapabilityId =
   | "settings.emailTemplates.read"
   | "settings.emailTemplates.update"
   | "settings.ahaFields.read"
-  | "settings.ahaFields.sync";
+  | "settings.ahaFields.sync"
+  | "settings.ahaTags.update";
 
 export type Capability = {
   id: CapabilityId;
@@ -130,6 +131,11 @@ export const CAPABILITIES: Capability[] = [
     label: "Synchronize AHA Fields",
     description: "Allow triggering synchronization from AHA to launches.",
   },
+  {
+    id: "settings.ahaTags.update",
+    label: "Update AHA Tags",
+    description: "Allow updating the list of AHA tags that trigger inclusion in Launch Console.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -153,6 +159,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.emailTemplates.update": ["PRODUCT_OPS", "CPO"],
   "settings.ahaFields.read": ["PRODUCT_OPS", "CPO"],
   "settings.ahaFields.sync": ["PRODUCT_OPS", "CPO"],
+  "settings.ahaTags.update": ["CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

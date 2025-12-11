@@ -54,3 +54,5 @@ CREATE POLICY "Allow write access to authenticated users" ON public.release_sche
     FOR ALL TO authenticated USING (true);
 
 
+
+

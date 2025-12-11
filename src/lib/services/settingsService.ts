@@ -134,8 +134,19 @@ export async function updateLaunchStage(payload: { id: number; name?: string; so
   return res.json();
 }
 
+
 export async function deleteLaunchStage(id: number) {
   const res = await fetch(`/api/launch-stages/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete stage");
   return res.json().catch(() => ({}));
+}
+
+export async function reorderLaunchStages(stages: any[]) {
+  const res = await fetch("/api/launch-stages", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stages }),
+  });
+  if (!res.ok) throw new Error("Failed to reorder stages");
+  return res.json();
 }

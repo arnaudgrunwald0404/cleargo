@@ -9,27 +9,19 @@ export function SignIn({
     const supabase = createClient();
 
     const handleSignIn = async () => {
-        // If a canonical app URL is configured and differs from the current host,
-        // first move the user to that host so the PKCE verifier cookie and callback
-        // land on the same site. Otherwise the code_verifier won't be present on callback.
-        const preferred = process.env.NEXT_PUBLIC_APP_URL;
-        if (preferred) {
-            try {
-                const preferredHost = new URL(preferred).host;
-                if (preferredHost && preferredHost !== window.location.host) {
-                    const next = encodeURIComponent(window.location.href);
-                    window.location.href = `${preferred}/login?next=${next}`;
-                    return;
-                }
-            } catch {
-                // ignore parse errors and fall back to current origin
-            }
-        }
-
-        // Use current origin for callback to avoid cross-host cookie issues
-        const redirectTo = `${window.location.origin}/auth/callback`;
+        // Use the canonical app URL if configured, otherwise use current origin
+        // This ensures PKCE cookies are set on the correct domain
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
+        const redirectTo = `${appUrl}/auth/callback`;
         
-        await supabase.auth.signInWithOAuth({
+        console.log('🔐 Initiating OAuth sign-in:', {
+            appUrl,
+            redirectTo,
+            currentOrigin: window.location.origin,
+            currentHost: window.location.host
+        });
+        
+        const { data, error } = await supabase.auth.signInWithOAuth({
             provider: provider || "google",
             options: {
                 redirectTo,
@@ -38,6 +30,13 @@ export function SignIn({
                 },
             },
         });
+        
+        if (error) {
+            console.error('❌ OAuth sign-in error:', error);
+        } else if (data?.url) {
+            console.log('✅ OAuth URL generated, redirecting...');
+            // The signInWithOAuth will redirect automatically, but we log for debugging
+        }
     };
 
     return (
