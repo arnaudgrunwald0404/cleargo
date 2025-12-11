@@ -34,13 +34,45 @@ export function SignIn({
             },
         });
         
+        // CRITICAL: After signInWithOAuth, Supabase may have stored the code_verifier in localStorage
+        // We need to ensure it's also in cookies so the server-side callback can access it
+        // Wait a bit for Supabase to finish storing it
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Check localStorage for PKCE code_verifier and copy to cookie
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
+        
+        // Check all localStorage keys for PKCE-related values
+        if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+            for (let i = 0; i < localStorage.length; i++) {
+                const key = localStorage.key(i);
+                if (key && (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier'))) {
+                    const value = localStorage.getItem(key);
+                    if (value && codeVerifierCookieName) {
+                        const isSecure = window.location.protocol === 'https:';
+                        const cookieString = `${codeVerifierCookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
+                        document.cookie = cookieString;
+                        console.log('🍪 Manually copied PKCE code_verifier to cookie:', {
+                            localStorageKey: key,
+                            cookieName: codeVerifierCookieName,
+                            valueLength: value.length,
+                            currentDomain: window.location.hostname
+                        });
+                    }
+                }
+            }
+        }
+        
         // Check cookies after OAuth URL generation
         const cookiesAfter = document.cookie.split(';').map(c => c.trim().split('=')[0]);
         const newCookies = cookiesAfter.filter(c => !cookiesBefore.includes(c));
         console.log('🍪 Cookies after OAuth init:', {
             allCookies: cookiesAfter,
             newCookies: newCookies,
-            hasCodeVerifier: cookiesAfter.some(c => c.includes('code-verifier') || c.includes('code_verifier'))
+            hasCodeVerifier: cookiesAfter.some(c => c.includes('code-verifier') || c.includes('code_verifier')),
+            codeVerifierCookieName
         });
         
         if (error) {
