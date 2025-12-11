@@ -7,17 +7,17 @@ import { useRef, useEffect } from 'react';
 
 function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
-  
+
   const handleClick = async () => {
     // CRITICAL: Use current origin for redirectTo to ensure PKCE cookie is set on correct domain
     const redirectTo = `${window.location.origin}/auth/callback`;
-    
+
     console.log('🔐 SSOButton - Initiating OAuth:', {
       redirectTo,
       currentOrigin: window.location.origin,
       currentHost: window.location.host
     });
-    
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -27,16 +27,16 @@ function SSOButton({ children, ...buttonProps }: any) {
         },
       },
     });
-    
+
     // CRITICAL: After signInWithOAuth, Supabase may have stored the code_verifier in localStorage
     // We need to ensure it's also in cookies so the server-side callback can access it
     await new Promise(resolve => setTimeout(resolve, 100));
-    
+
     // Check localStorage for PKCE code_verifier and copy to cookie
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
-    
+    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
+
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && codeVerifierCookieName) {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -56,7 +56,7 @@ function SSOButton({ children, ...buttonProps }: any) {
         }
       }
     }
-    
+
     if (error) {
       console.error('❌ SSOButton - OAuth error:', error);
     } else if (data?.url) {
@@ -85,7 +85,7 @@ export function WelcomePage() {
     const framesToCut = 12;
     const estimatedFps = 30; // Default assumption
     const frameDuration = framesToCut / estimatedFps; // ~0.4 seconds for 30fps
-    
+
     const handleTimeUpdate = () => {
       if (video.duration && video.currentTime >= video.duration - frameDuration) {
         video.pause();
@@ -96,9 +96,9 @@ export function WelcomePage() {
     video.addEventListener('loadedmetadata', () => {
       video.addEventListener('timeupdate', handleTimeUpdate);
     });
-    
+
     video.addEventListener('timeupdate', handleTimeUpdate);
-    
+
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
     };
@@ -193,7 +193,7 @@ export function WelcomePage() {
             <svg width="100%" height="200" viewBox="0 0 700 200" style={{ display: 'block' }}>
               {/* Timeline line */}
               <line x1="50" y1="100" x2="650" y2="100" stroke="#DEE2E6" strokeWidth="3" />
-              
+
               {/* Markers */}
               <g>
                 {/* T-90 */}
@@ -201,25 +201,25 @@ export function WelcomePage() {
                 <text x="150" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T-90</text>
                 <path d="M 140 90 L 130 80 L 120 90 Z" fill="#FA5252" />
                 <text x="130" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">!</text>
-                
+
                 {/* T-30 */}
                 <circle cx="350" cy="100" r="8" fill="#FAB005" />
                 <text x="350" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T-30</text>
                 <path d="M 340 90 L 330 80 L 320 90 Z" fill="#FAB005" />
                 <text x="330" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">?</text>
-                
+
                 {/* ClearGO Gate */}
                 <rect x="400" y="60" width="100" height="80" rx="8" fill="#228BE6" opacity="0.1" stroke="#228BE6" strokeWidth="2" />
                 <text x="450" y="105" textAnchor="middle" fontSize="12" fontWeight="700" fill="#228BE6">ClearGO</text>
                 <text x="450" y="125" textAnchor="middle" fontSize="10" fill="#228BE6">Gate</text>
-                
+
                 {/* T+30 */}
                 <circle cx="550" cy="100" r="8" fill="#12B886" />
                 <text x="550" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T+30</text>
                 <path d="M 560 90 L 570 80 L 580 90 Z" fill="#12B886" />
                 <text x="570" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">✓</text>
               </g>
-              
+
               {/* Risk transformation arrows */}
               <path d="M 150 100 L 400 100" stroke="#FA5252" strokeWidth="2" strokeDasharray="5,5" fill="none" opacity="0.5" />
               <path d="M 350 100 L 400 100" stroke="#FAB005" strokeWidth="2" strokeDasharray="5,5" fill="none" opacity="0.5" />
@@ -405,11 +405,11 @@ export function WelcomePage() {
                       <circle cx="200" cy="120" r="40" fill="#228BE6" />
                       <circle cx="200" cy="110" r="25" fill="#FFFFFF" />
                       <rect x="175" y="140" width="50" height="60" rx="8" fill="#228BE6" />
-                      
+
                       {/* Badge */}
                       <circle cx="230" cy="100" r="20" fill="#FAB005" />
                       <text x="230" y="107" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">3</text>
-                      
+
                       {/* To-Do label */}
                       <rect x="150" y="210" width="100" height="30" rx="4" fill="#F8F9FA" stroke="#DEE2E6" />
                       <text x="200" y="230" textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569">Security Review</text>

@@ -100,19 +100,19 @@ export async function GET(request: NextRequest) {
         // This ensures the code_verifier cookie is available for PKCE flow
         const allCookies = request.cookies.getAll()
         console.log('🔍 All cookies before exchange:', allCookies.map(c => ({ name: c.name, hasValue: !!c.value })))
-        
-        // Find Supabase PKCE code verifier cookie (format: sb-<project-ref>-auth-code-verifier)
+
+        // Find Supabase PKCE code verifier cookie (format: sb-<project-ref>-auth-token-code-verifier)
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
-        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
-        const codeVerifierCookie = codeVerifierCookieName 
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null
+        const codeVerifierCookie = codeVerifierCookieName
             ? allCookies.find(c => c.name === codeVerifierCookieName)
             : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
-        
-        console.log('🔍 Code verifier cookie:', codeVerifierCookie 
+
+        console.log('🔍 Code verifier cookie:', codeVerifierCookie
             ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value, valueLength: codeVerifierCookie.value?.length }
             : 'NOT FOUND')
-        
+
         if (!codeVerifierCookie && projectRef) {
             console.error('❌ PKCE code_verifier cookie missing!', {
                 expectedName: codeVerifierCookieName,
@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
                 projectRef
             })
         }
-        
+
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (error) {
