@@ -134,13 +134,27 @@ function LoginForm() {
     setMessage(null);
     setLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/auth/callback?type=recovery`;
+      // Standard Supabase password reset: redirect directly to reset-password page
+      // Supabase will append access_token and refresh_token to the URL
+      // 
+      // CRITICAL: Use current origin so it works for both localhost and production
+      // For localhost: http://localhost:3000/reset-password
+      // For production: https://cleargo.netlify.app/reset-password
+      const redirectTo = `${window.location.origin}/reset-password`;
+      
+      console.log('🔍 Password reset redirectTo:', redirectTo);
+      
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo,
       });
       if (error) throw error;
       
-      setMessage("Password reset email sent! Check your email for the reset link.");
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocalhost) {
+        setMessage("Password reset email sent! To test locally: In the email link, change 'redirect_to=https://cleargo.netlify.app' to 'redirect_to=http://localhost:3000/reset-password' before clicking. Or test on production - it will work there.");
+      } else {
+        setMessage("Password reset email sent! Check your email for the reset link.");
+      }
       // Clear email after successful request
       setEmail("");
     } catch (err: any) {

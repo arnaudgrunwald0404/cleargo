@@ -1,30 +1,61 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 function ResetPasswordForm() {
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    // Check if user is authenticated (via recovery token)
-    async function checkAuth() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        setError("Invalid or expired reset link. Please request a new password reset.");
-      } else {
-        setIsAuthenticated(true);
+    // Standard Supabase password reset flow:
+    // 1. User clicks link → redirected with tokens in URL
+    // 2. Extract tokens and set session
+    // 3. Then user can update password
+    
+    async function setupSession() {
+      // Check if we have tokens in the URL (from Supabase redirect)
+      const accessToken = searchParams.get('access_token');
+      const refreshToken = searchParams.get('refresh_token');
+      
+      if (accessToken && refreshToken) {
+        // Set session from URL tokens (standard Supabase pattern)
+        const { data, error: sessionError } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        });
+        
+        if (sessionError) {
+          setError("Invalid or expired reset link. Please request a new password reset.");
+          return;
+        }
+        
+        if (data.session) {
+          setIsReady(true);
+          return;
+        }
       }
+      
+      // Fallback: check if session already exists (from callback route)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setIsReady(true);
+        return;
+      }
+      
+      // No session found
+      setError("Invalid or expired reset link. Please request a new password reset.");
     }
-    checkAuth();
+    
+    setupSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -45,53 +76,30 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
-      // Verify user is authenticated before updating password
-      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError || !currentUser) {
-        throw new Error("You must be authenticated to reset your password. Please use the password reset link from your email.");
-      }
-      
-      console.log('✅ User authenticated, updating password for:', currentUser.email);
-      
-      // Update the password (user is already authenticated via recovery token)
-      const { data: updateData, error: updateError } = await supabase.auth.updateUser({
+      // Simple: update password (session should already be set from URL tokens)
+      const { error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) {
-        console.error('❌ Password update error:', updateError);
         throw updateError;
       }
-      
-      console.log('✅ Password updated successfully:', {
-        user: updateData.user?.email,
-        updated: !!updateData.user
-      });
 
       setMessage("Password reset successfully! Redirecting to login...");
       
-      // Wait a moment to ensure the password is saved
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Sign out after password reset to force re-login with new password
-      const { error: signOutError } = await supabase.auth.signOut();
-      if (signOutError) {
-        console.warn('⚠️ Sign out error (may be normal):', signOutError);
-      }
-      
+      // Sign out and redirect to login (user can log in with new password)
+      await supabase.auth.signOut();
       setTimeout(() => {
         router.push('/login');
-      }, 2000);
+      }, 1500);
     } catch (err: any) {
-      console.error('❌ Password reset error:', err);
       setError(err?.message || "Failed to reset password. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  if (!isAuthenticated) {
+  if (!isReady) {
     return (
       <main className="pt-24 max-w-md mx-auto px-4">
         <h1 className="text-2xl font-bold mb-4">Reset Password</h1>

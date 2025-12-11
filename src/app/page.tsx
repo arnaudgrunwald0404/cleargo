@@ -18,6 +18,19 @@ export default async function HomePage({
   const code = searchParams?.code;
   const type = searchParams?.type;
   const token_hash = searchParams?.token_hash;
+  const access_token = searchParams?.access_token;
+  const refresh_token = searchParams?.refresh_token;
+  
+  // CRITICAL: Password reset links come with access_token and refresh_token (not code/token_hash)
+  // Supabase redirects to Site URL (production) even when redirectTo is localhost
+  // So we handle these tokens on production and redirect to reset-password page
+  if (access_token && refresh_token) {
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const redirectUrl = new URL('/reset-password', baseUrl);
+    redirectUrl.searchParams.set('access_token', Array.isArray(access_token) ? access_token[0] : access_token);
+    redirectUrl.searchParams.set('refresh_token', Array.isArray(refresh_token) ? refresh_token[0] : refresh_token);
+    redirect(redirectUrl.toString());
+  }
   
   // If we have auth parameters (code, token_hash, type) but we're on the root page,
   // redirect to /auth/callback to handle them properly

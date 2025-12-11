@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     if (token_hash && type) {
         // Handle password recovery separately - verify token and redirect to reset password page
         if (type === 'recovery') {
-            const { error: verifyError } = await supabase.auth.verifyOtp({
+            const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
                 type: 'recovery',
                 token_hash,
             })
@@ -86,22 +86,61 @@ export async function GET(request: NextRequest) {
                 return NextResponse.redirect(errorUrl)
             }
             
+            // CRITICAL: Verify that verifyOtp created a session
+            if (!verifyData.session) {
+                console.error('❌ verifyOtp succeeded but no session was created')
+                const errorUrl = new URL('/login?error=no_session', request.url)
+                errorUrl.searchParams.set('message', 'Password reset link verification failed. Please request a new one.')
+                return NextResponse.redirect(errorUrl)
+            }
+            
+            console.log('✅ Recovery token verified, session created:', {
+                user: verifyData.user?.email,
+                hasSession: !!verifyData.session,
+                expiresAt: verifyData.session.expires_at,
+                accessToken: verifyData.session.access_token ? 'present' : 'missing'
+            })
+            
+            // CRITICAL: After verifyOtp, Supabase should have set session cookies via setAll
+            // But we need to ensure they're properly set on the redirect response
+            // The storedCookies array should contain the session cookies
+            console.log('🔍 Stored cookies after verifyOtp:', storedCookies.map(c => ({ 
+                name: c.name, 
+                hasValue: !!c.value,
+                valueLength: c.value?.length || 0
+            })))
+            
             // Token verified successfully - redirect to reset password page
             // The user is now authenticated via the recovery token, so they can update their password
             const redirectResponse = NextResponse.redirect(new URL('/reset-password', request.url))
             const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+            
+            // Copy all cookies that Supabase set (including session cookies)
+            // CRITICAL: These cookies contain the session that allows updateUser to work
             storedCookies.forEach(({ name, value, options }) => {
                 const cookieOptions = options || {
                     httpOnly: true,
                     secure: process.env.NODE_ENV === 'production',
                     sameSite: 'lax' as const,
                     path: '/',
+                    maxAge: 60 * 60 * 24 * 365, // 1 year
                 }
                 if (cookieDomain && !cookieDomain.includes('localhost')) {
                     cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
                 }
                 redirectResponse.cookies.set(name, value, cookieOptions)
+                console.log('🍪 Setting recovery session cookie:', name, 'hasValue:', !!value, 'domain:', cookieOptions.domain || 'default')
             })
+            
+            // Verify cookies were set on the response
+            const allCookies = redirectResponse.cookies.getAll()
+            console.log('🔍 Cookies on redirect response:', allCookies.map(c => ({ name: c.name, hasValue: !!c.value })))
+            
+            // CRITICAL: Also add the session data to the URL as a fallback
+            // This ensures the client-side can access the session even if cookies fail
+            // But actually, we shouldn't do this for security - cookies should work
+            // Instead, we'll rely on middleware to sync cookies to localStorage
+            
             return redirectResponse
         }
         
