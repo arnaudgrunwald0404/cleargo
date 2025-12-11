@@ -1,15 +1,26 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useSearchParams } from "next/navigation";
 
 export default function LoginPage() {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const code = searchParams.get('code');
 
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+
+  // If OAuth code is present, redirect to callback handler
+  useEffect(() => {
+    if (code) {
+      console.log('🔍 OAuth code detected on /login, redirecting to /auth/callback');
+      window.location.href = `/auth/callback?code=${code}`;
+    }
+  }, [code]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
