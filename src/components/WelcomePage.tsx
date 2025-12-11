@@ -9,15 +9,13 @@ function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
   
   const handleClick = async () => {
-    // Use the canonical app URL if configured, otherwise use current origin
-    // This ensures PKCE cookies are set on the correct domain
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || window.location.origin;
-    const redirectTo = `${appUrl}/auth/callback`;
+    // CRITICAL: Use current origin for redirectTo to ensure PKCE cookie is set on correct domain
+    const redirectTo = `${window.location.origin}/auth/callback`;
     
     console.log('🔐 SSOButton - Initiating OAuth:', {
-      appUrl,
       redirectTo,
-      currentOrigin: window.location.origin
+      currentOrigin: window.location.origin,
+      currentHost: window.location.host
     });
     
     const { data, error } = await supabase.auth.signInWithOAuth({
@@ -32,6 +30,8 @@ function SSOButton({ children, ...buttonProps }: any) {
     
     if (error) {
       console.error('❌ SSOButton - OAuth error:', error);
+    } else if (data?.url) {
+      console.log('✅ SSOButton - OAuth URL generated');
     }
   };
 

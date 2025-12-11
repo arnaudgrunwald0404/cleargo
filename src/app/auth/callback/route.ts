@@ -95,11 +95,31 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
-        // Log all cookies to debug PKCE code_verifier issue
+        // CRITICAL: Explicitly read all cookies before exchangeCodeForSession
+        // Next.js lazily evaluates cookies, so we must force them to be read
+        // This ensures the code_verifier cookie is available for PKCE flow
         const allCookies = request.cookies.getAll()
-        const codeVerifierCookie = allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
-        console.log('🔍 All cookies:', allCookies.map(c => c.name))
-        console.log('🔍 Code verifier cookie:', codeVerifierCookie ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value } : 'NOT FOUND')
+        console.log('🔍 All cookies before exchange:', allCookies.map(c => ({ name: c.name, hasValue: !!c.value })))
+        
+        // Find Supabase PKCE code verifier cookie (format: sb-<project-ref>-auth-code-verifier)
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
+        const codeVerifierCookie = codeVerifierCookieName 
+            ? allCookies.find(c => c.name === codeVerifierCookieName)
+            : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
+        
+        console.log('🔍 Code verifier cookie:', codeVerifierCookie 
+            ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value, valueLength: codeVerifierCookie.value?.length }
+            : 'NOT FOUND')
+        
+        if (!codeVerifierCookie && projectRef) {
+            console.error('❌ PKCE code_verifier cookie missing!', {
+                expectedName: codeVerifierCookieName,
+                availableCookies: allCookies.map(c => c.name),
+                projectRef
+            })
+        }
         
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
