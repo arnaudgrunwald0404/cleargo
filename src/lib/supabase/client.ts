@@ -12,7 +12,8 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
     return fetch(url, {
         ...options,
         headers: Object.fromEntries(headers.entries()),
-        credentials: 'include', // Ensure cookies are sent with requests
+        // NOTE: Don't set credentials: 'include' here - it causes CORS issues with Supabase's wildcard CORS headers
+        // Supabase handles cookies automatically through its own mechanisms
     });
 };
 

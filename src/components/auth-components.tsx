@@ -14,11 +14,14 @@ export function SignIn({
         // Using window.location.origin ensures cookies are accessible when callback happens
         const redirectTo = `${window.location.origin}/auth/callback`;
         
+        const cookiesBefore = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        
         console.log('🔐 Initiating OAuth sign-in:', {
             redirectTo,
             currentOrigin: window.location.origin,
             currentHost: window.location.host,
-            appUrl: process.env.NEXT_PUBLIC_APP_URL
+            appUrl: process.env.NEXT_PUBLIC_APP_URL,
+            cookiesBefore
         });
         
         const { data, error } = await supabase.auth.signInWithOAuth({
@@ -29,6 +32,15 @@ export function SignIn({
                     prompt: 'select_account',
                 },
             },
+        });
+        
+        // Check cookies after OAuth URL generation
+        const cookiesAfter = document.cookie.split(';').map(c => c.trim().split('=')[0]);
+        const newCookies = cookiesAfter.filter(c => !cookiesBefore.includes(c));
+        console.log('🍪 Cookies after OAuth init:', {
+            allCookies: cookiesAfter,
+            newCookies: newCookies,
+            hasCodeVerifier: cookiesAfter.some(c => c.includes('code-verifier') || c.includes('code_verifier'))
         });
         
         if (error) {
