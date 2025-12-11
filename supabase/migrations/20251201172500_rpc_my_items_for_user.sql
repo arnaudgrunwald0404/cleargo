@@ -1,5 +1,6 @@
 -- 20251201172500_rpc_my_items_for_user.sql
 -- RPC to return "my items" filtered in SQL using decision_owner rules and pod->PM mapping
+-- NOTE: Uses 'epic' table (renamed from 'launch' in migration 0018)
 
 create or replace function my_items_for_user(p_email text)
 returns table (
@@ -38,7 +39,7 @@ as $$
           )
         )
       end as resolved_email,
-      -- embed launch subset
+      -- embed launch subset (note: table is 'epic' but column name remains 'launch' for API compatibility)
       jsonb_build_object(
         'id', la.id,
         'name', la.name,
@@ -51,7 +52,7 @@ as $$
         'category', c.category
       ) as criterion
     from launch_criterion_status lcs
-    join launch la on la.id = lcs.launch_id
+    join epic la on la.id = lcs.launch_id
     join criterion c on c.id = lcs.criterion_id
   )
   select id, status, condition, condition_due_date, last_updated_at, launch, criterion

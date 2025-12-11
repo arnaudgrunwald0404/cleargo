@@ -66,6 +66,40 @@ export async function GET(request: NextRequest) {
     )
 
     if (token_hash && type) {
+        // Handle password recovery separately - verify token and redirect to reset password page
+        if (type === 'recovery') {
+            const { error: verifyError } = await supabase.auth.verifyOtp({
+                type: 'recovery',
+                token_hash,
+            })
+            
+            if (verifyError) {
+                console.error('Password recovery token verification error:', verifyError)
+                const errorUrl = new URL('/login?error=invalid_token', request.url)
+                errorUrl.searchParams.set('message', 'Password reset link is invalid or has expired')
+                return NextResponse.redirect(errorUrl)
+            }
+            
+            // Token verified successfully - redirect to reset password page
+            // The user is now authenticated via the recovery token, so they can update their password
+            const redirectResponse = NextResponse.redirect(new URL('/reset-password', request.url))
+            const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+            storedCookies.forEach(({ name, value, options }) => {
+                const cookieOptions = options || {
+                    httpOnly: true,
+                    secure: process.env.NODE_ENV === 'production',
+                    sameSite: 'lax' as const,
+                    path: '/',
+                }
+                if (cookieDomain && !cookieDomain.includes('localhost')) {
+                    cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                }
+                redirectResponse.cookies.set(name, value, cookieOptions)
+            })
+            return redirectResponse
+        }
+        
+        // Handle other OTP types (email confirmation, magic link, etc.)
         const { error } = await supabase.auth.verifyOtp({
             type,
             token_hash,

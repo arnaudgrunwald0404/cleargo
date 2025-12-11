@@ -1,9 +1,21 @@
 -- 0016_link_rating_timing_to_launch_stages.sql
 -- Link rating_timing column to launch_stages table via foreign key
 -- This migration converts the text rating_timing to a foreign key reference
+-- NOTE: This migration requires launch_stages table to exist (created in 20251202000000_create_launch_stages.sql)
 
 DO $$
 BEGIN
+    -- Only proceed if launch_stages table exists
+    IF NOT EXISTS (
+        SELECT 1 
+        FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'launch_stages'
+    ) THEN
+        RAISE NOTICE 'launch_stages table does not exist yet, skipping migration';
+        RETURN;
+    END IF;
+
     -- Check if rating_timing is still text type (needs conversion)
     IF EXISTS (
         SELECT 1 

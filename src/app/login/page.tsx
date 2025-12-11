@@ -8,7 +8,7 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
 
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -49,8 +49,18 @@ function LoginForm() {
     try {
       const { data, error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      // If email confirmations are enabled, Supabase will send a confirmation email
-      setMessage("Account created. Check your email to confirm, then sign in.");
+      
+      // Check if email confirmation is required
+      if (data.user && !data.session) {
+        // Email confirmation required
+        setMessage("Account created! Check your email to confirm, then sign in.");
+      } else if (data.session) {
+        // No email confirmation required - auto signed in
+        setMessage("Account created! Redirecting...");
+        window.location.href = "/dashboard";
+      } else {
+        setMessage("Account created! You can now sign in.");
+      }
     } catch (err: any) {
       setMessage(err?.message || "Sign-up failed");
     } finally {
@@ -58,54 +68,129 @@ function LoginForm() {
     }
   }
 
+  async function handleResetPassword(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+    setLoading(true);
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback?type=recovery`;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+      if (error) throw error;
+      
+      setMessage("Password reset email sent! Check your email for the reset link.");
+      // Clear email after successful request
+      setEmail("");
+    } catch (err: any) {
+      setMessage(err?.message || "Failed to send reset email");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="pt-24 max-w-md mx-auto px-4">
-      <h1 className="text-2xl font-bold mb-4">{mode === "signin" ? "Sign in" : "Create account"}</h1>
+      <h1 className="text-2xl font-bold mb-4">
+        {mode === "signin" ? "Sign in" : mode === "signup" ? "Create account" : "Reset password"}
+      </h1>
 
-      <div className="mb-4 text-sm text-gray-600">
-        <button
-          className="underline mr-2"
-          onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-        >
-          {mode === "signin" ? "Need an account? Sign up" : "Have an account? Sign in"}
-        </button>
+      <div className="mb-4 text-sm text-gray-600 flex flex-wrap gap-2">
+        {mode !== "reset" && (
+          <>
+            <button
+              className="underline"
+              onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+            >
+              {mode === "signin" ? "Need an account? Sign up" : "Have an account? Sign in"}
+            </button>
+            {mode === "signin" && (
+              <>
+                <span>•</span>
+                <button
+                  className="underline"
+                  onClick={() => setMode("reset")}
+                >
+                  Forgot password?
+                </button>
+              </>
+            )}
+          </>
+        )}
+        {mode === "reset" && (
+          <button
+            className="underline"
+            onClick={() => setMode("signin")}
+          >
+            Back to sign in
+          </button>
+        )}
       </div>
 
-      <form onSubmit={mode === "signin" ? handleSignIn : handleSignUp} className="space-y-3">
-        <label className="block">
-          <div className="text-sm mb-1">Email</div>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full px-3 py-2 border rounded"
-          />
-        </label>
-        <label className="block">
-          <div className="text-sm mb-1">Password</div>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            className="w-full px-3 py-2 border rounded"
-          />
-        </label>
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded disabled:opacity-50"
-        >
-          {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Sign up"}
-        </button>
-      </form>
+      {mode === "reset" ? (
+        <form onSubmit={handleResetPassword} className="space-y-3">
+          <label className="block">
+            <div className="text-sm mb-1">Email</div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              placeholder="Enter your email address"
+              className="w-full px-3 py-2 border rounded"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded disabled:opacity-50"
+          >
+            {loading ? "Sending..." : "Send reset link"}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={mode === "signin" ? handleSignIn : handleSignUp} className="space-y-3">
+          <label className="block">
+            <div className="text-sm mb-1">Email</div>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full px-3 py-2 border rounded"
+            />
+          </label>
+          <label className="block">
+            <div className="text-sm mb-1">Password</div>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              className="w-full px-3 py-2 border rounded"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 rounded disabled:opacity-50"
+          >
+            {loading ? "Please wait…" : mode === "signin" ? "Sign in" : "Sign up"}
+          </button>
+        </form>
+      )}
 
-      {message && <p className="mt-4 text-sm text-red-600">{message}</p>}
+      {message && (
+        <p className={`mt-4 text-sm ${message.includes("error") || message.includes("failed") || message.includes("Failed") ? "text-red-600" : "text-green-600"}`}>
+          {message}
+        </p>
+      )}
 
-      <div className="mt-6 text-sm text-gray-600">
-        <p>Or continue with Google OAuth from the header avatar if configured.</p>
-      </div>
+      {mode !== "reset" && (
+        <div className="mt-6 text-sm text-gray-600">
+          <p>Or continue with Google OAuth from the header avatar if configured.</p>
+        </div>
+      )}
     </main>
   );
 }
