@@ -37,6 +37,11 @@ export async function updateSession(request: NextRequest) {
     // This ensures that sessions stored in localStorage (from createBrowserClient) 
     // are synced to cookies (for createServerClient) on the next request
     // Supabase SSR handles the sync automatically when getUser() is called
+    // 
+    // Note: getUser() reads from cookies, but Supabase SSR will automatically
+    // sync sessions from the request if they exist. For signInWithPassword,
+    // the session is in localStorage client-side, so we need to ensure it's
+    // synced via a request that includes the session token.
     const { data: { user }, error } = await supabase.auth.getUser()
     
     if (error) {
@@ -46,6 +51,7 @@ export async function updateSession(request: NextRequest) {
         }
     } else if (user) {
         console.log('✅ Middleware - User session valid:', user.email)
+        // Session is valid - Supabase SSR has synced it to cookies automatically
     }
 
     return response

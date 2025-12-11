@@ -53,29 +53,47 @@ function LoginForm() {
       
       // CRITICAL: Supabase SSR requires sessions to be in cookies for server-side access
       // After signInWithPassword, session is in localStorage but needs to be in cookies
-      // We make a request to an API route that will trigger middleware to sync the session
-      // This ensures the server can read the session on the next request
-      try {
-        // Make a request that goes through middleware - this will sync the session
-        // We use a simple API call to trigger middleware session sync
-        const response = await fetch('/api/me', { 
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Cache-Control': 'no-cache'
-          }
+      // We need to manually sync the session to cookies so middleware/server can read it
+      // This works on both localhost (HTTP) and production (HTTPS)
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+      const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+      
+      if (projectRef && session.access_token) {
+        // Manually set the session cookie that Supabase SSR expects
+        // Format: sb-{project-ref}-auth-token
+        const cookieName = `sb-${projectRef}-auth-token`;
+        const isSecure = window.location.protocol === 'https:';
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        
+        // Supabase stores session as JSON in the cookie
+        const sessionData = {
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          expires_at: session.expires_at,
+          expires_in: session.expires_in,
+          token_type: session.token_type,
+          user: session.user
+        };
+        
+        const cookieValue = encodeURIComponent(JSON.stringify(sessionData));
+        const maxAge = 60 * 60 * 24 * 365; // 1 year
+        
+        // Set cookie - secure flag only in production (not localhost)
+        const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
+        document.cookie = `${cookieName}=${cookieValue}; path=/; SameSite=Lax; ${secureFlag} max-age=${maxAge}`;
+        
+        console.log('🍪 Manually set session cookie:', {
+          cookieName,
+          isSecure: !!secureFlag,
+          isLocalhost,
+          expiresAt: session.expires_at
         });
-        // Don't check response - we just need middleware to run
-        console.log('✅ Triggered middleware session sync');
-      } catch (syncError) {
-        // Ignore sync errors - the redirect will still trigger middleware
-        console.warn('Session sync warning (may be normal):', syncError);
       }
       
-      // Small delay to ensure sync completes
-      await new Promise(resolve => setTimeout(resolve, 200));
+      // Small delay to ensure cookie is set
+      await new Promise(resolve => setTimeout(resolve, 100));
       
-      // Use full page reload - middleware should now have synced the session to cookies
+      // Use full page reload - middleware will now read the session from cookies
       window.location.href = "/dashboard";
     } catch (err: any) {
       console.error('❌ Login error:', err);

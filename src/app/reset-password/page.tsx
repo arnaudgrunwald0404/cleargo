@@ -45,22 +45,46 @@ function ResetPasswordForm() {
 
     setLoading(true);
     try {
+      // Verify user is authenticated before updating password
+      const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !currentUser) {
+        throw new Error("You must be authenticated to reset your password. Please use the password reset link from your email.");
+      }
+      
+      console.log('✅ User authenticated, updating password for:', currentUser.email);
+      
       // Update the password (user is already authenticated via recovery token)
-      const { error: updateError } = await supabase.auth.updateUser({
+      const { data: updateData, error: updateError } = await supabase.auth.updateUser({
         password: password,
       });
 
       if (updateError) {
+        console.error('❌ Password update error:', updateError);
         throw updateError;
       }
+      
+      console.log('✅ Password updated successfully:', {
+        user: updateData.user?.email,
+        updated: !!updateData.user
+      });
 
       setMessage("Password reset successfully! Redirecting to login...");
-      // Sign out after password reset to force re-login
-      await supabase.auth.signOut();
+      
+      // Wait a moment to ensure the password is saved
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Sign out after password reset to force re-login with new password
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        console.warn('⚠️ Sign out error (may be normal):', signOutError);
+      }
+      
       setTimeout(() => {
         router.push('/login');
       }, 2000);
     } catch (err: any) {
+      console.error('❌ Password reset error:', err);
       setError(err?.message || "Failed to reset password. Please try again.");
     } finally {
       setLoading(false);
