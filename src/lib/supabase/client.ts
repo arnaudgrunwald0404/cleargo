@@ -80,6 +80,58 @@ const cookieStorage = {
 };
 
 export function createClient() {
+    // CRITICAL: Intercept localStorage to copy PKCE code_verifier to cookies
+    // Supabase SSR might use localStorage internally for PKCE, so we need to intercept it
+    if (typeof window !== 'undefined' && typeof Storage !== 'undefined') {
+        const originalSetItem = Storage.prototype.setItem;
+        const originalGetItem = Storage.prototype.getItem;
+        
+        Storage.prototype.setItem = function(key: string, value: string) {
+            // Call original setItem
+            originalSetItem.call(this, key, value);
+            
+            // If it's a PKCE-related key, also set as cookie
+            if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+                const isSecure = window.location.protocol === 'https:';
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+                const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+                
+                // Try both possible cookie names
+                const cookieNames = projectRef 
+                    ? [`sb-${projectRef}-auth-code-verifier`, key]
+                    : [key];
+                
+                cookieNames.forEach(cookieName => {
+                    const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
+                    document.cookie = cookieString;
+                    console.log('🍪 Intercepted localStorage.setItem -> cookie:', { key, cookieName, valueLength: value.length });
+                });
+            }
+        };
+        
+        Storage.prototype.getItem = function(key: string): string | null {
+            // First try localStorage
+            const value = originalGetItem.call(this, key);
+            
+            // If not found and it's PKCE-related, try cookies
+            if (!value && (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier'))) {
+                const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+                    const [name, ...rest] = cookie.trim().split('=');
+                    acc[name] = rest.join('=');
+                    return acc;
+                }, {} as Record<string, string>);
+                
+                const cookieValue = cookies[key] || null;
+                if (cookieValue) {
+                    console.log('🍪 Intercepted localStorage.getItem -> found in cookie:', { key });
+                    return cookieValue;
+                }
+            }
+            
+            return value;
+        };
+    }
+    
     // Important: disable client-side auto refresh to avoid races with
     // server-side refresh (middleware). When both refresh at once, Supabase
     // rotates the refresh token and the client may keep using the old one,
