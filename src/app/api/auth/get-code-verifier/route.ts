@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
     const allCookies = request.cookies.getAll();
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
+    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
 
     const codeVerifierCookie = codeVerifierCookieName
         ? allCookies.find(c => c.name === codeVerifierCookieName)

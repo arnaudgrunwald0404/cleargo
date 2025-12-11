@@ -70,15 +70,15 @@ const cookieStorage = {
         const isSecure = window.location.protocol === 'https:';
 
         // CRITICAL: If this is a PKCE code_verifier, use the exact cookie name Supabase expects
-        // Supabase expects: sb-{project-ref}-auth-token-code-verifier
-        // We used to rename it to sb-{project-ref}-auth-code-verifier but that was WRONG
+        // Supabase expects: sb-{project-ref}-auth-code-verifier (without "token")
+        // Reference: https://supabase.com/docs/guides/auth/server-side/oauth-with-pkce-flow-for-ssr
         let cookieName = key;
         if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
             const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
             if (projectRef && !key.includes(projectRef)) {
                 // Only construct name if key doesn't already look right
-                cookieName = `sb-${projectRef}-auth-token-code-verifier`;
+                cookieName = `sb-${projectRef}-auth-code-verifier`;
             }
         }
 
@@ -139,7 +139,7 @@ export function createClient() {
                     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
 
                     // Set cookie with the exact name Supabase expects
-                    const cookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : key;
+                    const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
                     const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
                     document.cookie = cookieString;
                     console.log('🍪 Intercepted Storage.setItem -> cookie:', {
@@ -164,7 +164,7 @@ export function createClient() {
 
                     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
                     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-                    const cookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : key;
+                    const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
                     const cookieValue = cookies[cookieName] || cookies[key] || null;
 
                     if (cookieValue) {
@@ -187,7 +187,7 @@ export function createClient() {
                     const isSecure = window.location.protocol === 'https:';
                     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
                     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-                    const cookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : key;
+                    const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
                     const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
                     document.cookie = cookieString;
                     console.log('🍪 Intercepted sessionStorage.setItem -> cookie:', { key, cookieName });
@@ -234,7 +234,7 @@ export function createClient() {
                     const isSecure = window.location.protocol === 'https:';
                     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
                     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-                    const cookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : key;
+                    const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
                     const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
                     document.cookie = cookieString;
                     console.log('🍪 Intercepted client.storage.setItem -> cookie:', { key, cookieName, valueLength: value.length });

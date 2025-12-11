@@ -35,7 +35,7 @@ function SSOButton({ children, ...buttonProps }: any) {
     // Check localStorage for PKCE code_verifier and copy to cookie
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
     const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
+    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
 
     if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && codeVerifierCookieName) {
       for (let i = 0; i < localStorage.length; i++) {

@@ -28,7 +28,7 @@ export function SignIn({
         // Supabase SSR might store the code_verifier immediately, so we need to catch it
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
 
         // Set up a MutationObserver to watch for cookie changes
         let codeVerifierFound = false;
