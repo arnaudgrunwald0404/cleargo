@@ -1,7 +1,27 @@
 import { createBrowserClient } from '@supabase/ssr'
 
 // Custom fetch that ensures proper Accept header to avoid 406 errors
+// CRITICAL: Also blocks client-side token exchange attempts (should only happen server-side)
 const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
+    const urlString = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+    
+    // BLOCK client-side token exchange - this should ONLY happen server-side in /auth/callback
+    // Supabase client tries to exchange codes automatically, but we handle it server-side
+    if (urlString.includes('/auth/v1/token') && options?.method === 'POST') {
+        const urlObj = typeof url === 'string' ? new URL(url) : url instanceof URL ? url : new URL(url.url);
+        if (urlObj.searchParams.get('grant_type') === 'pkce') {
+            console.warn('🚫 Blocked client-side PKCE token exchange - this should only happen server-side');
+            // Return a mock error response to prevent Supabase from retrying
+            return new Response(JSON.stringify({ 
+                error: 'client_side_exchange_blocked',
+                error_description: 'Token exchange must happen server-side. Redirect to /auth/callback instead.'
+            }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' }
+            });
+        }
+    }
+    
     const headers = new Headers(options?.headers);
     
     // Always set Accept header for Supabase REST API (PostgREST)
@@ -48,13 +68,32 @@ const cookieStorage = {
         // SameSite=Lax allows it to be sent with redirects from Google
         // Secure flag required for HTTPS
         const isSecure = window.location.protocol === 'https:';
-        const cookieString = `${key}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`; // 10 minutes
+        
+        // CRITICAL: If this is a PKCE code_verifier, use the exact cookie name Supabase expects
+        // Supabase expects: sb-{project-ref}-auth-code-verifier
+        let cookieName = key;
+        if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+            const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+            if (projectRef) {
+                cookieName = `sb-${projectRef}-auth-code-verifier`;
+            }
+        }
+        
+        const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`; // 10 minutes
         
         document.cookie = cookieString;
         
         // Log PKCE-related storage writes
         if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth')) {
-            console.log('✅ Storage setItem (cookie):', { key, valueLength: value.length, isSecure, cookieString });
+            console.log('✅ Storage setItem (cookie):', { 
+                key, 
+                cookieName, 
+                valueLength: value.length, 
+                isSecure, 
+                cookieString,
+                currentDomain: window.location.hostname
+            });
         }
         
         // Also store in localStorage as backup (Supabase might check both)
@@ -159,7 +198,7 @@ export function createClient() {
     // server-side refresh (middleware). When both refresh at once, Supabase
     // rotates the refresh token and the client may keep using the old one,
     // leading to "Invalid Refresh Token: Already Used" loops.
-    return createBrowserClient(
+    const client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
@@ -174,5 +213,33 @@ export function createClient() {
                 storage: typeof window !== 'undefined' ? cookieStorage : undefined,
             },
         }
-    )
+    );
+    
+    // CRITICAL: Intercept Supabase's internal PKCE storage
+    // Supabase SSR might store code_verifier in a way that bypasses our storage adapter
+    // So we intercept the actual storage operations at the lowest level
+    if (typeof window !== 'undefined') {
+        // Override the client's internal storage if it exists
+        // This is a last-resort attempt to catch the code_verifier
+        const originalStorage = (client as any).storage;
+        if (originalStorage && typeof originalStorage.setItem === 'function') {
+            const originalSetItem = originalStorage.setItem.bind(originalStorage);
+            originalStorage.setItem = function(key: string, value: string) {
+                originalSetItem(key, value);
+                
+                // If it's a PKCE-related key, also set as cookie
+                if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+                    const isSecure = window.location.protocol === 'https:';
+                    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+                    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+                    const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
+                    const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
+                    document.cookie = cookieString;
+                    console.log('🍪 Intercepted client.storage.setItem -> cookie:', { key, cookieName, valueLength: value.length });
+                }
+            };
+        }
+    }
+    
+    return client;
 }
