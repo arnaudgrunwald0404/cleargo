@@ -14,11 +14,15 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  // If OAuth code is present, redirect to callback handler
+  // CRITICAL: If OAuth code is present, IMMEDIATELY redirect to callback handler
+  // This handles the case where Supabase redirects to /login instead of /auth/callback
+  // Using window.location.href for immediate redirect (no React delay)
   useEffect(() => {
     if (code) {
-      console.log('🔍 OAuth code detected on /login, redirecting to /auth/callback');
+      console.log('🔍 OAuth code detected on /login, immediately redirecting to /auth/callback');
+      // Use window.location.href for immediate redirect (faster than router)
       window.location.href = `/auth/callback?code=${code}`;
+      return;
     }
   }, [code]);
 
