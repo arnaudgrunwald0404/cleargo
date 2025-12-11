@@ -15,6 +15,21 @@ export default async function HomePage({
   // Check for auth errors from OAuth callback
   const error = searchParams?.error;
   const errorMessage = searchParams?.message;
+  const code = searchParams?.code;
+  const type = searchParams?.type;
+  const token_hash = searchParams?.token_hash;
+  
+  // If we have auth parameters (code, token_hash, type) but we're on the root page,
+  // redirect to /auth/callback to handle them properly
+  if (code || token_hash) {
+    // Server-side redirect to callback
+    const redirectUrl = new URL('/auth/callback', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+    if (code) redirectUrl.searchParams.set('code', Array.isArray(code) ? code[0] : code);
+    if (token_hash) redirectUrl.searchParams.set('token_hash', Array.isArray(token_hash) ? token_hash[0] : token_hash);
+    if (type) redirectUrl.searchParams.set('type', Array.isArray(type) ? type[0] : type);
+    redirect(redirectUrl.toString());
+  }
+  
   if (error) {
     console.error('❌ Auth error from callback:', error, errorMessage);
   }

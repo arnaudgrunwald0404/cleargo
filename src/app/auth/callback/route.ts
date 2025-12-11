@@ -11,7 +11,13 @@ export async function GET(request: NextRequest) {
     const next = searchParams.get('next') ?? '/dashboard'
     const code = searchParams.get('code')
 
-    console.log('🔍 OAuth Callback - Code:', code ? 'present' : 'missing')
+    console.log('🔍 Auth Callback - All params:', {
+        code: code ? 'present' : 'missing',
+        token_hash: token_hash ? 'present' : 'missing',
+        type: type || 'none',
+        next,
+        fullUrl: request.url
+    })
     console.log('🔍 Request URL:', request.url)
     console.log('🔍 Request origin:', request.nextUrl.origin)
     console.log('🔍 Request host:', request.headers.get('host'))
@@ -129,6 +135,74 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
+        // Check if this is a recovery code (password reset) - recovery codes don't use PKCE
+        // If type=recovery is present with a code, handle it differently
+        if (type === 'recovery') {
+            console.log('🔍 Handling recovery code (password reset) - attempting verifyOtp first')
+            // Try verifyOtp first (for token_hash-based recovery)
+            // If code is actually a token_hash, this will work
+            const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+                type: 'recovery',
+                token_hash: code, // Try using code as token_hash
+            })
+            
+            if (!otpError && otpData?.session) {
+                console.log('✅ Recovery verified via verifyOtp')
+                const redirectResponse = NextResponse.redirect(new URL('/reset-password', request.url))
+                const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+                storedCookies.forEach(({ name, value, options }) => {
+                    const cookieOptions = options || {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax' as const,
+                        path: '/',
+                    }
+                    if (cookieDomain && !cookieDomain.includes('localhost')) {
+                        cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                    }
+                    redirectResponse.cookies.set(name, value, cookieOptions)
+                })
+                return redirectResponse
+            }
+            
+            // If verifyOtp failed, try exchangeCodeForSession (for PKCE-based recovery)
+            // But recovery codes shouldn't require PKCE, so this might fail
+            console.log('⚠️ verifyOtp failed, trying exchangeCodeForSession (may fail without PKCE)')
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+            
+            if (error) {
+                console.error('❌ Recovery code exchange error:', error)
+                // If it's a PKCE error, provide a more helpful message
+                if (error.message?.includes('code_verifier')) {
+                    console.error('❌ Password reset is trying to use PKCE but code_verifier is missing')
+                    console.error('❌ This suggests Supabase is using PKCE flow for password reset, which is incorrect')
+                }
+                const errorUrl = new URL('/login?error=invalid_token', request.url)
+                errorUrl.searchParams.set('message', 'Password reset link is invalid or has expired. Please request a new one.')
+                return NextResponse.redirect(errorUrl)
+            }
+            
+            if (data?.session) {
+                console.log('✅ Recovery code exchanged successfully')
+                // Successfully exchanged recovery code - redirect to reset password page
+                const redirectResponse = NextResponse.redirect(new URL('/reset-password', request.url))
+                const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+                storedCookies.forEach(({ name, value, options }) => {
+                    const cookieOptions = options || {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax' as const,
+                        path: '/',
+                    }
+                    if (cookieDomain && !cookieDomain.includes('localhost')) {
+                        cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                    }
+                    redirectResponse.cookies.set(name, value, cookieOptions)
+                })
+                return redirectResponse
+            }
+        }
+        
         // CRITICAL: Explicitly read all cookies before exchangeCodeForSession
         // Next.js lazily evaluates cookies, so we must force them to be read
         // This ensures the code_verifier cookie is available for PKCE flow
