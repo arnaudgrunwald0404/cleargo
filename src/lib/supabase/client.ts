@@ -51,11 +51,48 @@ const cookieStorage = {
             return acc;
         }, {} as Record<string, string>);
 
-        const value = cookies[key] || null;
+        // Check for exact key match first
+        let value = cookies[key] || null;
+        
+        // If not found and it's a Supabase auth key, try to find by pattern
+        if (!value && key.includes('auth')) {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+            const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+            
+            // Try Supabase cookie name format: sb-{project-ref}-auth-token
+            if (projectRef) {
+                if (key.includes('code-verifier') || key.includes('code_verifier')) {
+                    const cookieName = `sb-${projectRef}-auth-code-verifier`;
+                    value = cookies[cookieName] || null;
+                } else if (key.includes('auth-token') || key.includes('access-token')) {
+                    const cookieName = `sb-${projectRef}-auth-token`;
+                    value = cookies[cookieName] || null;
+                } else if (key.includes('refresh-token')) {
+                    const cookieName = `sb-${projectRef}-auth-token.refresh`;
+                    value = cookies[cookieName] || null;
+                }
+            }
+            
+            // Fallback: check localStorage if cookie not found
+            if (!value) {
+                try {
+                    value = localStorage.getItem(key);
+                } catch {
+                    // Ignore localStorage errors
+                }
+            }
+        } else if (!value) {
+            // For non-auth keys, also check localStorage
+            try {
+                value = localStorage.getItem(key);
+            } catch {
+                // Ignore localStorage errors
+            }
+        }
 
-        // Log PKCE-related storage access
-        if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth')) {
-            console.log('🔍 Storage getItem:', { key, found: !!value, source: value ? 'cookie' : 'none' });
+        // Log auth-related storage access
+        if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth') || key.includes('token')) {
+            console.log('🔍 Storage getItem:', { key, found: !!value, source: value ? (cookies[key] ? 'cookie' : 'localStorage') : 'none' });
         }
 
         return value;
@@ -63,42 +100,59 @@ const cookieStorage = {
     setItem: (key: string, value: string): void => {
         if (typeof document === 'undefined') return;
 
-        // CRITICAL: For PKCE code_verifier, we MUST use cookies, not localStorage
-        // Set cookie without domain so it works on exact domain match
-        // SameSite=Lax allows it to be sent with redirects from Google
-        // Secure flag required for HTTPS
+        // CRITICAL: Store ALL Supabase auth-related keys in cookies so server can read them
+        // This includes: PKCE code_verifier, session tokens, refresh tokens, etc.
         const isSecure = window.location.protocol === 'https:';
-
-        // CRITICAL: If this is a PKCE code_verifier, use the exact cookie name Supabase expects
-        // Supabase expects: sb-{project-ref}-auth-code-verifier (without "token")
-        // Reference: https://supabase.com/docs/guides/auth/server-side/oauth-with-pkce-flow-for-ssr
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+        
+        // Determine cookie name based on key type
         let cookieName = key;
+        let maxAge = 60 * 60 * 24 * 365; // Default: 1 year for session tokens
+        
         if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-            const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+            // PKCE code_verifier - short-lived (10 minutes)
             if (projectRef && !key.includes(projectRef)) {
-                // Only construct name if key doesn't already look right
                 cookieName = `sb-${projectRef}-auth-code-verifier`;
             }
+            maxAge = 600; // 10 minutes
+        } else if (key.includes('auth-token') || key.includes('access-token') || key.includes('refresh-token')) {
+            // Session tokens - use Supabase's expected cookie name format
+            if (projectRef && key.includes('sb-')) {
+                // Already has project ref, use as-is
+                cookieName = key;
+            } else if (projectRef) {
+                // Construct Supabase cookie name: sb-{project-ref}-auth-token
+                if (key.includes('access-token') || key.includes('auth-token')) {
+                    cookieName = `sb-${projectRef}-auth-token`;
+                } else if (key.includes('refresh-token')) {
+                    cookieName = `sb-${projectRef}-auth-token.refresh`;
+                }
+            }
+            maxAge = 60 * 60 * 24 * 365; // 1 year for session tokens
+        } else if (key.startsWith('sb-') && key.includes('auth')) {
+            // Other Supabase auth keys - use as-is
+            cookieName = key;
+            maxAge = 60 * 60 * 24 * 365; // 1 year
         }
 
-        const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`; // 10 minutes
-
+        // Set cookie with proper attributes
+        const cookieString = `${cookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=${maxAge}`;
         document.cookie = cookieString;
 
-        // Log PKCE-related storage writes
-        if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth')) {
+        // Log auth-related storage writes
+        if (key.includes('auth') || key.includes('token') || key.includes('code-verifier')) {
             console.log('✅ Storage setItem (cookie):', {
                 key,
                 cookieName,
                 valueLength: value.length,
                 isSecure,
-                cookieString,
+                maxAge,
                 currentDomain: window.location.hostname
             });
         }
 
-        // Also store in localStorage as backup (Supabase might check both)
+        // Also store in localStorage as backup (Supabase client might check both)
         try {
             localStorage.setItem(key, value);
         } catch {
@@ -200,6 +254,10 @@ export function createClient() {
     // server-side refresh (middleware). When both refresh at once, Supabase
     // rotates the refresh token and the client may keep using the old one,
     // leading to "Invalid Refresh Token: Already Used" loops.
+    // 
+    // CRITICAL: Don't use custom storage adapter - let Supabase handle session storage normally
+    // Supabase SSR automatically syncs sessions to cookies via middleware
+    // We only intercept PKCE code_verifier storage at the Storage.prototype level
     const client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -212,10 +270,27 @@ export function createClient() {
                 autoRefreshToken: false, // let middleware refresh on navigation
                 detectSessionInUrl: false, // we exchange the code on the server
                 flowType: 'pkce', // Explicitly use PKCE flow for OAuth
-                storage: typeof window !== 'undefined' ? cookieStorage : undefined,
+                // Don't override storage - let Supabase use default localStorage
+                // Middleware will sync sessions to cookies automatically
             },
         }
     );
+    
+    // CRITICAL: After signInWithPassword, we need to ensure the session is synced to cookies
+    // Supabase SSR expects sessions in cookies, but createBrowserClient stores in localStorage
+    // We intercept auth state changes to sync to cookies
+    if (typeof window !== 'undefined') {
+        client.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                console.log('✅ Auth state changed: SIGNED_IN - session available');
+                // The middleware will sync this to cookies on the next request
+                // But we can also manually trigger a cookie sync by making a request
+                // For now, just log - the redirect to /dashboard will trigger middleware
+            } else if (event === 'SIGNED_OUT') {
+                console.log('🔴 Auth state changed: SIGNED_OUT');
+            }
+        });
+    }
 
     // CRITICAL: Intercept Supabase's internal PKCE storage
     // Supabase SSR might store code_verifier in a way that bypasses our storage adapter

@@ -33,43 +33,19 @@ export async function updateSession(request: NextRequest) {
         }
     )
 
-    // refreshing the auth token
-    // Only refresh if there are existing auth cookies to avoid clearing cookies
-    // Supabase cookies are named like: sb-<project-ref>-auth-token
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
-    const authCookieName = projectRef ? `sb-${projectRef}-auth-token` : null
+    // CRITICAL: Always call getUser() to refresh/sync the session
+    // This ensures that sessions stored in localStorage (from createBrowserClient) 
+    // are synced to cookies (for createServerClient) on the next request
+    // Supabase SSR handles the sync automatically when getUser() is called
+    const { data: { user }, error } = await supabase.auth.getUser()
     
-    const existingAuthCookies = request.cookies.getAll().filter(c => 
-        c.name.startsWith('sb-') || 
-        (authCookieName && c.name === authCookieName) ||
-        c.name.includes('auth-token') || 
-        c.name.includes('access-token')
-    )
-    
-    console.log('🔍 Middleware - Checking auth cookies:', {
-        projectRef,
-        authCookieName,
-        existingCookies: request.cookies.getAll().map(c => c.name),
-        authCookiesFound: existingAuthCookies.length
-    })
-    
-    if (existingAuthCookies.length > 0) {
-        const { data: { user }, error } = await supabase.auth.getUser()
-        
-        if (error) {
-            // Only log if it's not a "missing session" error (which is normal for unauthenticated requests)
-            if (!error.message.includes('Auth session missing')) {
-                console.log('⚠️ Middleware - getUser() error:', error.message)
-            } else {
-                console.log('ℹ️ Middleware - No session (normal for unauthenticated requests)')
-            }
-        } else if (user) {
-            console.log('✅ Middleware - User session valid:', user.email)
+    if (error) {
+        // Only log if it's not a "missing session" error (which is normal for unauthenticated requests)
+        if (!error.message.includes('Auth session missing') && !error.message.includes('JWTExpired')) {
+            console.log('⚠️ Middleware - getUser() error:', error.message)
         }
-    } else {
-        // No auth cookies present, skip getUser() to avoid unnecessary cookie clearing
-        console.log('ℹ️ Middleware - No auth cookies found, skipping getUser()')
+    } else if (user) {
+        console.log('✅ Middleware - User session valid:', user.email)
     }
 
     return response

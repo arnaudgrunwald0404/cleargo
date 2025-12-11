@@ -33,9 +33,52 @@ function LoginForm() {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      // Reload so SSR session is picked up by middleware
+      
+      // CRITICAL: Wait for session to be persisted and verify it exists
+      if (!data.session) {
+        throw new Error("No session returned from sign in");
+      }
+      
+      // Verify session is accessible
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error("Session not available after sign in");
+      }
+      
+      console.log('✅ Login successful, session available:', {
+        accessToken: session.access_token ? 'present' : 'missing',
+        refreshToken: session.refresh_token ? 'present' : 'missing',
+        expiresAt: session.expires_at
+      });
+      
+      // CRITICAL: Supabase SSR requires sessions to be in cookies for server-side access
+      // After signInWithPassword, session is in localStorage but needs to be in cookies
+      // We make a request to an API route that will trigger middleware to sync the session
+      // This ensures the server can read the session on the next request
+      try {
+        // Make a request that goes through middleware - this will sync the session
+        // We use a simple API call to trigger middleware session sync
+        const response = await fetch('/api/me', { 
+          method: 'GET',
+          credentials: 'include',
+          headers: {
+            'Cache-Control': 'no-cache'
+          }
+        });
+        // Don't check response - we just need middleware to run
+        console.log('✅ Triggered middleware session sync');
+      } catch (syncError) {
+        // Ignore sync errors - the redirect will still trigger middleware
+        console.warn('Session sync warning (may be normal):', syncError);
+      }
+      
+      // Small delay to ensure sync completes
+      await new Promise(resolve => setTimeout(resolve, 200));
+      
+      // Use full page reload - middleware should now have synced the session to cookies
       window.location.href = "/dashboard";
     } catch (err: any) {
+      console.error('❌ Login error:', err);
       setMessage(err?.message || "Sign-in failed");
     } finally {
       setLoading(false);
