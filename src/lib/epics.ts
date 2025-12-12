@@ -89,23 +89,50 @@ export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
     return epic as Epic;
 }
 
-export async function getEpics() {
+export async function getEpics(daysFilter?: number) {
     // ALWAYS return empty array on any error - never throw
     try {
         const supabase = createClient();
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
-        let { data, error } = await supabase
+        let query = supabase
             .from('epic')
-            .select('*')
-            .order('created_at', { ascending: false });
+            .select('*');
+        
+        // Filter by days if specified (e.g., 90 days from today)
+        if (daysFilter !== undefined) {
+            const today = new Date();
+            const futureDate = new Date();
+            futureDate.setDate(today.getDate() + daysFilter);
+            const todayStr = today.toISOString().split('T')[0];
+            const futureStr = futureDate.toISOString().split('T')[0];
+            
+            query = query
+                .gte('target_launch_date', todayStr)
+                .lte('target_launch_date', futureStr);
+        }
+        
+        let { data, error } = await query.order('target_launch_date', { ascending: true });
         
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
-            const retryResult = await supabase
+            let launchQuery = supabase
                 .from('launch')
-                .select('*')
-                .order('created_at', { ascending: false });
+                .select('*');
+            
+            if (daysFilter !== undefined) {
+                const today = new Date();
+                const futureDate = new Date();
+                futureDate.setDate(today.getDate() + daysFilter);
+                const todayStr = today.toISOString().split('T')[0];
+                const futureStr = futureDate.toISOString().split('T')[0];
+                
+                launchQuery = launchQuery
+                    .gte('target_launch_date', todayStr)
+                    .lte('target_launch_date', futureStr);
+            }
+            
+            const retryResult = await launchQuery.order('target_launch_date', { ascending: true });
             data = retryResult.data;
             error = retryResult.error;
         }

@@ -11,7 +11,8 @@ export default async function DashboardPage() {
     let epics: any[] = [];
     
     try {
-        epics = await getEpics() || [];
+        // Filter to show epics launching in the next 90 days
+        epics = await getEpics(90) || [];
     } catch (error: any) {
         // Silently fail - page will render with empty list
         console.warn('Dashboard: Failed to load epics, continuing with empty list');
