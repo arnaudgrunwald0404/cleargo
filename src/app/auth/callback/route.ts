@@ -224,9 +224,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
-        // Check if this is an email confirmation (signup) - email confirmation doesn't use PKCE
-        // Email confirmation links should use verifyOtp, not exchangeCodeForSession
-        if (type === 'signup' || type === 'email') {
+        // CRITICAL: Google OAuth doesn't send a 'type' parameter - it's just a 'code'
+        // Email confirmation links WILL have type='signup' or type='email'
+        // So if type is present and is signup/email, handle as email confirmation
+        // Otherwise, treat as OAuth flow (PKCE)
+        if (type && (type === 'signup' || type === 'email')) {
             console.log('🔍 Handling email confirmation code - using verifyOtp (not PKCE)')
             const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
                 type: type as EmailOtpType,
@@ -382,14 +384,16 @@ export async function GET(request: NextRequest) {
                 projectRef,
                 type: type || 'none'
             })
-            // If this is not an OAuth flow (no code_verifier), it might be an email confirmation
-            // that should have been handled above, but if we get here, provide a helpful error
-            if (!type || type === 'signup' || type === 'email') {
+            // CRITICAL: If there's NO type parameter, this is likely an OAuth flow (Google SSO)
+            // Email confirmation links will have type=signup or type=email
+            // OAuth flows don't have a type parameter
+            if (type && (type === 'signup' || type === 'email')) {
+                // This is an email confirmation that should have been handled above
                 const errorUrl = new URL('/login?error=invalid_token', request.url)
                 errorUrl.searchParams.set('message', 'Email confirmation link is invalid or has expired. Please request a new confirmation email.')
                 return NextResponse.redirect(errorUrl)
             }
-            // For OAuth flows (Google SSO), if code_verifier is missing, provide helpful error
+            // For OAuth flows (no type parameter = Google SSO), if code_verifier is missing, provide helpful error
             // This usually means cookies aren't being set properly (domain/path/SameSite issues)
             const errorUrl = new URL('/login?error=oauth_failed', request.url)
             errorUrl.searchParams.set('message', 'OAuth authentication failed: missing security token. Please try signing in again. If the problem persists, check your browser cookie settings.')
