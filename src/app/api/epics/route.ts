@@ -6,16 +6,9 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const supabase = createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            console.error('Auth error:', authError);
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        console.log('Fetching epics for user:', user.email);
-        // TODO: After migration 0018 is applied, table will be renamed from 'launch' to 'epic'
+        // AUTH DISABLED: Skip auth check, just fetch epics
         const epics = await getEpics();
-        console.log('Returning epics:', Array.isArray(epics) ? epics.length : 'not an array', epics);
+        console.log('API /epics: Returning', Array.isArray(epics) ? epics.length : 'not an array', 'epics');
         return NextResponse.json(epics);
     } catch (error: any) {
         console.error('Error fetching epics:', error);
