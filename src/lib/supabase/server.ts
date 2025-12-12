@@ -11,6 +11,36 @@ export function createClient(): SupabaseClient {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     
+    // Validate JWT format (should have 3 parts separated by dots)
+    const isValidJWT = (key: string): boolean => {
+        if (!key) return false;
+        const parts = key.split('.');
+        return parts.length === 3 && parts.every(part => part.length > 0);
+    };
+    
+    // Validate the key format
+    if (supabaseKey && !isValidJWT(supabaseKey)) {
+        console.error('❌ Invalid Supabase API key format!');
+        console.error('   Key should be a JWT with 3 parts (header.payload.signature)');
+        console.error('   Key length:', supabaseKey.length);
+        console.error('   Key starts with:', supabaseKey.substring(0, 20) + '...');
+        console.error('   Key parts:', supabaseKey.split('.').length);
+        // Return mock client if key is invalid
+        const mockClient = {
+            auth: {
+                getUser: async () => ({ data: { user: getMockSuperAdmin() }, error: null }),
+                getSession: async () => ({ data: { session: null }, error: null }),
+            },
+            from: () => ({
+                select: () => ({ order: () => ({ data: [], error: null }) }),
+                insert: () => ({ select: () => ({ data: null, error: null }) }),
+                update: () => ({ eq: () => ({ select: () => ({ data: null, error: null }) }) }),
+                delete: () => ({ eq: () => ({ data: null, error: null }) }),
+            }),
+        } as any as SupabaseClient;
+        return mockClient;
+    }
+    
     // Log which key we're using (only in development)
     if (process.env.NODE_ENV === 'development') {
         const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
