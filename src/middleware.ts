@@ -33,8 +33,9 @@ export async function middleware(request: NextRequest) {
             );
         }
 
-        // If allowed, proceed with session update and CORS
-        const response = await updateSession(request);
+        // AUTH DISABLED: Skip session update
+        // const response = await updateSession(request);
+        const response = NextResponse.next();
         response.headers.set('X-RateLimit-Limit', '100');
         response.headers.set('X-RateLimit-Remaining', remaining.toString());
         response.headers.set('X-RateLimit-Reset', new Date(resetTime).toISOString());
@@ -56,8 +57,9 @@ export async function middleware(request: NextRequest) {
         return response;
     }
 
-    // For non-API routes, just handle auth and CORS as before
-    const response = await updateSession(request);
+    // AUTH DISABLED: Skip session update
+    // const response = await updateSession(request);
+    const response = NextResponse.next();
 
     // Apply CORS headers
     const allowedOrigins = [

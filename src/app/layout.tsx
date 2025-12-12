@@ -40,6 +40,14 @@ export default async function RootLayout({
   let avatarUrl: string | null = null;
   let role: Role | null = null;
 
+  // AUTH DISABLED: Use mock superadmin
+  const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
+  const profile = getMockSuperAdminProfile();
+  email = profile.email;
+  avatarUrl = profile.avatar_url || null;
+  role = 'SUPERADMIN' as Role;
+  
+  /* AUTH DISABLED
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -66,6 +74,7 @@ export default async function RootLayout({
   } catch {
     // Continue rendering without user data
   }
+  */
   return (
     <html lang="en" suppressHydrationWarning>
       <head>

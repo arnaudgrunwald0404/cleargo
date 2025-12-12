@@ -47,6 +47,10 @@ export default async function HomePage({
     console.error('❌ Auth error from callback:', error, errorMessage);
   }
 
+  // AUTH DISABLED: Always redirect to dashboard as superadmin
+  redirect('/dashboard');
+  
+  /* AUTH DISABLED
   const { data: { user } } = await supabase.auth.getUser();
   const email = user?.email;
   const role = email ? await resolveRole(email) : null;
@@ -54,6 +58,7 @@ export default async function HomePage({
   if (!email) {
     return <WelcomePage />;
   }
+  */
 
   // Fetch user profile to get first_name
   let firstName = null;

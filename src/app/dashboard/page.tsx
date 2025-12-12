@@ -6,12 +6,12 @@ import { redirect } from 'next/navigation';
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-
-    if (!user) {
-        redirect('/login');
-    }
+    // AUTH DISABLED: Skip auth check
+    // const supabase = createClient();
+    // const { data: { user } } = await supabase.auth.getUser();
+    // if (!user) {
+    //     redirect('/login');
+    // }
 
     const epics = await getEpics();
 
