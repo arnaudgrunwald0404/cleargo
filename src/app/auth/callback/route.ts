@@ -84,18 +84,27 @@ export async function GET(request: NextRequest) {
     // Handle OAuth flows with code (PKCE)
     if (code) {
         // Check for code_verifier cookie before exchange
+        // Supabase uses: sb-{project}-auth-token-code-verifier (not sb-{project}-auth-code-verifier)
         const allCookies = request.cookies.getAll()
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
-        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
-        const codeVerifierCookie = codeVerifierCookieName
-            ? allCookies.find(c => c.name === codeVerifierCookieName)
+        
+        // Try both possible cookie name formats
+        const codeVerifierCookieName1 = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
+        const codeVerifierCookieName2 = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null
+        
+        const codeVerifierCookie = codeVerifierCookieName2
+            ? allCookies.find(c => c.name === codeVerifierCookieName2)
+            : codeVerifierCookieName1
+            ? allCookies.find(c => c.name === codeVerifierCookieName1)
             : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
 
         console.log('OAuth callback:', {
             hasCode: !!code,
             hasCodeVerifierCookie: !!codeVerifierCookie,
-            codeVerifierCookieName,
+            codeVerifierCookieName1,
+            codeVerifierCookieName2,
+            foundCookieName: codeVerifierCookie?.name,
             allCookieNames: allCookies.map(c => c.name),
         })
 

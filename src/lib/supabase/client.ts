@@ -21,7 +21,8 @@ export function createClient() {
         const originalSetItem = Storage.prototype.setItem;
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
+        // Supabase actually uses: sb-{project}-auth-token-code-verifier
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
 
         Storage.prototype.setItem = function (key: string, value: string) {
             originalSetItem.call(this, key, value);
