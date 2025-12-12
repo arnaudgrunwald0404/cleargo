@@ -30,6 +30,11 @@ export function createClient() {
             },
             cookies: {
                 getAll() {
+                    // Only access document in browser environment
+                    if (typeof document === 'undefined') {
+                        return [];
+                    }
+                    
                     // Parse cookies from document.cookie
                     const cookies = document.cookie.split(';').reduce((acc, cookie) => {
                         const [name, ...rest] = cookie.trim().split('=');
@@ -41,6 +46,11 @@ export function createClient() {
                     return Object.entries(cookies).map(([name, value]) => ({ name, value }));
                 },
                 setAll(cookiesToSet) {
+                    // Only access document/window in browser environment
+                    if (typeof document === 'undefined' || typeof window === 'undefined') {
+                        return;
+                    }
+                    
                     // Set cookies with proper attributes
                     cookiesToSet.forEach(({ name, value, options }) => {
                         if (value === undefined || value === null) {
