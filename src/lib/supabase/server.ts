@@ -6,14 +6,25 @@ export function createClient(): SupabaseClient {
     // When auth is disabled, we need to bypass RLS which requires authenticated users
     // Using regular createClient (not createServerClient) with SERVICE_ROLE_KEY bypasses all RLS
     
-    // Always use SERVICE_ROLE_KEY if available, otherwise use ANON_KEY
-    // Both will work, but SERVICE_ROLE_KEY bypasses RLS
+    // CRITICAL: Always use SERVICE_ROLE_KEY to bypass RLS and see all data
+    // SERVICE_ROLE_KEY bypasses all Row Level Security policies
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     
+    // Log which key we're using (for debugging)
+    const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (usingServiceRole) {
+        console.log('✅ Using SERVICE_ROLE_KEY - RLS bypassed, full data access');
+    } else {
+        console.warn('⚠️  Using ANON_KEY - RLS may block data access');
+    }
+    
     // If keys are missing, return a mock client that does nothing
     if (!supabaseKey || !supabaseUrl) {
-        console.warn('Missing Supabase credentials, returning mock client');
+        console.error('❌ Missing Supabase credentials!');
+        console.error('   SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+        console.error('   NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+        console.error('   NEXT_PUBLIC_SUPABASE_URL:', !!process.env.NEXT_PUBLIC_SUPABASE_URL);
         // Return a minimal mock client that won't crash
         const mockClient = {
             auth: {

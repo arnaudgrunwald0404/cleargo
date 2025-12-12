@@ -108,6 +108,7 @@ export async function getEpics() {
         
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
+            console.log('epic table not found, trying launch table...');
             const retryResult = await supabase
                 .from('launch')
                 .select('*')
@@ -117,13 +118,19 @@ export async function getEpics() {
         }
 
         if (error) {
-            console.warn('Database query failed, returning empty array:', error.message || error.code);
+            console.error('Database query error:', {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint,
+            });
             return [];
         }
 
+        console.log(`✅ Successfully fetched ${data?.length || 0} epics from database`);
         return data || [];
     } catch (error: any) {
-        console.warn('Exception in getEpics, returning empty array:', error?.message || String(error));
+        console.error('Exception in getEpics:', error?.message || String(error));
         return [];
     }
 }
