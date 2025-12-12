@@ -5,6 +5,15 @@ export function getMockSuperAdmin() {
         email: 'agrunwald@clearcompany.com',
         user_metadata: {},
         app_metadata: {},
+        aud: 'authenticated',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        email_confirmed_at: new Date().toISOString(),
+        phone: null,
+        phone_confirmed_at: null,
+        confirmed_at: new Date().toISOString(),
+        last_sign_in_at: new Date().toISOString(),
+        role: 'authenticated',
     };
 }
 

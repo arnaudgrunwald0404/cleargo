@@ -25,7 +25,7 @@ export function createClient() {
     
     // Override getUser to return mock superadmin
     const originalGetUser = client.auth.getUser.bind(client.auth)
-    client.auth.getUser = async () => {
+    ;(client.auth as any).getUser = async () => {
         const { getMockSuperAdmin } = await import('@/lib/auth-mock')
         return {
             data: { user: getMockSuperAdmin() },
