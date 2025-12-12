@@ -224,6 +224,39 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
+        // Check if this is an email confirmation (signup) - email confirmation doesn't use PKCE
+        // Email confirmation links should use verifyOtp, not exchangeCodeForSession
+        if (type === 'signup' || type === 'email') {
+            console.log('🔍 Handling email confirmation code - using verifyOtp (not PKCE)')
+            const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+                type: type as EmailOtpType,
+                token_hash: code, // Email confirmation codes can be used as token_hash
+            })
+            
+            if (!otpError && otpData?.session) {
+                console.log('✅ Email confirmation verified successfully')
+                const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+                const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+                storedCookies.forEach(({ name, value, options }) => {
+                    const cookieOptions = options || {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax' as const,
+                        path: '/',
+                    }
+                    if (cookieDomain && !cookieDomain.includes('localhost')) {
+                        cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                    }
+                    redirectResponse.cookies.set(name, value, cookieOptions)
+                })
+                return redirectResponse
+            } else {
+                console.error('❌ Email confirmation verifyOtp error:', otpError)
+                // Fall through to try exchangeCodeForSession as fallback
+                console.log('⚠️ verifyOtp failed, trying exchangeCodeForSession as fallback')
+            }
+        }
+        
         // Check if this is a recovery code (password reset) - recovery codes don't use PKCE
         // If type=recovery is present with a code, handle it differently
         if (type === 'recovery') {
@@ -311,12 +344,51 @@ export async function GET(request: NextRequest) {
             ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value, valueLength: codeVerifierCookie.value?.length }
             : 'NOT FOUND')
 
+        // If no code_verifier cookie and we have a type parameter, try verifyOtp first
+        // Email confirmation links don't use PKCE, so they won't have code_verifier
+        if (!codeVerifierCookie && type && (type === 'signup' || type === 'email' || type === 'magiclink')) {
+            console.log('🔍 No code_verifier found, but type suggests email confirmation - trying verifyOtp')
+            const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+                type: type as EmailOtpType,
+                token_hash: code, // Try using code as token_hash
+            })
+            
+            if (!otpError && otpData?.session) {
+                console.log('✅ Email confirmation verified via verifyOtp')
+                const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+                const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+                storedCookies.forEach(({ name, value, options }) => {
+                    const cookieOptions = options || {
+                        httpOnly: true,
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'lax' as const,
+                        path: '/',
+                    }
+                    if (cookieDomain && !cookieDomain.includes('localhost')) {
+                        cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                    }
+                    redirectResponse.cookies.set(name, value, cookieOptions)
+                })
+                return redirectResponse
+            } else {
+                console.log('⚠️ verifyOtp failed, will try exchangeCodeForSession:', otpError?.message)
+            }
+        }
+
         if (!codeVerifierCookie && projectRef) {
             console.error('❌ PKCE code_verifier cookie missing!', {
                 expectedName: codeVerifierCookieName,
                 availableCookies: allCookies.map(c => c.name),
-                projectRef
+                projectRef,
+                type: type || 'none'
             })
+            // If this is not an OAuth flow (no code_verifier), it might be an email confirmation
+            // that should have been handled above, but if we get here, provide a helpful error
+            if (!type || type === 'signup' || type === 'email') {
+                const errorUrl = new URL('/login?error=invalid_token', request.url)
+                errorUrl.searchParams.set('message', 'Email confirmation link is invalid or has expired. Please request a new confirmation email.')
+                return NextResponse.redirect(errorUrl)
+            }
         }
 
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
