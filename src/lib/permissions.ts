@@ -179,6 +179,14 @@ export async function getEffectiveRules(): Promise<PermissionRules> {
 }
 
 export async function canRolesPerform(roles: Role[] | string[] | null | undefined, capability: CapabilityId): Promise<boolean> {
+  // AUTH DISABLED: Superadmin bypasses all permission checks
+  if (roles && Array.isArray(roles)) {
+    const roleStrings = roles.map(r => String(r).toUpperCase());
+    if (roleStrings.includes('SUPERADMIN')) {
+      return true;
+    }
+  }
+  
   if (!roles || roles.length === 0) return false;
   const effective = await getEffectiveRules();
   const allowed = new Set(effective[capability] || []);

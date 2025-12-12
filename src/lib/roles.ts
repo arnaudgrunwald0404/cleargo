@@ -19,9 +19,19 @@ async function readOverrides(): Promise<Record<string, Role>> {
 }
 
 export async function resolveRole(email: string): Promise<Role> {
-  const overrides = await readOverrides();
+  // AUTH DISABLED: Superadmin always returns SUPERADMIN
   const e = email.toLowerCase();
+  if (e === 'agrunwald@clearcompany.com') {
+    return "SUPERADMIN" as Role;
+  }
+  
+  const overrides = await readOverrides();
   if (overrides[e]) return overrides[e];
   if (e === FALLBACK_PRODUCT_OPS) return "PRODUCT_OPS";
   return "OTHER";
+}
+
+// Helper to check if role has admin-level access
+export function isAdminRole(role: Role): boolean {
+  return role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO";
 }

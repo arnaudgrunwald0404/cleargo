@@ -21,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.update
   const { data: me, error: userError } = await supabase
@@ -77,7 +77,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.delete
   const { data: me, error: userError } = await supabase

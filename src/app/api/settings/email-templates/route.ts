@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
-    if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -67,7 +67,7 @@ export async function PATCH(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
-    if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')

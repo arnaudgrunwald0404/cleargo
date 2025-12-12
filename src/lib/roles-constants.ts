@@ -1,4 +1,5 @@
 export type Role =
+  | "SUPERADMIN"
   | "CPO"
   | "PRODUCT_LEAD"
   | "PM"
@@ -11,6 +12,7 @@ export type Role =
   | "OTHER";
 
 export const ALL_ROLES: Role[] = [
+  "SUPERADMIN",
   "CPO",
   "PRODUCT_LEAD",
   "PM",

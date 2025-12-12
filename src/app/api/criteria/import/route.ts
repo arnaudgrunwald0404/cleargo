@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
             }, { status: 401, headers: debugHeaders });
         }
         const role = await resolveRole(user.email);
-        if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
+        if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
         // Capability: criteria.import
         const { data: me, error: userError } = await supabase
           .from('app_user')
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
         const role = await resolveRole(user.email);
-        if (!(role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
+        if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
         const { data: me2, error: userError2 } = await supabase
           .from('app_user')
           .select('roles')

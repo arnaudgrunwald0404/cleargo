@@ -32,26 +32,29 @@ export async function DELETE(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.delete
-  const { data: me, error: userError } = await supabase
-    .from("app_user")
-    .select("roles")
-    .eq("email", user.email)
-    .single();
-  
-  // Handle case where user doesn't exist in app_user table
-  if (userError && userError.code === 'PGRST116') {
-    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  // AUTH DISABLED: Superadmin bypasses capability checks
+  if (role !== "SUPERADMIN") {
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
+    const { canRolesPerform } = await import("@/lib/permissions");
+    const canDelete = await canRolesPerform((me?.roles as string[]) || [], "criteria.delete");
+    if (!canDelete) return forbid();
   }
-  if (userError) {
-    throw userError;
-  }
-  
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canDelete = await canRolesPerform((me?.roles as string[]) || [], "criteria.delete");
-  if (!canDelete) return forbid();
 
   const deleted = await deleteCriteria(id);
   if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -67,26 +70,29 @@ export async function PUT(
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  const { data: me, error: userError } = await supabase
-    .from("app_user")
-    .select("roles")
-    .eq("email", user.email)
-    .single();
-  
-  // Handle case where user doesn't exist in app_user table
-  if (userError && userError.code === 'PGRST116') {
-    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  // AUTH DISABLED: Superadmin bypasses capability checks
+  if (role !== "SUPERADMIN") {
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
+    const { canRolesPerform } = await import("@/lib/permissions");
+    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
+    if (!canUpdate) return forbid();
   }
-  if (userError) {
-    throw userError;
-  }
-  
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
-  if (!canUpdate) return forbid();
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);
@@ -111,26 +117,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  const { data: me, error: userError } = await supabase
-    .from("app_user")
-    .select("roles")
-    .eq("email", user.email)
-    .single();
-  
-  // Handle case where user doesn't exist in app_user table
-  if (userError && userError.code === 'PGRST116') {
-    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  // AUTH DISABLED: Superadmin bypasses capability checks
+  if (role !== "SUPERADMIN") {
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
+    const { canRolesPerform } = await import("@/lib/permissions");
+    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
+    if (!canUpdate) return forbid();
   }
-  if (userError) {
-    throw userError;
-  }
-  
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
-  if (!canUpdate) return forbid();
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);

@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  // AUTH DISABLED: Superadmin bypasses role checks
+  if (!(role === "SUPERADMIN" || role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Get users from app_user table
   const { data: users, error } = await supabase
@@ -64,26 +65,30 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
-  if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  // AUTH DISABLED: Superadmin bypasses role checks
+  if (!(role === "SUPERADMIN" || role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.create
-  const { data: me, error: userError } = await supabase
-    .from("app_user")
-    .select("roles")
-    .eq("email", user.email)
-    .single();
-  
-  // Handle case where user doesn't exist in app_user table
-  if (userError && userError.code === 'PGRST116') {
-    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  // AUTH DISABLED: Superadmin bypasses capability checks
+  if (role !== "SUPERADMIN") {
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+    
+    // Handle case where user doesn't exist in app_user table
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
+    }
+    
+    const { canRolesPerform } = await import("@/lib/permissions");
+    const canCreate = await canRolesPerform((me?.roles as string[]) || [], "users.create");
+    if (!canCreate) return forbid();
   }
-  if (userError) {
-    throw userError;
-  }
-  
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canCreate = await canRolesPerform((me?.roles as string[]) || [], "users.create");
-  if (!canCreate) return forbid();
 
   const body = await req.json();
   const parsed = createUserSchema.safeParse(body);

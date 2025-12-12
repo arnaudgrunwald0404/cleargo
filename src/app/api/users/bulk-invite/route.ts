@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
     const role = await resolveRole(user.email);
-    if (!(role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
     // Capability check: users.invite.send
     const { data: me, error: userError } = await supabase

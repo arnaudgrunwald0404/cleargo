@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
         }
 
         const role = await resolveRole(user.email);
-        if (!(role === 'PRODUCT_OPS' || role === 'CPO')) {
+        if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
             return new NextResponse('Forbidden', { status: 403 });
         }
 
