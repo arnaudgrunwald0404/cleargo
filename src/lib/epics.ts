@@ -102,10 +102,21 @@ export async function getEpics() {
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
         console.log('🔍 Querying epic table...');
+        console.log('   Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'Set' : 'MISSING');
+        console.log('   Using key:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY');
+        
         let { data, error } = await supabase
             .from('epic')
             .select('*')
             .order('created_at', { ascending: false });
+        
+        // Log the raw response immediately
+        console.log('   Query result - data:', data ? `${Array.isArray(data) ? data.length : 'not array'}` : 'null');
+        console.log('   Query result - error:', error ? 'EXISTS' : 'null');
+        if (error) {
+            console.log('   Error type:', typeof error);
+            console.log('   Error keys:', Object.keys(error || {}));
+        }
         
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
