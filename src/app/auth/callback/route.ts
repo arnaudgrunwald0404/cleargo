@@ -10,11 +10,15 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type') as EmailOtpType | null
     const next = searchParams.get('next') ?? '/dashboard'
     const code = searchParams.get('code')
+    const access_token = searchParams.get('access_token')
+    const refresh_token = searchParams.get('refresh_token')
 
     console.log('🔍 Auth Callback - All params:', {
         code: code ? 'present' : 'missing',
         token_hash: token_hash ? 'present' : 'missing',
         type: type || 'none',
+        access_token: access_token ? 'present' : 'missing',
+        refresh_token: refresh_token ? 'present' : 'missing',
         next,
         fullUrl: request.url
     })
@@ -70,6 +74,52 @@ export async function GET(request: NextRequest) {
             },
         }
     )
+
+    // CRITICAL: Handle password reset tokens from Supabase's /auth/v1/verify endpoint
+    // Supabase's verify endpoint redirects with access_token and refresh_token (not token_hash)
+    // This happens BEFORE the token_hash check because verify endpoint uses tokens, not token_hash
+    if (access_token && refresh_token && type === 'recovery') {
+        console.log('🔍 Handling password reset tokens from Supabase verify endpoint')
+        
+        // Set session using the tokens from Supabase's verify redirect
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+        })
+        
+        if (sessionError || !sessionData.session) {
+            console.error('❌ Failed to set session from password reset tokens:', sessionError)
+            const errorUrl = new URL('/login?error=invalid_token', request.url)
+            errorUrl.searchParams.set('message', 'Password reset link is invalid or has expired. Please request a new one.')
+            return NextResponse.redirect(errorUrl)
+        }
+        
+        console.log('✅ Password reset session set successfully:', {
+            user: sessionData.user?.email,
+            expiresAt: sessionData.session.expires_at
+        })
+        
+        // Redirect to reset password page - user is now authenticated
+        const redirectResponse = NextResponse.redirect(new URL('/reset-password', request.url))
+        const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+        
+        // Copy session cookies to response
+        storedCookies.forEach(({ name, value, options }) => {
+            const cookieOptions = options || {
+                httpOnly: true,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: 'lax' as const,
+                path: '/',
+            }
+            if (cookieDomain && !cookieDomain.includes('localhost')) {
+                cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+            }
+            redirectResponse.cookies.set(name, value, cookieOptions)
+            console.log('🍪 Setting password reset session cookie:', name, 'hasValue:', !!value)
+        })
+        
+        return redirectResponse
+    }
 
     if (token_hash && type) {
         // Handle password recovery separately - verify token and redirect to reset password page

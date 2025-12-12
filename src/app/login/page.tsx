@@ -1,10 +1,11 @@
 "use client";
 import { useState, useEffect, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 
 function LoginForm() {
   const supabase = createClient();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
 
@@ -51,50 +52,38 @@ function LoginForm() {
         expiresAt: session.expires_at
       });
       
-      // CRITICAL: Supabase SSR requires sessions to be in cookies for server-side access
+      // Supabase SSR requires sessions in cookies for server-side access
       // After signInWithPassword, session is in localStorage but needs to be in cookies
-      // We need to manually sync the session to cookies so middleware/server can read it
-      // This works on both localhost (HTTP) and production (HTTPS)
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
       const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
       
       if (projectRef && session.access_token) {
-        // Manually set the session cookie that Supabase SSR expects
-        // Format: sb-{project-ref}-auth-token
+        // Set the session cookie in the format Supabase SSR expects
         const cookieName = `sb-${projectRef}-auth-token`;
-        const isSecure = window.location.protocol === 'https:';
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        
-        // Supabase stores session as JSON in the cookie
-        const sessionData = {
+        const sessionData = JSON.stringify({
           access_token: session.access_token,
           refresh_token: session.refresh_token,
           expires_at: session.expires_at,
           expires_in: session.expires_in,
           token_type: session.token_type,
           user: session.user
-        };
+        });
         
-        const cookieValue = encodeURIComponent(JSON.stringify(sessionData));
+        const isSecure = window.location.protocol === 'https:';
+        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
         const maxAge = 60 * 60 * 24 * 365; // 1 year
         
-        // Set cookie - secure flag only in production (not localhost)
-        const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
-        document.cookie = `${cookieName}=${cookieValue}; path=/; SameSite=Lax; ${secureFlag} max-age=${maxAge}`;
-        
-        console.log('🍪 Manually set session cookie:', {
-          cookieName,
-          isSecure: !!secureFlag,
-          isLocalhost,
-          expiresAt: session.expires_at
-        });
+        document.cookie = `${cookieName}=${encodeURIComponent(sessionData)}; path=/; SameSite=Lax; ${secureFlag} max-age=${maxAge}`;
+        console.log('🍪 Session cookie set:', cookieName);
       }
       
-      // Small delay to ensure cookie is set
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Small delay to ensure cookie is set before navigation
+      await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Use full page reload - middleware will now read the session from cookies
-      window.location.href = "/dashboard";
+      // Navigate to dashboard - middleware will read session from cookies
+      router.push("/dashboard");
+      router.refresh();
     } catch (err: any) {
       console.error('❌ Login error:', err);
       setMessage(err?.message || "Sign-in failed");
