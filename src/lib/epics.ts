@@ -97,14 +97,26 @@ export async function getEpics() {
         const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
         console.log('getEpics: Using SERVICE_ROLE_KEY:', usingServiceRole);
 
-        // Try simple query first, then add joins if needed
-        // The join with app_user might be failing due to RLS or missing data
+        // Try 'epic' table first, fallback to 'launch' if it doesn't exist
+        // (Migration 0018 renamed 'launch' to 'epic')
         let query = supabase
             .from('epic')
             .select('*')
             .order('created_at', { ascending: false });
         
-        const { data, error } = await query;
+        let { data, error } = await query;
+        
+        // If epic table doesn't exist, try launch table
+        if (error && (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
+            console.log('epic table not found, trying launch table...');
+            query = supabase
+                .from('launch')
+                .select('*')
+                .order('created_at', { ascending: false });
+            const retryResult = await query;
+            data = retryResult.data;
+            error = retryResult.error;
+        }
 
         if (error) {
             console.error('Error fetching epics from database:', {
