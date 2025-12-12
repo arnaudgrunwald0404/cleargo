@@ -11,20 +11,21 @@ export function createClient(): SupabaseClient {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     
-    // Log which key we're using (for debugging)
-    const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (usingServiceRole) {
-        console.log('✅ Using SERVICE_ROLE_KEY - RLS bypassed, full data access');
-    } else {
-        console.warn('⚠️  Using ANON_KEY - RLS may block data access');
+    // Log which key we're using (only in development)
+    if (process.env.NODE_ENV === 'development') {
+        const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (usingServiceRole) {
+            console.log('✅ Using SERVICE_ROLE_KEY - RLS bypassed, full data access');
+        } else {
+            console.warn('⚠️  Using ANON_KEY - RLS may block data access');
+        }
     }
     
     // If keys are missing, return a mock client that does nothing
     if (!supabaseKey || !supabaseUrl) {
-        console.error('❌ Missing Supabase credentials!');
-        console.error('   SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-        console.error('   NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-        console.error('   NEXT_PUBLIC_SUPABASE_URL:', !!process.env.NEXT_PUBLIC_SUPABASE_URL);
+        if (process.env.NODE_ENV === 'development') {
+            console.warn('⚠️  Missing Supabase credentials, using mock client');
+        }
         // Return a minimal mock client that won't crash
         const mockClient = {
             auth: {

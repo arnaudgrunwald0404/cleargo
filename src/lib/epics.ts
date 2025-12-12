@@ -101,58 +101,53 @@ export async function getEpics() {
         }
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
-        console.log('🔍 Querying epic table...');
-        console.log('   Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'Set' : 'MISSING');
-        console.log('   Using key:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SERVICE_ROLE_KEY' : 'ANON_KEY');
-        
         let { data, error } = await supabase
             .from('epic')
             .select('*')
             .order('created_at', { ascending: false });
         
-        // Log the raw response immediately
-        console.log('   Query result - data:', data ? `${Array.isArray(data) ? data.length : 'not array'}` : 'null');
-        console.log('   Query result - error:', error ? 'EXISTS' : 'null');
-        if (error) {
-            console.log('   Error type:', typeof error);
-            console.log('   Error keys:', Object.keys(error || {}));
-        }
-        
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
-            console.log('⚠️  epic table not found, trying launch table...');
             const retryResult = await supabase
                 .from('launch')
                 .select('*')
                 .order('created_at', { ascending: false });
             data = retryResult.data;
             error = retryResult.error;
-            if (!error) {
-                console.log(`✅ Found ${data?.length || 0} launches in 'launch' table`);
-            }
-        } else if (!error) {
-            console.log(`✅ Found ${data?.length || 0} epics in 'epic' table`);
         }
 
         if (error) {
-            // Log the full error object to see what we're actually getting
-            console.error('Database query error (full):', JSON.stringify(error, null, 2));
-            console.error('Database query error (type):', typeof error);
-            console.error('Database query error (keys):', Object.keys(error || {}));
-            console.error('Database query error (message):', error?.message || 'NO MESSAGE');
-            console.error('Database query error (code):', error?.code || 'NO CODE');
-            console.error('Database query error (details):', error?.details || 'NO DETAILS');
-            console.error('Database query error (hint):', error?.hint || 'NO HINT');
-            
-            // If error is empty or has no useful info, try to stringify it
-            if (!error.message && !error.code) {
-                console.error('Error object appears empty, stringified:', String(error));
+            // Safely log error information
+            try {
+                const errorInfo: any = {
+                    message: error?.message || 'Unknown error',
+                    code: error?.code || 'NO_CODE',
+                };
+                
+                // Only add these if they exist
+                if (error?.details) errorInfo.details = error.details;
+                if (error?.hint) errorInfo.hint = error.hint;
+                
+                // Try to stringify, but handle circular references
+                let errorStr = 'Unknown error';
+                try {
+                    errorStr = JSON.stringify(error, null, 2);
+                } catch {
+                    // If stringify fails, try to get basic info
+                    errorStr = String(error) || 'Empty error object';
+                }
+                
+                console.error('Database query error:', errorInfo.message, `(${errorInfo.code})`);
+                if (errorInfo.details) console.error('  Details:', errorInfo.details);
+                if (errorInfo.hint) console.error('  Hint:', errorInfo.hint);
+            } catch (logError) {
+                // If even logging fails, just return empty array
+                console.error('Failed to log error details');
             }
             
             return [];
         }
 
-        console.log(`✅ Successfully fetched ${data?.length || 0} epics from database`);
         return data || [];
     } catch (error: any) {
         console.error('Exception in getEpics:', error?.message || String(error));

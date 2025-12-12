@@ -16,11 +16,15 @@ export default async function DashboardPage() {
             epics = await getEpics() || [];
         } catch (error: any) {
             // Silently fail - page will render with empty list
-            console.warn('Dashboard: Failed to load epics:', error?.message || String(error));
+            if (process.env.NODE_ENV === 'development') {
+                console.warn('Dashboard: Failed to load epics:', error?.message || String(error));
+            }
         }
     } catch (error: any) {
         // Catch any unexpected errors
-        console.error('Dashboard: Unexpected error:', error);
+        if (process.env.NODE_ENV === 'development') {
+            console.error('Dashboard: Unexpected error:', error);
+        }
     }
 
     // Always return the page, no matter what
