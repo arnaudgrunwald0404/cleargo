@@ -83,11 +83,33 @@ export async function GET(request: NextRequest) {
 
     // Handle OAuth flows with code (PKCE)
     if (code) {
+        // Check for code_verifier cookie before exchange
+        const allCookies = request.cookies.getAll()
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
+        const codeVerifierCookie = codeVerifierCookieName
+            ? allCookies.find(c => c.name === codeVerifierCookieName)
+            : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
+
+        console.log('OAuth callback:', {
+            hasCode: !!code,
+            hasCodeVerifierCookie: !!codeVerifierCookie,
+            codeVerifierCookieName,
+            allCookieNames: allCookies.map(c => c.name),
+        })
+
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (error) {
-            console.error('Code exchange error:', error)
-            return NextResponse.redirect(new URL('/login?error=auth_failed', requestUrl))
+            console.error('Code exchange error:', {
+                message: error.message,
+                status: error.status,
+                hasCodeVerifier: !!codeVerifierCookie,
+            })
+            const errorUrl = new URL('/login?error=auth_failed', requestUrl)
+            errorUrl.searchParams.set('message', error.message)
+            return NextResponse.redirect(errorUrl)
         }
 
         if (data?.session) {
