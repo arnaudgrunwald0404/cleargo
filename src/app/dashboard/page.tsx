@@ -7,24 +7,20 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
     // AUTH DISABLED: Skip auth check
-    // const supabase = createClient();
-    // const { data: { user } } = await supabase.auth.getUser();
-    // if (!user) {
-    //     redirect('/login');
-    // }
-
-    let epics = [];
+    // Always render the page, even if data fetch fails
+    let epics: any[] = [];
+    
     try {
         epics = await getEpics() || [];
-    } catch (error) {
-        console.error('Error fetching epics:', error);
-        // Continue with empty array if there's an error
+    } catch (error: any) {
+        // Silently fail - page will render with empty list
+        console.warn('Dashboard: Failed to load epics, continuing with empty list');
     }
 
     return (
         <div className="min-h-screen bg-gray-50 pt-24 pb-8">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <EpicDashboard initialEpics={epics || []} />
+                <EpicDashboard initialEpics={epics} />
             </div>
         </div>
     );

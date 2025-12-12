@@ -90,55 +90,34 @@ export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
 }
 
 export async function getEpics() {
+    // ALWAYS return empty array on any error - never throw
     try {
         const supabase = createClient();
 
-        // Log which key is being used
-        const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
-        console.log('getEpics: Using SERVICE_ROLE_KEY:', usingServiceRole);
-
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
-        // (Migration 0018 renamed 'launch' to 'epic')
-        let query = supabase
+        let { data, error } = await supabase
             .from('epic')
             .select('*')
             .order('created_at', { ascending: false });
         
-        let { data, error } = await query;
-        
         // If epic table doesn't exist, try launch table
-        if (error && (error.code === '42P01' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
-            console.log('epic table not found, trying launch table...');
-            query = supabase
+        if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
+            const retryResult = await supabase
                 .from('launch')
                 .select('*')
                 .order('created_at', { ascending: false });
-            const retryResult = await query;
             data = retryResult.data;
             error = retryResult.error;
         }
 
         if (error) {
-            console.error('Error fetching epics from database:', {
-                message: error.message,
-                details: error.details,
-                hint: error.hint,
-                code: error.code,
-                fullError: JSON.stringify(error, null, 2),
-            });
-            // Return empty array instead of throwing to prevent page crash
+            console.warn('Database query failed, returning empty array:', error.message || error.code);
             return [];
         }
 
-        console.log('Fetched epics from database:', data?.length || 0);
         return data || [];
-    } catch (error) {
-        console.error('Exception fetching epics:', {
-            error,
-            message: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-        });
-        // Return empty array instead of throwing to prevent page crash
+    } catch (error: any) {
+        console.warn('Exception in getEpics, returning empty array:', error?.message || String(error));
         return [];
     }
 }

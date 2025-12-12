@@ -10,11 +10,12 @@ export function createClient(): SupabaseClient {
     // Both will work, but SERVICE_ROLE_KEY bypasses RLS
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     
-    // Log which key is being used (first 10 chars only for security)
-    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
-        console.log('Supabase client: Using SERVICE_ROLE_KEY (bypasses RLS)');
-    } else {
-        console.warn('Supabase client: Using ANON_KEY (RLS may block queries)');
+    if (!supabaseKey) {
+        throw new Error('Missing Supabase key: SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY must be set');
+    }
+    
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+        throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL');
     }
     
     const client = createSupabaseClient(
