@@ -36,35 +36,45 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // DEV MODE: Bypass authentication for local development
+  const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development';
+
   let email: string | null = null;
   let avatarUrl: string | null = null;
   let role: Role | null = null;
 
-  try {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    email = user?.email || null;
+  if (DEV_BYPASS_AUTH) {
+    // Use mock user for development
+    email = 'dev@localhost.com';
+    role = 'PRODUCT_OPS' as Role;
+    avatarUrl = null;
+  } else {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      email = user?.email || null;
 
-    if (email) {
-      try {
-        const { data: profile } = await supabase
-          .from('app_user')
-          .select('avatar_url')
-          .eq('email', email)
-          .single();
-        avatarUrl = profile?.avatar_url || null;
-      } catch {
-        // Continue without avatar URL
-      }
+      if (email) {
+        try {
+          const { data: profile } = await supabase
+            .from('app_user')
+            .select('avatar_url')
+            .eq('email', email)
+            .single();
+          avatarUrl = profile?.avatar_url || null;
+        } catch {
+          // Continue without avatar URL
+        }
 
-      try {
-        role = await resolveRole(email);
-      } catch {
-        // Continue without role
+        try {
+          role = await resolveRole(email);
+        } catch {
+          // Continue without role
+        }
       }
+    } catch {
+      // Continue rendering without user data
     }
-  } catch {
-    // Continue rendering without user data
   }
   return (
     <html lang="en" suppressHydrationWarning>

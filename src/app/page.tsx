@@ -47,12 +47,24 @@ export default async function HomePage({
     console.error('❌ Auth error from callback:', error, errorMessage);
   }
 
-  const { data: { user } } = await supabase.auth.getUser();
-  const email = user?.email;
-  const role = email ? await resolveRole(email) : null;
+  // DEV MODE: Bypass authentication for local development
+  const DEV_BYPASS_AUTH = process.env.NODE_ENV === 'development';
 
-  if (!email) {
-    return <WelcomePage />;
+  let email: string | null = null;
+  let role = null;
+
+  if (DEV_BYPASS_AUTH) {
+    // Use a mock user for development
+    email = 'dev@localhost.com';
+    role = 'PRODUCT_OPS';
+  } else {
+    const { data: { user } } = await supabase.auth.getUser();
+    email = user?.email || null;
+    role = email ? await resolveRole(email) : null;
+
+    if (!email) {
+      return <WelcomePage />;
+    }
   }
 
   // Fetch user profile to get first_name
