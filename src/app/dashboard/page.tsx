@@ -1,11 +1,21 @@
+import { getEpics } from '@/lib/epics';
 import EpicDashboard from '@/components/EpicDashboard';
+import { createClient } from '@/lib/supabase/server';
+import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
     // AUTH DISABLED: Skip auth check
-    // Always render the page - don't even try to fetch data if it's causing issues
-    const epics: any[] = [];
+    // Always render the page, even if data fetch fails
+    let epics: any[] = [];
+    
+    try {
+        epics = await getEpics() || [];
+    } catch (error: any) {
+        // Silently fail - page will render with empty list
+        console.warn('Dashboard: Failed to load epics, continuing with empty list');
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 pt-24 pb-8">
