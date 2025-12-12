@@ -6,11 +6,10 @@ export const dynamic = 'force-dynamic';
 // This endpoint attempts to read the code_verifier from Supabase's internal storage
 // It's a diagnostic endpoint to understand how Supabase stores PKCE data
 export async function GET(request: NextRequest) {
-    const supabase = createClient();
-
-    // Try to get the code_verifier from Supabase's internal state
-    // This might not work, but it's worth trying
-    const { data: { session } } = await supabase.auth.getSession();
+    // AUTH DISABLED: Skip session check
+    // const supabase = createClient();
+    // const { data: { session } } = await supabase.auth.getSession();
+    const session = null;
 
     // Check all cookies
     const allCookies = request.cookies.getAll();
