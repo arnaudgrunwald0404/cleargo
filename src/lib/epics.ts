@@ -124,12 +124,20 @@ export async function getEpics() {
         }
 
         if (error) {
-            console.error('Database query error:', {
-                message: error.message,
-                code: error.code,
-                details: error.details,
-                hint: error.hint,
-            });
+            // Log the full error object to see what we're actually getting
+            console.error('Database query error (full):', JSON.stringify(error, null, 2));
+            console.error('Database query error (type):', typeof error);
+            console.error('Database query error (keys):', Object.keys(error || {}));
+            console.error('Database query error (message):', error?.message || 'NO MESSAGE');
+            console.error('Database query error (code):', error?.code || 'NO CODE');
+            console.error('Database query error (details):', error?.details || 'NO DETAILS');
+            console.error('Database query error (hint):', error?.hint || 'NO HINT');
+            
+            // If error is empty or has no useful info, try to stringify it
+            if (!error.message && !error.code) {
+                console.error('Error object appears empty, stringified:', String(error));
+            }
+            
             return [];
         }
 

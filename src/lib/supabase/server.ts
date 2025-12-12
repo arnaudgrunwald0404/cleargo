@@ -60,7 +60,7 @@ export function createClient(): SupabaseClient {
     }
     
     const client = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        supabaseUrl,
         supabaseKey,
         {
             // Ensure we have all the methods that SSR client would have
@@ -73,7 +73,10 @@ export function createClient(): SupabaseClient {
             global: {
                 // Ensure fetch is available
                 fetch: globalThis.fetch,
-            }
+            },
+            db: {
+                schema: 'public',
+            },
         }
     )
     
