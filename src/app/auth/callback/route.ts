@@ -21,15 +21,34 @@ export async function GET(request: NextRequest) {
     })
 
     // Create Supabase client - Supabase SSR handles cookies automatically
+    // CRITICAL: Force read all cookies before creating client to ensure code_verifier is available
+    const allCookiesBeforeClient = request.cookies.getAll()
+    console.log('🔍 Cookies available before creating Supabase client:', {
+        count: allCookiesBeforeClient.length,
+        names: allCookiesBeforeClient.map(c => c.name),
+        hasCodeVerifier: allCookiesBeforeClient.some(c => 
+            c.name.includes('code-verifier') || c.name.includes('code_verifier')
+        ),
+    })
+
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
             cookies: {
                 getAll() {
-                    return request.cookies.getAll()
+                    const cookies = request.cookies.getAll()
+                    console.log('🔍 Supabase getAll() called:', {
+                        count: cookies.length,
+                        names: cookies.map(c => c.name),
+                    })
+                    return cookies
                 },
                 setAll(cookiesToSet) {
+                    console.log('🔍 Supabase setAll() called:', {
+                        count: cookiesToSet.length,
+                        names: cookiesToSet.map(c => c.name),
+                    })
                     cookiesToSet.forEach(({ name, value, options }) => {
                         request.cookies.set(name, value)
                         response.cookies.set(name, value, options)
