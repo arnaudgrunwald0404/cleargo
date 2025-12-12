@@ -15,15 +15,37 @@ export function createClient(): SupabaseClient {
     if (!supabaseKey || !supabaseUrl) {
         console.warn('Missing Supabase credentials, returning mock client');
         // Return a minimal mock client that won't crash
-        return {
+        const mockClient = {
             auth: {
-                getUser: async () => ({ data: { user: null }, error: null }),
-                getSession: async () => ({ data: { session: null }, error: null }),
+                getUser: async () => {
+                    const { getMockSuperAdmin } = await import('@/lib/auth-mock');
+                    return { data: { user: getMockSuperAdmin() }, error: null };
+                },
+                getSession: async () => {
+                    const { getMockSuperAdmin } = await import('@/lib/auth-mock');
+                    const user = getMockSuperAdmin();
+                    return {
+                        data: { 
+                            session: {
+                                user,
+                                access_token: 'mock-token',
+                                refresh_token: 'mock-refresh',
+                                expires_in: 3600,
+                                expires_at: Date.now() / 1000 + 3600,
+                            }
+                        },
+                        error: null,
+                    };
+                },
             },
             from: () => ({
-                select: () => ({ data: [], error: null }),
+                select: () => ({ order: () => ({ data: [], error: null }) }),
+                insert: () => ({ select: () => ({ data: null, error: null }) }),
+                update: () => ({ eq: () => ({ select: () => ({ data: null, error: null }) }) }),
+                delete: () => ({ eq: () => ({ data: null, error: null }) }),
             }),
         } as any as SupabaseClient;
+        return mockClient;
     }
     
     const client = createSupabaseClient(
