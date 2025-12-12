@@ -11,18 +11,29 @@ export function createClient(): SupabaseClient {
     let supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     
-    // Debug: Log what we're getting (only in development, and only first time)
-    if (process.env.NODE_ENV === 'development' && !supabaseKey && !supabaseUrl) {
-        console.warn('⚠️  No Supabase credentials found in environment variables');
-        console.warn('   Check that .env.local exists and contains:');
-        console.warn('   - SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY');
-        console.warn('   - NEXT_PUBLIC_SUPABASE_URL');
-        console.warn('   Restart your dev server after updating .env.local');
-    }
-    
     // Clean the key (remove quotes, whitespace, etc.)
     if (supabaseKey) {
         supabaseKey = supabaseKey.trim().replace(/^["']|["']$/g, '');
+    }
+    
+    // Debug: Log what we're getting (only in development)
+    if (process.env.NODE_ENV === 'development') {
+        if (!supabaseKey) {
+            console.warn('⚠️  No Supabase API key found in environment variables');
+            console.warn('   SUPABASE_SERVICE_ROLE_KEY:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+            console.warn('   NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+            console.warn('   Check your .env.local file and restart your dev server');
+        } else {
+            const parts = supabaseKey.split('.');
+            if (parts.length !== 3) {
+                console.error('❌ API key format issue detected!');
+                console.error('   Key length:', supabaseKey.length);
+                console.error('   Key parts:', parts.length);
+                console.error('   Key preview:', supabaseKey.substring(0, 50) + '...');
+                console.error('   This usually means the key was truncated or corrupted');
+                console.error('   Check your .env.local file - make sure the key is on a single line');
+            }
+        }
     }
     
     // Validate JWT format (should have 3 parts separated by dots)
