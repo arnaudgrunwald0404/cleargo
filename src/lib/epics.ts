@@ -93,18 +93,27 @@ export async function getEpics() {
     try {
         const supabase = createClient();
 
-        const { data, error } = await supabase
+        // Log which key is being used
+        const usingServiceRole = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+        console.log('getEpics: Using SERVICE_ROLE_KEY:', usingServiceRole);
+
+        // Try simple query first, then add joins if needed
+        // The join with app_user might be failing due to RLS or missing data
+        let query = supabase
             .from('epic')
-            .select(`
-          *,
-          product:product_id (name),
-          owner:app_user!owner_id (name, email, first_name, last_name, avatar_url),
-          aha_fields
-        `)
+            .select('*')
             .order('created_at', { ascending: false });
+        
+        const { data, error } = await query;
 
         if (error) {
-            console.error('Error fetching epics from database:', error);
+            console.error('Error fetching epics from database:', {
+                message: error.message,
+                details: error.details,
+                hint: error.hint,
+                code: error.code,
+                fullError: JSON.stringify(error, null, 2),
+            });
             // Return empty array instead of throwing to prevent page crash
             return [];
         }
@@ -112,7 +121,11 @@ export async function getEpics() {
         console.log('Fetched epics from database:', data?.length || 0);
         return data || [];
     } catch (error) {
-        console.error('Exception fetching epics:', error);
+        console.error('Exception fetching epics:', {
+            error,
+            message: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+        });
         // Return empty array instead of throwing to prevent page crash
         return [];
     }
