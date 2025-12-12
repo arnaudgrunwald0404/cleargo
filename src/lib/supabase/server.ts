@@ -28,7 +28,10 @@ export function createClient(): SupabaseClient {
         // Return mock client if key is invalid
         const mockClient = {
             auth: {
-                getUser: async () => ({ data: { user: getMockSuperAdmin() }, error: null }),
+                getUser: async () => {
+                    const { getMockSuperAdmin } = await import('@/lib/auth-mock');
+                    return { data: { user: getMockSuperAdmin() }, error: null };
+                },
                 getSession: async () => ({ data: { session: null }, error: null }),
             },
             from: () => ({
