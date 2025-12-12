@@ -26,18 +26,55 @@ export function createClient() {
         Storage.prototype.setItem = function (key: string, value: string) {
             originalSetItem.call(this, key, value);
 
+            // Log ALL localStorage writes to see what Supabase is storing
+            if (key.includes('supabase') || key.includes('auth') || key.includes('code') || key.includes('sb-')) {
+                console.log('🔍 localStorage.setItem intercepted:', {
+                    key,
+                    valueLength: value.length,
+                    valuePreview: value.substring(0, 20) + '...',
+                });
+            }
+
             // If it's a PKCE code_verifier, also store in cookie
-            if ((key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) && codeVerifierCookieName) {
+            // Supabase might use different key formats, so check multiple patterns
+            const isCodeVerifier = 
+                key.includes('code-verifier') || 
+                key.includes('code_verifier') || 
+                key.includes('auth-code-verifier') ||
+                key.includes('auth_code_verifier') ||
+                (key.startsWith('sb-') && key.includes('code')) ||
+                (key.includes('sb-') && key.includes('verifier'));
+
+            if (isCodeVerifier && codeVerifierCookieName) {
                 const isSecure = window.location.protocol === 'https:';
                 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                 const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
+                // Use the exact cookie name Supabase expects
                 const cookieString = `${codeVerifierCookieName}=${encodeURIComponent(value)}; path=/; SameSite=Lax; ${secureFlag} max-age=600`;
                 document.cookie = cookieString;
                 console.log('🍪 Intercepted localStorage.setItem -> cookie:', {
                     localStorageKey: key,
                     cookieName: codeVerifierCookieName,
                     valueLength: value.length,
+                    cookieSet: true,
+                    currentDomain: window.location.hostname,
                 });
+                
+                // Verify cookie was set
+                const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+                    const [name, ...rest] = cookie.trim().split('=');
+                    acc[name] = decodeURIComponent(rest.join('='));
+                    return acc;
+                }, {} as Record<string, string>);
+                
+                if (cookies[codeVerifierCookieName]) {
+                    console.log('✅ Cookie verified after setting');
+                } else {
+                    console.error('❌ Cookie NOT found after setting!', {
+                        expectedName: codeVerifierCookieName,
+                        allCookies: Object.keys(cookies),
+                    });
+                }
             }
         };
     }
