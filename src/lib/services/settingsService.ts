@@ -83,11 +83,17 @@ export async function getEmailTemplates() {
 }
 
 export async function patchEmailTemplates(payload: any) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settingsService.ts:85',message:'patchEmailTemplates API call START',data:{payloadKeys:Object.keys(payload)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
   const res = await fetch("/api/settings/email-templates", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settingsService.ts:91',message:'patchEmailTemplates API response',data:{ok:res.ok,status:res.status,statusText:res.statusText},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C'})}).catch(()=>{});
+  // #endregion
   if (!res.ok) throw new Error("Failed to save email templates");
   return res.json().catch(() => ({}));
 }

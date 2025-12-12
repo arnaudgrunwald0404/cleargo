@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Epic, CreateEpicDTO, EpicTier } from "@/types/epics";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { TextInput, Select, Group, Card, Box, ActionIcon, Badge, Button, Title, Text, Alert, Stack, Grid } from '@mantine/core';
+import { IconSearch, IconX, IconFilter, IconPlus, IconAlertCircle } from '@tabler/icons-react';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -29,6 +31,7 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         status: "ALL",
         risk: "ALL"
     });
+    const [showFilters, setShowFilters] = useState(true);
 
     useEffect(() => {
         // Only load additional data if we don't have initial epics
@@ -205,64 +208,140 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center mb-8">
-                <div>
-                    <h1 className="text-2xl font-bold">Epics</h1>
-                    <p className="text-sm text-gray-600 mt-1">
+            <Group justify="space-between" align="flex-start" mb="xl">
+                <Box>
+                    <Title order={1} mb="xs" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
+                        Epics
+                    </Title>
+                    <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }}>
                         Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
-                    </p>
-                </div>
-                <button
+                    </Text>
+                </Box>
+                <Button
+                    leftSection={<IconPlus size={16} />}
                     onClick={() => setShowCreate(!showCreate)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+                    variant={showCreate ? "subtle" : "filled"}
+                    color="indigo"
                 >
                     {showCreate ? "Cancel" : "New Epic"}
-                </button>
-            </div>
+                </Button>
+            </Group>
 
-            {/* Filters */}
-            <div className="bg-white p-4 rounded shadow border mb-6 flex gap-4 flex-wrap items-center">
-                <input
-                    type="text"
-                    placeholder="Search epics..."
-                    value={filters.search}
-                    onChange={e => setFilters({ ...filters, search: e.target.value })}
-                    className="p-2 border rounded w-64"
-                />
-                <select
-                    value={filters.tier}
-                    onChange={e => setFilters({ ...filters, tier: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Tiers</option>
-                    <option value="TIER_1">Tier 1</option>
-                    <option value="TIER_2">Tier 2</option>
-                    <option value="TIER_3">Tier 3</option>
-                </select>
-                <select
-                    value={filters.status}
-                    onChange={e => setFilters({ ...filters, status: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Statuses</option>
-                    <option value="PLANNED">Planned</option>
-                    <option value="PRE_LAUNCH">Pre-Launch</option>
-                    <option value="LAUNCHING">Launching</option>
-                    <option value="LAUNCHED">Launched</option>
-                </select>
-                <select
-                    value={filters.risk}
-                    onChange={e => setFilters({ ...filters, risk: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Risks</option>
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                </select>
-            </div>
+            {/* Modern Search and Filters */}
+            <Box
+                style={{
+                    backgroundColor: 'white',
+                    padding: '16px',
+                    borderRadius: '8px',
+                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
+                }}
+                mb="md"
+            >
+                <Group justify="space-between" align="center" mb={showFilters ? "md" : 0}>
+                    <Group gap="md" style={{ flex: 1 }}>
+                        <TextInput
+                            placeholder="Search epics..."
+                            value={filters.search}
+                            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                            leftSection={<IconSearch size={16} />}
+                            rightSection={
+                                filters.search && (
+                                    <ActionIcon
+                                        size="sm"
+                                        variant="transparent"
+                                        onClick={() => setFilters({ ...filters, search: "" })}
+                                    >
+                                        <IconX size={14} />
+                                    </ActionIcon>
+                                )
+                            }
+                            style={{ flex: 1, maxWidth: 400 }}
+                        />
+                        <ActionIcon
+                            variant={showFilters ? "filled" : "subtle"}
+                            color="indigo"
+                            onClick={() => setShowFilters(!showFilters)}
+                            size="lg"
+                        >
+                            <IconFilter size={18} />
+                        </ActionIcon>
+                    </Group>
+                    {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.search) && (
+                        <Badge
+                            variant="light"
+                            color="indigo"
+                            size="lg"
+                            rightSection={
+                                <ActionIcon
+                                    size="xs"
+                                    color="indigo"
+                                    radius="xl"
+                                    variant="transparent"
+                                    onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" })}
+                                >
+                                    <IconX size={12} />
+                                </ActionIcon>
+                            }
+                        >
+                            {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk].filter(Boolean).length} active
+                        </Badge>
+                    )}
+                </Group>
 
-            {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
+                {showFilters && (
+                    <Group gap="md" mt="md">
+                        <Select
+                            label="Tier"
+                            placeholder="All Tiers"
+                            value={filters.tier}
+                            onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
+                            data={[
+                                { value: "ALL", label: "All Tiers" },
+                                { value: "TIER_1", label: "Tier 1" },
+                                { value: "TIER_2", label: "Tier 2" },
+                                { value: "TIER_3", label: "Tier 3" },
+                            ]}
+                            clearable
+                            style={{ flex: 1 }}
+                        />
+                        <Select
+                            label="Status"
+                            placeholder="All Statuses"
+                            value={filters.status}
+                            onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
+                            data={[
+                                { value: "ALL", label: "All Statuses" },
+                                { value: "PLANNED", label: "Planned" },
+                                { value: "PRE_LAUNCH", label: "Pre-Launch" },
+                                { value: "LAUNCHING", label: "Launching" },
+                                { value: "LAUNCHED", label: "Launched" },
+                            ]}
+                            clearable
+                            style={{ flex: 1 }}
+                        />
+                        <Select
+                            label="Risk Level"
+                            placeholder="All Risks"
+                            value={filters.risk}
+                            onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
+                            data={[
+                                { value: "ALL", label: "All Risks" },
+                                { value: "LOW", label: "Low" },
+                                { value: "MEDIUM", label: "Medium" },
+                                { value: "HIGH", label: "High" },
+                            ]}
+                            clearable
+                            style={{ flex: 1 }}
+                        />
+                    </Group>
+                )}
+            </Box>
+
+            {error && (
+                <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
+                    {error}
+                </Alert>
+            )}
 
             {
                 releaseGroups.length === 0 ? (
@@ -363,82 +442,86 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 )
             }
 
-            {
-                showCreate && (
-                    <div className="bg-white p-6 rounded shadow mb-8 border">
-                        <h2 className="text-xl font-semibold mb-4">Create New Epic</h2>
-                        <form onSubmit={handleCreate} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Epic Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                />
-                            </div>
+            {showCreate && (
+                <Card shadow="sm" padding="lg" radius="md" withBorder mb="xl">
+                    <Title order={2} mb="lg" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
+                        Create New Epic
+                    </Title>
+                    <form onSubmit={handleCreate}>
+                        <Stack gap="md">
+                            <TextInput
+                                label="Epic Name"
+                                placeholder="Enter epic name"
+                                required
+                                value={formData.name}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            />
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Tier</label>
-                                    <select
+                            <Grid>
+                                <Grid.Col span={{ base: 12, sm: 6 }}>
+                                    <Select
+                                        label="Tier"
+                                        required
                                         value={formData.tier}
-                                        onChange={e => setFormData({ ...formData, tier: e.target.value as EpicTier })}
-                                        className="w-full p-2 border rounded"
-                                    >
-                                        <option value="TIER_1">Tier 1 (Strategic)</option>
-                                        <option value="TIER_2">Tier 2 (Major)</option>
-                                        <option value="TIER_3">Tier 3 (Minor)</option>
-                                    </select>
-                                </div>
+                                        onChange={(value) => setFormData({ ...formData, tier: (value as EpicTier) || "TIER_3" })}
+                                        data={[
+                                            { value: "TIER_1", label: "Tier 1 (Strategic)" },
+                                            { value: "TIER_2", label: "Tier 2 (Major)" },
+                                            { value: "TIER_3", label: "Tier 3 (Minor)" },
+                                        ]}
+                                    />
+                                </Grid.Col>
 
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Product</label>
-                                    <select
-                                        value={formData.product_id || ""}
-                                        onChange={e => setFormData({ ...formData, product_id: e.target.value })}
-                                        className="w-full p-2 border rounded"
-                                    >
-                                        <option value="">Select Product...</option>
-                                        {products.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
+                                <Grid.Col span={{ base: 12, sm: 6 }}>
+                                    <Select
+                                        label="Product"
+                                        placeholder="Select Product..."
+                                        value={formData.product_id || null}
+                                        onChange={(value) => setFormData({ ...formData, product_id: value || undefined })}
+                                        data={products.map(p => ({ value: p.id, label: p.name }))}
+                                        clearable
+                                    />
+                                </Grid.Col>
+                            </Grid>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Target Date</label>
-                                    <input
+                            <Grid>
+                                <Grid.Col span={{ base: 12, sm: 6 }}>
+                                    <TextInput
+                                        label="Target Date"
                                         type="date"
                                         value={formData.target_launch_date || ""}
-                                        onChange={e => setFormData({ ...formData, target_launch_date: e.target.value })}
-                                        className="w-full p-2 border rounded"
+                                        onChange={(e) => setFormData({ ...formData, target_launch_date: e.target.value })}
                                     />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Aha ID (Optional)</label>
-                                    <input
-                                        type="text"
+                                </Grid.Col>
+                                <Grid.Col span={{ base: 12, sm: 6 }}>
+                                    <TextInput
+                                        label="Aha ID"
+                                        placeholder="Optional"
                                         value={formData.aha_id || ""}
-                                        onChange={e => setFormData({ ...formData, aha_id: e.target.value })}
-                                        className="w-full p-2 border rounded"
+                                        onChange={(e) => setFormData({ ...formData, aha_id: e.target.value })}
                                     />
-                                </div>
-                            </div>
+                                </Grid.Col>
+                            </Grid>
 
-                            <button
-                                type="submit"
-                                className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
-                            >
-                                Create Epic
-                            </button>
-                        </form>
-                    </div>
-                )
-            }
+                            <Group justify="flex-end" mt="md">
+                                <Button
+                                    variant="subtle"
+                                    onClick={() => setShowCreate(false)}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    color="green"
+                                    leftSection={<IconPlus size={16} />}
+                                >
+                                    Create Epic
+                                </Button>
+                            </Group>
+                        </Stack>
+                    </form>
+                </Card>
+            )}
 
         </div >
     );

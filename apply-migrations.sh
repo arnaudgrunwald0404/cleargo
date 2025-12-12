@@ -12,7 +12,13 @@ PROJECT_REF=$(echo $NEXT_PUBLIC_SUPABASE_URL | sed 's|https://||' | sed 's|.supa
 
 # Construct PostgreSQL connection string
 # Format: postgresql://postgres:[PASSWORD]@db.[PROJECT_REF].supabase.co:5432/postgres
-DB_URL="postgresql://postgres.${PROJECT_REF}:${SUPABASE_SERVICE_ROLE_KEY}@aws-0-us-west-1.pooler.supabase.com:6543/postgres"
+# Use new secret key, fallback to legacy service_role key for backward compatibility
+SUPABASE_KEY="${SUPABASE_SECRET_KEY:-${SUPABASE_SERVICE_ROLE_KEY}}"
+if [ -z "$SUPABASE_KEY" ]; then
+    echo "Error: Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY"
+    exit 1
+fi
+DB_URL="postgresql://postgres.${PROJECT_REF}:${SUPABASE_KEY}@aws-0-us-west-1.pooler.supabase.com:6543/postgres"
 
 echo "Applying migrations to Supabase database..."
 echo "Project: $PROJECT_REF"

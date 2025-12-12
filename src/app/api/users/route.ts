@@ -44,9 +44,15 @@ export async function GET(req: NextRequest) {
   }
 
   // Get last login times from auth.users using admin client
+  // Use new secret key, fallback to legacy service_role key for backward compatibility
+  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secretKey) {
+    return NextResponse.json({ error: "Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+  }
+  
   const adminClient = createAdminClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    secretKey
   );
   const { data: authUsers } = await adminClient.auth.admin.listUsers();
   const authUserMap = new Map(authUsers?.users.map(u => [u.email?.toLowerCase(), u.last_sign_in_at]) || []);

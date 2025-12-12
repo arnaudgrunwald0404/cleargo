@@ -26,6 +26,7 @@ export interface AppSettings {
     // Capability-based permissions: capability id -> array of roles allowed
     permissions?: Record<string, string[]>;
     aha_tags?: string[]; // Tags that trigger inclusion in Launch Console
+    enable_activity_feed?: boolean; // Whether to show activity feed on home page
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -68,6 +69,7 @@ export async function getSettings(): Promise<AppSettings> {
             updated_at: new Date().toISOString(),
             permissions: {},
             aha_tags: ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'],
+            enable_activity_feed: true,
         };
     }
 
@@ -99,6 +101,9 @@ export async function updateSettings(
     updates: Partial<Omit<AppSettings, "id" | "updated_at">>
 ): Promise<AppSettings> {
     const supabase = await createClient();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:100',message:'updateSettings START',data:{updateKeys:Object.keys(updates)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
 
     // First, get current settings to ensure we have all required fields
     const currentSettings = await getSettings();
@@ -112,6 +117,9 @@ export async function updateSettings(
 
     // Remove id and updated_at from the object before update (id is used in .eq(), updated_at is set explicitly)
     const { id, updated_at, ...updateData } = mergedData;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:119',message:'About to update DB',data:{updateDataKeys:Object.keys(updateData),settingsId:id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
 
     // Use update instead of upsert to avoid issues with required fields
     const { data, error } = await supabase
@@ -120,6 +128,9 @@ export async function updateSettings(
         .eq("id", 1)
         .select()
         .single();
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:126',message:'DB update response',data:{hasData:!!data,hasError:!!error,errorCode:error?.code,errorMessage:error?.message,errorDetails:error?.details},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+    // #endregion
 
     if (error) {
         console.error("Supabase error updating settings:", {

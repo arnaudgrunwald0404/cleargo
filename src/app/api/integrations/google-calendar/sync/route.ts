@@ -32,7 +32,7 @@ async function refreshAccessToken(refreshToken: string): Promise<{ access_token:
 
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
+        const supabase = createClient();
         const {
             data: { user },
         } = await supabase.auth.getUser();

@@ -110,9 +110,15 @@ export async function POST(
     }
 
     // Check if user has logged in before (to determine if it's invite or remind)
+    // Use new secret key, fallback to legacy service_role key for backward compatibility
+    const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secretKey) {
+      return NextResponse.json({ error: "Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY" }, { status: 500 });
+    }
+    
     const adminClient = createAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      secretKey
     );
     const { data: authUsers } = await adminClient.auth.admin.listUsers();
     const authUser = authUsers?.users.find(

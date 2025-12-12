@@ -770,7 +770,7 @@ export default function EpicDetailPage() {
                                 return true;
                             });
                             
-                            return <Matrix epicId={epic.id} items={filteredMatrix} onUpdate={loadData} />;
+                            return <Matrix epicId={epic.id} epicName={epic.name} items={filteredMatrix} onUpdate={loadData} />;
                         })()}
                     </>
                 )}

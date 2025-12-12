@@ -1,9 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Select, Avatar, Modal, Button, Group } from "@mantine/core";
 import { IconChevronDown, IconChevronRight, IconPencil } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
+import { UserDisplayWithDelegation } from "./UserDisplayWithDelegation";
 import { RichText } from "./admin/RichText";
+import { createClient } from "@/lib/supabase/client";
 
 type MatrixItem = {
     id: string;
@@ -57,11 +59,12 @@ const getAvatarColor = (email: string) => {
 
 type Props = {
     epicId: string;
+    epicName: string;
     items: MatrixItem[];
     onUpdate: () => void;
 };
 
-export default function Matrix({ epicId, items, onUpdate }: Props) {
+export default function Matrix({ epicId, epicName, items, onUpdate }: Props) {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
@@ -69,6 +72,35 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
     const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
     const [editingNotes, setEditingNotes] = useState<string>("");
     const [savingNotes, setSavingNotes] = useState(false);
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+    const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+
+    // Get current user email and check if Super Admin
+    useEffect(() => {
+        const fetchCurrentUser = async () => {
+            try {
+                const supabase = createClient();
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user?.email) {
+                    setCurrentUserEmail(user.email);
+                    
+                    // Check if user is Super Admin
+                    const { data: appUser } = await supabase
+                        .from('app_user')
+                        .select('roles')
+                        .eq('email', user.email)
+                        .single();
+                    
+                    if (appUser?.roles && Array.isArray(appUser.roles)) {
+                        setIsSuperAdmin(appUser.roles.includes('SUPERADMIN'));
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to get current user:', error);
+            }
+        };
+        fetchCurrentUser();
+    }, []);
 
     // Merge optimistic updates with actual items
     const itemsWithOptimistic = items.map(item => ({
@@ -329,12 +361,21 @@ export default function Matrix({ epicId, items, onUpdate }: Props) {
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '200px' }}>
                                             {item.approverEmail ? (
-                                                <UserDisplay
+                                                <UserDisplayWithDelegation
                                                     email={item.approverEmail}
                                                     firstName={item.approverInfo?.first_name}
                                                     lastName={item.approverInfo?.last_name}
                                                     avatarUrl={item.approverInfo?.avatar_url}
                                                     size="sm"
+                                                    epicId={epicId}
+                                                    epicName={epicName}
+                                                    taskId={item.id}
+                                                    taskLabel={item.criterion.label}
+                                                    category={item.criterion.category}
+                                                    isGate={item.criterion.gate}
+                                                    currentUserEmail={currentUserEmail}
+                                                    showDelegationButton={isSuperAdmin || currentUserEmail === item.approverEmail}
+                                                    onDelegationComplete={onUpdate}
                                                 />
                                             ) : (
                                                 '-'

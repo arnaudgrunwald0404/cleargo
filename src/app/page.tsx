@@ -1,24 +1,53 @@
-import { getEpics } from '@/lib/epics';
-import EpicDashboard from '@/components/EpicDashboard';
+import { HomeDashboard } from '@/components/HomeDashboard';
+import { createClient } from '@/lib/supabase/server';
+import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  // AUTH DISABLED: Render dashboard directly instead of redirecting
-  // This avoids any redirect-related errors
-  let epics: any[] = [];
+  // AUTH DISABLED: Use mock user profile
+  let email: string | null = null;
+  let firstName: string | null = null;
+  let enableActivityFeed = true;
   
   try {
-    epics = await getEpics() || [];
+    const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
+    const profile = getMockSuperAdminProfile();
+    email = profile?.email || 'agrunwald@clearcompany.com';
+    firstName = profile?.first_name || null;
   } catch (error: any) {
-    console.warn('HomePage: Failed to load epics:', error?.message);
+    email = 'agrunwald@clearcompany.com';
+    firstName = null;
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 pt-24 pb-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <EpicDashboard initialEpics={epics || []} />
-      </div>
-    </div>
-  );
+  // Try to fetch real profile from database if available
+  try {
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user?.email) {
+      const { data: profile } = await supabase
+        .from('app_user')
+        .select('email, first_name')
+        .eq('email', user.email)
+        .single();
+      
+      if (profile) {
+        email = profile.email || email;
+        firstName = profile.first_name || firstName;
+      }
+    }
+  } catch (error) {
+    // Silently fail - use mock data
+  }
+
+  // Fetch settings to check if activity feed is enabled
+  try {
+    const settings = await getSettings();
+    enableActivityFeed = settings.enable_activity_feed !== false;
+  } catch (error) {
+    // Silently fail - default to enabled
+    console.warn('Failed to fetch settings for activity feed:', error);
+  }
+
+  return <HomeDashboard userEmail={email} firstName={firstName} enableActivityFeed={enableActivityFeed} />;
 }

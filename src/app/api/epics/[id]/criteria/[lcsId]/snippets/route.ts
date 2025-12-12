@@ -7,7 +7,7 @@ export async function POST(
 ) {
     try {
         const { id, lcsId } = await params;
-        const supabase = await createClient();
+        const supabase = createClient();
         const body = await request.json();
         const { snippet_id } = body;
 

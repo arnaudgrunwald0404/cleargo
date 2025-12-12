@@ -4,7 +4,11 @@ import { buildWriteBackPayload } from './mapping';
 import type { EpicReadinessData } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Use new secret key, fallback to legacy service_role key for backward compatibility
+const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseServiceKey) {
+    throw new Error('Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY in environment variables');
+}
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 

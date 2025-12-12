@@ -7,7 +7,7 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
-        const supabase = await createClient();
+        const supabase = createClient();
         // Try with linked_epics first, fallback if table doesn't exist
         let selectQuery = `
             *,
@@ -62,7 +62,7 @@ export async function PATCH(
 ) {
     try {
         const { id } = await params;
-        const supabase = await createClient();
+        const supabase = createClient();
         const body = await request.json();
 
         const { data, error } = await supabase
@@ -93,7 +93,7 @@ export async function DELETE(
 ) {
     try {
         const { id } = await params;
-        const supabase = await createClient();
+        const supabase = createClient();
         const { error } = await supabase
             .from("meeting")
             .delete()

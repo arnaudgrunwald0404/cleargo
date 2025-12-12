@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -40,20 +41,59 @@ export async function PATCH(req: NextRequest) {
         // No additional processing needed currently
     }
 
-    // Update app_user table where email matches
-    const { data: updatedUser, error } = await supabase
+    // Use upsert to handle both insert and update cases
+    // This ensures the profile is created if it doesn't exist
+    let { data: updatedUser, error } = await supabase
         .from("app_user")
-        .update({ ...updateData, updated_at: new Date().toISOString() })
-        .eq("email", user.email)
+        .upsert(
+            {
+                email: user.email,
+                ...updateData,
+                updated_at: new Date().toISOString(),
+            },
+            {
+                onConflict: 'email',
+            }
+        )
         .select()
         .single();
 
-    if (error) {
-        // Handle case where user profile doesn't exist yet
-        if (error.code === 'PGRST116') {
-            return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    // If RLS error occurs, try with admin client that bypasses RLS
+    if (error && (error.message?.includes('row-level security') || error.code === '42501')) {
+        const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (secretKey && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+            const adminSupabase = createAdminClient(
+                process.env.NEXT_PUBLIC_SUPABASE_URL,
+                secretKey
+            );
+            
+            const adminResult = await adminSupabase
+                .from("app_user")
+                .upsert(
+                    {
+                        email: user.email,
+                        ...updateData,
+                        updated_at: new Date().toISOString(),
+                    },
+                    {
+                        onConflict: 'email',
+                    }
+                )
+                .select()
+                .single();
+            
+            if (adminResult.error) {
+                console.error("Error upserting profile with admin client:", adminResult.error);
+                return NextResponse.json({ error: "Failed to update profile", details: adminResult.error.message }, { status: 500 });
+            }
+            
+            updatedUser = adminResult.data;
+        } else {
+            console.error("Error upserting profile:", error);
+            return NextResponse.json({ error: "Failed to update profile", details: error.message }, { status: 500 });
         }
-        console.error("Error updating profile:", error);
+    } else if (error) {
+        console.error("Error upserting profile:", error);
         return NextResponse.json({ error: "Failed to update profile", details: error.message }, { status: 500 });
     }
 

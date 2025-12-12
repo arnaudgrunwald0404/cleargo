@@ -3,9 +3,16 @@
 const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config({ path: '.env' });
 
+// Use new secret key, fallback to legacy service_role key for backward compatibility
+const supabaseKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+if (!supabaseKey) {
+    console.error('Missing SUPABASE_SECRET_KEY or SUPABASE_SERVICE_ROLE_KEY');
+    process.exit(1);
+}
+
 const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    supabaseKey
 );
 
 async function createFallbackUser() {

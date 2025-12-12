@@ -45,9 +45,12 @@ Ensure these are set in **Netlify Dashboard** → **Site Settings** → **Enviro
 
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://[your-project-ref].supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=[your-anon-key]
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[your-publishable-key]
+SUPABASE_SECRET_KEY=[your-secret-key]
 NEXT_PUBLIC_APP_URL=https://cleargo.netlify.com
 ```
+
+**Note:** The code supports both new keys (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`) and legacy keys (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) for backward compatibility. However, we recommend using the new keys as they provide enhanced security features.
 
 ## 4. Cookie Settings Verification
 

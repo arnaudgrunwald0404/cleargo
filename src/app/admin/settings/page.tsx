@@ -347,17 +347,30 @@ export default function AdminSettingsPage() {
     };
 
     const autoSaveEmailTemplates = async () => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:349',message:'autoSaveEmailTemplates START',data:{invite_subject:emailTemplates.invite_subject?.substring(0,50),invite_html_length:emailTemplates.invite_html?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         setEmailTemplatesSaving(true);
         try {
-            await patchEmailTemplates({
+            const payload = {
                 email_template_invite_subject: emailTemplates.invite_subject || null,
                 email_template_invite_html: emailTemplates.invite_html || null,
                 email_template_remind_subject: emailTemplates.remind_subject || null,
                 email_template_remind_html: emailTemplates.remind_html || null,
                 email_template_update_criteria_subject: emailTemplates.update_criteria_subject || null,
                 email_template_update_criteria_html: emailTemplates.update_criteria_html || null,
-            });
+            };
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:354',message:'Calling patchEmailTemplates',data:{payloadKeys:Object.keys(payload),hasInviteSubject:!!payload.email_template_invite_subject},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
+            // #endregion
+            await patchEmailTemplates(payload);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:359',message:'patchEmailTemplates SUCCESS',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
         } catch (error: any) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:362',message:'autoSaveEmailTemplates ERROR',data:{errorMessage:error?.message,errorName:error?.name,errorString:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+            // #endregion
             console.error("Failed to auto-save email templates:", error);
             setError("Failed to save email templates. Please try again.");
         } finally {
@@ -396,7 +409,13 @@ export default function AdminSettingsPage() {
 
     // Auto-save email templates with debouncing (2 seconds after last change)
     useEffect(() => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:398',message:'useEffect triggered',data:{emailTemplatesLoading,hasTemplates:!!emailTemplates,invite_subject_length:emailTemplates?.invite_subject?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         if (emailTemplatesLoading) return; // Don't auto-save on initial load
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:403',message:'Scheduling auto-save',data:{willSaveIn:'2000ms'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
+        // #endregion
 
         const timer = setTimeout(() => {
             autoSaveEmailTemplates();

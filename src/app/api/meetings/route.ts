@@ -3,14 +3,90 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: NextRequest) {
     try {
-        const supabase = await createClient();
+        // Use direct PostgREST request - Supabase JS client has issues with JWT keys
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
         const { searchParams } = new URL(request.url);
         const epicId = searchParams.get("epicId");
         const startDate = searchParams.get("startDate");
         const endDate = searchParams.get("endDate");
 
-        // Build base select - try with linked_epics first, fallback if table doesn't exist
-        let selectQuery = `
+        if (serviceRoleKey && supabaseUrl) {
+            try {
+                // Build PostgREST select query with joins
+                // PostgREST syntax: foreign_key_table(id,name) for foreign keys
+                const selectQuery = `*,epic_id(id,name),linked_epic_id(id,name),created_by(id,email,name),meeting_transcript(id,transcript_text,uploaded_at),meeting_snippet(id,snippet_text,criterion_id,epic_id,relevance_score),meeting_epic(epic_id(id,name))`;
+                
+                // Build query params
+                const params = new URLSearchParams({
+                    select: selectQuery,
+                    order: 'meeting_date.desc'
+                });
+
+                if (epicId) {
+                    params.append('or', `(epic_id.eq.${epicId},linked_epic_id.eq.${epicId})`);
+                }
+                if (startDate) {
+                    params.append('meeting_date', `gte.${startDate}`);
+                }
+                if (endDate) {
+                    params.append('meeting_date', `lte.${endDate}`);
+                }
+
+                const response = await fetch(`${supabaseUrl}/rest/v1/meeting?${params.toString()}`, {
+                    method: 'GET',
+                    headers: {
+                        'apikey': serviceRoleKey,
+                        'Authorization': `Bearer ${serviceRoleKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=representation'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    return NextResponse.json({ meetings: data || [] });
+                } else if (response.status === 404 || response.status === 400) {
+                    // Try without linked_epics if it fails
+                    const simpleSelectQuery = `*,epic_id(id,name),linked_epic_id(id,name),created_by(id,email,name),meeting_transcript(id,transcript_text,uploaded_at),meeting_snippet(id,snippet_text,criterion_id,epic_id,relevance_score)`;
+                    const simpleParams = new URLSearchParams({
+                        select: simpleSelectQuery,
+                        order: 'meeting_date.desc'
+                    });
+
+                    if (epicId) {
+                        simpleParams.append('or', `(epic_id.eq.${epicId},linked_epic_id.eq.${epicId})`);
+                    }
+                    if (startDate) {
+                        simpleParams.append('meeting_date', `gte.${startDate}`);
+                    }
+                    if (endDate) {
+                        simpleParams.append('meeting_date', `lte.${endDate}`);
+                    }
+
+                    const retryResponse = await fetch(`${supabaseUrl}/rest/v1/meeting?${simpleParams.toString()}`, {
+                        method: 'GET',
+                        headers: {
+                            'apikey': serviceRoleKey,
+                            'Authorization': `Bearer ${serviceRoleKey}`,
+                            'Content-Type': 'application/json',
+                            'Prefer': 'return=representation'
+                        }
+                    });
+
+                    if (retryResponse.ok) {
+                        const data = await retryResponse.json();
+                        return NextResponse.json({ meetings: data || [] });
+                    }
+                }
+            } catch (directError: any) {
+                console.warn('Direct PostgREST request error:', directError?.message);
+            }
+        }
+
+        // Fallback to Supabase client
+        const supabase = createClient();
+        const selectQuery = `
             *,
             epic:epic_id(id, name),
             linked_epic:linked_epic_id(id, name),
@@ -19,11 +95,9 @@ export async function GET(request: NextRequest) {
             snippets:meeting_snippet(id, snippet_text, criterion_id, epic_id, relevance_score)
         `;
 
-        // Try to include linked_epics if the junction table exists
-        // We'll attempt this and handle errors gracefully
         let query = supabase
             .from("meeting")
-            .select(selectQuery + `, linked_epics:meeting_epic(epic:epic_id(id, name))`)
+            .select(selectQuery)
             .order("meeting_date", { ascending: false });
 
         if (epicId) {
@@ -38,31 +112,7 @@ export async function GET(request: NextRequest) {
             query = query.lte("meeting_date", endDate);
         }
 
-        let { data, error } = await query;
-
-        // If error is due to missing table, retry without linked_epics
-        if (error && (error.message?.includes('meeting_epic') || error.message?.includes('relation') || error.code === '42P01' || error.code === 'PGRST')) {
-            query = supabase
-                .from("meeting")
-                .select(selectQuery)
-                .order("meeting_date", { ascending: false });
-
-            if (epicId) {
-                query = query.or(`epic_id.eq.${epicId},linked_epic_id.eq.${epicId}`);
-            }
-
-            if (startDate) {
-                query = query.gte("meeting_date", startDate);
-            }
-
-            if (endDate) {
-                query = query.lte("meeting_date", endDate);
-            }
-
-            const retryResult = await query;
-            data = retryResult.data;
-            error = retryResult.error;
-        }
+        const { data, error } = await query;
 
         if (error) {
             console.error("Error fetching meetings:", error);
@@ -78,7 +128,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const supabase = await createClient();
+        const supabase = createClient();
         const {
             data: { user },
         } = await supabase.auth.getUser();

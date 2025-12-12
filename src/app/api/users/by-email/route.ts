@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
             );
         }
         
-        const supabase = await createClient();
+        const supabase = createClient();
         
         // Fetch user info from app_user table
         const { data: users, error } = await supabase
