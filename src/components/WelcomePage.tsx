@@ -9,14 +9,7 @@ function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
 
   const handleClick = async () => {
-    // CRITICAL: Use current origin for redirectTo to ensure PKCE cookie is set on correct domain
     const redirectTo = `${window.location.origin}/auth/callback`;
-
-    console.log('🔐 SSOButton - Initiating OAuth:', {
-      redirectTo,
-      currentOrigin: window.location.origin,
-      currentHost: window.location.host
-    });
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
@@ -28,39 +21,8 @@ function SSOButton({ children, ...buttonProps }: any) {
       },
     });
 
-    // CRITICAL: After signInWithOAuth, Supabase may have stored the code_verifier in localStorage
-    // We need to ensure it's also in cookies so the server-side callback can access it
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // Check localStorage for PKCE code_verifier and copy to cookie
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-    const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-    const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null;
-
-    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined' && codeVerifierCookieName) {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier'))) {
-          const value = localStorage.getItem(key);
-          if (value) {
-            const isSecure = window.location.protocol === 'https:';
-            const cookieString = `${codeVerifierCookieName}=${value}; path=/; SameSite=Lax; ${isSecure ? 'Secure;' : ''} max-age=600`;
-            document.cookie = cookieString;
-            console.log('🍪 SSOButton - Manually copied PKCE code_verifier to cookie:', {
-              localStorageKey: key,
-              cookieName: codeVerifierCookieName,
-              valueLength: value.length,
-              currentDomain: window.location.hostname
-            });
-          }
-        }
-      }
-    }
-
     if (error) {
-      console.error('❌ SSOButton - OAuth error:', error);
-    } else if (data?.url) {
-      console.log('✅ SSOButton - OAuth URL generated');
+      console.error('OAuth sign-in error:', error);
     }
   };
 

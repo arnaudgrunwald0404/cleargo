@@ -9,19 +9,8 @@ export function SignIn({
     const supabase = createClient();
 
     const handleSignIn = async () => {
-        // CRITICAL: Use current origin for redirectTo to ensure PKCE cookie is set on correct domain
-        // The code_verifier cookie must be set on the same domain as the callback
-        // Using window.location.origin ensures cookies are accessible when callback happens
         const redirectTo = `${window.location.origin}/auth/callback`;
 
-        console.log('🔐 Initiating OAuth sign-in:', {
-            redirectTo,
-            currentOrigin: window.location.origin,
-            currentHost: window.location.host,
-        });
-
-        // The Supabase client now handles PKCE code_verifier cookie storage automatically
-        // via the hybridStorage adapter and Storage.prototype interception
         const { data, error } = await supabase.auth.signInWithOAuth({
             provider: provider || "google",
             options: {
@@ -33,11 +22,7 @@ export function SignIn({
         });
 
         if (error) {
-            console.error('❌ OAuth sign-in error:', error);
-        } else if (data?.url) {
-            console.log('✅ OAuth URL generated, redirecting to:', data.url);
-            // The signInWithOAuth will redirect automatically
-            // The code_verifier cookie should already be set by hybridStorage
+            console.error('OAuth sign-in error:', error);
         }
     };
 

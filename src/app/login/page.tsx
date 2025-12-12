@@ -46,42 +46,8 @@ function LoginForm() {
         throw new Error("Session not available after sign in");
       }
       
-      console.log('✅ Login successful, session available:', {
-        accessToken: session.access_token ? 'present' : 'missing',
-        refreshToken: session.refresh_token ? 'present' : 'missing',
-        expiresAt: session.expires_at
-      });
-      
-      // Supabase SSR requires sessions in cookies for server-side access
-      // After signInWithPassword, session is in localStorage but needs to be in cookies
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-      const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-      
-      if (projectRef && session.access_token) {
-        // Set the session cookie in the format Supabase SSR expects
-        const cookieName = `sb-${projectRef}-auth-token`;
-        const sessionData = JSON.stringify({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-          expires_at: session.expires_at,
-          expires_in: session.expires_in,
-          token_type: session.token_type,
-          user: session.user
-        });
-        
-        const isSecure = window.location.protocol === 'https:';
-        const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
-        const maxAge = 60 * 60 * 24 * 365; // 1 year
-        
-        document.cookie = `${cookieName}=${encodeURIComponent(sessionData)}; path=/; SameSite=Lax; ${secureFlag} max-age=${maxAge}`;
-        console.log('🍪 Session cookie set:', cookieName);
-      }
-      
-      // Small delay to ensure cookie is set before navigation
-      await new Promise(resolve => setTimeout(resolve, 50));
-      
-      // Navigate to dashboard - middleware will read session from cookies
+      // Middleware will automatically sync session from localStorage to cookies
+      // Navigate to dashboard - middleware handles session sync
       router.push("/dashboard");
       router.refresh();
     } catch (err: any) {
