@@ -389,6 +389,11 @@ export async function GET(request: NextRequest) {
                 errorUrl.searchParams.set('message', 'Email confirmation link is invalid or has expired. Please request a new confirmation email.')
                 return NextResponse.redirect(errorUrl)
             }
+            // For OAuth flows (Google SSO), if code_verifier is missing, provide helpful error
+            // This usually means cookies aren't being set properly (domain/path/SameSite issues)
+            const errorUrl = new URL('/login?error=oauth_failed', request.url)
+            errorUrl.searchParams.set('message', 'OAuth authentication failed: missing security token. Please try signing in again. If the problem persists, check your browser cookie settings.')
+            return NextResponse.redirect(errorUrl)
         }
 
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
@@ -401,8 +406,15 @@ export async function GET(request: NextRequest) {
                 codeVerifierPresent: !!codeVerifierCookie,
                 allCookieNames: allCookies.map(c => c.name)
             })
-            const errorUrl = new URL('/?error=auth_failed', request.url)
-            errorUrl.searchParams.set('message', error.message)
+            
+            // Provide more helpful error messages based on the error type
+            let errorMessage = error.message
+            if (error.message?.includes('code_verifier') || error.message?.includes('code verifier')) {
+                errorMessage = 'OAuth authentication failed: security token missing. This may be due to cookie restrictions. Please try signing in again and ensure cookies are enabled.'
+            }
+            
+            const errorUrl = new URL('/login?error=auth_failed', request.url)
+            errorUrl.searchParams.set('message', errorMessage)
             return NextResponse.redirect(errorUrl)
         }
 

@@ -255,9 +255,93 @@ export function createClient() {
     // rotates the refresh token and the client may keep using the old one,
     // leading to "Invalid Refresh Token: Already Used" loops.
     // 
-    // CRITICAL: Don't use custom storage adapter - let Supabase handle session storage normally
-    // Supabase SSR automatically syncs sessions to cookies via middleware
-    // We only intercept PKCE code_verifier storage at the Storage.prototype level
+    // CRITICAL: Use custom storage adapter for PKCE code_verifier to ensure it's in cookies
+    // Supabase stores code_verifier in localStorage by default, but we need it in cookies
+    // so the server-side callback can access it. We use a hybrid approach:
+    // - PKCE code_verifier: stored in cookies (for server access)
+    // - Session tokens: stored in localStorage (Supabase default, synced to cookies by middleware)
+    const hybridStorage = {
+        getItem: (key: string): string | null => {
+            // For PKCE code_verifier, check cookies first, then localStorage
+            if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+                const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+                const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
+                
+                // Check cookies first
+                const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+                    const [name, ...rest] = cookie.trim().split('=');
+                    acc[name] = decodeURIComponent(rest.join('='));
+                    return acc;
+                }, {} as Record<string, string>);
+                
+                if (cookies[cookieName]) {
+                    return cookies[cookieName];
+                }
+            }
+            
+            // For everything else, use localStorage
+            try {
+                return localStorage.getItem(key);
+            } catch {
+                return null;
+            }
+        },
+        setItem: (key: string, value: string): void => {
+            // CRITICAL: For PKCE code_verifier, store in BOTH cookies and localStorage
+            // Cookies are needed for server-side callback, localStorage for client-side access
+            if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+                const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+                const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
+                
+                // Set cookie with proper attributes - CRITICAL: must be set synchronously before redirect
+                const isSecure = window.location.protocol === 'https:';
+                const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
+                const cookieString = `${cookieName}=${encodeURIComponent(value)}; path=/; SameSite=Lax; ${secureFlag} max-age=600`;
+                document.cookie = cookieString;
+                
+                console.log('🍪 PKCE code_verifier stored in cookie:', {
+                    cookieName,
+                    valueLength: value.length,
+                    isSecure: !!secureFlag,
+                    domain: window.location.hostname
+                });
+                
+                // Also store in localStorage for client-side access
+                try {
+                    localStorage.setItem(key, value);
+                } catch {
+                    // Ignore localStorage errors
+                }
+                return;
+            }
+            
+            // For everything else, use localStorage
+            try {
+                localStorage.setItem(key, value);
+            } catch {
+                // Ignore localStorage errors
+            }
+        },
+        removeItem: (key: string): void => {
+            // Remove from both cookies and localStorage
+            if (key.includes('code-verifier') || key.includes('code_verifier') || key.includes('auth-code-verifier')) {
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+                const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+                const cookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : key;
+                document.cookie = `${cookieName}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+            }
+            
+            try {
+                localStorage.removeItem(key);
+            } catch {
+                // Ignore localStorage errors
+            }
+        },
+    };
+
     const client = createBrowserClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -270,8 +354,7 @@ export function createClient() {
                 autoRefreshToken: false, // let middleware refresh on navigation
                 detectSessionInUrl: false, // we exchange the code on the server
                 flowType: 'pkce', // Explicitly use PKCE flow for OAuth
-                // Don't override storage - let Supabase use default localStorage
-                // Middleware will sync sessions to cookies automatically
+                storage: hybridStorage, // Use hybrid storage for PKCE code_verifier
             },
         }
     );
