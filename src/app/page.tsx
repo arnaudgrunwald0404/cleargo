@@ -1,15 +1,24 @@
-import { redirect } from "next/navigation";
-import DashboardPage from './dashboard/page';
+import { getEpics } from '@/lib/epics';
+import EpicDashboard from '@/components/EpicDashboard';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  // AUTH DISABLED: Always redirect to dashboard as superadmin
-  // Use redirect() which throws internally (expected in Next.js)
+  // AUTH DISABLED: Render dashboard directly instead of redirecting
+  // This avoids any redirect-related errors
+  let epics: any[] = [];
+  
   try {
-    redirect('/dashboard');
+    epics = await getEpics() || [];
   } catch (error: any) {
-    // redirect() throws a special error - this is normal, but if it fails, render dashboard directly
-    return <DashboardPage />;
+    console.warn('HomePage: Failed to load epics:', error?.message);
   }
+
+  return (
+    <div className="min-h-screen bg-gray-50 pt-24 pb-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <EpicDashboard initialEpics={epics || []} />
+      </div>
+    </div>
+  );
 }
