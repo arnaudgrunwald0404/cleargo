@@ -11,6 +11,15 @@ export function createClient(): SupabaseClient {
     let supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
     
+    // Debug: Log what we're getting (only in development, and only first time)
+    if (process.env.NODE_ENV === 'development' && !supabaseKey && !supabaseUrl) {
+        console.warn('⚠️  No Supabase credentials found in environment variables');
+        console.warn('   Check that .env.local exists and contains:');
+        console.warn('   - SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+        console.warn('   - NEXT_PUBLIC_SUPABASE_URL');
+        console.warn('   Restart your dev server after updating .env.local');
+    }
+    
     // Clean the key (remove quotes, whitespace, etc.)
     if (supabaseKey) {
         supabaseKey = supabaseKey.trim().replace(/^["']|["']$/g, '');
