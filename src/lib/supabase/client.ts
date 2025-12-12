@@ -28,6 +28,38 @@ export function createClient() {
                 detectSessionInUrl: false, // we exchange the code on the server
                 flowType: 'pkce',
             },
+            cookies: {
+                getAll() {
+                    // Parse cookies from document.cookie
+                    const cookies = document.cookie.split(';').reduce((acc, cookie) => {
+                        const [name, ...rest] = cookie.trim().split('=');
+                        acc[name] = decodeURIComponent(rest.join('='));
+                        return acc;
+                    }, {} as Record<string, string>);
+                    
+                    // Convert to array format expected by Supabase SSR
+                    return Object.entries(cookies).map(([name, value]) => ({ name, value }));
+                },
+                setAll(cookiesToSet) {
+                    // Set cookies with proper attributes
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        if (value === undefined || value === null) {
+                            // Remove cookie
+                            document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+                        } else {
+                            // Set cookie
+                            const isSecure = window.location.protocol === 'https:';
+                            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                            const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
+                            const sameSite = options?.sameSite || 'Lax';
+                            const path = options?.path || '/';
+                            const maxAge = options?.maxAge ? `max-age=${options.maxAge};` : '';
+                            
+                            document.cookie = `${name}=${encodeURIComponent(value)}; path=${path}; SameSite=${sameSite}; ${secureFlag} ${maxAge}`;
+                        }
+                    });
+                },
+            },
         }
     );
 }
