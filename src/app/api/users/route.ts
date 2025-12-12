@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveRole } from "@/lib/roles";
+import { resolveRole, isAdminRole } from "@/lib/roles";
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
   // AUTH DISABLED: Superadmin bypasses role checks
-  if (!(role === "SUPERADMIN" || role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!isAdminRole(role)) return forbid();
 
   // Get users from app_user table
   const { data: users, error } = await supabase
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
   // AUTH DISABLED: Superadmin bypasses role checks
-  if (!(role === "SUPERADMIN" || role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+  if (!isAdminRole(role)) return forbid();
 
   // Capability check: users.create
   // AUTH DISABLED: Superadmin bypasses capability checks
