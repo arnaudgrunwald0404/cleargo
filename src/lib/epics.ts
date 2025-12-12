@@ -101,6 +101,7 @@ export async function getEpics() {
         }
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
+        console.log('🔍 Querying epic table...');
         let { data, error } = await supabase
             .from('epic')
             .select('*')
@@ -108,13 +109,18 @@ export async function getEpics() {
         
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
-            console.log('epic table not found, trying launch table...');
+            console.log('⚠️  epic table not found, trying launch table...');
             const retryResult = await supabase
                 .from('launch')
                 .select('*')
                 .order('created_at', { ascending: false });
             data = retryResult.data;
             error = retryResult.error;
+            if (!error) {
+                console.log(`✅ Found ${data?.length || 0} launches in 'launch' table`);
+            }
+        } else if (!error) {
+            console.log(`✅ Found ${data?.length || 0} epics in 'epic' table`);
         }
 
         if (error) {
