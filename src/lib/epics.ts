@@ -117,7 +117,21 @@ export async function getEpics() {
         }
 
         if (error) {
-            // Safely log error information
+            // Check if it's a JWT validation error - this means the API key is invalid
+            const isJWTError = error?.code === 'PGRST301' || 
+                              error?.message?.includes('JWT') || 
+                              error?.message?.includes('Expected 3 parts');
+            
+            if (isJWTError) {
+                console.error('❌ Invalid Supabase API key detected!');
+                console.error('   Error:', error?.message || 'JWT validation failed');
+                console.error('   This usually means your API key in .env.local is malformed');
+                console.error('   Check that SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY is correct');
+                console.error('   The key should be a JWT with 3 parts separated by dots');
+                return [];
+            }
+            
+            // Safely log other error information
             try {
                 const errorInfo: any = {
                     message: error?.message || 'Unknown error',
@@ -127,15 +141,6 @@ export async function getEpics() {
                 // Only add these if they exist
                 if (error?.details) errorInfo.details = error.details;
                 if (error?.hint) errorInfo.hint = error.hint;
-                
-                // Try to stringify, but handle circular references
-                let errorStr = 'Unknown error';
-                try {
-                    errorStr = JSON.stringify(error, null, 2);
-                } catch {
-                    // If stringify fails, try to get basic info
-                    errorStr = String(error) || 'Empty error object';
-                }
                 
                 console.error('Database query error:', errorInfo.message, `(${errorInfo.code})`);
                 if (errorInfo.details) console.error('  Details:', errorInfo.details);

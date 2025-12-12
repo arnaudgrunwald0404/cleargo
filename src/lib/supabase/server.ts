@@ -8,23 +8,36 @@ export function createClient(): SupabaseClient {
     
     // CRITICAL: Always use SERVICE_ROLE_KEY to bypass RLS and see all data
     // SERVICE_ROLE_KEY bypasses all Row Level Security policies
-    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+    let supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    
+    // Clean the key (remove quotes, whitespace, etc.)
+    if (supabaseKey) {
+        supabaseKey = supabaseKey.trim().replace(/^["']|["']$/g, '');
+    }
     
     // Validate JWT format (should have 3 parts separated by dots)
     const isValidJWT = (key: string): boolean => {
         if (!key) return false;
         const parts = key.split('.');
-        return parts.length === 3 && parts.every(part => part.length > 0);
+        const isValid = parts.length === 3 && parts.every(part => part.length > 0);
+        if (!isValid && process.env.NODE_ENV === 'development') {
+            console.error('❌ Invalid Supabase API key format!');
+            console.error('   Key should be a JWT with 3 parts (header.payload.signature)');
+            console.error('   Key length:', key.length);
+            console.error('   Key parts:', parts.length);
+            console.error('   Key preview:', key.substring(0, 50) + (key.length > 50 ? '...' : ''));
+        }
+        return isValid;
     };
     
-    // Validate the key format
-    if (supabaseKey && !isValidJWT(supabaseKey)) {
-        console.error('❌ Invalid Supabase API key format!');
-        console.error('   Key should be a JWT with 3 parts (header.payload.signature)');
-        console.error('   Key length:', supabaseKey.length);
-        console.error('   Key starts with:', supabaseKey.substring(0, 20) + '...');
-        console.error('   Key parts:', supabaseKey.split('.').length);
+    // Validate the key format - if invalid, return mock client
+    if (!supabaseKey || !isValidJWT(supabaseKey)) {
+        if (process.env.NODE_ENV === 'development') {
+            console.warn('⚠️  Invalid or missing Supabase API key, using mock client');
+            console.warn('   This means you won\'t see real data until the key is fixed');
+            console.warn('   Check your .env.local file for SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+        }
         // Return mock client if key is invalid
         const mockClient = {
             auth: {
