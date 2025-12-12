@@ -1,4 +1,3 @@
-import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 // AUTH DISABLED: Mock Supabase client that returns superadmin and bypasses RLS
@@ -13,14 +12,41 @@ export function createClient() {
     
     const client = createSupabaseClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        supabaseKey
+        supabaseKey,
+        {
+            // Ensure we have all the methods that SSR client would have
+            auth: {
+                persistSession: false, // Not needed when auth is disabled
+                autoRefreshToken: false,
+                detectSessionInUrl: false,
+            }
+        }
     )
     
     // Override getUser to return mock superadmin
-    ;(client.auth as any).getUser = async () => {
+    const originalGetUser = client.auth.getUser.bind(client.auth)
+    client.auth.getUser = async () => {
         const { getMockSuperAdmin } = await import('@/lib/auth-mock')
         return {
             data: { user: getMockSuperAdmin() },
+            error: null,
+        }
+    }
+    
+    // Also override getSession to return mock session
+    ;(client.auth as any).getSession = async () => {
+        const { getMockSuperAdmin } = await import('@/lib/auth-mock')
+        const user = getMockSuperAdmin()
+        return {
+            data: { 
+                session: {
+                    user,
+                    access_token: 'mock-token',
+                    refresh_token: 'mock-refresh',
+                    expires_in: 3600,
+                    expires_at: Date.now() / 1000 + 3600,
+                }
+            },
             error: null,
         }
     }
