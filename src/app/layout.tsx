@@ -41,11 +41,16 @@ export default async function RootLayout({
   let role: Role | null = null;
 
   // AUTH DISABLED: Use mock superadmin
-  const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
-  const profile = getMockSuperAdminProfile();
-  email = profile.email;
-  avatarUrl = profile.avatar_url || null;
-  role = 'SUPERADMIN' as Role;
+  try {
+    const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
+    const profile = getMockSuperAdminProfile();
+    email = profile.email;
+    avatarUrl = profile.avatar_url || null;
+    role = 'SUPERADMIN' as Role;
+  } catch (error) {
+    console.error('Error loading mock superadmin:', error);
+    // Continue without user data if mock fails
+  }
   
   /* AUTH DISABLED
   try {
