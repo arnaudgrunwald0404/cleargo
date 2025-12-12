@@ -2,7 +2,7 @@
 export function getMockSuperAdmin() {
     return {
         id: 'mock-superadmin-id',
-        email: 'superadmin@cleargo.app',
+        email: 'agrunwald@clearcompany.com',
         user_metadata: {},
         app_metadata: {},
     };
@@ -11,11 +11,11 @@ export function getMockSuperAdmin() {
 export function getMockSuperAdminProfile() {
     return {
         id: 'mock-superadmin-id',
-        email: 'superadmin@cleargo.app',
-        name: 'Super Admin',
+        email: 'agrunwald@clearcompany.com',
+        name: 'Arnaud Grunwald',
         roles: ['SUPERADMIN', 'CPO', 'PRODUCT_OPS'],
-        first_name: 'Super',
-        last_name: 'Admin',
+        first_name: 'Arnaud',
+        last_name: 'Grunwald',
         avatar_url: null,
     };
 }
