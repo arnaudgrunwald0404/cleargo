@@ -49,9 +49,15 @@ export function createClient() {
             if (isCodeVerifier && codeVerifierCookieName) {
                 const isSecure = window.location.protocol === 'https:';
                 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                
+                // For OAuth redirects, we need SameSite=None with Secure for cross-site requests
+                // But for same-site (Netlify), SameSite=Lax should work
+                // Try SameSite=None first for maximum compatibility
+                const sameSite = isSecure && !isLocalhost ? 'SameSite=None' : 'SameSite=Lax';
                 const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
+                
                 // Use the exact cookie name Supabase expects
-                const cookieString = `${codeVerifierCookieName}=${encodeURIComponent(value)}; path=/; SameSite=Lax; ${secureFlag} max-age=600`;
+                const cookieString = `${codeVerifierCookieName}=${encodeURIComponent(value)}; path=/; ${sameSite}; ${secureFlag} max-age=600`;
                 document.cookie = cookieString;
                 console.log('🍪 Intercepted localStorage.setItem -> cookie:', {
                     localStorageKey: key,
@@ -134,7 +140,14 @@ export function createClient() {
                             const isSecure = window.location.protocol === 'https:';
                             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
                             const secureFlag = isSecure && !isLocalhost ? 'Secure;' : '';
-                            const sameSite = options?.sameSite || 'Lax';
+                            
+                            // For code_verifier cookies, use SameSite=None for OAuth redirects
+                            // For other cookies, use the provided sameSite or default to Lax
+                            let sameSite = options?.sameSite || 'Lax';
+                            if ((name.includes('code-verifier') || name.includes('code_verifier')) && isSecure && !isLocalhost) {
+                                sameSite = 'None'; // Required for cross-site OAuth redirects
+                            }
+                            
                             const path = options?.path || '/';
                             const maxAge = options?.maxAge ? `max-age=${options.maxAge};` : '';
                             
