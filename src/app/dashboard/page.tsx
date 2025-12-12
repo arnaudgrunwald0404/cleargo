@@ -13,7 +13,13 @@ export default async function DashboardPage() {
     //     redirect('/login');
     // }
 
-    const epics = await getEpics();
+    let epics = [];
+    try {
+        epics = await getEpics() || [];
+    } catch (error) {
+        console.error('Error fetching epics:', error);
+        // Continue with empty array if there's an error
+    }
 
     return (
         <div className="min-h-screen bg-gray-50 pt-24 pb-8">

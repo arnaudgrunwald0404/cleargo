@@ -90,25 +90,32 @@ export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
 }
 
 export async function getEpics() {
-    const supabase = createClient();
+    try {
+        const supabase = createClient();
 
-    const { data, error } = await supabase
-        .from('epic')
-        .select(`
-      *,
-      product:product_id (name),
-      owner:app_user!owner_id (name, email, first_name, last_name, avatar_url),
-      aha_fields
-    `)
-        .order('created_at', { ascending: false });
+        const { data, error } = await supabase
+            .from('epic')
+            .select(`
+          *,
+          product:product_id (name),
+          owner:app_user!owner_id (name, email, first_name, last_name, avatar_url),
+          aha_fields
+        `)
+            .order('created_at', { ascending: false });
 
-    if (error) {
-        console.error('Error fetching epics from database:', error);
-        throw error;
+        if (error) {
+            console.error('Error fetching epics from database:', error);
+            // Return empty array instead of throwing to prevent page crash
+            return [];
+        }
+
+        console.log('Fetched epics from database:', data?.length || 0);
+        return data || [];
+    } catch (error) {
+        console.error('Exception fetching epics:', error);
+        // Return empty array instead of throwing to prevent page crash
+        return [];
     }
-
-    console.log('Fetched epics from database:', data?.length || 0);
-    return data;
 }
 
 export async function getEpic(id: string) {
