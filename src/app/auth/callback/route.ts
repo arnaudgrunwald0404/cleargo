@@ -224,10 +224,13 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(errorUrl)
         }
     } else if (code) {
-        // CRITICAL: Google OAuth doesn't send a 'type' parameter - it's just a 'code'
-        // Email confirmation links WILL have type='signup' or type='email'
-        // So if type is present and is signup/email, handle as email confirmation
+        // CRITICAL: Email confirmation links may come with 'code' and 'type=signup' or 'type=email'
+        // Google OAuth comes with 'code' but NO 'type' parameter
+        // Strategy: If type is explicitly signup/email, try verifyOtp first
+        // If no type but no code_verifier cookie, also try verifyOtp (might be email confirmation)
         // Otherwise, treat as OAuth flow (PKCE)
+        
+        // First, check if this is explicitly an email confirmation
         if (type && (type === 'signup' || type === 'email')) {
             console.log('🔍 Handling email confirmation code - using verifyOtp (not PKCE)')
             const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
@@ -257,6 +260,60 @@ export async function GET(request: NextRequest) {
                 // Fall through to try exchangeCodeForSession as fallback
                 console.log('⚠️ verifyOtp failed, trying exchangeCodeForSession as fallback')
             }
+        }
+        
+        // CRITICAL: Explicitly read all cookies before exchangeCodeForSession
+        // Next.js lazily evaluates cookies, so we must force them to be read
+        // This ensures the code_verifier cookie is available for PKCE flow
+        const allCookies = request.cookies.getAll()
+        console.log('🔍 All cookies before exchange:', allCookies.map(c => ({ name: c.name, hasValue: !!c.value })))
+
+        // Find Supabase PKCE code verifier cookie (format: sb-<project-ref>-auth-code-verifier)
+        // According to Supabase docs: https://supabase.com/docs/guides/auth/server-side/oauth-with-pkce-flow-for-ssr
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
+        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
+        const codeVerifierCookie = codeVerifierCookieName
+            ? allCookies.find(c => c.name === codeVerifierCookieName)
+            : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
+
+        console.log('🔍 Code verifier cookie:', codeVerifierCookie
+            ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value, valueLength: codeVerifierCookie.value?.length }
+            : 'NOT FOUND')
+        
+        // If no code_verifier cookie and no type parameter, try email confirmation first
+        // Email confirmation links don't use PKCE, so they won't have code_verifier
+        // This handles cases where email confirmation links come with 'code' but no 'type'
+        if (!codeVerifierCookie && !type) {
+            console.log('🔍 No code_verifier and no type - trying email confirmation verifyOtp first')
+            // Try common email confirmation types
+            const emailTypes: EmailOtpType[] = ['signup', 'email', 'magiclink']
+            for (const emailType of emailTypes) {
+                const { data: otpData, error: otpError } = await supabase.auth.verifyOtp({
+                    type: emailType,
+                    token_hash: code,
+                })
+                
+                if (!otpError && otpData?.session) {
+                    console.log(`✅ Email confirmation verified via verifyOtp (type=${emailType})`)
+                    const redirectResponse = NextResponse.redirect(new URL(next, request.url))
+                    const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
+                    storedCookies.forEach(({ name, value, options }) => {
+                        const cookieOptions = options || {
+                            httpOnly: true,
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'lax' as const,
+                            path: '/',
+                        }
+                        if (cookieDomain && !cookieDomain.includes('localhost')) {
+                            cookieOptions.domain = `.${cookieDomain.replace(/^www\./, '')}`
+                        }
+                        redirectResponse.cookies.set(name, value, cookieOptions)
+                    })
+                    return redirectResponse
+                }
+            }
+            console.log('⚠️ Email confirmation verifyOtp attempts failed, will try OAuth exchange')
         }
         
         // Check if this is a recovery code (password reset) - recovery codes don't use PKCE
@@ -327,25 +384,6 @@ export async function GET(request: NextRequest) {
             }
         }
         
-        // CRITICAL: Explicitly read all cookies before exchangeCodeForSession
-        // Next.js lazily evaluates cookies, so we must force them to be read
-        // This ensures the code_verifier cookie is available for PKCE flow
-        const allCookies = request.cookies.getAll()
-        console.log('🔍 All cookies before exchange:', allCookies.map(c => ({ name: c.name, hasValue: !!c.value })))
-
-        // Find Supabase PKCE code verifier cookie (format: sb-<project-ref>-auth-code-verifier)
-        // According to Supabase docs: https://supabase.com/docs/guides/auth/server-side/oauth-with-pkce-flow-for-ssr
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
-        const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
-        const codeVerifierCookie = codeVerifierCookieName
-            ? allCookies.find(c => c.name === codeVerifierCookieName)
-            : allCookies.find(c => c.name.includes('code-verifier') || c.name.includes('code_verifier'))
-
-        console.log('🔍 Code verifier cookie:', codeVerifierCookie
-            ? { name: codeVerifierCookie.name, hasValue: !!codeVerifierCookie.value, valueLength: codeVerifierCookie.value?.length }
-            : 'NOT FOUND')
-
         // If no code_verifier cookie and we have a type parameter, try verifyOtp first
         // Email confirmation links don't use PKCE, so they won't have code_verifier
         if (!codeVerifierCookie && type && (type === 'signup' || type === 'email' || type === 'magiclink')) {
