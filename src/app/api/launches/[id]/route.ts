@@ -6,11 +6,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
     req: NextRequest,
-    { params }: { params: Promise<{ id: string }> | { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const resolvedParams = await Promise.resolve(params);
-        const epic = await getEpic(resolvedParams.id);
+        const { id } = await params;
+        const epic = await getEpic(id);
         if (!epic) {
             return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
         }
@@ -27,10 +27,10 @@ export async function GET(
 
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: Promise<{ id: string }> | { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const resolvedParams = await Promise.resolve(params);
+        const { id } = await params;
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -41,7 +41,7 @@ export async function PATCH(
         const body = await req.json();
 
         // Load current epic to compare changes
-        const current = await getEpic(resolvedParams.id);
+        const current = await getEpic(id);
         if (!current) {
             return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
         }
@@ -65,7 +65,7 @@ export async function PATCH(
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic risk level' }, { status: 403 });
         }
 
-        const epic = await updateEpic(resolvedParams.id, body);
+        const epic = await updateEpic(id, body);
 
         // Trigger write-back to Aha! if epic has aha_id
         if (epic.aha_id) {
@@ -88,10 +88,10 @@ export async function PATCH(
 
 export async function DELETE(
     req: NextRequest,
-    { params }: { params: Promise<{ id: string }> | { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const resolvedParams = await Promise.resolve(params);
+        const { id } = await params;
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -110,7 +110,7 @@ export async function DELETE(
         const ok = await canRolesPerform(roles, 'launch.delete');
         if (!ok) return NextResponse.json({ error: 'Forbidden: cannot delete epic' }, { status: 403 });
 
-        await deleteEpic(resolvedParams.id);
+        await deleteEpic(id);
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('Error deleting epic:', error);

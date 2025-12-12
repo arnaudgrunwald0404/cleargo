@@ -6,9 +6,10 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -24,7 +25,7 @@ export async function POST(
         }
 
         const snapshot = await createSnapshot(
-            params.id,
+            id,
             decision_type,
             verdict,
             notes,
@@ -40,10 +41,11 @@ export async function POST(
 
 export async function GET(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const snapshots = await getSnapshots(params.id);
+        const { id } = await params;
+        const snapshots = await getSnapshots(id);
         return NextResponse.json(snapshots);
     } catch (error) {
         console.error('Error fetching snapshots:', error);

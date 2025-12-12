@@ -15,7 +15,8 @@ function forbid() {
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
@@ -55,7 +56,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   const { data: updatedUser, error } = await supabase
     .from("app_user")
     .update({ ...updateData, updated_at: new Date().toISOString() })
-    .eq("id", params.id)
+    .eq("id", id)
     .select()
     .single();
 
@@ -70,7 +71,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
   return NextResponse.json({ user: updatedUser });
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
@@ -99,7 +101,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const { error } = await supabase
     .from("app_user")
     .delete()
-    .eq("id", params.id);
+    .eq("id", id);
 
   if (error) {
     return NextResponse.json({ error: "Failed to delete user", details: error.message }, { status: 500 });

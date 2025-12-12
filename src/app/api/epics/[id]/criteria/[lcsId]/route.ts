@@ -4,9 +4,10 @@ import { recomputeEpicReadiness } from '@/lib/readiness';
 
 export async function PATCH(
     req: NextRequest,
-    { params }: { params: { id: string; lcsId: string } }
+    { params }: { params: Promise<{ id: string; lcsId: string }> }
 ) {
     try {
+        const { id, lcsId } = await params;
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -33,8 +34,8 @@ export async function PATCH(
         const { data: existing, error: fetchErr } = await supabase
             .from('epic_criterion_status')
             .select('id, condition_owner_id')
-            .eq('id', params.lcsId)
-            .eq('epic_id', params.id)
+            .eq('id', lcsId)
+            .eq('epic_id', id)
             .single();
         if (fetchErr || !existing) {
             console.error('Failed to fetch existing criterion status', fetchErr);
@@ -66,8 +67,8 @@ export async function PATCH(
         }
 
         console.log('Updating criterion status:', { 
-            lcsId: params.lcsId, 
-            epicId: params.id, 
+            lcsId, 
+            epicId: id, 
             status,
             appUserId: appUser.id,
             body 
@@ -85,8 +86,8 @@ export async function PATCH(
                 last_updated_at: new Date().toISOString(),
                 last_updated_by: appUser.id
             })
-            .eq('id', params.lcsId)
-            .eq('epic_id', params.id) // Security check
+            .eq('id', lcsId)
+            .eq('epic_id', id) // Security check
             .select()
             .single();
 
@@ -101,7 +102,7 @@ export async function PATCH(
         }
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
-        await recomputeEpicReadiness(params.id);
+        await recomputeEpicReadiness(id);
 
         return NextResponse.json(data);
     } catch (error: any) {

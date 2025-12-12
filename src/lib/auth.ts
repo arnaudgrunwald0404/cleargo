@@ -4,7 +4,8 @@ import { verifyToken } from "@/lib/jwt";
 export type Session = { email: string } | null;
 
 export async function getSession(): Promise<Session> {
-  const cookie = cookies().get("lr_session");
+  const cookieStore = await cookies();
+  const cookie = cookieStore.get("lr_session");
   if (!cookie) return null;
   try {
     const payload = await verifyToken<{ email: string; t: string }>(cookie.value);

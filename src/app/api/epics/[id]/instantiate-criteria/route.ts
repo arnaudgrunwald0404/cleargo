@@ -4,9 +4,10 @@ import { instantiateCriteriaForEpic } from "@/lib/db/epics";
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         
         // Check authentication
@@ -19,7 +20,7 @@ export async function POST(
         const { data: epic, error: epicError } = await supabase
             .from("epic")
             .select("id, tier")
-            .eq("id", params.id)
+            .eq("id", id)
             .single();
 
         // Handle case where epic doesn't exist (PGRST116)

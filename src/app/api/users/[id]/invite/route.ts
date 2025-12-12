@@ -20,12 +20,10 @@ function forbid() {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: Promise<{ id: string }> | { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // Handle params which might be a Promise in Next.js App Router
-    const resolvedParams = await Promise.resolve(params);
-    const userId = resolvedParams.id;
+    const { id: userId } = await params;
 
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();

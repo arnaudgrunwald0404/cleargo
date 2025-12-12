@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string; lcsId: string } }
+    { params }: { params: Promise<{ id: string; lcsId: string }> }
 ) {
     try {
+        const { id, lcsId } = await params;
         const supabase = await createClient();
         const body = await request.json();
         const { snippet_id } = body;
@@ -35,8 +36,8 @@ export async function POST(
         const { data: criterionStatus, error: statusError } = await supabase
             .from("epic_criterion_status")
             .select("current_status_notes")
-            .eq("id", params.lcsId)
-            .eq("epic_id", params.id)
+            .eq("id", lcsId)
+            .eq("epic_id", id)
             .single();
 
         if (statusError) {
@@ -58,8 +59,8 @@ export async function POST(
                 current_status_notes: newNotes,
                 last_updated_at: new Date().toISOString(),
             })
-            .eq("id", params.lcsId)
-            .eq("epic_id", params.id)
+            .eq("id", lcsId)
+            .eq("epic_id", id)
             .select()
             .single();
 

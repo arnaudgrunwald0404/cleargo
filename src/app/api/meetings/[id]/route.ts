@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
         // Try with linked_epics first, fallback if table doesn't exist
         let selectQuery = `
@@ -29,7 +30,7 @@ export async function GET(
         let { data, error } = await supabase
             .from("meeting")
             .select(selectQuery + `, linked_epics:meeting_epic(epic:epic_id(id, name))`)
-            .eq("id", params.id)
+            .eq("id", id)
             .single();
 
         // If error is due to missing table, retry without linked_epics
@@ -37,7 +38,7 @@ export async function GET(
             const retryResult = await supabase
                 .from("meeting")
                 .select(selectQuery)
-                .eq("id", params.id)
+                .eq("id", id)
                 .single();
             data = retryResult.data;
             error = retryResult.error;
@@ -57,9 +58,10 @@ export async function GET(
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
         const body = await request.json();
 
@@ -69,7 +71,7 @@ export async function PATCH(
                 ...body,
                 updated_at: new Date().toISOString(),
             })
-            .eq("id", params.id)
+            .eq("id", id)
             .select()
             .single();
 
@@ -87,14 +89,15 @@ export async function PATCH(
 
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
         const { error } = await supabase
             .from("meeting")
             .delete()
-            .eq("id", params.id);
+            .eq("id", id);
 
         if (error) {
             console.error("Error deleting meeting:", error);

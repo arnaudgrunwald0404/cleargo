@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = await createClient();
         const {
             data: { user },
@@ -41,7 +42,7 @@ export async function POST(
             .from("meeting_transcript")
             .upsert(
                 {
-                    meeting_id: params.id,
+                    meeting_id: id,
                     transcript_text,
                     uploaded_by: appUser.id,
                     uploaded_at: new Date().toISOString(),

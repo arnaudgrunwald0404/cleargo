@@ -25,8 +25,9 @@ function forbid() {
 
 export async function DELETE(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
@@ -52,15 +53,16 @@ export async function DELETE(
   const canDelete = await canRolesPerform((me?.roles as string[]) || [], "criteria.delete");
   if (!canDelete) return forbid();
 
-  const deleted = await deleteCriteria(params.id);
+  const deleted = await deleteCriteria(id);
   if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json({ message: "Criteria deleted successfully" });
 }
 
 export async function PUT(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
+  const { id } = await params;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
@@ -92,7 +94,7 @@ export async function PUT(
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
   try {
-    const updated = await updateCriteria(params.id, parsed.data as any);
+    const updated = await updateCriteria(id, parsed.data as any);
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ item: updated });
   } catch (e: any) {
@@ -103,7 +105,8 @@ export async function PUT(
   }
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
@@ -135,7 +138,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
   }
   try {
-    const updated = await updateCriteria(params.id, parsed.data as any);
+    const updated = await updateCriteria(id, parsed.data as any);
     if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json({ item: updated });
   } catch (e: any) {

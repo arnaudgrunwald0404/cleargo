@@ -5,9 +5,10 @@ export const dynamic = 'force-dynamic';
 
 export async function DELETE(
     req: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id: idParam } = await params;
         const supabase = createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
         
@@ -34,7 +35,7 @@ export async function DELETE(
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-        const id = parseInt(params.id);
+        const id = parseInt(idParam);
         if (isNaN(id)) {
             return NextResponse.json(
                 { error: 'Invalid ID' },

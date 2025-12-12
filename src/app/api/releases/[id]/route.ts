@@ -3,9 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function PATCH(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         
         // Check authentication
@@ -60,7 +61,7 @@ export async function PATCH(
         const { data, error } = await supabase
             .from("release_schedule")
             .update(updateData)
-            .eq("id", params.id)
+            .eq("id", id)
             .select()
             .single();
 
@@ -86,9 +87,10 @@ export async function PATCH(
 
 export async function DELETE(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         
         // Check authentication
@@ -119,7 +121,7 @@ export async function DELETE(
         const { error } = await supabase
             .from("release_schedule")
             .delete()
-            .eq("id", params.id);
+            .eq("id", id);
 
         if (error) {
             console.error("Error deleting release:", error);

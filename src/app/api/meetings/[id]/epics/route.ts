@@ -3,9 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function PUT(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         const body = await request.json();
         const { epic_ids } = body;
@@ -39,7 +40,7 @@ export async function PUT(
                     linked_epic_id: epic_ids.length > 0 ? epic_ids[0] : null,
                     updated_at: new Date().toISOString(),
                 })
-                .eq("id", params.id);
+                .eq("id", id);
 
             if (updateError) {
                 console.error("Error updating meeting:", updateError);
@@ -56,7 +57,7 @@ export async function PUT(
         const { error: deleteError } = await supabase
             .from("meeting_epic")
             .delete()
-            .eq("meeting_id", params.id);
+            .eq("meeting_id", id);
 
         if (deleteError) {
             console.error("Error deleting meeting-epic links:", deleteError);
@@ -69,7 +70,7 @@ export async function PUT(
         // Insert new links
         if (epic_ids.length > 0) {
             const links = epic_ids.map((epicId: string) => ({
-                meeting_id: params.id,
+                meeting_id: id,
                 epic_id: epicId,
             }));
 
@@ -95,14 +96,15 @@ export async function PUT(
 
 export async function GET(
     request: NextRequest,
-    { params }: { params: { id: string } }
+    { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const { id } = await params;
         const supabase = createClient();
         const { data, error } = await supabase
             .from("meeting_epic")
             .select("epic_id, epic:epic_id(id, name)")
-            .eq("meeting_id", params.id);
+            .eq("meeting_id", id);
 
         if (error) {
             console.error("Error fetching meeting epics:", error);
