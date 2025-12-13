@@ -16,6 +16,9 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
     const [opened, { toggle }] = useDisclosure(false);
 
+    // Check if user has only the OTHER role (pending access)
+    const hasOnlyOtherRole = !role || role === 'OTHER';
+
     const links = [
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Epics' },
@@ -37,7 +40,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     {/* Left side: Logo and Nav */}
                     <div className="flex items-center gap-8">
                         {/* Logo */}
-                        <Link href="/" className="flex items-center gap-2 no-underline text-gray-900 hover:text-indigo-600 transition-colors">
+                        <Link href={hasOnlyOtherRole ? "/access-pending" : "/"} className="flex items-center gap-2 no-underline text-gray-900 hover:text-indigo-600 transition-colors">
                             <div className="w-8 h-8 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg flex items-center justify-center shadow-sm">
                                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
@@ -46,21 +49,23 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                             <span className="font-bold text-xl tracking-tight">ClearGO</span>
                         </Link>
 
-                        {/* Desktop Navigation */}
-                        <nav className="hidden md:flex items-center gap-1">
-                            {links.map((link) => (
-                                <Link
-                                    key={link.link}
-                                    href={link.link}
-                                    className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${isActive(link.link)
-                                        ? 'bg-indigo-50 text-indigo-700'
-                                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
-                                        }`}
-                                >
-                                    {link.label}
-                                </Link>
-                            ))}
-                        </nav>
+                        {/* Desktop Navigation - Hidden for users with only OTHER role */}
+                        {!hasOnlyOtherRole && (
+                            <nav className="hidden md:flex items-center gap-1">
+                                {links.map((link) => (
+                                    <Link
+                                        key={link.link}
+                                        href={link.link}
+                                        className={`px-3 py-2 rounded-md text-sm font-medium transition-all duration-200 ${isActive(link.link)
+                                            ? 'bg-indigo-50 text-indigo-700'
+                                            : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                                            }`}
+                                    >
+                                        {link.label}
+                                    </Link>
+                                ))}
+                            </nav>
+                        )}
                     </div>
 
                     {/* Right side: User Avatar */}

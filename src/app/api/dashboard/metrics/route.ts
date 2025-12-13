@@ -7,20 +7,13 @@ export async function GET(req: NextRequest) {
     try {
         const supabase = createClient();
         
-        // Get user email (using mock for now since auth is disabled)
+        // Get user email from auth
         let userEmail: string | null = null;
         try {
-            const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
-            const profile = getMockSuperAdminProfile();
-            userEmail = profile?.email || null;
+            const { data: { user } } = await supabase.auth.getUser();
+            userEmail = user?.email || null;
         } catch {
-            // Try to get from auth if available
-            try {
-                const { data: { user } } = await supabase.auth.getUser();
-                userEmail = user?.email || null;
-            } catch {
-                // Continue without user email
-            }
+            // Continue without user email
         }
 
         // Try epic table first, fallback to launch table
@@ -103,4 +96,3 @@ export async function GET(req: NextRequest) {
         });
     }
 }
-

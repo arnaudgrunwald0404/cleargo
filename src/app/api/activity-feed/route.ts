@@ -20,6 +20,29 @@ export interface ActivityFeedItem {
     entity_id?: string;
 }
 
+function firstItem<T>(value: T | T[] | null | undefined): T | undefined {
+    if (!value) return undefined;
+    return Array.isArray(value) ? value[0] : value;
+}
+
+function normalizeActor(actor: any): ActivityFeedItem['actor'] | undefined {
+    const candidate = firstItem(actor);
+    if (!candidate) return undefined;
+
+    const email = candidate.email ?? '';
+    if (!email) return undefined;
+
+    const name = candidate.name ?? candidate.full_name ?? email;
+
+    return {
+        name,
+        email,
+        first_name: candidate.first_name ?? null,
+        last_name: candidate.last_name ?? null,
+        avatar_url: candidate.avatar_url ?? null,
+    };
+}
+
 export async function GET(req: NextRequest) {
     try {
         const supabase = createClient();
@@ -98,7 +121,7 @@ export async function GET(req: NextRequest) {
                         title: 'Criterion Updated',
                         description: `Status changed from "${statusChange.old || 'N/A'}" to "${statusChange.new || 'N/A'}"`,
                         timestamp: log.taken_at,
-                        actor: log.actor,
+                        actor: normalizeActor(log.actor),
                         entity_type: log.entity_type,
                         entity_id: log.entity_id,
                     };
@@ -114,7 +137,7 @@ export async function GET(req: NextRequest) {
                         title: log.entity_type === 'epic' ? 'New Epic Created' : 'New Launch Created',
                         description: diff.name?.new || diff.title?.new || 'A new item has been added',
                         timestamp: log.taken_at,
-                        actor: log.actor,
+                        actor: normalizeActor(log.actor),
                         entity_type: log.entity_type,
                         entity_id: log.entity_id,
                     };
@@ -126,7 +149,7 @@ export async function GET(req: NextRequest) {
                         title: 'Release Updated',
                         description: `${log.entity_type === 'epic' ? 'Epic' : 'Launch'} assigned to release`,
                         timestamp: log.taken_at,
-                        actor: log.actor,
+                        actor: normalizeActor(log.actor),
                         entity_type: log.entity_type,
                         entity_id: log.entity_id,
                     };
@@ -144,7 +167,8 @@ export async function GET(req: NextRequest) {
 
         // Add feedback activities
         for (const feedback of feedbackItems || []) {
-            const launchName = feedback.launch?.name || 'Unknown Launch';
+            const launch = firstItem(feedback.launch);
+            const launchName = launch?.name || 'Unknown Launch';
             const truncatedFeedback = feedback.feedback_text.length > 100 
                 ? feedback.feedback_text.substring(0, 100) + '...'
                 : feedback.feedback_text;
@@ -155,7 +179,7 @@ export async function GET(req: NextRequest) {
                 title: 'Feedback Added',
                 description: `${launchName}: "${truncatedFeedback}"`,
                 timestamp: feedback.created_at,
-                actor: feedback.attributed_to,
+                actor: normalizeActor(feedback.attributed_to),
                 entity_type: 'feedback',
                 entity_id: feedback.id,
             });

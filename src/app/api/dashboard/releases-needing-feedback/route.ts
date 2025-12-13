@@ -17,10 +17,11 @@ export async function GET(req: NextRequest) {
         const ninetyDaysFromNow = new Date();
         ninetyDaysFromNow.setDate(today.getDate() + 90);
 
-        // Query launches (epics) with target launch date within 90 days
+        // Query epics with target launch date within 90 days
         // and count how many have feedback
-        const { data: launches, error: launchError } = await supabase
-            .from('launch')
+        // Note: feedback table has epic_id foreign key to epic table
+        const { data: epics, error: epicError } = await supabase
+            .from('epic')
             .select(`
                 id,
                 name,
@@ -29,19 +30,19 @@ export async function GET(req: NextRequest) {
             `)
             .gte('target_launch_date', today.toISOString().split('T')[0])
             .lte('target_launch_date', ninetyDaysFromNow.toISOString().split('T')[0])
-            .not('status', 'in', '("COMPLETED","CANCELLED")');
+            .not('readiness_status', 'in', '("COMPLETED","CANCELLED")');
 
-        if (launchError) throw launchError;
+        if (epicError) throw epicError;
 
-        // Count launches that have no feedback or very little feedback
-        const needingFeedback = (launches || []).filter(launch => {
-            const feedbackCount = launch.feedback?.[0]?.count || 0;
+        // Count epics that have no feedback
+        const needingFeedback = (epics || []).filter(epic => {
+            const feedbackCount = epic.feedback?.[0]?.count || 0;
             return feedbackCount === 0; // No feedback at all
         });
 
         return NextResponse.json({
             count: needingFeedback.length,
-            total: launches?.length || 0,
+            total: epics?.length || 0,
             launches: needingFeedback
         });
 

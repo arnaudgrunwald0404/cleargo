@@ -1,4 +1,3 @@
-import { getSettings } from "./settings-db";
 import type { Role } from "./roles-constants";
 
 export type CapabilityId =
@@ -164,22 +163,10 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
 
 export type PermissionRules = Record<CapabilityId, Role[]>;
 
-export async function getEffectiveRules(): Promise<PermissionRules> {
-  const settings = await getSettings();
-  const overrides = (settings as any).permissions as Partial<Record<CapabilityId, Role[]>> | undefined;
-  const effective: Partial<Record<CapabilityId, Role[]>> = { ...DEFAULT_RULES };
-  if (overrides) {
-    for (const [cap, roles] of Object.entries(overrides)) {
-      if (roles && Array.isArray(roles)) {
-        effective[cap as CapabilityId] = roles as Role[];
-      }
-    }
-  }
-  return effective as PermissionRules;
-}
-
-export async function canRolesPerform(roles: Role[] | string[] | null | undefined, capability: CapabilityId): Promise<boolean> {
-  // AUTH DISABLED: Superadmin bypasses all permission checks
+// Client-safe function that uses default rules only (no server imports)
+// This can be used in both client and server components
+export function canRolesPerform(roles: Role[] | string[] | null | undefined, capability: CapabilityId): boolean {
+  // SUPERADMIN bypasses all permission checks
   if (roles && Array.isArray(roles)) {
     const roleStrings = roles.map(r => String(r).toUpperCase());
     if (roleStrings.includes('SUPERADMIN')) {
@@ -188,7 +175,9 @@ export async function canRolesPerform(roles: Role[] | string[] | null | undefine
   }
   
   if (!roles || roles.length === 0) return false;
-  const effective = await getEffectiveRules();
-  const allowed = new Set(effective[capability] || []);
+  const allowed = new Set(DEFAULT_RULES[capability] || []);
   return (roles as string[]).some((r) => allowed.has(r as Role));
 }
+
+// Alias for backward compatibility
+export const canRolesPerformSync = canRolesPerform;

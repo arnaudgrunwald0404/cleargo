@@ -10,6 +10,7 @@ import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
 import { RichText } from "@/components/admin/RichText";
 import { DEFAULT_EMAIL_TEMPLATES } from "@/lib/constants/settings";
 import { getPermissions, getUsers, getPods, getReleases, addRelease, deleteRelease, updateRelease, getSettings, patchSettings, getAhaFields, syncAhaFields, patchEmailTemplates, getLaunchStages, addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
+import { debugLog } from "@/lib/debug";
 import EmailTemplatesSection from "@/components/admin/settings/EmailTemplatesSection";
 import PermissionsSection from "@/components/admin/settings/PermissionsSection";
 import GeneralSection from "@/components/admin/settings/GeneralSection";
@@ -347,9 +348,7 @@ export default function AdminSettingsPage() {
     };
 
     const autoSaveEmailTemplates = async () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:349',message:'autoSaveEmailTemplates START',data:{invite_subject:emailTemplates.invite_subject?.substring(0,50),invite_html_length:emailTemplates.invite_html?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
+        debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'autoSaveEmailTemplates START', data: { invite_subject: emailTemplates.invite_subject?.substring(0, 50), invite_html_length: emailTemplates.invite_html?.length }, hypothesisId: 'B' });
         setEmailTemplatesSaving(true);
         try {
             const payload = {
@@ -360,17 +359,11 @@ export default function AdminSettingsPage() {
                 email_template_update_criteria_subject: emailTemplates.update_criteria_subject || null,
                 email_template_update_criteria_html: emailTemplates.update_criteria_html || null,
             };
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:354',message:'Calling patchEmailTemplates',data:{payloadKeys:Object.keys(payload),hasInviteSubject:!!payload.email_template_invite_subject},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,C'})}).catch(()=>{});
-            // #endregion
+            debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'Calling patchEmailTemplates', data: { payloadKeys: Object.keys(payload), hasInviteSubject: !!payload.email_template_invite_subject }, hypothesisId: 'B,C' });
             await patchEmailTemplates(payload);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:359',message:'patchEmailTemplates SUCCESS',data:{},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
+            debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'patchEmailTemplates SUCCESS', data: {}, hypothesisId: 'B' });
         } catch (error: any) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:362',message:'autoSaveEmailTemplates ERROR',data:{errorMessage:error?.message,errorName:error?.name,errorString:String(error)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
-            // #endregion
+            debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'autoSaveEmailTemplates ERROR', data: { errorMessage: error?.message, errorName: error?.name, errorString: String(error) }, hypothesisId: 'B,E' });
             console.error("Failed to auto-save email templates:", error);
             setError("Failed to save email templates. Please try again.");
         } finally {
@@ -409,13 +402,9 @@ export default function AdminSettingsPage() {
 
     // Auto-save email templates with debouncing (2 seconds after last change)
     useEffect(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:398',message:'useEffect triggered',data:{emailTemplatesLoading,hasTemplates:!!emailTemplates,invite_subject_length:emailTemplates?.invite_subject?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
+        debugLog({ location: 'page.tsx:useEffect', message: 'useEffect triggered', data: { emailTemplatesLoading, hasTemplates: !!emailTemplates, invite_subject_length: emailTemplates?.invite_subject?.length }, hypothesisId: 'A' });
         if (emailTemplatesLoading) return; // Don't auto-save on initial load
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:403',message:'Scheduling auto-save',data:{willSaveIn:'2000ms'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-        // #endregion
+        debugLog({ location: 'page.tsx:useEffect', message: 'Scheduling auto-save', data: { willSaveIn: '2000ms' }, hypothesisId: 'A,D' });
 
         const timer = setTimeout(() => {
             autoSaveEmailTemplates();
