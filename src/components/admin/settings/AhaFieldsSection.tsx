@@ -255,6 +255,8 @@ export default function AhaFieldsSection({
                                 checked={false}
                                 onChange={() => {
                                   const currentFields = settings.aha_fields_to_load || [];
+                                  // Prevent duplicates
+                                  if (currentFields.includes(field.alias)) return;
                                   const newFields = [...currentFields, field.alias];
                                   setSettings({ ...settings, aha_fields_to_load: newFields });
                                   onAutoSaveFields(newFields);
@@ -314,6 +316,8 @@ export default function AhaFieldsSection({
                                 checked={false}
                                 onChange={() => {
                                   const currentFields = settings.aha_fields_to_load || [];
+                                  // Prevent duplicates
+                                  if (currentFields.includes(field.alias)) return;
                                   const newFields = [...currentFields, field.alias];
                                   setSettings({ ...settings, aha_fields_to_load: newFields });
                                   onAutoSaveFields(newFields);

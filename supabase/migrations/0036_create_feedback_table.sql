@@ -1,9 +1,9 @@
--- Create feedback table for launches/epics
+-- Create feedback table for epics (formerly launches)
 -- Feedback is attributed to someone, timestamped, and has a source
 
 CREATE TABLE IF NOT EXISTS public.feedback (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  launch_id uuid REFERENCES launch(id) ON DELETE CASCADE NOT NULL,
+  epic_id uuid REFERENCES epic(id) ON DELETE CASCADE NOT NULL,
   feedback_text text NOT NULL,
   source text NOT NULL, -- e.g., 'slack', 'email', 'meeting', 'manual', 'aha'
   attributed_to_id uuid REFERENCES app_user(id) ON DELETE SET NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.feedback (
 );
 
 -- Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_feedback_launch ON feedback(launch_id);
+CREATE INDEX IF NOT EXISTS idx_feedback_epic ON feedback(epic_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_attributed_to ON feedback(attributed_to_id);
 CREATE INDEX IF NOT EXISTS idx_feedback_created_at ON feedback(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedback_source ON feedback(source);

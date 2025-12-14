@@ -1,5 +1,8 @@
+"use server";
+
 import { createClient } from "@/lib/supabase/server";
-import { defaults, TierThresholds } from "./settings";
+import { defaults } from "./settings";
+import { debugLog } from "./debug";
 
 export interface AppSettings {
     id: number;
@@ -38,6 +41,8 @@ export async function getSettings(): Promise<AppSettings> {
         .select("*")
         .eq("id", 1)
         .single();
+
+    debugLog({ location: 'settings-db.ts:getSettings', message: 'Fetched settings from DB', data: { hasData: !!data, ahaFieldsFromDB: data?.aha_fields_to_load, hasDuplicates: data?.aha_fields_to_load ? new Set(data.aha_fields_to_load).size !== data.aha_fields_to_load.length : false }, hypothesisId: 'C' });
 
     if (error || !data) {
         // If not found, return defaults (mapped to DB structure)
@@ -84,7 +89,6 @@ export async function getSettings(): Promise<AppSettings> {
             't_shirt_est',
             'progress',
             'reason_for_release_change',
-            'reason_for_release_change',
             'release_target_after_pod_planning'
         ];
     }
@@ -101,9 +105,7 @@ export async function updateSettings(
     updates: Partial<Omit<AppSettings, "id" | "updated_at">>
 ): Promise<AppSettings> {
     const supabase = await createClient();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:100',message:'updateSettings START',data:{updateKeys:Object.keys(updates)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
+    debugLog({ location: 'settings-db.ts:updateSettings-START', message: 'updateSettings called', data: { updateKeys: Object.keys(updates), ahaFieldsInUpdate: updates.aha_fields_to_load, hasDuplicatesInUpdate: updates.aha_fields_to_load ? new Set(updates.aha_fields_to_load).size !== updates.aha_fields_to_load.length : false }, hypothesisId: 'A' });
 
     // First, get current settings to ensure we have all required fields
     const currentSettings = await getSettings();
@@ -117,9 +119,7 @@ export async function updateSettings(
 
     // Remove id and updated_at from the object before update (id is used in .eq(), updated_at is set explicitly)
     const { id, updated_at, ...updateData } = mergedData;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:119',message:'About to update DB',data:{updateDataKeys:Object.keys(updateData),settingsId:id},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
+    debugLog({ location: 'settings-db.ts:updateSettings-MERGED', message: 'After merge with currentSettings', data: { mergedAhaFields: updateData.aha_fields_to_load, hasDuplicatesAfterMerge: updateData.aha_fields_to_load ? new Set(updateData.aha_fields_to_load).size !== updateData.aha_fields_to_load.length : false }, hypothesisId: 'A' });
 
     // Use update instead of upsert to avoid issues with required fields
     const { data, error } = await supabase
@@ -128,9 +128,7 @@ export async function updateSettings(
         .eq("id", 1)
         .select()
         .single();
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'settings-db.ts:126',message:'DB update response',data:{hasData:!!data,hasError:!!error,errorCode:error?.code,errorMessage:error?.message,errorDetails:error?.details},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
-    // #endregion
+    debugLog({ location: 'settings-db.ts:updateSettings-RESPONSE', message: 'DB update response', data: { hasData: !!data, hasError: !!error, errorCode: error?.code, errorMessage: error?.message, errorDetails: error?.details }, hypothesisId: 'E' });
 
     if (error) {
         console.error("Supabase error updating settings:", {

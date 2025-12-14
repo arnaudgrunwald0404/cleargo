@@ -14,7 +14,7 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
   const [canEditAhaTags, setCanEditAhaTags] = useState(false);
 
   useEffect(() => {
-    canRolesPerform(currentUserRoles, "settings.ahaTags.update").then(setCanEditAhaTags);
+    setCanEditAhaTags(canRolesPerform(currentUserRoles, "settings.ahaTags.update"));
   }, [currentUserRoles]);
   return (
     <>

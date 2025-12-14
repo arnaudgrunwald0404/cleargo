@@ -177,8 +177,8 @@ export async function getEpics(params?: { per_page?: number; page?: number; prod
 }
 
 export async function testConnection(): Promise<any> {
-    // Test connection by fetching account info
-    const url = `${BASE_URL}/account`;
+    // Test connection by fetching current user info
+    const url = `${BASE_URL}/me`;
     return await fetchWithRetry(url, {
         method: 'GET',
         headers: {

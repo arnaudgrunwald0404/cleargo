@@ -5,39 +5,32 @@ import { getSettings } from '@/lib/settings-db';
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  // AUTH DISABLED: Use mock user profile
   let email: string | null = null;
   let firstName: string | null = null;
   let enableActivityFeed = true;
   
   try {
-    const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
-    const profile = getMockSuperAdminProfile();
-    email = profile?.email || 'agrunwald@clearcompany.com';
-    firstName = profile?.first_name || null;
-  } catch (error: any) {
-    email = 'agrunwald@clearcompany.com';
-    firstName = null;
-  }
-
-  // Try to fetch real profile from database if available
-  try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    
     if (user?.email) {
+      email = user.email;
+      
+      // Fetch profile data
       const { data: profile } = await supabase
         .from('app_user')
-        .select('email, first_name')
+        .select('email, first_name, name')
         .eq('email', user.email)
         .single();
       
       if (profile) {
         email = profile.email || email;
-        firstName = profile.first_name || firstName;
+        firstName = profile.first_name || profile.name?.split(' ')[0] || null;
       }
     }
   } catch (error) {
-    // Silently fail - use mock data
+    // Continue without user data
+    console.warn('Failed to fetch user profile:', error);
   }
 
   // Fetch settings to check if activity feed is enabled

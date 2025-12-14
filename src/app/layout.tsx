@@ -6,10 +6,13 @@ import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Header } from "@/components/Header";
-// AUTH DISABLED: import { createClient } from "@/lib/supabase/server";
-// AUTH DISABLED: import { resolveRole } from "@/lib/roles";
+import { createClient } from "@/lib/supabase/server";
+import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
+
+// Force dynamic rendering for the root layout since it uses cookies for auth
+export const dynamic = 'force-dynamic';
 
 const geistSans = Inter({
   variable: "--font-geist-sans",
@@ -40,23 +43,6 @@ export default async function RootLayout({
   let avatarUrl: string | null = null;
   let role: Role | null = null;
 
-  // AUTH DISABLED: Use mock superadmin
-  // Always succeed - use defaults if import fails
-  try {
-    const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
-    const profile = getMockSuperAdminProfile();
-    email = profile?.email || 'agrunwald@clearcompany.com';
-    avatarUrl = profile?.avatar_url || null;
-    role = 'SUPERADMIN' as Role;
-  } catch (error: any) {
-    // Use hardcoded defaults if import fails
-    console.warn('Error loading mock superadmin, using defaults:', error?.message);
-    email = 'agrunwald@clearcompany.com';
-    avatarUrl = null;
-    role = 'SUPERADMIN' as Role;
-  }
-  
-  /* AUTH DISABLED
   try {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -83,14 +69,14 @@ export default async function RootLayout({
   } catch {
     // Continue rendering without user data
   }
-  */
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[8px]' : ''}`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[68px]' : ''}`}
       >
         <MantineProvider theme={theme}>
           <Notifications />

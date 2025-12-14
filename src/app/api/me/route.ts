@@ -101,11 +101,6 @@ export async function PATCH(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
-    // AUTH DISABLED: Return mock superadmin
-    const { getMockSuperAdminProfile } = await import('@/lib/auth-mock');
-    return NextResponse.json({ user: getMockSuperAdminProfile() });
-    
-    /* AUTH DISABLED
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -128,5 +123,4 @@ export async function GET(req: NextRequest) {
     }
 
     return NextResponse.json({ user: profile });
-    */
 }

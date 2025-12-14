@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/settings-db";
 import { createClient } from "@/lib/supabase/server";
+import { debugLog } from "@/lib/debug";
 
 export const dynamic = 'force-dynamic';
 
@@ -54,6 +55,7 @@ export async function PATCH(req: NextRequest) {
 
         const body = await req.json();
         console.log("PATCH /api/settings - Request body:", JSON.stringify(body, null, 2));
+        debugLog({ location: 'api/settings/route.ts:PATCH', message: 'API received settings update', data: { hasAhaFields: 'aha_fields_to_load' in body, ahaFieldsFromRequest: body.aha_fields_to_load, hasDuplicatesInRequest: body.aha_fields_to_load ? new Set(body.aha_fields_to_load).size !== body.aha_fields_to_load.length : false }, hypothesisId: 'D' });
 
         // Validate body if necessary (e.g. ensure thresholds are 0-1)
 

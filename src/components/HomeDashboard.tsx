@@ -24,6 +24,8 @@ interface HomeDashboardProps {
   enableActivityFeed?: boolean;
 }
 
+type SafeResponse = Response | { ok: false; json: () => Promise<null> };
+
 export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true }: HomeDashboardProps) {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     activeEpics: 0,
@@ -35,11 +37,19 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
 
   useEffect(() => {
     async function fetchMetrics() {
+      const safeFetch = async (url: string): Promise<SafeResponse> => {
+        try {
+          return await fetch(url, { credentials: 'include' });
+        } catch {
+          return { ok: false as const, json: async () => null };
+        }
+      };
+
       try {
         const [epicsRes, myItemsRes, feedbackRes] = await Promise.all([
-          fetch('/api/epics', { credentials: 'include' }).catch(() => ({ ok: false })),
-          fetch('/api/my-items', { credentials: 'include' }).catch(() => ({ ok: false })),
-          fetch('/api/dashboard/releases-needing-feedback', { credentials: 'include' }).catch(() => ({ ok: false })),
+          safeFetch('/api/epics'),
+          safeFetch('/api/my-items'),
+          safeFetch('/api/dashboard/releases-needing-feedback'),
         ]);
 
         let activeEpics = 0;
