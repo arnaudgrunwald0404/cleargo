@@ -311,6 +311,23 @@ export function CriteriaManager() {
     setEditingId(null);
   }
 
+  async function handleDelete(id: string) {
+    if (!confirm('Are you sure you want to delete this criterion? This action cannot be undone.')) {
+      return;
+    }
+    setError(null);
+    const res = await fetch(`/api/criteria/${id}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setError(data.error || 'Failed to delete');
+      return;
+    }
+    setItems((prev) => prev.filter((c) => c.id !== id));
+    setEditingId(null);
+  }
+
   async function handleReorder(draggedId: string, targetId: string, targetIndex: number) {
     const draggedIndex = items.findIndex((c) => c.id === draggedId);
     if (draggedIndex === -1) return;
@@ -715,6 +732,96 @@ export function CriteriaManager() {
             </div>
           </div>
 
+          {/* Create Form */}
+          {showCreateForm && (
+            <div className="p-5 border-b border-gray-200 bg-gray-50">
+              <form onSubmit={submitCreate} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <TextInput
+                    label="Label"
+                    value={form.label || ''}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                    required
+                    placeholder="Enter criterion label"
+                  />
+                  <TextInput
+                    label="Category"
+                    value={form.category || ''}
+                    onChange={(e) => setForm({ ...form, category: e.target.value })}
+                    required
+                    placeholder="e.g., PRODUCT_TECH"
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <Select
+                    label="Tier Applicability"
+                    value={form.tier_applicability || 'ALL'}
+                    onChange={(value) => setForm({ ...form, tier_applicability: value || 'ALL' })}
+                    data={TIERS}
+                  />
+                  <TextInput
+                    label="Sort Order"
+                    type="number"
+                    value={form.sort_order?.toString() || '0'}
+                    onChange={(e) => setForm({ ...form, sort_order: Number(e.target.value) })}
+                  />
+                  <div className="flex items-end gap-4 pb-1">
+                    <Checkbox
+                      label="Gate"
+                      checked={!!form.gate}
+                      onChange={(e) => setForm({ ...form, gate: e.currentTarget.checked })}
+                    />
+                    <Checkbox
+                      label="Active"
+                      checked={!!form.is_active}
+                      onChange={(e) => setForm({ ...form, is_active: e.currentTarget.checked })}
+                    />
+                  </div>
+                </div>
+
+                <Textarea
+                  label="Description"
+                  value={form.description || ''}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="Optional description"
+                  minRows={2}
+                />
+
+                <div className="grid grid-cols-3 gap-4">
+                  <Textarea
+                    label="GO Definition"
+                    value={form.status_definition_go || ''}
+                    onChange={(e) => setForm({ ...form, status_definition_go: e.target.value })}
+                    placeholder="Definition for GO status"
+                    minRows={3}
+                  />
+                  <Textarea
+                    label="CONDITIONAL GO Definition"
+                    value={form.status_definition_conditional || ''}
+                    onChange={(e) => setForm({ ...form, status_definition_conditional: e.target.value })}
+                    placeholder="Definition for CONDITIONAL GO status"
+                    minRows={3}
+                  />
+                  <Textarea
+                    label="NO GO Definition"
+                    value={form.status_definition_no_go || ''}
+                    onChange={(e) => setForm({ ...form, status_definition_no_go: e.target.value })}
+                    placeholder="Definition for NO GO status"
+                    minRows={3}
+                  />
+                </div>
+
+                <Group justify="flex-end" gap="sm">
+                  <Button variant="outline" onClick={() => setShowCreateForm(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">Create Criterion</Button>
+                </Group>
+              </form>
+            </div>
+          )}
+
           <div>
             <table className="w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -886,6 +993,7 @@ export function CriteriaManager() {
                 submitEdit(editingId, patch);
                 setEditingId(null);
               }}
+              onDelete={() => handleDelete(editingId)}
               launchStages={launchStages}
             />
           ) : null;
@@ -899,12 +1007,14 @@ function EditDrawer({
   opened,
   onClose,
   onSave,
+  onDelete,
   launchStages,
 }: {
   item: Item;
   opened: boolean;
   onClose: () => void;
   onSave: (patch: Partial<Item>) => void;
+  onDelete: () => void;
   launchStages: LaunchStage[];
 }) {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
@@ -1179,11 +1289,16 @@ function EditDrawer({
           onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
         />
 
-        <Group justify="flex-end" mt="xl">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+        <Group justify="space-between" mt="xl">
+          <Button variant="filled" color="red" onClick={onDelete}>
+            Delete
           </Button>
-          <Button onClick={() => onSave(patch)}>Save Changes</Button>
+          <Group>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={() => onSave(patch)}>Save Changes</Button>
+          </Group>
         </Group>
       </Stack>
     </Drawer>
