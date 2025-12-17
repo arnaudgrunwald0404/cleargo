@@ -13,6 +13,13 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
+  // Custom rules
+  {
+    rules: {
+      // Enforce Unix line endings (LF) for cross-platform consistency
+      "linebreak-style": ["error", "unix"],
+    },
+  },
 ]);
 
 export default eslintConfig;
