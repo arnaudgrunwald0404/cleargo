@@ -1,36 +1,105 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ClearGO - Launch Readiness Console
+
+A launch readiness management system for tracking epics, criteria, and go/no-go decisions. Integrates with Aha! for epic synchronization.
+
+## Prerequisites
+
+- Node.js 18+
+- npm
+- Supabase account (for database and authentication)
+- Aha! account (optional, for epic sync)
+
+## Environment Setup
+
+Copy `.env.example` to `.env.local` and configure:
+
+```bash
+# Supabase
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# Aha! Integration (optional)
+AHA_API_KEY=your-aha-api-key
+AHA_ACCOUNT_DOMAIN=your-account.aha.io
+AHA_WEBHOOK_SECRET=your-webhook-secret
+
+# Email (Resend)
+RESEND_API_KEY=your-resend-api-key
+```
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+# Install dependencies
+npm install
+
+# Run development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Available Scripts
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Build for production |
+| `npm run start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run lint:fix` | Fix ESLint issues |
+| `npm run format` | Format code with Prettier |
+| `npm run format:check` | Check code formatting |
+| `npm run test` | Run tests |
 
-## Learn More
+## Database Migrations
 
-To learn more about Next.js, take a look at the following resources:
+Migrations are in `supabase/migrations/`. To apply:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. **Via Supabase Dashboard**: Copy SQL from migration files into the SQL Editor
+2. **Via Supabase CLI**: `npx supabase db push` (requires linking project first)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Project Structure
 
-## Deploy on Vercel
+```
+src/
+├── app/                    # Next.js App Router pages and API routes
+│   ├── api/               # API endpoints
+│   ├── admin/             # Admin pages (settings, criteria, audit)
+│   ├── epics/             # Epic management pages
+│   └── ...
+├── components/            # React components
+├── lib/                   # Utilities, services, and business logic
+│   ├── aha/              # Aha! integration
+│   ├── db/               # Database queries
+│   ├── email/            # Email notifications
+│   ├── slack/            # Slack integration
+│   └── supabase/         # Supabase client setup
+└── types/                # TypeScript type definitions
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Key Features
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Epic Management**: Track launch epics with tier classification and readiness scoring
+- **Criteria Matrix**: Configurable go/no-go criteria with category grouping
+- **Aha! Sync**: Automatic sync of epics from Aha! via webhooks
+- **Role-Based Access**: Granular permissions for different user roles
+- **Email Notifications**: Customizable email templates for invites and reminders
+- **Activity Feed**: Track changes and updates across the system
+
+## Tech Stack
+
+- **Framework**: Next.js 16 (App Router)
+- **UI**: Mantine UI + Tailwind CSS
+- **Database**: Supabase (PostgreSQL)
+- **Authentication**: Supabase Auth
+- **Email**: Resend
+- **Testing**: Jest + React Testing Library
+
+## Contributing
+
+1. Create a feature branch from `main`
+2. Make changes and ensure `npm run lint` passes
+3. Format code with `npm run format`
+4. Submit a pull request
