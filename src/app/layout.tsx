@@ -1,36 +1,36 @@
-import type { Metadata } from "next";
-import { Inter, Roboto_Mono } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Inter, Roboto_Mono } from 'next/font/google';
+import './globals.css';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { Header } from "@/components/Header";
-import { createClient } from "@/lib/supabase/server";
-import { resolveRole } from "@/lib/roles";
-import type { Role } from "@/lib/roles-constants";
-import { theme } from "@/lib/mantine-theme";
+import { Header } from '@/components/Header';
+import { createClient } from '@/lib/supabase/server';
+import { resolveRole } from '@/lib/roles';
+import type { Role } from '@/lib/roles-constants';
+import { theme } from '@/lib/mantine-theme';
 
 // Force dynamic rendering for the root layout since it uses cookies for auth
 export const dynamic = 'force-dynamic';
 
 const geistSans = Inter({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+  variable: '--font-geist-sans',
+  subsets: ['latin'],
 });
 
 const geistMono = Roboto_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+  variable: '--font-geist-mono',
+  subsets: ['latin'],
 });
 
 export const metadata: Metadata = {
-  title: "ClearGO",
-  description: "Launch Readiness Console",
+  title: 'ClearGO',
+  description: 'Launch Readiness Console',
   icons: {
-    icon: "/icon.svg",
-    shortcut: "/icon.svg",
-    apple: "/icon.svg",
+    icon: '/icon.svg',
+    shortcut: '/icon.svg',
+    apple: '/icon.svg',
   },
 };
 
@@ -45,7 +45,9 @@ export default async function RootLayout({
 
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     email = user?.email || null;
 
     if (email) {

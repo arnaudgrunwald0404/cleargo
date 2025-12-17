@@ -1,9 +1,20 @@
-"use client";
-import React, { useEffect, useState, useMemo } from "react";
-import Link from "next/link";
-import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar } from "@mantine/core";
-import { createClient } from "@/lib/supabase/client";
-import { UserDisplay } from "../UserDisplay";
+'use client';
+import React, { useEffect, useState, useMemo } from 'react';
+import Link from 'next/link';
+import {
+  Drawer,
+  TextInput,
+  Textarea,
+  Select,
+  Checkbox,
+  Button,
+  Group,
+  Stack,
+  SimpleGrid,
+  Avatar,
+} from '@mantine/core';
+import { createClient } from '@/lib/supabase/client';
+import { UserDisplay } from '../UserDisplay';
 
 type Item = {
   id: string;
@@ -31,18 +42,18 @@ interface LaunchStage {
   details?: string | null;
 }
 
-const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2"];
+const TIERS = ['ALL', 'TIER_1_ONLY', 'TIER_1_AND_2'];
 const ROLES = [
-  "CPO",
-  "PRODUCT_LEAD",
-  "PM",
-  "PMM",
-  "ENG_LEAD",
-  "SUPPORT_LEAD",
-  "SECURITY",
-  "LEARNING",
-  "PRODUCT_OPS",
-  "OTHER",
+  'CPO',
+  'PRODUCT_LEAD',
+  'PM',
+  'PMM',
+  'ENG_LEAD',
+  'SUPPORT_LEAD',
+  'SECURITY',
+  'LEARNING',
+  'PRODUCT_OPS',
+  'OTHER',
 ];
 
 export function CriteriaManager() {
@@ -50,10 +61,10 @@ export function CriteriaManager() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<Item>>({
-    label: "",
-    category: "PRODUCT_TECH",
+    label: '',
+    category: 'PRODUCT_TECH',
     gate: false,
-    tier_applicability: "ALL",
+    tier_applicability: 'ALL',
     is_active: true,
     sort_order: 0,
   });
@@ -65,17 +76,24 @@ export function CriteriaManager() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importLoading, setImportLoading] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const [importPreview, setImportPreview] = useState<{ preview: any[], count: number } | null>(null);
+  const [importPreview, setImportPreview] = useState<{ preview: any[]; count: number } | null>(
+    null
+  );
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [launchStages, setLaunchStages] = useState<LaunchStage[]>([]);
-  const [userInfoMap, setUserInfoMap] = useState<Record<string, {
-    first_name?: string | null;
-    last_name?: string | null;
-    avatar_url?: string | null;
-  }>>({});
+  const [userInfoMap, setUserInfoMap] = useState<
+    Record<
+      string,
+      {
+        first_name?: string | null;
+        last_name?: string | null;
+        avatar_url?: string | null;
+      }
+    >
+  >({});
 
   const toggleCategory = (category: string) => {
-    setExpandedCategories(prev => {
+    setExpandedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(category)) {
         next.delete(category);
@@ -88,25 +106,28 @@ export function CriteriaManager() {
 
   const groupedPreview = useMemo(() => {
     if (!importPreview) return {};
-    return importPreview.preview.reduce((acc: Record<string, { overall: any[], details: any[] }>, item: any) => {
-      const category = item.category || "OTHER";
-      if (!acc[category]) {
-        acc[category] = { overall: [], details: [] };
-      }
-      const labelLower = (item.label || "").toLowerCase();
-      if (labelLower.startsWith("overall")) {
-        acc[category].overall.push(item);
-      } else {
-        acc[category].details.push(item);
-      }
-      return acc;
-    }, {});
+    return importPreview.preview.reduce(
+      (acc: Record<string, { overall: any[]; details: any[] }>, item: any) => {
+        const category = item.category || 'OTHER';
+        if (!acc[category]) {
+          acc[category] = { overall: [], details: [] };
+        }
+        const labelLower = (item.label || '').toLowerCase();
+        if (labelLower.startsWith('overall')) {
+          acc[category].overall.push(item);
+        } else {
+          acc[category].details.push(item);
+        }
+        return acc;
+      },
+      {}
+    );
   }, [importPreview]);
 
   // Helper function to get launch stage name by ID
   const getLaunchStageName = (stageId: number | null | undefined): string => {
-    if (!stageId) return "—";
-    const stage = launchStages.find(s => s.id === stageId);
+    if (!stageId) return '—';
+    const stage = launchStages.find((s) => s.id === stageId);
     return stage?.name || `Unknown (${stageId})`;
   };
 
@@ -115,15 +136,15 @@ export function CriteriaManager() {
     setImportLoading(true);
     setImportError(null);
     const formData = new FormData();
-    formData.append("file", importFile);
+    formData.append('file', importFile);
 
     try {
-      const res = await fetch("/api/criteria/import", {
-        method: "POST",
+      const res = await fetch('/api/criteria/import', {
+        method: 'POST',
         body: formData,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to preview");
+      if (!res.ok) throw new Error(data.error || 'Failed to preview');
       setImportPreview(data);
     } catch (e: any) {
       setImportError(e.message);
@@ -137,15 +158,15 @@ export function CriteriaManager() {
     setImportLoading(true);
     setImportError(null);
     const formData = new FormData();
-    formData.append("file", importFile);
+    formData.append('file', importFile);
 
     try {
-      const res = await fetch("/api/criteria/import?commit=true", {
-        method: "POST",
+      const res = await fetch('/api/criteria/import?commit=true', {
+        method: 'POST',
         body: formData,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to import");
+      if (!res.ok) throw new Error(data.error || 'Failed to import');
 
       let message = `Import successful! Created: ${data.created}, Updated: ${data.updated}`;
       if (data.errors && data.errors.length > 0) {
@@ -158,7 +179,7 @@ export function CriteriaManager() {
       setImportPreview(null);
       setImportFile(null);
       // Refresh list
-      const listRes = await fetch("/api/criteria");
+      const listRes = await fetch('/api/criteria');
       const listData = await listRes.json();
       setItems(listData.items || []);
     } catch (e: any) {
@@ -172,8 +193,8 @@ export function CriteriaManager() {
     (async () => {
       try {
         const [criteriaRes, stagesRes] = await Promise.all([
-          fetch("/api/criteria"),
-          fetch("/api/launch-stages")
+          fetch('/api/criteria'),
+          fetch('/api/launch-stages'),
         ]);
 
         const criteriaData = await criteriaRes.json();
@@ -188,7 +209,11 @@ export function CriteriaManager() {
         // Fetch user info for all decision_owner_email values
         const emails = new Set<string>();
         loadedItems.forEach((item: Item) => {
-          if (item.decision_owner_email && !item.decision_owner_email.includes('[') && !item.decision_owner_email.includes('pod')) {
+          if (
+            item.decision_owner_email &&
+            !item.decision_owner_email.includes('[') &&
+            !item.decision_owner_email.includes('pod')
+          ) {
             emails.add(item.decision_owner_email);
           }
         });
@@ -201,13 +226,16 @@ export function CriteriaManager() {
             .in('email', Array.from(emails));
 
           if (users) {
-            const userMap: Record<string, { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }> = {};
-            users.forEach(user => {
+            const userMap: Record<
+              string,
+              { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }
+            > = {};
+            users.forEach((user) => {
               if (user.email) {
                 userMap[user.email] = {
                   first_name: user.first_name || null,
                   last_name: user.last_name || null,
-                  avatar_url: user.avatar_url || null
+                  avatar_url: user.avatar_url || null,
                 };
               }
             });
@@ -215,7 +243,7 @@ export function CriteriaManager() {
           }
         }
       } catch (e: any) {
-        setError("Failed to load criteria");
+        setError('Failed to load criteria');
       } finally {
         setLoading(false);
       }
@@ -227,33 +255,35 @@ export function CriteriaManager() {
     setError(null);
     const payload = {
       label: form.label,
-      description: form.description || "",
+      description: form.description || '',
       category: form.category,
       gate: !!form.gate,
       tier_applicability: form.tier_applicability,
-      status_definition_go: form.status_definition_go || "",
-      status_definition_conditional: form.status_definition_conditional || "",
-      status_definition_no_go: form.status_definition_no_go || "",
+      status_definition_go: form.status_definition_go || '',
+      status_definition_conditional: form.status_definition_conditional || '',
+      status_definition_no_go: form.status_definition_no_go || '',
       is_active: !!form.is_active,
       sort_order: Number(form.sort_order || 0),
     };
-    const res = await fetch("/api/criteria", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch('/api/criteria', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Failed to create");
+      setError(data.error || 'Failed to create');
       return;
     }
     const { item } = await res.json();
-    setItems((prev) => [...prev, item].sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)));
+    setItems((prev) =>
+      [...prev, item].sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))
+    );
     setForm({
-      label: "",
-      category: "PRODUCT_TECH",
+      label: '',
+      category: 'PRODUCT_TECH',
       gate: false,
-      tier_applicability: "ALL",
+      tier_applicability: 'ALL',
       is_active: true,
       sort_order: 0,
     });
@@ -263,17 +293,21 @@ export function CriteriaManager() {
   async function submitEdit(id: string, patch: Partial<Item>) {
     setError(null);
     const res = await fetch(`/api/criteria/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(patch),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      setError(data.error || "Failed to update");
+      setError(data.error || 'Failed to update');
       return;
     }
     const { item } = await res.json();
-    setItems((prev) => prev.map((c) => (c.id === id ? item : c)).sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)));
+    setItems((prev) =>
+      prev
+        .map((c) => (c.id === id ? item : c))
+        .sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label))
+    );
     setEditingId(null);
   }
 
@@ -297,8 +331,8 @@ export function CriteriaManager() {
       await Promise.all(
         updates.map((update) =>
           fetch(`/api/criteria/${update.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sort_order: update.sort_order }),
           })
         )
@@ -307,8 +341,8 @@ export function CriteriaManager() {
       // Update local state
       setItems(newItems.map((item, index) => ({ ...item, sort_order: index })));
     } catch (error) {
-      console.error("Failed to reorder:", error);
-      setError("Failed to reorder items");
+      console.error('Failed to reorder:', error);
+      setError('Failed to reorder items');
     }
   }
 
@@ -336,8 +370,18 @@ export function CriteriaManager() {
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"
+              />
             </svg>
           </div>
           <div>
@@ -351,13 +395,25 @@ export function CriteriaManager() {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5">
             <div className="flex items-center gap-3 mb-4">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
                 </svg>
               </div>
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Import from Excel</h3>
-                <p className="text-sm text-gray-500">Upload a .xlsx file to bulk create or update criteria. Matches by Label.</p>
+                <p className="text-sm text-gray-500">
+                  Upload a .xlsx file to bulk create or update criteria. Matches by Label.
+                </p>
               </div>
             </div>
 
@@ -373,7 +429,7 @@ export function CriteriaManager() {
                 disabled={!importFile || importLoading}
                 className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {importLoading ? "Processing..." : "Preview Import"}
+                {importLoading ? 'Processing...' : 'Preview Import'}
               </button>
             </div>
 
@@ -385,19 +441,35 @@ export function CriteriaManager() {
 
             {importPreview && (
               <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-                <h3 className="font-semibold text-gray-900 mb-2">Preview ({importPreview.count} items)</h3>
+                <h3 className="font-semibold text-gray-900 mb-2">
+                  Preview ({importPreview.count} items)
+                </h3>
                 <div className="max-h-96 overflow-y-auto mb-4">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-100 sticky top-0">
                       <tr>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-8"></th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Timing</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stakeholder</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GO Definition</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CONDITIONAL GO</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">NO GO</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Category
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Label
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Rating Timing
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          Stakeholder
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          GO Definition
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          CONDITIONAL GO
+                        </th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
+                          NO GO
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -408,88 +480,181 @@ export function CriteriaManager() {
 
                         return (
                           <React.Fragment key={category}>
-                            {showOverall ? overall.map((item: any, i: number) => (
-                              <React.Fragment key={`${category}-overall-${i}`}>
-                                <tr className="bg-gray-50 hover:bg-gray-100">
-                                  <td className="px-3 py-2">
-                                    {hasDetails && (
-                                      <button
-                                        onClick={() => toggleCategory(category)}
-                                        className="text-gray-500 hover:text-gray-700 transition-transform"
-                                        style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                            {showOverall
+                              ? overall.map((item: any, i: number) => (
+                                  <React.Fragment key={`${category}-overall-${i}`}>
+                                    <tr className="bg-gray-50 hover:bg-gray-100">
+                                      <td className="px-3 py-2">
+                                        {hasDetails && (
+                                          <button
+                                            onClick={() => toggleCategory(category)}
+                                            className="text-gray-500 hover:text-gray-700 transition-transform"
+                                            style={{
+                                              transform: isExpanded
+                                                ? 'rotate(90deg)'
+                                                : 'rotate(0deg)',
+                                            }}
+                                          >
+                                            <svg
+                                              className="w-4 h-4"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              viewBox="0 0 24 24"
+                                            >
+                                              <path
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                                strokeWidth={2}
+                                                d="M9 5l7 7-7 7"
+                                              />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                                        {item.category}
+                                      </td>
+                                      <td className="px-3 py-2 text-sm font-medium text-gray-900">
+                                        {item.label}
+                                      </td>
+                                      <td className="px-3 py-2 text-sm text-gray-600">
+                                        {getLaunchStageName(item.rating_timing)}
+                                      </td>
+                                      <td className="px-3 py-2 text-sm text-gray-600">
+                                        {item.decision_owner_email ? (
+                                          <UserDisplay
+                                            email={item.decision_owner_email}
+                                            firstName={
+                                              userInfoMap[item.decision_owner_email]?.first_name
+                                            }
+                                            lastName={
+                                              userInfoMap[item.decision_owner_email]?.last_name
+                                            }
+                                            avatarUrl={
+                                              userInfoMap[item.decision_owner_email]?.avatar_url
+                                            }
+                                            size="sm"
+                                          />
+                                        ) : (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                      <td
+                                        className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                        title={item.status_definition_go || ''}
                                       >
-                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                        </svg>
-                                      </button>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
-                                  <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">
-                                    {item.decision_owner_email ? (
-                                      <UserDisplay
-                                        email={item.decision_owner_email}
-                                        firstName={userInfoMap[item.decision_owner_email]?.first_name}
-                                        lastName={userInfoMap[item.decision_owner_email]?.last_name}
-                                        avatarUrl={userInfoMap[item.decision_owner_email]?.avatar_url}
-                                        size="sm"
-                                      />
-                                    ) : (
-                                      <span className="text-gray-400">—</span>
-                                    )}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_go || ""}>
-                                    {item.status_definition_go || <span className="text-gray-400">—</span>}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_conditional || ""}>
-                                    {item.status_definition_conditional || <span className="text-gray-400">—</span>}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={item.status_definition_no_go || ""}>
-                                    {item.status_definition_no_go || <span className="text-gray-400">—</span>}
-                                  </td>
-                                </tr>
-                                {isExpanded && hasDetails && details.map((detailItem: any, j: number) => (
+                                        {item.status_definition_go || (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                      <td
+                                        className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                        title={item.status_definition_conditional || ''}
+                                      >
+                                        {item.status_definition_conditional || (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                      <td
+                                        className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                        title={item.status_definition_no_go || ''}
+                                      >
+                                        {item.status_definition_no_go || (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                    {isExpanded &&
+                                      hasDetails &&
+                                      details.map((detailItem: any, j: number) => (
+                                        <tr key={`${category}-detail-${j}`} className="bg-white">
+                                          <td className="px-3 py-2"></td>
+                                          <td className="px-3 py-2 text-sm text-gray-500 pl-8">
+                                            {detailItem.category}
+                                          </td>
+                                          <td className="px-3 py-2 text-sm text-gray-600 pl-8">
+                                            {detailItem.label}
+                                          </td>
+                                          <td className="px-3 py-2 text-sm text-gray-600 pl-8">
+                                            {getLaunchStageName(detailItem.rating_timing)}
+                                          </td>
+                                          <td className="px-3 py-2 text-sm text-gray-600 pl-8">
+                                            {detailItem.decision_owner_email || (
+                                              <span className="text-gray-400">—</span>
+                                            )}
+                                          </td>
+                                          <td
+                                            className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                            title={detailItem.status_definition_go || ''}
+                                          >
+                                            {detailItem.status_definition_go || (
+                                              <span className="text-gray-400">—</span>
+                                            )}
+                                          </td>
+                                          <td
+                                            className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                            title={detailItem.status_definition_conditional || ''}
+                                          >
+                                            {detailItem.status_definition_conditional || (
+                                              <span className="text-gray-400">—</span>
+                                            )}
+                                          </td>
+                                          <td
+                                            className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                            title={detailItem.status_definition_no_go || ''}
+                                          >
+                                            {detailItem.status_definition_no_go || (
+                                              <span className="text-gray-400">—</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                  </React.Fragment>
+                                ))
+                              : // No overall item - show all details directly without collapse
+                                details.map((detailItem: any, j: number) => (
                                   <tr key={`${category}-detail-${j}`} className="bg-white">
                                     <td className="px-3 py-2"></td>
-                                    <td className="px-3 py-2 text-sm text-gray-500 pl-8">{detailItem.category}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.label}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getLaunchStageName(detailItem.rating_timing)}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
-                                      {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
+                                    <td className="px-3 py-2 text-sm text-gray-600">
+                                      {detailItem.category}
                                     </td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_conditional || ""}>
-                                      {detailItem.status_definition_conditional || <span className="text-gray-400">—</span>}
+                                    <td className="px-3 py-2 text-sm text-gray-900">
+                                      {detailItem.label}
                                     </td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_no_go || ""}>
-                                      {detailItem.status_definition_no_go || <span className="text-gray-400">—</span>}
+                                    <td className="px-3 py-2 text-sm text-gray-600">
+                                      {getLaunchStageName(detailItem.rating_timing)}
+                                    </td>
+                                    <td className="px-3 py-2 text-sm text-gray-600">
+                                      {detailItem.decision_owner_email || (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td
+                                      className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                      title={detailItem.status_definition_go || ''}
+                                    >
+                                      {detailItem.status_definition_go || (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td
+                                      className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                      title={detailItem.status_definition_conditional || ''}
+                                    >
+                                      {detailItem.status_definition_conditional || (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td
+                                      className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate"
+                                      title={detailItem.status_definition_no_go || ''}
+                                    >
+                                      {detailItem.status_definition_no_go || (
+                                        <span className="text-gray-400">—</span>
+                                      )}
                                     </td>
                                   </tr>
                                 ))}
-                              </React.Fragment>
-                            )) : (
-                              // No overall item - show all details directly without collapse
-                              details.map((detailItem: any, j: number) => (
-                                <tr key={`${category}-detail-${j}`} className="bg-white">
-                                  <td className="px-3 py-2"></td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.category}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-900">{detailItem.label}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(detailItem.rating_timing)}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
-                                    {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_conditional || ""}>
-                                    {detailItem.status_definition_conditional || <span className="text-gray-400">—</span>}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_no_go || ""}>
-                                    {detailItem.status_definition_no_go || <span className="text-gray-400">—</span>}
-                                  </td>
-                                </tr>
-                              ))
-                            )}
                           </React.Fragment>
                         );
                       })}
@@ -502,7 +667,7 @@ export function CriteriaManager() {
                     disabled={importLoading}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors disabled:opacity-50"
                   >
-                    {importLoading ? "Importing..." : "Confirm & Import"}
+                    {importLoading ? 'Importing...' : 'Confirm & Import'}
                   </button>
                   <button
                     onClick={() => setImportPreview(null)}
@@ -522,8 +687,18 @@ export function CriteriaManager() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                  <svg
+                    className="w-5 h-5 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"
+                    />
                   </svg>
                 </div>
                 <div>
@@ -545,11 +720,21 @@ export function CriteriaManager() {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"></th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Rank</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label/Category</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gate</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tier</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ready by</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                    Rank
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Label/Category
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Gate
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tier
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Ready by
+                  </th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
                 </tr>
               </thead>
@@ -559,23 +744,23 @@ export function CriteriaManager() {
                     key={c.id}
                     onDragOver={(e) => {
                       e.preventDefault();
-                      e.dataTransfer.dropEffect = "move";
+                      e.dataTransfer.dropEffect = 'move';
                       if (draggedId !== c.id) {
-                        e.currentTarget.classList.add("bg-blue-50");
+                        e.currentTarget.classList.add('bg-blue-50');
                       }
                     }}
                     onDragLeave={(e) => {
-                      e.currentTarget.classList.remove("bg-blue-50");
+                      e.currentTarget.classList.remove('bg-blue-50');
                     }}
                     onDrop={async (e) => {
                       e.preventDefault();
-                      e.currentTarget.classList.remove("bg-blue-50");
+                      e.currentTarget.classList.remove('bg-blue-50');
                       if (draggedId && draggedId !== c.id) {
                         await handleReorder(draggedId, c.id, index);
                       }
                       setDraggedId(null);
                     }}
-                    className={`hover:bg-gray-50 cursor-pointer ${draggedId === c.id ? "opacity-50" : ""}`}
+                    className={`hover:bg-gray-50 cursor-pointer ${draggedId === c.id ? 'opacity-50' : ''}`}
                     onClick={(e) => {
                       // Don't open drawer if dragging or clicking on drag handle
                       if (!draggedId && !(e.target as HTMLElement).closest('td:first-child')) {
@@ -589,11 +774,21 @@ export function CriteriaManager() {
                       draggable
                       onDragStart={(e) => {
                         setDraggedId(c.id);
-                        e.dataTransfer.effectAllowed = "move";
+                        e.dataTransfer.effectAllowed = 'move';
                       }}
                     >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                      <svg
+                        className="w-5 h-5"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M4 8h16M4 16h16"
+                        />
                       </svg>
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -602,7 +797,9 @@ export function CriteriaManager() {
                     <td className="px-4 py-4 text-sm cursor-pointer">
                       <div className="font-medium text-gray-900">{c.label}</div>
                       <div className="text-gray-500 text-xs mt-0.5">{c.category}</div>
-                      {c.description && <div className="text-gray-400 text-xs mt-1">{c.description}</div>}
+                      {c.description && (
+                        <div className="text-gray-400 text-xs mt-1">{c.description}</div>
+                      )}
                     </td>
                     <td
                       className="px-4 py-4 whitespace-nowrap"
@@ -638,21 +835,34 @@ export function CriteriaManager() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Select
-                        value={c.rating_timing?.toString() || launchStages[0]?.id.toString() || ""}
+                        value={c.rating_timing?.toString() || launchStages[0]?.id.toString() || ''}
                         onChange={(value) => {
                           if (value) {
                             submitEdit(c.id, { rating_timing: Number(value) });
                           }
                         }}
-                        data={launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
+                        data={launchStages.map((stage) => ({
+                          value: stage.id.toString(),
+                          label: stage.name,
+                        }))}
                         size="xs"
                         allowDeselect={false}
                         comboboxProps={{ width: 250, position: 'bottom-start' }}
                       />
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-center">
-                      <svg className="w-5 h-5 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      <svg
+                        className="w-5 h-5 text-gray-400 mx-auto"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
                       </svg>
                     </td>
                   </tr>
@@ -664,28 +874,48 @@ export function CriteriaManager() {
       </div>
 
       {/* Edit Drawer */}
-      {editingId && (() => {
-        const editingItem = items.find(i => i.id === editingId);
-        return editingItem ? (
-          <EditDrawer
-            item={editingItem}
-            opened={!!editingId}
-            onClose={() => setEditingId(null)}
-            onSave={(patch) => {
-              submitEdit(editingId, patch);
-              setEditingId(null);
-            }}
-            launchStages={launchStages}
-          />
-        ) : null;
-      })()}
+      {editingId &&
+        (() => {
+          const editingItem = items.find((i) => i.id === editingId);
+          return editingItem ? (
+            <EditDrawer
+              item={editingItem}
+              opened={!!editingId}
+              onClose={() => setEditingId(null)}
+              onSave={(patch) => {
+                submitEdit(editingId, patch);
+                setEditingId(null);
+              }}
+              launchStages={launchStages}
+            />
+          ) : null;
+        })()}
     </div>
   );
 }
 
-function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Item; opened: boolean; onClose: () => void; onSave: (patch: Partial<Item>) => void; launchStages: LaunchStage[] }) {
+function EditDrawer({
+  item,
+  opened,
+  onClose,
+  onSave,
+  launchStages,
+}: {
+  item: Item;
+  opened: boolean;
+  onClose: () => void;
+  onSave: (patch: Partial<Item>) => void;
+  launchStages: LaunchStage[];
+}) {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
-  const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null; avatar_url?: string | null }>>([]);
+  const [users, setUsers] = useState<
+    Array<{
+      email: string;
+      first_name?: string | null;
+      last_name?: string | null;
+      avatar_url?: string | null;
+    }>
+  >([]);
   const [usersLoading, setUsersLoading] = useState(false);
 
   useEffect(() => {
@@ -697,12 +927,12 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await fetch("/api/users");
-      if (!res.ok) throw new Error("Failed to fetch users");
+      const res = await fetch('/api/users');
+      if (!res.ok) throw new Error('Failed to fetch users');
       const data = await res.json();
       setUsers(data.users || []);
     } catch (error: any) {
-      console.error("Failed to fetch users:", error);
+      console.error('Failed to fetch users:', error);
     } finally {
       setUsersLoading(false);
     }
@@ -716,7 +946,20 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
   };
 
   const getColor = (email: string) => {
-    const colors = ['blue', 'cyan', 'teal', 'green', 'lime', 'yellow', 'orange', 'red', 'pink', 'grape', 'violet', 'indigo'];
+    const colors = [
+      'blue',
+      'cyan',
+      'teal',
+      'green',
+      'lime',
+      'yellow',
+      'orange',
+      'red',
+      'pink',
+      'grape',
+      'violet',
+      'indigo',
+    ];
     let hash = 0;
     for (let i = 0; i < email.length; i++) {
       hash = email.charCodeAt(i) + ((hash << 5) - hash);
@@ -724,15 +967,15 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
     return colors[Math.abs(hash) % colors.length];
   };
 
-  const selectedUser = users.find(u => u.email === patch.decision_owner_email);
+  const selectedUser = users.find((u) => u.email === patch.decision_owner_email);
   const isCustomEmail = patch.decision_owner_email && !selectedUser;
 
   const userSelectData = [
-    { value: "", label: "None" },
-    ...users.map(u => ({
+    { value: '', label: 'None' },
+    ...users.map((u) => ({
       value: u.email,
-      label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
-    }))
+      label: `${u.first_name || ''} ${u.last_name || ''}`.trim() || u.email,
+    })),
   ];
 
   return (
@@ -747,14 +990,14 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
       <Stack gap="md">
         <TextInput
           label="Label"
-          value={patch.label || ""}
+          value={patch.label || ''}
           onChange={(e) => setPatch({ ...patch, label: e.target.value })}
           required
         />
 
         <TextInput
           label="Category"
-          value={patch.category || ""}
+          value={patch.category || ''}
           onChange={(e) => setPatch({ ...patch, category: e.target.value })}
           required
           description="Category from the table"
@@ -768,19 +1011,21 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
 
         <Select
           label="Tier Applicability"
-          value={patch.tier_applicability || ""}
-          onChange={(value) => setPatch({ ...patch, tier_applicability: value || "" })}
+          value={patch.tier_applicability || ''}
+          onChange={(value) => setPatch({ ...patch, tier_applicability: value || '' })}
           data={TIERS}
           required
         />
 
         <Select
           label="Rating Timing"
-          value={patch.rating_timing?.toString() || ""}
-          onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
+          value={patch.rating_timing?.toString() || ''}
+          onChange={(value) =>
+            setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })
+          }
           data={[
-            { value: "", label: "None" },
-            ...launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
+            { value: '', label: 'None' },
+            ...launchStages.map((stage) => ({ value: stage.id.toString(), label: stage.name })),
           ]}
           placeholder="Select launch stage"
           description="Launch stage by which the criteria needs to be rated"
@@ -788,9 +1033,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
         />
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Decision Owner
-          </label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Decision Owner</label>
           {selectedUser ? (
             <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3">
               <Avatar
@@ -804,7 +1047,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
               </Avatar>
               <div>
                 <div className="font-medium text-gray-900">
-                  {selectedUser.first_name || ""} {selectedUser.last_name || ""}
+                  {selectedUser.first_name || ''} {selectedUser.last_name || ''}
                 </div>
                 <div className="text-sm text-gray-500">{selectedUser.email}</div>
               </div>
@@ -817,7 +1060,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           <Select
             label="Select User"
             placeholder="Choose a user from the system"
-            value={selectedUser ? patch.decision_owner_email : ""}
+            value={selectedUser ? patch.decision_owner_email : ''}
             onChange={(value) => {
               if (value) {
                 setPatch({ ...patch, decision_owner_email: value });
@@ -835,7 +1078,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           <TextInput
             label="Enter Custom Email/Placeholder"
             placeholder="e.g., email@example.com or [name of pod's product manager]"
-            value={isCustomEmail ? (patch.decision_owner_email ?? "") : ""}
+            value={isCustomEmail ? (patch.decision_owner_email ?? '') : ''}
             onChange={(e) => {
               const value = e.target.value;
               setPatch({ ...patch, decision_owner_email: value || undefined });
@@ -848,10 +1091,14 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           <label className="block text-sm font-medium text-gray-700 mb-2">Status Definitions</label>
           <SimpleGrid cols={3} spacing="md">
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-green-900 mb-2">GO Definition</label>
+              <label className="block text-sm font-semibold text-green-900 mb-2">
+                GO Definition
+              </label>
               <Textarea
-                value={patch.status_definition_go || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_go: e.target.value || undefined })}
+                value={patch.status_definition_go || ''}
+                onChange={(e) =>
+                  setPatch({ ...patch, status_definition_go: e.target.value || undefined })
+                }
                 placeholder="Definition for GO status"
                 minRows={8}
                 autosize
@@ -862,16 +1109,20 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
                     border: '1px solid #D1D5DB',
                     borderRadius: '0.5rem',
                     padding: '0.75rem',
-                  }
+                  },
                 }}
               />
             </div>
 
             <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-orange-900 mb-2">CONDITIONAL GO Definition</label>
+              <label className="block text-sm font-semibold text-orange-900 mb-2">
+                CONDITIONAL GO Definition
+              </label>
               <Textarea
-                value={patch.status_definition_conditional || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_conditional: e.target.value || undefined })}
+                value={patch.status_definition_conditional || ''}
+                onChange={(e) =>
+                  setPatch({ ...patch, status_definition_conditional: e.target.value || undefined })
+                }
                 placeholder="Definition for CONDITIONAL GO status"
                 minRows={8}
                 autosize
@@ -882,16 +1133,20 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
                     border: '1px solid #D1D5DB',
                     borderRadius: '0.5rem',
                     padding: '0.75rem',
-                  }
+                  },
                 }}
               />
             </div>
 
             <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-red-900 mb-2">NO GO Definition</label>
+              <label className="block text-sm font-semibold text-red-900 mb-2">
+                NO GO Definition
+              </label>
               <Textarea
-                value={patch.status_definition_no_go || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_no_go: e.target.value || undefined })}
+                value={patch.status_definition_no_go || ''}
+                onChange={(e) =>
+                  setPatch({ ...patch, status_definition_no_go: e.target.value || undefined })
+                }
                 placeholder="Definition for NO GO status"
                 minRows={8}
                 autosize
@@ -902,7 +1157,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
                     border: '1px solid #D1D5DB',
                     borderRadius: '0.5rem',
                     padding: '0.75rem',
-                  }
+                  },
                 }}
               />
             </div>
@@ -913,7 +1168,9 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           label="Sort Order"
           type="number"
           value={(patch.sort_order ?? 0) + 1}
-          onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
+          onChange={(e) =>
+            setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })
+          }
         />
 
         <Checkbox
@@ -926,9 +1183,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => onSave(patch)}>
-            Save Changes
-          </Button>
+          <Button onClick={() => onSave(patch)}>Save Changes</Button>
         </Group>
       </Stack>
     </Drawer>

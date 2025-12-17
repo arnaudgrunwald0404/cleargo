@@ -1,9 +1,9 @@
-"use client";
-import React from "react";
-import { Modal } from "@mantine/core";
-import { IconMail } from "@tabler/icons-react";
+'use client';
+import React from 'react';
+import { Modal } from '@mantine/core';
+import { IconMail } from '@tabler/icons-react';
 
-export type TemplateType = "invite" | "remind" | "update_criteria";
+export type TemplateType = 'invite' | 'remind' | 'update_criteria';
 
 export type EmailTemplates = {
   invite_subject: string;
@@ -48,7 +48,9 @@ export default function EmailTemplatesSection({
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Email Templates</h2>
-            <p className="text-sm text-gray-500">Customize email templates for different notification types</p>
+            <p className="text-sm text-gray-500">
+              Customize email templates for different notification types
+            </p>
           </div>
         </div>
 
@@ -59,31 +61,31 @@ export default function EmailTemplatesSection({
             <div className="border-b border-gray-200">
               <nav className="flex space-x-1" aria-label="Tabs">
                 <button
-                  onClick={() => setActiveTemplateType("invite")}
+                  onClick={() => setActiveTemplateType('invite')}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTemplateType === "invite"
-                      ? "border-indigo-500 text-indigo-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    activeTemplateType === 'invite'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   Invite
                 </button>
                 <button
-                  onClick={() => setActiveTemplateType("remind")}
+                  onClick={() => setActiveTemplateType('remind')}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTemplateType === "remind"
-                      ? "border-indigo-500 text-indigo-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    activeTemplateType === 'remind'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   Reminder
                 </button>
                 <button
-                  onClick={() => setActiveTemplateType("update_criteria")}
+                  onClick={() => setActiveTemplateType('update_criteria')}
                   className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                    activeTemplateType === "update_criteria"
-                      ? "border-indigo-500 text-indigo-600"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    activeTemplateType === 'update_criteria'
+                      ? 'border-indigo-500 text-indigo-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
                   }`}
                 >
                   Update Criteria
@@ -91,14 +93,18 @@ export default function EmailTemplatesSection({
               </nav>
             </div>
 
-            {activeTemplateType === "invite" && (
+            {activeTemplateType === 'invite' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject Line</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject Line
+                  </label>
                   <input
                     type="text"
                     value={emailTemplates.invite_subject}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, invite_subject: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({ ...emailTemplates, invite_subject: e.target.value })
+                    }
                     placeholder="Welcome to ClearGO"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
@@ -110,7 +116,7 @@ export default function EmailTemplatesSection({
                     <button
                       type="button"
                       onClick={() => {
-                        setPreviewType("invite");
+                        setPreviewType('invite');
                         setPreviewOpen(true);
                       }}
                       className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
@@ -120,26 +126,38 @@ export default function EmailTemplatesSection({
                   </div>
                   <textarea
                     value={emailTemplates.invite_html}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, invite_html: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({ ...emailTemplates, invite_html: e.target.value })
+                    }
                     placeholder="Leave empty to use default template"
                     rows={16}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}inviteLink{"}"}{"}"}
+                    Available placeholders: {'{'}
+                    {'{'}firstName{'}'}
+                    {'}'}, {'{'}
+                    {'{'}greeting{'}'}
+                    {'}'}, {'{'}
+                    {'{'}inviteLink{'}'}
+                    {'}'}
                   </p>
                 </div>
               </div>
             )}
 
-            {activeTemplateType === "remind" && (
+            {activeTemplateType === 'remind' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject Line</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject Line
+                  </label>
                   <input
                     type="text"
                     value={emailTemplates.remind_subject}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, remind_subject: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({ ...emailTemplates, remind_subject: e.target.value })
+                    }
                     placeholder="Reminder: Join ClearGO"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
@@ -151,7 +169,7 @@ export default function EmailTemplatesSection({
                     <button
                       type="button"
                       onClick={() => {
-                        setPreviewType("remind");
+                        setPreviewType('remind');
                         setPreviewOpen(true);
                       }}
                       className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
@@ -161,26 +179,41 @@ export default function EmailTemplatesSection({
                   </div>
                   <textarea
                     value={emailTemplates.remind_html}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, remind_html: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({ ...emailTemplates, remind_html: e.target.value })
+                    }
                     placeholder="Leave empty to use default template"
                     rows={16}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}inviteLink{"}"}{"}"}
+                    Available placeholders: {'{'}
+                    {'{'}firstName{'}'}
+                    {'}'}, {'{'}
+                    {'{'}greeting{'}'}
+                    {'}'}, {'{'}
+                    {'{'}inviteLink{'}'}
+                    {'}'}
                   </p>
                 </div>
               </div>
             )}
 
-            {activeTemplateType === "update_criteria" && (
+            {activeTemplateType === 'update_criteria' && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Subject Line</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Subject Line
+                  </label>
                   <input
                     type="text"
                     value={emailTemplates.update_criteria_subject}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, update_criteria_subject: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({
+                        ...emailTemplates,
+                        update_criteria_subject: e.target.value,
+                      })
+                    }
                     placeholder="Action Required: Update Criteria in ClearGO"
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                   />
@@ -192,7 +225,7 @@ export default function EmailTemplatesSection({
                     <button
                       type="button"
                       onClick={() => {
-                        setPreviewType("update_criteria");
+                        setPreviewType('update_criteria');
                         setPreviewOpen(true);
                       }}
                       className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
@@ -202,13 +235,21 @@ export default function EmailTemplatesSection({
                   </div>
                   <textarea
                     value={emailTemplates.update_criteria_html}
-                    onChange={(e) => setEmailTemplates({ ...emailTemplates, update_criteria_html: e.target.value })}
+                    onChange={(e) =>
+                      setEmailTemplates({ ...emailTemplates, update_criteria_html: e.target.value })
+                    }
                     placeholder="Leave empty to use default template"
                     rows={16}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono text-sm"
                   />
                   <p className="mt-1 text-xs text-gray-500">
-                    Available placeholders: {"{"}{"{"}firstName{"}"}{"}"}, {"{"}{"{"}greeting{"}"}{"}"}, {"{"}{"{"}actionLink{"}"}{"}"}
+                    Available placeholders: {'{'}
+                    {'{'}firstName{'}'}
+                    {'}'}, {'{'}
+                    {'{'}greeting{'}'}
+                    {'}'}, {'{'}
+                    {'{'}actionLink{'}'}
+                    {'}'}
                   </p>
                 </div>
               </div>
@@ -234,7 +275,11 @@ export default function EmailTemplatesSection({
         opened={previewOpen}
         onClose={() => setPreviewOpen(false)}
         title={`Email Preview - ${
-          previewType === "invite" ? "Invite" : previewType === "remind" ? "Reminder" : "Update Criteria"
+          previewType === 'invite'
+            ? 'Invite'
+            : previewType === 'remind'
+              ? 'Reminder'
+              : 'Update Criteria'
         }`}
         size="xl"
       >
@@ -242,11 +287,12 @@ export default function EmailTemplatesSection({
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Subject Line</label>
             <div className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm">
-              {previewType === "invite"
-                ? emailTemplates.invite_subject || "Welcome to ClearGO"
-                : previewType === "remind"
-                ? emailTemplates.remind_subject || "Reminder: Join ClearGO"
-                : emailTemplates.update_criteria_subject || "Action Required: Update Criteria in ClearGO"}
+              {previewType === 'invite'
+                ? emailTemplates.invite_subject || 'Welcome to ClearGO'
+                : previewType === 'remind'
+                  ? emailTemplates.remind_subject || 'Reminder: Join ClearGO'
+                  : emailTemplates.update_criteria_subject ||
+                    'Action Required: Update Criteria in ClearGO'}
             </div>
           </div>
           <div>
@@ -257,14 +303,14 @@ export default function EmailTemplatesSection({
                 dangerouslySetInnerHTML={{
                   __html: (() => {
                     const html =
-                      previewType === "invite"
+                      previewType === 'invite'
                         ? emailTemplates.invite_html
-                        : previewType === "remind"
-                        ? emailTemplates.remind_html
-                        : emailTemplates.update_criteria_html;
+                        : previewType === 'remind'
+                          ? emailTemplates.remind_html
+                          : emailTemplates.update_criteria_html;
 
                     if (!html) {
-                      return previewType === "invite"
+                      return previewType === 'invite'
                         ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                               <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
                               <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
@@ -291,8 +337,8 @@ export default function EmailTemplatesSection({
                                   <a href="https://example.com/invite-link" style="color: #4f46e5; word-break: break-all;">https://example.com/invite-link</a>
                               </p>
                           </div>`
-                        : previewType === "remind"
-                        ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                        : previewType === 'remind'
+                          ? `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                               <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
                               <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
                                   This is a reminder that you have an invitation to join ClearGO. Click the button below to accept your invitation.
@@ -318,7 +364,7 @@ export default function EmailTemplatesSection({
                                   <a href="https://example.com/invite-link" style="color: #4f46e5; word-break: break-all;">https://example.com/invite-link</a>
                               </p>
                           </div>`
-                        : `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                          : `<div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                               <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">Hi John,</h2>
                               <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
                                   You have criteria that require your attention in ClearGO. Please review and update as needed.
@@ -336,17 +382,18 @@ export default function EmailTemplatesSection({
                     }
 
                     return html
-                      .replace(/\{\{firstName\}\}/g, "John")
-                      .replace(/\{\{greeting\}\}/g, "Hi John,")
-                      .replace(/\{\{inviteLink\}\}/g, "https://example.com/invite-link")
-                      .replace(/\{\{actionLink\}\}/g, "https://example.com/action-link");
+                      .replace(/\{\{firstName\}\}/g, 'John')
+                      .replace(/\{\{greeting\}\}/g, 'Hi John,')
+                      .replace(/\{\{inviteLink\}\}/g, 'https://example.com/invite-link')
+                      .replace(/\{\{actionLink\}\}/g, 'https://example.com/action-link');
                   })(),
                 }}
               />
             </div>
           </div>
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-            <strong>Note:</strong> This preview uses sample data (firstName: "John", inviteLink: "https://example.com/invite-link"). Actual emails will use real recipient data.
+            <strong>Note:</strong> This preview uses sample data (firstName: "John", inviteLink:
+            "https://example.com/invite-link"). Actual emails will use real recipient data.
           </div>
         </div>
       </Modal>

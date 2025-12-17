@@ -1,14 +1,14 @@
 export const ROLES = [
-  "CPO",
-  "PRODUCT_LEAD",
-  "PM",
-  "PMM",
-  "ENG_LEAD",
-  "SUPPORT_LEAD",
-  "SECURITY",
-  "LEARNING",
-  "PRODUCT_OPS",
-  "OTHER",
+  'CPO',
+  'PRODUCT_LEAD',
+  'PM',
+  'PMM',
+  'ENG_LEAD',
+  'SUPPORT_LEAD',
+  'SECURITY',
+  'LEARNING',
+  'PRODUCT_OPS',
+  'OTHER',
 ] as const;
 
 export const DEFAULT_EMAIL_TEMPLATES = {
@@ -81,5 +81,5 @@ export const DEFAULT_EMAIL_TEMPLATES = {
         If the button doesn't work, copy and paste this link into your browser:<br>
         <a href="{{actionLink}}" style="color: #4f46e5; word-break: break-all;">{{actionLink}}</a>
     </p>
-</div>`
+</div>`,
 } as const;

@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { CriteriaManager } from "@/components/admin/CriteriaManager";
+import { CriteriaManager } from '@/components/admin/CriteriaManager';
 
 export default function CriteriaAdminPage() {
   return (

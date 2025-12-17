@@ -8,21 +8,23 @@ export default async function HomePage() {
   let email: string | null = null;
   let firstName: string | null = null;
   let enableActivityFeed = true;
-  
+
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
     if (user?.email) {
       email = user.email;
-      
+
       // Fetch profile data
       const { data: profile } = await supabase
         .from('app_user')
         .select('email, first_name, name')
         .eq('email', user.email)
         .single();
-      
+
       if (profile) {
         email = profile.email || email;
         firstName = profile.first_name || profile.name?.split(' ')[0] || null;
@@ -42,5 +44,11 @@ export default async function HomePage() {
     console.warn('Failed to fetch settings for activity feed:', error);
   }
 
-  return <HomeDashboard userEmail={email} firstName={firstName} enableActivityFeed={enableActivityFeed} />;
+  return (
+    <HomeDashboard
+      userEmail={email}
+      firstName={firstName}
+      enableActivityFeed={enableActivityFeed}
+    />
+  );
 }

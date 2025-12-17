@@ -8,7 +8,9 @@ export default async function AccessPendingPage() {
 
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     email = user?.email || null;
   } catch {
     // Continue without user data
@@ -22,19 +24,32 @@ export default async function AccessPendingPage() {
           {/* Header with icon */}
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 px-8 py-10 text-center">
             <div className="w-20 h-20 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center mx-auto mb-4">
-              <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              <svg
+                className="w-10 h-10 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                />
               </svg>
             </div>
             <h1 className="text-2xl font-bold text-white mb-2">Access Pending</h1>
-            <p className="text-indigo-100 text-sm">Your account is ready, but you need access to continue</p>
+            <p className="text-indigo-100 text-sm">
+              Your account is ready, but you need access to continue
+            </p>
           </div>
 
           {/* Content */}
           <div className="px-8 py-8">
             <div className="text-center mb-6">
               <p className="text-gray-600 leading-relaxed">
-                Welcome to <span className="font-semibold text-gray-900">ClearGO</span>! Your account has been created successfully.
+                Welcome to <span className="font-semibold text-gray-900">ClearGO</span>! Your
+                account has been created successfully.
               </p>
             </div>
 
@@ -47,13 +62,24 @@ export default async function AccessPendingPage() {
 
             <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-4 mb-6">
               <div className="flex gap-3">
-                <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <svg
+                  className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  />
                 </svg>
                 <div>
                   <p className="text-sm text-amber-800 font-medium mb-1">Access Required</p>
                   <p className="text-sm text-amber-700">
-                    Please contact a <span className="font-medium">Product Ops</span> team member to request access to ClearGO.
+                    Please contact a <span className="font-medium">Product Ops</span> team member to
+                    request access to ClearGO.
                   </p>
                 </div>
               </div>
@@ -89,4 +115,3 @@ export default async function AccessPendingPage() {
     </div>
   );
 }
-

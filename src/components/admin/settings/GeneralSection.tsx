@@ -1,8 +1,8 @@
-"use client";
-import React, { useEffect, useState } from "react";
-import type { AppSettings } from "@/lib/settings-db";
-import { TagsInput } from "@mantine/core";
-import { canRolesPerform } from "@/lib/permissions";
+'use client';
+import React, { useEffect, useState } from 'react';
+import type { AppSettings } from '@/lib/settings-db';
+import { TagsInput } from '@mantine/core';
+import { canRolesPerform } from '@/lib/permissions';
 
 type Props = {
   settings: AppSettings;
@@ -14,7 +14,7 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
   const [canEditAhaTags, setCanEditAhaTags] = useState(false);
 
   useEffect(() => {
-    setCanEditAhaTags(canRolesPerform(currentUserRoles, "settings.ahaTags.update"));
+    setCanEditAhaTags(canRolesPerform(currentUserRoles, 'settings.ahaTags.update'));
   }, [currentUserRoles]);
   return (
     <>
@@ -22,8 +22,18 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+              />
             </svg>
           </div>
           <div>
@@ -40,10 +50,14 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
               min="0"
               max="1"
               value={settings.threshold_tier1}
-              onChange={(e) => setSettings({ ...settings, threshold_tier1: Number(e.target.value) })}
+              onChange={(e) =>
+                setSettings({ ...settings, threshold_tier1: Number(e.target.value) })
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p className="text-xs text-gray-500 mt-1">{(settings.threshold_tier1 * 100).toFixed(0)}%</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(settings.threshold_tier1 * 100).toFixed(0)}%
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tier 2 Threshold</label>
@@ -53,10 +67,14 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
               min="0"
               max="1"
               value={settings.threshold_tier2}
-              onChange={(e) => setSettings({ ...settings, threshold_tier2: Number(e.target.value) })}
+              onChange={(e) =>
+                setSettings({ ...settings, threshold_tier2: Number(e.target.value) })
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p className="text-xs text-gray-500 mt-1">{(settings.threshold_tier2 * 100).toFixed(0)}%</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(settings.threshold_tier2 * 100).toFixed(0)}%
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tier 3 Threshold</label>
@@ -66,10 +84,14 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
               min="0"
               max="1"
               value={settings.threshold_tier3}
-              onChange={(e) => setSettings({ ...settings, threshold_tier3: Number(e.target.value) })}
+              onChange={(e) =>
+                setSettings({ ...settings, threshold_tier3: Number(e.target.value) })
+              }
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             />
-            <p className="text-xs text-gray-500 mt-1">{(settings.threshold_tier3 * 100).toFixed(0)}%</p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(settings.threshold_tier3 * 100).toFixed(0)}%
+            </p>
           </div>
         </div>
       </div>
@@ -78,8 +100,18 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              />
             </svg>
           </div>
           <div>
@@ -89,7 +121,9 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Staleness Window (Days)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Staleness Window (Days)
+            </label>
             <input
               type="number"
               min={1}
@@ -129,23 +163,39 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+              />
             </svg>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Google Calendar Check-in Keywords</h2>
-            <p className="text-sm text-gray-500">Keywords to identify check-in meetings in calendar events</p>
+            <h2 className="text-lg font-semibold text-gray-900">
+              Google Calendar Check-in Keywords
+            </h2>
+            <p className="text-sm text-gray-500">
+              Keywords to identify check-in meetings in calendar events
+            </p>
           </div>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Keywords (comma-separated)</label>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            Keywords (comma-separated)
+          </label>
           <input
             type="text"
-            value={(settings.check_in_keywords || []).join(", ")}
+            value={(settings.check_in_keywords || []).join(', ')}
             onChange={(e) => {
               const keywords = e.target.value
-                .split(",")
+                .split(',')
                 .map((k) => k.trim())
                 .filter((k) => k.length > 0);
               setSettings({ ...settings, check_in_keywords: keywords });
@@ -154,7 +204,8 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />
           <p className="text-xs text-gray-500 mt-1">
-            Calendar events matching these keywords will be automatically detected as check-in meetings
+            Calendar events matching these keywords will be automatically detected as check-in
+            meetings
           </p>
         </div>
       </div>
@@ -163,13 +214,25 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-amber-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+              />
             </svg>
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Aha! Integration Tags</h2>
-            <p className="text-sm text-gray-500">Tags that trigger inclusion in the Launch Console</p>
+            <p className="text-sm text-gray-500">
+              Tags that trigger inclusion in the Launch Console
+            </p>
           </div>
         </div>
         <div>
@@ -177,19 +240,24 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
           <TagsInput
             value={settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']}
             onChange={(tags) => setSettings({ ...settings, aha_tags: tags })}
-            placeholder={canEditAhaTags ? "Enter tags..." : "Contact admin to modify tags"}
+            placeholder={canEditAhaTags ? 'Enter tags...' : 'Contact admin to modify tags'}
             disabled={!canEditAhaTags}
             clearable={canEditAhaTags}
             className="w-full"
             classNames={{
-              input: "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg",
-              pill: "bg-indigo-50 text-indigo-700 font-medium"
+              input: 'border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg',
+              pill: 'bg-indigo-50 text-indigo-700 font-medium',
             }}
           />
           {!canEditAhaTags && (
             <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                />
               </svg>
               Only users with the "Update AHA Tags" permission can modify these tags.
             </p>
@@ -204,8 +272,18 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+              />
             </svg>
           </div>
           <div>
@@ -216,11 +294,15 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
         <div className="space-y-4">
           <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
             <div className="flex-1">
-              <label htmlFor="enable-activity-feed" className="block text-sm font-medium text-gray-900 mb-1">
+              <label
+                htmlFor="enable-activity-feed"
+                className="block text-sm font-medium text-gray-900 mb-1"
+              >
                 Enable Activity Feed
               </label>
               <p className="text-xs text-gray-600">
-                Display a real-time activity feed on the home page showing criteria changes, new epics, and release updates
+                Display a real-time activity feed on the home page showing criteria changes, new
+                epics, and release updates
               </p>
             </div>
             <div className="ml-4">
@@ -229,7 +311,9 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
                   id="enable-activity-feed"
                   type="checkbox"
                   checked={settings.enable_activity_feed !== false}
-                  onChange={(e) => setSettings({ ...settings, enable_activity_feed: e.target.checked })}
+                  onChange={(e) =>
+                    setSettings({ ...settings, enable_activity_feed: e.target.checked })
+                  }
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>

@@ -1,10 +1,10 @@
 /**
  * Debug logging utility for Cursor's debug mode.
- * 
+ *
  * To enable debugging:
  * 1. Replace {session-id} below with the actual session ID from Cursor's debug mode
  * 2. Set DEBUG_ENABLED to true
- * 
+ *
  * To disable: Set DEBUG_ENABLED to false
  */
 
@@ -36,4 +36,3 @@ export function debugLog(payload: DebugPayload): void {
     }),
   }).catch(() => {});
 }
-

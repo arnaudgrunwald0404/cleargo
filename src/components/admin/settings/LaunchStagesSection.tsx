@@ -1,9 +1,9 @@
-"use client";
-import React from "react";
-import { Drawer, Button, Group, Stack, TextInput, NumberInput } from "@mantine/core";
-import { IconGripVertical, IconPencil } from "@tabler/icons-react";
-import { RichText } from "@/components/admin/RichText";
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+'use client';
+import React from 'react';
+import { Drawer, Button, Group, Stack, TextInput, NumberInput } from '@mantine/core';
+import { IconGripVertical, IconPencil } from '@tabler/icons-react';
+import { RichText } from '@/components/admin/RichText';
+import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
 
 export type LaunchStage = {
   id: number;
@@ -31,7 +31,12 @@ type Props = {
   editingDetails: string;
   setEditingDetails: (v: string) => void;
   onSaveNew: () => void; // called when no id (add)
-  onUpdateExisting: (id: number, name: string, durationDays: number | null, details: string | null) => void;
+  onUpdateExisting: (
+    id: number,
+    name: string,
+    durationDays: number | null,
+    details: string | null
+  ) => void;
   onDeleteExisting: (id: number) => void;
 };
 
@@ -61,8 +66,18 @@ export default function LaunchStagesSection({
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              <svg
+                className="w-6 h-6 text-white"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
+                />
               </svg>
             </div>
             <div>
@@ -74,9 +89,9 @@ export default function LaunchStagesSection({
             <button
               onClick={() => {
                 setEditingId(null);
-                setEditingName("");
-                setEditingDuration("");
-                setEditingDetails("");
+                setEditingName('');
+                setEditingDuration('');
+                setEditingDetails('');
                 setEditingOpen(true);
               }}
               className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors"
@@ -92,7 +107,10 @@ export default function LaunchStagesSection({
         ) : stages.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-500 mb-4">No launch stages found.</p>
-            <p className="text-sm text-gray-400">The migration may not have inserted the initial data. Check the database or add stages manually.</p>
+            <p className="text-sm text-gray-400">
+              The migration may not have inserted the initial data. Check the database or add stages
+              manually.
+            </p>
           </div>
         ) : (
           <>
@@ -109,11 +127,21 @@ export default function LaunchStagesSection({
                 <thead className="bg-purple-100">
                   <tr>
                     <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-12"></th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-16">Rank</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Stage Name</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Duration (days)</th>
-                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Details</th>
-                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-16">Actions</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-16">
+                      Rank
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">
+                      Stage Name
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">
+                      Duration (days)
+                    </th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">
+                      Details
+                    </th>
+                    <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-16">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-purple-200">
@@ -122,30 +150,30 @@ export default function LaunchStagesSection({
                       key={stage.id}
                       onDragOver={(e) => {
                         e.preventDefault();
-                        e.dataTransfer.dropEffect = "move";
+                        e.dataTransfer.dropEffect = 'move';
                         if (draggedStageId !== stage.id) {
-                          e.currentTarget.classList.add("bg-purple-100");
+                          e.currentTarget.classList.add('bg-purple-100');
                         }
                       }}
                       onDragLeave={(e) => {
-                        e.currentTarget.classList.remove("bg-purple-100");
+                        e.currentTarget.classList.remove('bg-purple-100');
                       }}
                       onDrop={async (e) => {
                         e.preventDefault();
-                        e.currentTarget.classList.remove("bg-purple-100");
+                        e.currentTarget.classList.remove('bg-purple-100');
                         if (draggedStageId && draggedStageId !== stage.id) {
                           await onReorder(draggedStageId, stage.id, index);
                         }
                         setDraggedStageId(null);
                       }}
-                      className={`hover:bg-purple-50 transition-colors ${draggedStageId === stage.id ? "opacity-50" : ""}`}
+                      className={`hover:bg-purple-50 transition-colors ${draggedStageId === stage.id ? 'opacity-50' : ''}`}
                     >
                       <td
                         className="px-2 py-3 whitespace-nowrap w-12 cursor-move"
                         draggable
                         onDragStart={(e) => {
                           setDraggedStageId(stage.id);
-                          e.dataTransfer.effectAllowed = "move";
+                          e.dataTransfer.effectAllowed = 'move';
                         }}
                         onDragEnd={() => {
                           setDraggedStageId(null);
@@ -162,19 +190,24 @@ export default function LaunchStagesSection({
                         <span className="font-medium text-gray-900">{stage.name}</span>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap w-32">
-                        <span className="text-gray-700">{stage.duration_days !== null ? `${stage.duration_days} days` : "N/A"}</span>
+                        <span className="text-gray-700">
+                          {stage.duration_days !== null ? `${stage.duration_days} days` : 'N/A'}
+                        </span>
                       </td>
                       <td className="px-4 py-3" onDragStart={(e) => e.stopPropagation()}>
-                        <RichText value={stage.details || ""} onChange={() => {}} readOnly={true} />
+                        <RichText value={stage.details || ''} onChange={() => {}} readOnly={true} />
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap w-16" onDragStart={(e) => e.stopPropagation()}>
+                      <td
+                        className="px-4 py-3 whitespace-nowrap w-16"
+                        onDragStart={(e) => e.stopPropagation()}
+                      >
                         <div className="flex justify-end">
                           <button
                             onClick={() => {
                               setEditingId(stage.id);
                               setEditingName(stage.name);
-                              setEditingDuration(stage.duration_days?.toString() || "");
-                              setEditingDetails(stage.details || "");
+                              setEditingDuration(stage.duration_days?.toString() || '');
+                              setEditingDetails(stage.details || '');
                               setEditingOpen(true);
                             }}
                             className="p-1.5 rounded hover:bg-gray-100 text-gray-600 transition-colors"
@@ -200,9 +233,9 @@ export default function LaunchStagesSection({
         onClose={() => {
           setEditingOpen(false);
           setEditingId(null);
-          setEditingName("");
-          setEditingDuration("");
-          setEditingDetails("");
+          setEditingName('');
+          setEditingDuration('');
+          setEditingDetails('');
         }}
         stageId={editingId}
         stageName={editingName}
@@ -262,20 +295,38 @@ function StageDrawer({
 }) {
   const isAdding = stageId === null;
   return (
-    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Launch Stage" : "Edit Launch Stage"} position="right" size="xl" padding="lg">
+    <Drawer
+      opened={opened}
+      onClose={onClose}
+      title={isAdding ? 'Add Launch Stage' : 'Edit Launch Stage'}
+      position="right"
+      size="xl"
+      padding="lg"
+    >
       <Stack gap="md">
-        <TextInput label="Stage Name" value={stageName} onChange={(e) => setStageName(e.target.value)} required placeholder="e.g., GTM Access" />
+        <TextInput
+          label="Stage Name"
+          value={stageName}
+          onChange={(e) => setStageName(e.target.value)}
+          required
+          placeholder="e.g., GTM Access"
+        />
         <NumberInput
           label="Duration (days)"
           value={stageDuration ? parseInt(stageDuration) : undefined}
-          onChange={(value) => setStageDuration(value?.toString() || "")}
+          onChange={(value) => setStageDuration(value?.toString() || '')}
           placeholder="Enter number of days"
           allowDecimal={false}
           min={0}
         />
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">Details</label>
-          <RichText value={stageDetails} onChange={setStageDetails} placeholder="Enter details..." rows={10} />
+          <RichText
+            value={stageDetails}
+            onChange={setStageDetails}
+            placeholder="Enter details..."
+            rows={10}
+          />
         </div>
         <Group justify="flex-end" mt="xl">
           {!isAdding && (
@@ -286,7 +337,7 @@ function StageDrawer({
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={onSave}>{isAdding ? "Add" : "Save"}</Button>
+          <Button onClick={onSave}>{isAdding ? 'Add' : 'Save'}</Button>
         </Group>
       </Stack>
     </Drawer>

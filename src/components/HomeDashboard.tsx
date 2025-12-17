@@ -1,13 +1,13 @@
-"use client";
+'use client';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Card, Title, Text, SimpleGrid, Group, Box } from '@mantine/core';
-import { 
-  IconBolt, 
-  IconFolderCheck, 
+import {
+  IconBolt,
+  IconFolderCheck,
   IconAlertTriangle,
-  IconChevronRight
+  IconChevronRight,
 } from '@tabler/icons-react';
 import { ActivityFeed } from './ActivityFeed';
 
@@ -26,7 +26,11 @@ interface HomeDashboardProps {
 
 type SafeResponse = Response | { ok: false; json: () => Promise<null> };
 
-export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true }: HomeDashboardProps) {
+export function HomeDashboard({
+  userEmail,
+  firstName,
+  enableActivityFeed = true,
+}: HomeDashboardProps) {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     activeEpics: 0,
     pendingItems: 0,
@@ -61,12 +65,10 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
           try {
             const epics = await epicsRes.json();
             if (Array.isArray(epics)) {
-              activeEpics = epics.filter((epic: any) => 
-                epic.readiness_status !== 'COMPLETED' && epic.status !== 'COMPLETED'
+              activeEpics = epics.filter(
+                (epic: any) => epic.readiness_status !== 'COMPLETED' && epic.status !== 'COMPLETED'
               ).length;
-              highRiskEpics = epics.filter((epic: any) => 
-                epic.risk_level === 'HIGH'
-              ).length;
+              highRiskEpics = epics.filter((epic: any) => epic.risk_level === 'HIGH').length;
             }
           } catch (e) {
             console.warn('Error parsing epics response:', e);
@@ -117,40 +119,52 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
   return (
     <div className="min-h-screen bg-gray-50 pt-24 pb-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div style={{ 
-          display: 'flex', 
-          gap: '24px', 
-          alignItems: 'flex-start',
-          flexDirection: enableActivityFeed ? undefined : 'column',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '24px',
+            alignItems: 'flex-start',
+            flexDirection: enableActivityFeed ? undefined : 'column',
+          }}
+        >
           {/* Main Content */}
           <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
             {/* Welcome Section */}
             <div className="mb-8">
-              <Title 
-                order={1} 
+              <Title
+                order={1}
                 className="text-4xl font-bold mb-2"
                 style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}
               >
                 Welcome back, <span className="text-indigo-600">{displayName}</span>
               </Title>
-              <Text size="lg" className="text-gray-600" style={{ fontFamily: "'Public Sans', sans-serif" }}>
-                Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
+              <Text
+                size="lg"
+                className="text-gray-600"
+                style={{ fontFamily: "'Public Sans', sans-serif" }}
+              >
+                Manage your epics, track readiness criteria, and ensure successful go-to-market
+                execution.
               </Text>
             </div>
 
             {/* Action Cards */}
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg" className="mb-8">
               {/* Epics Card */}
-              <Card 
-                shadow="sm" 
-                padding="md" 
-                radius="md" 
+              <Card
+                shadow="sm"
+                padding="md"
+                radius="md"
                 withBorder
                 className="hover:shadow-md transition-shadow cursor-pointer"
                 component={Link}
                 href="/epics"
-                style={{ minHeight: '160px', height: '100%', display: 'flex', flexDirection: 'column' }}
+                style={{
+                  minHeight: '160px',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
               >
                 <Box style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <Group justify="space-between" align="flex-start" mb="sm">
@@ -183,21 +197,28 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
                     Epics
                   </Title>
                   <Text size="sm" className="text-gray-600 mb-3" style={{ flex: 1 }}>
-                    {loading ? 'Loading...' : `${metrics.activeEpics} active epic${metrics.activeEpics !== 1 ? 's' : ''}`}
+                    {loading
+                      ? 'Loading...'
+                      : `${metrics.activeEpics} active epic${metrics.activeEpics !== 1 ? 's' : ''}`}
                   </Text>
                 </Box>
               </Card>
 
               {/* My Items Card */}
-              <Card 
-                shadow="sm" 
-                padding="md" 
-                radius="md" 
+              <Card
+                shadow="sm"
+                padding="md"
+                radius="md"
                 withBorder
                 className="hover:shadow-md transition-shadow cursor-pointer"
                 component={Link}
                 href="/my-items"
-                style={{ minHeight: '160px', height: '100%', display: 'flex', flexDirection: 'column' }}
+                style={{
+                  minHeight: '160px',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                }}
               >
                 <Box style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                   <Group justify="space-between" align="flex-start" mb="sm">
@@ -230,7 +251,9 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
                     My Items
                   </Title>
                   <Text size="sm" className="text-gray-600 mb-3" style={{ flex: 1 }}>
-                    {loading ? 'Loading...' : `${metrics.pendingItems} item${metrics.pendingItems !== 1 ? 's' : ''} need${metrics.pendingItems === 1 ? 's' : ''} my attention`}
+                    {loading
+                      ? 'Loading...'
+                      : `${metrics.pendingItems} item${metrics.pendingItems !== 1 ? 's' : ''} need${metrics.pendingItems === 1 ? 's' : ''} my attention`}
                   </Text>
                 </Box>
               </Card>
@@ -239,7 +262,13 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
             {/* Metric Cards */}
             <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="lg">
               {/* High Risk Epics */}
-              <Card shadow="sm" padding="md" radius="md" withBorder style={{ minHeight: '160px', height: '100%' }}>
+              <Card
+                shadow="sm"
+                padding="md"
+                radius="md"
+                withBorder
+                style={{ minHeight: '160px', height: '100%' }}
+              >
                 <Group justify="space-between" align="center" style={{ height: '100%' }}>
                   <div>
                     <Text size="sm" className="text-gray-600 mb-1">
@@ -266,7 +295,13 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
               </Card>
 
               {/* Releases Needing Feedback */}
-              <Card shadow="sm" padding="md" radius="md" withBorder style={{ minHeight: '160px', height: '100%' }}>
+              <Card
+                shadow="sm"
+                padding="md"
+                radius="md"
+                withBorder
+                style={{ minHeight: '160px', height: '100%' }}
+              >
                 <Box style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                   <Group justify="space-between" align="flex-start" mb="sm">
                     <div>
@@ -277,8 +312,8 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
                         {loading ? '-' : metrics.releasesNeedingFeedback}
                       </Title>
                       <Text size="xs" className="text-gray-500" style={{ marginTop: 'auto' }}>
-                    Launched less than 90 days ago
-                  </Text>
+                        Launched less than 90 days ago
+                      </Text>
                     </div>
                     <Box
                       style={{
@@ -294,7 +329,6 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
                       <IconFolderCheck size={18} color="#F59E0B" />
                     </Box>
                   </Group>
-
                 </Box>
               </Card>
             </SimpleGrid>
@@ -302,8 +336,8 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
 
           {/* Activity Feed Sidebar */}
           {enableActivityFeed && (
-            <div 
-              style={{ 
+            <div
+              style={{
                 width: '380px',
                 flexShrink: 0,
                 position: 'sticky',
@@ -323,4 +357,3 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
     </div>
   );
 }
-

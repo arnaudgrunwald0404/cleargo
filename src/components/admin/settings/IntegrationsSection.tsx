@@ -1,6 +1,6 @@
-"use client";
-import React from "react";
-import type { AppSettings } from "@/lib/settings-db";
+'use client';
+import React from 'react';
+import type { AppSettings } from '@/lib/settings-db';
 
 type Props = {
   settings: AppSettings;
@@ -13,7 +13,12 @@ export default function IntegrationsSection({ settings, setSettings }: Props) {
       <div className="flex items-center gap-3 mb-4">
         <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
           <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M13 10V3L4 14h7v7l9-11h-7z"
+            />
           </svg>
         </div>
         <div>
@@ -23,7 +28,9 @@ export default function IntegrationsSection({ settings, setSettings }: Props) {
       </div>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Fallback Product Ops Email</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Fallback Product Ops Email
+          </label>
           <input
             type="email"
             value={settings.fallback_user_email}
@@ -44,7 +51,7 @@ export default function IntegrationsSection({ settings, setSettings }: Props) {
           <label className="block text-sm font-medium text-gray-700 mb-1">Aha Webhook Secret</label>
           <input
             type="password"
-            value={settings.aha_webhook_secret || ""}
+            value={settings.aha_webhook_secret || ''}
             onChange={(e) => setSettings({ ...settings, aha_webhook_secret: e.target.value })}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           />

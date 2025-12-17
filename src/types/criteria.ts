@@ -1,28 +1,28 @@
 export type CriterionCategory =
-  | "PRODUCT_TECH"
-  | "PRODUCT_DOCUMENTATION"
-  | "GTM"
-  | "SUPPORT"
-  | "DATA_ANALYTICS"
-  | "ANALYTICS_AND_METRICS"
-  | "LEGAL_SECURITY"
-  | "OPS"
-  | "STRATEGY"
-  | "OTHER";
+  | 'PRODUCT_TECH'
+  | 'PRODUCT_DOCUMENTATION'
+  | 'GTM'
+  | 'SUPPORT'
+  | 'DATA_ANALYTICS'
+  | 'ANALYTICS_AND_METRICS'
+  | 'LEGAL_SECURITY'
+  | 'OPS'
+  | 'STRATEGY'
+  | 'OTHER';
 
-export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2";
+export type TierApplicability = 'ALL' | 'TIER_1_ONLY' | 'TIER_1_AND_2';
 
 export type DecisionOwnerRole =
-  | "CPO"
-  | "PRODUCT_LEAD"
-  | "PM"
-  | "PMM"
-  | "ENG_LEAD"
-  | "SUPPORT_LEAD"
-  | "SECURITY"
-  | "LEARNING"
-  | "PRODUCT_OPS"
-  | "OTHER";
+  | 'CPO'
+  | 'PRODUCT_LEAD'
+  | 'PM'
+  | 'PMM'
+  | 'ENG_LEAD'
+  | 'SUPPORT_LEAD'
+  | 'SECURITY'
+  | 'LEARNING'
+  | 'PRODUCT_OPS'
+  | 'OTHER';
 
 export type Criterion = {
   id: string;

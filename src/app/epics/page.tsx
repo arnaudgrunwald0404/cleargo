@@ -6,14 +6,16 @@ import EpicsClient from './EpicsClient';
 export const dynamic = 'force-dynamic';
 
 export default async function EpicsPage() {
-    const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-    if (!user) {
-        redirect('/');
-    }
+  if (!user) {
+    redirect('/');
+  }
 
-    const epics = await getEpics();
+  const epics = await getEpics();
 
-    return <EpicsClient initialEpics={epics || []} />;
+  return <EpicsClient initialEpics={epics || []} />;
 }

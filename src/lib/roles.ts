@@ -1,7 +1,9 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
-import type { Role } from "./roles-constants";
+import { createClient, createAdminClient } from '@/lib/supabase/server';
+import type { Role } from './roles-constants';
 
-const FALLBACK_PRODUCT_OPS = (process.env.FALLBACK_PRODUCT_OPS_EMAIL || "agrunwald@clearcompany.com").toLowerCase();
+const FALLBACK_PRODUCT_OPS = (
+  process.env.FALLBACK_PRODUCT_OPS_EMAIL || 'agrunwald@clearcompany.com'
+).toLowerCase();
 
 /**
  * Resolve the primary role for a user by querying the database.
@@ -11,9 +13,9 @@ const FALLBACK_PRODUCT_OPS = (process.env.FALLBACK_PRODUCT_OPS_EMAIL || "agrunwa
  */
 export async function resolveRole(email: string): Promise<Role> {
   const e = email.toLowerCase();
-  
+
   // Safety net: fallback product ops email always gets PRODUCT_OPS
-  if (e === FALLBACK_PRODUCT_OPS) return "PRODUCT_OPS";
+  if (e === FALLBACK_PRODUCT_OPS) return 'PRODUCT_OPS';
 
   try {
     // Use admin client to bypass RLS for role lookups
@@ -25,18 +27,18 @@ export async function resolveRole(email: string): Promise<Role> {
       // Fall back to regular client if admin client not available
       supabase = createClient();
     }
-    
+
     const { data: user, error } = await supabase
-      .from("app_user")
-      .select("roles, role")
-      .eq("email", e)
+      .from('app_user')
+      .select('roles, role')
+      .eq('email', e)
       .single();
 
     console.log('🔍 resolveRole - email:', e, 'user:', user, 'error:', error?.message);
 
     if (error || !user) {
       console.log('⚠️ resolveRole - No user found, returning OTHER');
-      return "OTHER";
+      return 'OTHER';
     }
 
     // Handle both 'roles' array and legacy 'role' string field
@@ -56,15 +58,15 @@ export async function resolveRole(email: string): Promise<Role> {
     }
 
     console.log('⚠️ resolveRole - No roles found, returning OTHER');
-    return "OTHER";
+    return 'OTHER';
   } catch (err) {
     // If database query fails, return OTHER
     console.log('❌ resolveRole - Error:', err);
-    return "OTHER";
+    return 'OTHER';
   }
 }
 
 // Helper to check if role has admin-level access
 export function isAdminRole(role: Role): boolean {
-  return role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO";
+  return role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
 }

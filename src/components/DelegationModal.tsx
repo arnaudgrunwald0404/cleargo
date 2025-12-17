@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useState, useEffect } from 'react';
 import { Modal, Button, Group, Radio, Stack, Text, Loader, TextInput, Avatar } from '@mantine/core';
@@ -73,14 +73,11 @@ export function DelegationModal({
     }
   };
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = users.filter((user) => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase();
-    return (
-      user.email.toLowerCase().includes(query) ||
-      fullName.includes(query)
-    );
+    return user.email.toLowerCase().includes(query) || fullName.includes(query);
   });
 
   const handleSubmit = async () => {
@@ -135,7 +132,20 @@ export function DelegationModal({
   };
 
   const getAvatarColor = (email: string): string => {
-    const colors = ['blue', 'cyan', 'teal', 'green', 'lime', 'yellow', 'orange', 'red', 'pink', 'grape', 'violet', 'indigo'];
+    const colors = [
+      'blue',
+      'cyan',
+      'teal',
+      'green',
+      'lime',
+      'yellow',
+      'orange',
+      'red',
+      'pink',
+      'grape',
+      'violet',
+      'indigo',
+    ];
     let hash = 0;
     for (let i = 0; i < email.length; i++) {
       hash = email.charCodeAt(i) + ((hash << 5) - hash);
@@ -147,22 +157,32 @@ export function DelegationModal({
     <Modal
       opened={opened}
       onClose={onClose}
-      title={<Text fw={600} size="lg">Delegate Approval Task</Text>}
+      title={
+        <Text fw={600} size="lg">
+          Delegate Approval Task
+        </Text>
+      }
       size="lg"
     >
       <Stack gap="md">
         <div>
-          <Text size="sm" c="dimmed" mb={4}>Epic</Text>
+          <Text size="sm" c="dimmed" mb={4}>
+            Epic
+          </Text>
           <Text fw={500}>{epicName}</Text>
         </div>
 
         <div>
-          <Text size="sm" c="dimmed" mb={4}>Current Approver</Text>
+          <Text size="sm" c="dimmed" mb={4}>
+            Current Approver
+          </Text>
           <Text fw={500}>{currentApproverEmail}</Text>
         </div>
 
         <div>
-          <Text size="sm" fw={600} mb="xs">Delegation Scope</Text>
+          <Text size="sm" fw={600} mb="xs">
+            Delegation Scope
+          </Text>
           <Radio.Group
             value={delegationType}
             onChange={(value) => setDelegationType(value as DelegationType)}
@@ -172,8 +192,12 @@ export function DelegationModal({
                 value="SINGLE_TASK"
                 label={
                   <div>
-                    <Text size="sm" fw={500}>This task only</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
+                    <Text size="sm" fw={500}>
+                      This task only
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {getDelegationDescription('SINGLE_TASK')}
+                    </Text>
                   </div>
                 }
               />
@@ -181,8 +205,12 @@ export function DelegationModal({
                 value="CATEGORY_EXCLUDING_GATES"
                 label={
                   <div>
-                    <Text size="sm" fw={500}>All {category} tasks in this epic (excluding GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_EXCLUDING_GATES')}</Text>
+                    <Text size="sm" fw={500}>
+                      All {category} tasks in this epic (excluding GATE)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {getDelegationDescription('CATEGORY_EXCLUDING_GATES')}
+                    </Text>
                   </div>
                 }
               />
@@ -190,8 +218,12 @@ export function DelegationModal({
                 value="CATEGORY_INCLUDING_GATES"
                 label={
                   <div>
-                    <Text size="sm" fw={500}>All {category} tasks in this epic (including GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_INCLUDING_GATES')}</Text>
+                    <Text size="sm" fw={500}>
+                      All {category} tasks in this epic (including GATE)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {getDelegationDescription('CATEGORY_INCLUDING_GATES')}
+                    </Text>
                   </div>
                 }
               />
@@ -199,8 +231,12 @@ export function DelegationModal({
                 value="TEMPLATE_EXCLUDING_GATES"
                 label={
                   <div>
-                    <Text size="sm" fw={500}>All future epics - {category} (excluding GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}</Text>
+                    <Text size="sm" fw={500}>
+                      All future epics - {category} (excluding GATE)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}
+                    </Text>
                   </div>
                 }
               />
@@ -208,8 +244,12 @@ export function DelegationModal({
                 value="TEMPLATE_INCLUDING_GATES"
                 label={
                   <div>
-                    <Text size="sm" fw={500}>All future epics - {category} (including GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_INCLUDING_GATES')}</Text>
+                    <Text size="sm" fw={500}>
+                      All future epics - {category} (including GATE)
+                    </Text>
+                    <Text size="xs" c="dimmed">
+                      {getDelegationDescription('TEMPLATE_INCLUDING_GATES')}
+                    </Text>
                   </div>
                 }
               />
@@ -218,7 +258,9 @@ export function DelegationModal({
         </div>
 
         <div>
-          <Text size="sm" fw={600} mb="xs">Delegate To</Text>
+          <Text size="sm" fw={600} mb="xs">
+            Delegate To
+          </Text>
           <TextInput
             placeholder="Search users..."
             value={searchQuery}
@@ -232,18 +274,22 @@ export function DelegationModal({
               <Loader size="sm" />
             </div>
           ) : (
-            <div style={{ 
-              maxHeight: '200px', 
-              overflowY: 'auto', 
-              border: '1px solid #e0e0e0', 
-              borderRadius: '8px',
-              padding: '4px'
-            }}>
+            <div
+              style={{
+                maxHeight: '200px',
+                overflowY: 'auto',
+                border: '1px solid #e0e0e0',
+                borderRadius: '8px',
+                padding: '4px',
+              }}
+            >
               {filteredUsers.length === 0 ? (
-                <Text size="sm" c="dimmed" ta="center" p="md">No users found</Text>
+                <Text size="sm" c="dimmed" ta="center" p="md">
+                  No users found
+                </Text>
               ) : (
                 <Stack gap={4}>
-                  {filteredUsers.map(user => (
+                  {filteredUsers.map((user) => (
                     <div
                       key={user.email}
                       onClick={() => setSelectedUser(user)}
@@ -251,8 +297,12 @@ export function DelegationModal({
                         padding: '8px 12px',
                         cursor: 'pointer',
                         borderRadius: '6px',
-                        backgroundColor: selectedUser?.email === user.email ? '#f0f0ff' : 'transparent',
-                        border: selectedUser?.email === user.email ? '2px solid #6366F1' : '2px solid transparent',
+                        backgroundColor:
+                          selectedUser?.email === user.email ? '#f0f0ff' : 'transparent',
+                        border:
+                          selectedUser?.email === user.email
+                            ? '2px solid #6366F1'
+                            : '2px solid transparent',
                         transition: 'all 0.2s',
                       }}
                       onMouseEnter={(e) => {
@@ -277,8 +327,12 @@ export function DelegationModal({
                           {getInitials(user)}
                         </Avatar>
                         <div>
-                          <Text size="sm" fw={500}>{getUserDisplayName(user)}</Text>
-                          <Text size="xs" c="dimmed">{user.email}</Text>
+                          <Text size="sm" fw={500}>
+                            {getUserDisplayName(user)}
+                          </Text>
+                          <Text size="xs" c="dimmed">
+                            {user.email}
+                          </Text>
                         </div>
                       </Group>
                     </div>
@@ -293,11 +347,7 @@ export function DelegationModal({
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
-          <Button 
-            onClick={handleSubmit} 
-            loading={submitting}
-            disabled={!selectedUser}
-          >
+          <Button onClick={handleSubmit} loading={submitting} disabled={!selectedUser}>
             Delegate
           </Button>
         </Group>
@@ -305,4 +355,3 @@ export function DelegationModal({
     </Modal>
   );
 }
-

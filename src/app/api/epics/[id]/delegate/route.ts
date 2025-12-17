@@ -18,16 +18,15 @@ interface DelegationRequest {
   isGate: boolean;
 }
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id: epicId } = await params;
     const supabase = createClient();
-    
+
     // Authenticate user
-    const { data: { user } } = await supabase.auth.getUser();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     if (!user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -147,17 +146,12 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid delegation type' }, { status: 400 });
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       success: true,
       message: 'Delegation completed successfully',
     });
-
   } catch (error: any) {
     console.error('Delegation error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to delegate' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error.message || 'Failed to delegate' }, { status: 500 });
   }
 }
-

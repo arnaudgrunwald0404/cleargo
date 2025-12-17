@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import { useState } from 'react';
 import { ActionIcon, Tooltip } from '@mantine/core';
@@ -11,8 +11,8 @@ interface UserDisplayWithDelegationProps {
   firstName?: string | null;
   lastName?: string | null;
   avatarUrl?: string | null;
-  size?: "xs" | "sm" | "md" | "lg" | "xl";
-  
+  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
+
   // Delegation props
   epicId: string;
   epicName: string;
@@ -30,7 +30,7 @@ export function UserDisplayWithDelegation({
   firstName,
   lastName,
   avatarUrl,
-  size = "sm",
+  size = 'sm',
   epicId,
   epicName,
   taskId,
@@ -76,10 +76,10 @@ export function UserDisplayWithDelegation({
 
   return (
     <>
-      <div 
-        style={{ 
-          position: 'relative', 
-          display: 'inline-flex', 
+      <div
+        style={{
+          position: 'relative',
+          display: 'inline-flex',
           alignItems: 'center',
           gap: '8px',
         }}
@@ -93,7 +93,7 @@ export function UserDisplayWithDelegation({
           avatarUrl={avatarUrl}
           size={size}
         />
-        
+
         {showDelegationButton && (
           <Tooltip label="Delegate this task" position="top" withArrow>
             <ActionIcon
@@ -130,4 +130,3 @@ export function UserDisplayWithDelegation({
     </>
   );
 }
-

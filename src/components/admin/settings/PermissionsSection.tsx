@@ -1,5 +1,5 @@
-"use client";
-import React from "react";
+'use client';
+import React from 'react';
 
 type Capability = { id: string; label: string; description: string };
 
@@ -29,8 +29,18 @@ export default function PermissionsSection({
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            <svg
+              className="w-6 h-6 text-white"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"
+              />
             </svg>
           </div>
           <div>
@@ -42,7 +52,8 @@ export default function PermissionsSection({
         {/* Toolbar */}
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm text-gray-500">
-            Configure which roles may perform each capability. Defaults come from code; overrides are saved in app settings.
+            Configure which roles may perform each capability. Defaults come from code; overrides
+            are saved in app settings.
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -67,9 +78,14 @@ export default function PermissionsSection({
               <table className="min-w-full divide-y divide-gray-200">
                 <thead>
                   <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capability</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Capability
+                    </th>
                     {rolesList.map((r) => (
-                      <th key={r} className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th
+                        key={r}
+                        className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider"
+                      >
                         <div className="flex flex-col items-center gap-1">
                           <div>{r}</div>
                           <div className="flex gap-2 text-[10px] text-indigo-700">
@@ -85,7 +101,9 @@ export default function PermissionsSection({
                                 setRules(next);
                                 autoSavePermissions(next);
                               }}
-                            >All</button>
+                            >
+                              All
+                            </button>
                             <span className="text-gray-300">|</span>
                             <button
                               className="underline"
@@ -99,12 +117,16 @@ export default function PermissionsSection({
                                 setRules(next);
                                 autoSavePermissions(next);
                               }}
-                            >None</button>
+                            >
+                              None
+                            </button>
                           </div>
                         </div>
                       </th>
                     ))}
-                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -122,7 +144,9 @@ export default function PermissionsSection({
                           <div className="font-medium text-gray-900 flex items-center gap-2">
                             {cap.label}
                             {isOverridden && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">Overridden</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                Overridden
+                              </span>
                             )}
                           </div>
                           <div className="text-xs text-gray-500">{cap.description}</div>
@@ -137,7 +161,8 @@ export default function PermissionsSection({
                                 onChange={(e) => {
                                   const next = { ...rules } as Record<string, string[]>;
                                   const current = new Set(next[cap.id] || []);
-                                  if (e.target.checked) current.add(r); else current.delete(r);
+                                  if (e.target.checked) current.add(r);
+                                  else current.delete(r);
                                   next[cap.id] = Array.from(current);
                                   setRules(next);
                                   autoSavePermissions(next);
@@ -156,7 +181,9 @@ export default function PermissionsSection({
                                 setRules(next);
                                 autoSavePermissions(next);
                               }}
-                            >All</button>
+                            >
+                              All
+                            </button>
                             <button
                               className="text-indigo-700 underline"
                               onClick={() => {
@@ -165,7 +192,9 @@ export default function PermissionsSection({
                                 setRules(next);
                                 autoSavePermissions(next);
                               }}
-                            >None</button>
+                            >
+                              None
+                            </button>
                             <button
                               className="text-gray-600 underline"
                               onClick={() => {
@@ -174,7 +203,9 @@ export default function PermissionsSection({
                                 setRules(next);
                                 autoSavePermissions(next);
                               }}
-                            >Reset</button>
+                            >
+                              Reset
+                            </button>
                           </div>
                         </td>
                       </tr>

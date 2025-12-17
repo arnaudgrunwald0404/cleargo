@@ -1,6 +1,18 @@
-"use client";
+'use client';
 
-import { Button, Container, Title, Text, SimpleGrid, Card, Tabs, Stack, Group, Box, Flex } from '@mantine/core';
+import {
+  Button,
+  Container,
+  Title,
+  Text,
+  SimpleGrid,
+  Card,
+  Tabs,
+  Stack,
+  Group,
+  Box,
+  Flex,
+} from '@mantine/core';
 import { IconTable, IconCalculator, IconRefresh, IconBell } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRef, useEffect } from 'react';
@@ -102,11 +114,11 @@ export function WelcomePage() {
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" style={{ alignItems: 'center' }}>
           <Stack gap="xl">
             <Title order={1} style={{ fontSize: '48px', fontWeight: 800, lineHeight: 1.2 }}>
-              Launch with Confidence.{' '}
-              <span style={{ color: '#228BE6' }}>Not Spreadsheets.</span>
+              Launch with Confidence. <span style={{ color: '#228BE6' }}>Not Spreadsheets.</span>
             </Title>
             <Text size="lg" style={{ color: '#495057', lineHeight: 1.6, maxWidth: '500px' }}>
-              Replace the chaos of static matrices with a living, intelligent control tower. Align Product, GTM, and Engineering on a single source of truth.
+              Replace the chaos of static matrices with a living, intelligent control tower. Align
+              Product, GTM, and Engineering on a single source of truth.
             </Text>
             <Group>
               <SSOButton
@@ -120,7 +132,15 @@ export function WelcomePage() {
           </Stack>
 
           {/* Hero Visual - Before/After Transformation Video */}
-          <Box style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
+          <Box
+            style={{
+              position: 'relative',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              boxShadow:
+                '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+            }}
+          >
             <video
               ref={videoRef}
               src="/hero_video.mp4"
@@ -147,7 +167,9 @@ export function WelcomePage() {
             Stop Launching in the Dark.
           </Title>
           <Text size="lg" style={{ color: '#495057', marginBottom: '64px', lineHeight: 1.6 }}>
-            Launch risks are often discovered too late. ClearGO models your matrix in a real database, highlighting blockers and enforcing gates <strong>before</strong> they delay the release.
+            Launch risks are often discovered too late. ClearGO models your matrix in a real
+            database, highlighting blockers and enforcing gates <strong>before</strong> they delay
+            the release.
           </Text>
 
           {/* Timeline Visualization */}
@@ -160,32 +182,127 @@ export function WelcomePage() {
               <g>
                 {/* T-90 */}
                 <circle cx="150" cy="100" r="8" fill="#FA5252" />
-                <text x="150" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T-90</text>
+                <text
+                  x="150"
+                  y="60"
+                  textAnchor="middle"
+                  fontSize="14"
+                  fontWeight="600"
+                  fill="#495057"
+                >
+                  T-90
+                </text>
                 <path d="M 140 90 L 130 80 L 120 90 Z" fill="#FA5252" />
-                <text x="130" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">!</text>
+                <text
+                  x="130"
+                  y="78"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="700"
+                  fill="#FFFFFF"
+                >
+                  !
+                </text>
 
                 {/* T-30 */}
                 <circle cx="350" cy="100" r="8" fill="#FAB005" />
-                <text x="350" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T-30</text>
+                <text
+                  x="350"
+                  y="60"
+                  textAnchor="middle"
+                  fontSize="14"
+                  fontWeight="600"
+                  fill="#495057"
+                >
+                  T-30
+                </text>
                 <path d="M 340 90 L 330 80 L 320 90 Z" fill="#FAB005" />
-                <text x="330" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">?</text>
+                <text
+                  x="330"
+                  y="78"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="700"
+                  fill="#FFFFFF"
+                >
+                  ?
+                </text>
 
                 {/* ClearGO Gate */}
-                <rect x="400" y="60" width="100" height="80" rx="8" fill="#228BE6" opacity="0.1" stroke="#228BE6" strokeWidth="2" />
-                <text x="450" y="105" textAnchor="middle" fontSize="12" fontWeight="700" fill="#228BE6">ClearGO</text>
-                <text x="450" y="125" textAnchor="middle" fontSize="10" fill="#228BE6">Gate</text>
+                <rect
+                  x="400"
+                  y="60"
+                  width="100"
+                  height="80"
+                  rx="8"
+                  fill="#228BE6"
+                  opacity="0.1"
+                  stroke="#228BE6"
+                  strokeWidth="2"
+                />
+                <text
+                  x="450"
+                  y="105"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="700"
+                  fill="#228BE6"
+                >
+                  ClearGO
+                </text>
+                <text x="450" y="125" textAnchor="middle" fontSize="10" fill="#228BE6">
+                  Gate
+                </text>
 
                 {/* T+30 */}
                 <circle cx="550" cy="100" r="8" fill="#12B886" />
-                <text x="550" y="60" textAnchor="middle" fontSize="14" fontWeight="600" fill="#495057">T+30</text>
+                <text
+                  x="550"
+                  y="60"
+                  textAnchor="middle"
+                  fontSize="14"
+                  fontWeight="600"
+                  fill="#495057"
+                >
+                  T+30
+                </text>
                 <path d="M 560 90 L 570 80 L 580 90 Z" fill="#12B886" />
-                <text x="570" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">✓</text>
+                <text
+                  x="570"
+                  y="78"
+                  textAnchor="middle"
+                  fontSize="12"
+                  fontWeight="700"
+                  fill="#FFFFFF"
+                >
+                  ✓
+                </text>
               </g>
 
               {/* Risk transformation arrows */}
-              <path d="M 150 100 L 400 100" stroke="#FA5252" strokeWidth="2" strokeDasharray="5,5" fill="none" opacity="0.5" />
-              <path d="M 350 100 L 400 100" stroke="#FAB005" strokeWidth="2" strokeDasharray="5,5" fill="none" opacity="0.5" />
-              <path d="M 500 100 L 550 100" stroke="#12B886" strokeWidth="2" fill="none" opacity="0.5" />
+              <path
+                d="M 150 100 L 400 100"
+                stroke="#FA5252"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                fill="none"
+                opacity="0.5"
+              />
+              <path
+                d="M 350 100 L 400 100"
+                stroke="#FAB005"
+                strokeWidth="2"
+                strokeDasharray="5,5"
+                fill="none"
+                opacity="0.5"
+              />
+              <path
+                d="M 500 100 L 550 100"
+                stroke="#12B886"
+                strokeWidth="2"
+                fill="none"
+                opacity="0.5"
+              />
               <polygon points="545,95 550,100 545,105" fill="#12B886" opacity="0.5" />
             </svg>
           </Box>
@@ -197,56 +314,100 @@ export function WelcomePage() {
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl">
           <Card shadow="sm" padding="xl" radius="md" withBorder style={{ borderColor: '#E2E8F0' }}>
             <Stack gap="md">
-              <Box style={{ backgroundColor: '#EFF6FF', width: '64px', height: '64px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Box
+                style={{
+                  backgroundColor: '#EFF6FF',
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <IconTable size={32} color="#228BE6" />
               </Box>
               <Title order={3} style={{ fontSize: '20px', fontWeight: 700 }}>
                 The Portfolio View
               </Title>
               <Text style={{ color: '#475569', lineHeight: 1.6 }}>
-                A consistent, real-time view across all ~15 pods and active launches. Filter by tier or product instantly.
+                A consistent, real-time view across all ~15 pods and active launches. Filter by tier
+                or product instantly.
               </Text>
             </Stack>
           </Card>
 
           <Card shadow="sm" padding="xl" radius="md" withBorder style={{ borderColor: '#E2E8F0' }}>
             <Stack gap="md">
-              <Box style={{ backgroundColor: '#EFF6FF', width: '64px', height: '64px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Box
+                style={{
+                  backgroundColor: '#EFF6FF',
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <IconCalculator size={32} color="#228BE6" />
               </Box>
               <Title order={3} style={{ fontSize: '20px', fontWeight: 700 }}>
                 Intelligent Gating
               </Title>
               <Text style={{ color: '#475569', lineHeight: 1.6 }}>
-                Automated readiness scores and verdicts based on your criteria. Gates block launches if not met.
+                Automated readiness scores and verdicts based on your criteria. Gates block launches
+                if not met.
               </Text>
             </Stack>
           </Card>
 
           <Card shadow="sm" padding="xl" radius="md" withBorder style={{ borderColor: '#E2E8F0' }}>
             <Stack gap="md">
-              <Box style={{ backgroundColor: '#EFF6FF', width: '64px', height: '64px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Box
+                style={{
+                  backgroundColor: '#EFF6FF',
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <IconRefresh size={32} color="#228BE6" />
               </Box>
               <Title order={3} style={{ fontSize: '20px', fontWeight: 700 }}>
                 Synced with Aha!
               </Title>
               <Text style={{ color: '#475569', lineHeight: 1.6 }}>
-                Aha! remains the roadmap source of truth. We pull launchable epics and push back summary status.
+                Aha! remains the roadmap source of truth. We pull launchable epics and push back
+                summary status.
               </Text>
             </Stack>
           </Card>
 
           <Card shadow="sm" padding="xl" radius="md" withBorder style={{ borderColor: '#E2E8F0' }}>
             <Stack gap="md">
-              <Box style={{ backgroundColor: '#EFF6FF', width: '64px', height: '64px', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Box
+                style={{
+                  backgroundColor: '#EFF6FF',
+                  width: '64px',
+                  height: '64px',
+                  borderRadius: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
                 <IconBell size={32} color="#228BE6" />
               </Box>
               <Title order={3} style={{ fontSize: '20px', fontWeight: 700 }}>
                 Accountability & Alerts
               </Title>
               <Text style={{ color: '#475569', lineHeight: 1.6 }}>
-                Stakeholders get reminders for stale criteria. High risks are flagged weeks before the target date.
+                Stakeholders get reminders for stale criteria. High risks are flagged weeks before
+                the target date.
               </Text>
             </Stack>
           </Card>
@@ -256,29 +417,59 @@ export function WelcomePage() {
       {/* Section 5: Who is this for? */}
       <Box style={{ backgroundColor: '#F8F9FA', paddingTop: '128px', paddingBottom: '128px' }}>
         <Container size="lg">
-          <Title order={2} style={{ fontSize: '36px', fontWeight: 700, textAlign: 'center', marginBottom: '48px' }}>
+          <Title
+            order={2}
+            style={{ fontSize: '36px', fontWeight: 700, textAlign: 'center', marginBottom: '48px' }}
+          >
             Built for the Whole Org
           </Title>
           <Tabs defaultValue="leadership" variant="pills">
-            <Tabs.List justify="center" style={{ marginBottom: '48px', backgroundColor: '#E2E8F0', padding: '4px', borderRadius: '9999px' }}>
+            <Tabs.List
+              justify="center"
+              style={{
+                marginBottom: '48px',
+                backgroundColor: '#E2E8F0',
+                padding: '4px',
+                borderRadius: '9999px',
+              }}
+            >
               <Tabs.Tab value="leadership">Leadership (CPO/ELT)</Tabs.Tab>
               <Tabs.Tab value="pm">Product Managers</Tabs.Tab>
               <Tabs.Tab value="functional">Functional Leads (Eng/GTM)</Tabs.Tab>
             </Tabs.List>
 
             <Tabs.Panel value="leadership">
-              <Card shadow="sm" padding={0} radius="md" withBorder style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}>
+              <Card
+                shadow="sm"
+                padding={0}
+                radius="md"
+                withBorder
+                style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}
+              >
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing={0}>
                   <Stack gap="md" style={{ padding: '48px' }}>
                     <Title order={3} style={{ fontSize: '28px', fontWeight: 700 }}>
                       See the Big Picture.
                     </Title>
                     <Text size="lg" style={{ color: '#475569', lineHeight: 1.6 }}>
-                      Needs a single view of major launches and risks. Use ClearGO in GTM councils to make data-driven Go/No-Go decisions based on real-time readiness scores.
+                      Needs a single view of major launches and risks. Use ClearGO in GTM councils
+                      to make data-driven Go/No-Go decisions based on real-time readiness scores.
                     </Text>
                   </Stack>
-                  <Box style={{ height: '300px', backgroundColor: '#F1F5F9', position: 'relative', overflow: 'hidden' }}>
-                    <svg width="100%" height="100%" viewBox="0 0 400 300" style={{ display: 'block' }}>
+                  <Box
+                    style={{
+                      height: '300px',
+                      backgroundColor: '#F1F5F9',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 400 300"
+                      style={{ display: 'block' }}
+                    >
                       <defs>
                         <linearGradient id="chartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
                           <stop offset="0%" stopColor="#228BE6" />
@@ -287,7 +478,7 @@ export function WelcomePage() {
                       </defs>
                       {/* Chart bars */}
                       {[50, 100, 150, 200, 250, 300, 350].map((x, i) => {
-                        const height = 50 + (i * 20);
+                        const height = 50 + i * 20;
                         return (
                           <rect
                             key={i}
@@ -296,7 +487,7 @@ export function WelcomePage() {
                             width="40"
                             height={height}
                             fill="url(#chartGradient)"
-                            opacity={0.7 + (i * 0.05)}
+                            opacity={0.7 + i * 0.05}
                           />
                         );
                       })}
@@ -308,25 +499,52 @@ export function WelcomePage() {
                         strokeWidth="3"
                       />
                     </svg>
-                    <Box style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))', mixBlendMode: 'multiply' }} />
+                    <Box
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background:
+                          'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))',
+                        mixBlendMode: 'multiply',
+                      }}
+                    />
                   </Box>
                 </SimpleGrid>
               </Card>
             </Tabs.Panel>
 
             <Tabs.Panel value="pm">
-              <Card shadow="sm" padding={0} radius="md" withBorder style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}>
+              <Card
+                shadow="sm"
+                padding={0}
+                radius="md"
+                withBorder
+                style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}
+              >
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing={0}>
                   <Stack gap="md" style={{ padding: '48px' }}>
                     <Title order={3} style={{ fontSize: '28px', fontWeight: 700 }}>
                       Own Your Epic.
                     </Title>
                     <Text size="lg" style={{ color: '#475569', lineHeight: 1.6 }}>
-                      Coordinate with PMM, Eng, and Support without chasing people down. Get a clear checklist, visibility into blockers, and a definitive log of launch decisions.
+                      Coordinate with PMM, Eng, and Support without chasing people down. Get a clear
+                      checklist, visibility into blockers, and a definitive log of launch decisions.
                     </Text>
                   </Stack>
-                  <Box style={{ height: '300px', backgroundColor: '#F1F5F9', position: 'relative', overflow: 'hidden' }}>
-                    <svg width="100%" height="100%" viewBox="0 0 400 300" style={{ display: 'block' }}>
+                  <Box
+                    style={{
+                      height: '300px',
+                      backgroundColor: '#F1F5F9',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 400 300"
+                      style={{ display: 'block' }}
+                    >
                       {/* Checklist items */}
                       {[
                         { y: 60, text: 'Product Requirements', checked: true },
@@ -336,33 +554,76 @@ export function WelcomePage() {
                         { y: 220, text: 'Support Training', checked: false },
                       ].map((item, i) => (
                         <g key={i}>
-                          <rect x="50" y={item.y - 15} width="20" height="20" rx="4" fill={item.checked ? '#12B886' : '#DEE2E6'} />
+                          <rect
+                            x="50"
+                            y={item.y - 15}
+                            width="20"
+                            height="20"
+                            rx="4"
+                            fill={item.checked ? '#12B886' : '#DEE2E6'}
+                          />
                           {item.checked && (
-                            <path d={`M ${55} ${item.y - 5} L ${60} ${item.y} L ${65} ${item.y - 5}`} stroke="#FFFFFF" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                            <path
+                              d={`M ${55} ${item.y - 5} L ${60} ${item.y} L ${65} ${item.y - 5}`}
+                              stroke="#FFFFFF"
+                              strokeWidth="2"
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
                           )}
-                          <text x="85" y={item.y} fontSize="16" fill="#475569">{item.text}</text>
+                          <text x="85" y={item.y} fontSize="16" fill="#475569">
+                            {item.text}
+                          </text>
                         </g>
                       ))}
                     </svg>
-                    <Box style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))', mixBlendMode: 'multiply' }} />
+                    <Box
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background:
+                          'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))',
+                        mixBlendMode: 'multiply',
+                      }}
+                    />
                   </Box>
                 </SimpleGrid>
               </Card>
             </Tabs.Panel>
 
             <Tabs.Panel value="functional">
-              <Card shadow="sm" padding={0} radius="md" withBorder style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}>
+              <Card
+                shadow="sm"
+                padding={0}
+                radius="md"
+                withBorder
+                style={{ borderColor: '#E2E8F0', overflow: 'hidden' }}
+              >
                 <SimpleGrid cols={{ base: 1, md: 2 }} spacing={0}>
                   <Stack gap="md" style={{ padding: '48px' }}>
                     <Title order={3} style={{ fontSize: '28px', fontWeight: 700 }}>
                       Clear Expectations.
                     </Title>
                     <Text size="lg" style={{ color: '#475569', lineHeight: 1.6 }}>
-                      Whether you own migration tooling, support readiness, or sales assets, see exactly what criteria you are on the hook for and easily update your status.
+                      Whether you own migration tooling, support readiness, or sales assets, see
+                      exactly what criteria you are on the hook for and easily update your status.
                     </Text>
                   </Stack>
-                  <Box style={{ height: '300px', backgroundColor: '#F1F5F9', position: 'relative', overflow: 'hidden' }}>
-                    <svg width="100%" height="100%" viewBox="0 0 400 300" style={{ display: 'block' }}>
+                  <Box
+                    style={{
+                      height: '300px',
+                      backgroundColor: '#F1F5F9',
+                      position: 'relative',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    <svg
+                      width="100%"
+                      height="100%"
+                      viewBox="0 0 400 300"
+                      style={{ display: 'block' }}
+                    >
                       {/* User avatar */}
                       <circle cx="200" cy="120" r="40" fill="#228BE6" />
                       <circle cx="200" cy="110" r="25" fill="#FFFFFF" />
@@ -370,13 +631,47 @@ export function WelcomePage() {
 
                       {/* Badge */}
                       <circle cx="230" cy="100" r="20" fill="#FAB005" />
-                      <text x="230" y="107" textAnchor="middle" fontSize="12" fontWeight="700" fill="#FFFFFF">3</text>
+                      <text
+                        x="230"
+                        y="107"
+                        textAnchor="middle"
+                        fontSize="12"
+                        fontWeight="700"
+                        fill="#FFFFFF"
+                      >
+                        3
+                      </text>
 
                       {/* To-Do label */}
-                      <rect x="150" y="210" width="100" height="30" rx="4" fill="#F8F9FA" stroke="#DEE2E6" />
-                      <text x="200" y="230" textAnchor="middle" fontSize="12" fontWeight="600" fill="#475569">Security Review</text>
+                      <rect
+                        x="150"
+                        y="210"
+                        width="100"
+                        height="30"
+                        rx="4"
+                        fill="#F8F9FA"
+                        stroke="#DEE2E6"
+                      />
+                      <text
+                        x="200"
+                        y="230"
+                        textAnchor="middle"
+                        fontSize="12"
+                        fontWeight="600"
+                        fill="#475569"
+                      >
+                        Security Review
+                      </text>
                     </svg>
-                    <Box style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))', mixBlendMode: 'multiply' }} />
+                    <Box
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        background:
+                          'linear-gradient(to bottom, rgba(30, 58, 138, 0.1), rgba(30, 58, 138, 0.1))',
+                        mixBlendMode: 'multiply',
+                      }}
+                    />
                   </Box>
                 </SimpleGrid>
               </Card>
@@ -386,7 +681,15 @@ export function WelcomePage() {
       </Box>
 
       {/* Section 6: Footer */}
-      <Box component="footer" style={{ borderTop: '1px solid #E2E8F0', paddingTop: '48px', paddingBottom: '48px', backgroundColor: '#FFFFFF' }}>
+      <Box
+        component="footer"
+        style={{
+          borderTop: '1px solid #E2E8F0',
+          paddingTop: '48px',
+          paddingBottom: '48px',
+          backgroundColor: '#FFFFFF',
+        }}
+      >
         <Container size="xl">
           <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" style={{ marginBottom: '32px' }}>
             <Stack gap="xs">
@@ -397,7 +700,12 @@ export function WelcomePage() {
                 Internal Launch Readiness Console
               </Text>
             </Stack>
-            <Flex direction={{ base: 'column', md: 'row' }} gap="xl" justify={{ base: 'flex-start', md: 'flex-end' }} align={{ base: 'flex-start', md: 'center' }}>
+            <Flex
+              direction={{ base: 'column', md: 'row' }}
+              gap="xl"
+              justify={{ base: 'flex-start', md: 'flex-end' }}
+              align={{ base: 'flex-start', md: 'center' }}
+            >
               <Text size="sm" style={{ color: '#475569', fontWeight: 500 }}>
                 Ready to launch?
               </Text>
@@ -405,9 +713,14 @@ export function WelcomePage() {
                 component="a"
                 href="#"
                 size="sm"
-                style={{ color: '#228BE6', textDecoration: 'none', fontWeight: 500, cursor: 'pointer' }}
-                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                style={{
+                  color: '#228BE6',
+                  textDecoration: 'none',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
               >
                 Documentation / Wiki
               </Text>
@@ -415,9 +728,14 @@ export function WelcomePage() {
                 component="a"
                 href="#"
                 size="sm"
-                style={{ color: '#228BE6', textDecoration: 'none', fontWeight: 500, cursor: 'pointer' }}
-                onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                style={{
+                  color: '#228BE6',
+                  textDecoration: 'none',
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.textDecoration = 'underline')}
+                onMouseLeave={(e) => (e.currentTarget.style.textDecoration = 'none')}
               >
                 Support (Product Ops)
               </Text>
@@ -433,4 +751,3 @@ export function WelcomePage() {
     </Box>
   );
 }
-

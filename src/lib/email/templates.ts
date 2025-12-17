@@ -1,12 +1,12 @@
 export function getLaunchStatusChangeEmail(
-    launchName: string,
-    oldStatus: string,
-    newStatus: string,
-    launchUrl: string
+  launchName: string,
+  oldStatus: string,
+  newStatus: string,
+  launchUrl: string
 ) {
-    return {
-        subject: `[Launch Console] Status Change: ${launchName}`,
-        html: `
+  return {
+    subject: `[Launch Console] Status Change: ${launchName}`,
+    html: `
             <h2>Launch Status Changed</h2>
             <p>The readiness status for <strong>${launchName}</strong> has changed.</p>
             <ul>
@@ -14,32 +14,32 @@ export function getLaunchStatusChangeEmail(
                 <li><strong>New Status:</strong> ${newStatus}</li>
             </ul>
             <p><a href="${launchUrl}">View Launch</a></p>
-        `
-    };
+        `,
+  };
 }
 
 export function getRiskAlertEmail(
-    launchName: string,
-    riskLevel: string,
-    reason: string,
-    launchUrl: string
+  launchName: string,
+  riskLevel: string,
+  reason: string,
+  launchUrl: string
 ) {
-    return {
-        subject: `[Launch Console] Risk Alert: ${launchName}`,
-        html: `
+  return {
+    subject: `[Launch Console] Risk Alert: ${launchName}`,
+    html: `
             <h2 style="color: red;">High Risk Alert</h2>
             <p>The risk level for <strong>${launchName}</strong> is now <strong>${riskLevel}</strong>.</p>
             <p><strong>Reason:</strong> ${reason}</p>
             <p><a href="${launchUrl}">View Launch</a></p>
-        `
-    };
+        `,
+  };
 }
 
 function getDefaultInviteEmail(firstName: string | null, inviteLink: string) {
-    const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
-    return {
-        subject: 'Welcome to ClearGO',
-        html: `
+  const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
+  return {
+    subject: 'Welcome to ClearGO',
+    html: `
             <div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">${greeting}</h2>
                 <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
@@ -66,37 +66,37 @@ function getDefaultInviteEmail(firstName: string | null, inviteLink: string) {
                     <a href="${inviteLink}" style="color: #4f46e5; word-break: break-all;">${inviteLink}</a>
                 </p>
             </div>
-        `
-    };
+        `,
+  };
 }
 
 export async function getInviteEmail(
-    firstName: string | null,
-    inviteLink: string,
-    customTemplate?: { subject?: string | null; html?: string | null }
+  firstName: string | null,
+  inviteLink: string,
+  customTemplate?: { subject?: string | null; html?: string | null }
 ) {
-    const defaultEmail = getDefaultInviteEmail(firstName, inviteLink);
-    
-    // Use custom template if provided, otherwise use default
-    const subject = customTemplate?.subject || defaultEmail.subject;
-    let html = customTemplate?.html || defaultEmail.html;
-    
-    // Replace placeholders in custom template
-    if (customTemplate?.html) {
-        html = html
-            .replace(/\{\{firstName\}\}/g, firstName || '')
-            .replace(/\{\{greeting\}\}/g, firstName ? `Hi ${firstName},` : 'Hello,')
-            .replace(/\{\{inviteLink\}\}/g, inviteLink);
-    }
-    
-    return { subject, html };
+  const defaultEmail = getDefaultInviteEmail(firstName, inviteLink);
+
+  // Use custom template if provided, otherwise use default
+  const subject = customTemplate?.subject || defaultEmail.subject;
+  let html = customTemplate?.html || defaultEmail.html;
+
+  // Replace placeholders in custom template
+  if (customTemplate?.html) {
+    html = html
+      .replace(/\{\{firstName\}\}/g, firstName || '')
+      .replace(/\{\{greeting\}\}/g, firstName ? `Hi ${firstName},` : 'Hello,')
+      .replace(/\{\{inviteLink\}\}/g, inviteLink);
+  }
+
+  return { subject, html };
 }
 
 function getDefaultRemindEmail(firstName: string | null, inviteLink: string) {
-    const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
-    return {
-        subject: 'Reminder: Join ClearGO',
-        html: `
+  const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
+  return {
+    subject: 'Reminder: Join ClearGO',
+    html: `
             <div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
                 <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">${greeting}</h2>
                 <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
@@ -123,28 +123,28 @@ function getDefaultRemindEmail(firstName: string | null, inviteLink: string) {
                     <a href="${inviteLink}" style="color: #4f46e5; word-break: break-all;">${inviteLink}</a>
                 </p>
             </div>
-        `
-    };
+        `,
+  };
 }
 
 export async function getRemindEmail(
-    firstName: string | null,
-    inviteLink: string,
-    customTemplate?: { subject?: string | null; html?: string | null }
+  firstName: string | null,
+  inviteLink: string,
+  customTemplate?: { subject?: string | null; html?: string | null }
 ) {
-    const defaultEmail = getDefaultRemindEmail(firstName, inviteLink);
-    
-    // Use custom template if provided, otherwise use default
-    const subject = customTemplate?.subject || defaultEmail.subject;
-    let html = customTemplate?.html || defaultEmail.html;
-    
-    // Replace placeholders in custom template
-    if (customTemplate?.html) {
-        html = html
-            .replace(/\{\{firstName\}\}/g, firstName || '')
-            .replace(/\{\{greeting\}\}/g, firstName ? `Hi ${firstName},` : 'Hello,')
-            .replace(/\{\{inviteLink\}\}/g, inviteLink);
-    }
-    
-    return { subject, html };
+  const defaultEmail = getDefaultRemindEmail(firstName, inviteLink);
+
+  // Use custom template if provided, otherwise use default
+  const subject = customTemplate?.subject || defaultEmail.subject;
+  let html = customTemplate?.html || defaultEmail.html;
+
+  // Replace placeholders in custom template
+  if (customTemplate?.html) {
+    html = html
+      .replace(/\{\{firstName\}\}/g, firstName || '')
+      .replace(/\{\{greeting\}\}/g, firstName ? `Hi ${firstName},` : 'Hello,')
+      .replace(/\{\{inviteLink\}\}/g, inviteLink);
+  }
+
+  return { subject, html };
 }
