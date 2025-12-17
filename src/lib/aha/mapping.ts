@@ -254,7 +254,14 @@ export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
     const settings = await getSettings();
     const ALLOWED_TAGS = settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
 
-    const isLaunchCandidate = await getCustomFieldValue(epic, 'launch_candidate') === true;
+    // Check launch_candidate field if configured, otherwise skip this check
+    let isLaunchCandidate = false;
+    try {
+        isLaunchCandidate = await getCustomFieldValue(epic, 'launch_candidate') === true;
+    } catch {
+        // launch_candidate field not configured - skip this check
+    }
+    
     const hasLaunchTag = epic.tags?.some(tag => ALLOWED_TAGS.includes(tag)) ?? false;
 
     return isLaunchCandidate || hasLaunchTag;

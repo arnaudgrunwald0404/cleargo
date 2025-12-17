@@ -18,17 +18,20 @@ BEGIN
     END IF;
 END $$;
 
--- Allow public access to avatars
+-- Allow public access to avatars (drop first if exists)
+DROP POLICY IF EXISTS "Avatar images are publicly accessible" ON storage.objects;
 create policy "Avatar images are publicly accessible"
   on storage.objects for select
   using ( bucket_id = 'avatars' );
 
--- Allow authenticated users to upload avatar images
+-- Allow authenticated users to upload avatar images (drop first if exists)
+DROP POLICY IF EXISTS "Anyone can upload an avatar" ON storage.objects;
 create policy "Anyone can upload an avatar"
   on storage.objects for insert
   with check ( bucket_id = 'avatars' and auth.role() = 'authenticated' );
 
--- Allow authenticated users to update their own avatar
+-- Allow authenticated users to update their own avatar (drop first if exists)
+DROP POLICY IF EXISTS "Anyone can update their own avatar" ON storage.objects;
 create policy "Anyone can update their own avatar"
   on storage.objects for update
   using ( bucket_id = 'avatars' and auth.role() = 'authenticated' );

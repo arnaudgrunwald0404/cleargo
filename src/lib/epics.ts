@@ -151,7 +151,7 @@ export async function getEpics() {
         // If epic table doesn't exist, try launch table
         if (error && (error.code === '42P01' || error.code === 'PGRST' || error.message?.includes('relation') || error.message?.includes('does not exist'))) {
             const retryResult = await supabase
-                .from('launch')
+                .from('epic')
                 .select('*')
                 .order('created_at', { ascending: false });
             data = retryResult.data;
@@ -204,7 +204,7 @@ export async function getEpics() {
                         // If epic table doesn't exist, try launch table
                         if (retryResult.error && (retryResult.error.code === '42P01' || retryResult.error.message?.includes('does not exist'))) {
                             const launchResult = await fallbackClient
-                                .from('launch')
+                                .from('epic')
                                 .select('*')
                                 .order('created_at', { ascending: false });
                             if (!launchResult.error) {

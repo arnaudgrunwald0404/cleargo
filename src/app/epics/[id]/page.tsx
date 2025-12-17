@@ -33,6 +33,7 @@ export default function EpicDetailPage() {
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
     const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
+    const [syncing, setSyncing] = useState(false);
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -519,6 +520,49 @@ export default function EpicDetailPage() {
         }
     }
 
+    async function handleSyncWithAha() {
+        if (!epic?.aha_id) {
+            notifications.show({
+                title: 'Cannot sync',
+                message: 'This epic does not have an Aha ID',
+                color: 'red',
+            });
+            return;
+        }
+
+        setSyncing(true);
+        try {
+            const res = await fetch(`/api/epics/${id}/sync`, {
+                method: 'POST',
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to sync with Aha' }));
+                throw new Error(errorData.error || `HTTP ${res.status}: Failed to sync`);
+            }
+
+            const result = await res.json();
+            
+            notifications.show({
+                title: 'Synced with Aha',
+                message: 'Epic data has been updated from Aha',
+                color: 'green',
+            });
+
+            // Reload the page data
+            await loadData();
+        } catch (error: any) {
+            console.error('Error syncing with Aha:', error);
+            notifications.show({
+                title: 'Sync failed',
+                message: error.message || 'Failed to sync with Aha',
+                color: 'red',
+            });
+        } finally {
+            setSyncing(false);
+        }
+    }
+
     async function handleRiskLevelUpdate(newRiskLevel: string | null) {
         if (!newRiskLevel || !epic || newRiskLevel === epic.risk_level) return;
 
@@ -560,12 +604,24 @@ export default function EpicDetailPage() {
             <div className="flex-1 pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
                 <div className="mb-6 flex justify-between items-center">
                     <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline">← Back to Epics</Link>
-                    <Button 
-                        size="xs" 
-                        onClick={() => setSnapshotModalOpen(true)}
-                    >
-                        Take Snapshot
-                    </Button>
+                    <Group gap="xs">
+                        {epic.aha_id && (
+                            <Button 
+                                size="xs" 
+                                variant="outline"
+                                onClick={handleSyncWithAha}
+                                loading={syncing}
+                            >
+                                Sync with Aha
+                            </Button>
+                        )}
+                        <Button 
+                            size="xs" 
+                            onClick={() => setSnapshotModalOpen(true)}
+                        >
+                            Take Snapshot
+                        </Button>
+                    </Group>
                 </div>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">

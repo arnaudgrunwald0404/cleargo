@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEpic } from '@/lib/aha/client';
-import type { AhaWebhookPayload } from '@/lib/aha/types';
 import { verifyWebhookSignature } from '@/lib/aha/webhook-validator';
-import { mapEpicToEpic, shouldProcessEpic } from '@/lib/aha/mapping';
+import { mapEpicToEpic } from '@/lib/aha/mapping';
 import {
     upsertEpicFromAha,
     getUserByEmail,
     getFallbackProductOpsUser,
-    instantiateCriteriaForEpic,
     getEpicByAhaId,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
@@ -74,20 +72,20 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ message: 'Not an epic event, skipping' }, { status: 200 });
         }
 
-        // Apply filter: only process if launch candidate or has LaunchConsole tag
-        if (!(await shouldProcessEpic(epic))) {
-            console.log('⏭️  Skipping: Epic does not match filter criteria', {
-                epic_id: epic.id,
-                tags: epic.tags,
-                launch_candidate: epic.custom_fields?.launch_candidate?.value
-            });
+        // Get the Aha reference number to check if epic exists in our DB
+        const ahaId = epic.reference_num || epic.id;
+        
+        // Only process epics that have been imported into ClearGO
+        const existingEpic = await getEpicByAhaId(ahaId);
+        if (!existingEpic) {
+            console.log('⏭️  Skipping: Epic not imported into ClearGO', { aha_id: ahaId });
             return NextResponse.json(
-                { message: 'Epic does not match filter criteria, skipping' },
+                { message: 'Epic not imported into ClearGO, skipping' },
                 { status: 200 }
             );
         }
 
-        console.log('✅ Epic matches filter criteria, processing...');
+        console.log('✅ Epic exists in ClearGO, processing update...');
 
         // Get settings to determine which fields to load
         const settings = await getSettings();
@@ -104,43 +102,27 @@ export async function POST(req: NextRequest) {
             fields_to_load: fieldsToLoad
         });
 
-        // Resolve owner
-        let ownerId: string | null = null;
+        // Resolve owner - keep existing owner if new owner not found
+        let ownerId: string | null = existingEpic.owner_id;
         if (epicData.owner_email) {
             const user = await getUserByEmail(epicData.owner_email);
             if (user) {
                 ownerId = user.id;
-            } else {
-                // Fallback to Product Ops user
-                console.warn(`Owner not found: ${epicData.owner_email}, using fallback`);
-                ownerId = await getFallbackProductOpsUser();
             }
-        } else {
-            // No owner specified, use fallback
-            ownerId = await getFallbackProductOpsUser();
+            // If owner not found in ClearGO, keep the existing owner
         }
 
-        // Check if this is a new epic
-        const existingEpic = await getEpicByAhaId(epicData.aha_id);
-        const isNewEpic = !existingEpic;
-
-        // Upsert epic
+        // Update the epic
         const savedEpic = await upsertEpicFromAha(epicData, ownerId);
-        console.log(`${isNewEpic ? '🆕' : '🔄'} Epic ${isNewEpic ? 'created' : 'updated'}:`, {
+        console.log('🔄 Epic updated:', {
             epic_id: savedEpic.id,
             aha_id: savedEpic.aha_id,
             name: savedEpic.name,
             tier: savedEpic.tier
         });
 
-        // For new epics, instantiate criteria
-        if (isNewEpic) {
-            await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
-            console.log('✅ Criteria instantiated for new epic');
-        }
-
         return NextResponse.json({
-            message: isNewEpic ? 'Epic created' : 'Epic updated',
+            message: 'Epic updated',
             epic_id: savedEpic.id,
             aha_id: savedEpic.aha_id,
         }, { status: 200 });

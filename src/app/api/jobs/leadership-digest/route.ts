@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
         // Get high-risk launches
         const { data: highRiskLaunches, error: highRiskError } = await supabase
-            .from('launch')
+            .from('epic')
             .select('id, name, tier, target_launch_date, readiness_score, risk_level')
             .in('risk_level', ['HIGH', 'MEDIUM'])
             .order('risk_level', { ascending: false })
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         thirtyDaysFromNow.setDate(thirtyDaysFromNow.getDate() + 30);
 
         const { data: upcomingLaunches, error: upcomingError } = await supabase
-            .from('launch')
+            .from('epic')
             .select('id, name, tier, target_launch_date')
             .gte('target_launch_date', new Date().toISOString())
             .lte('target_launch_date', thirtyDaysFromNow.toISOString())
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 
         // Get total active launches count
         const { count: totalActive } = await supabase
-            .from('launch')
+            .from('epic')
             .select('*', { count: 'exact', head: true })
             .not('readiness_status', 'eq', 'COMPLETED');
 

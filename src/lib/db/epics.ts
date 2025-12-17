@@ -35,22 +35,23 @@ export interface Epic {
     console_url: string | null;
     last_go_no_go_decision_date: string | null;
     scheduled_ga_dev_date: string | null;
-    modified_rice_score: any | null;
-    wsjf_score: any | null;
-    gtm_link: string | null;
-    activation_process: string | null;
-    new_org_setup: string | null;
-    existing_org_setup: string | null;
-    pricing_model: string | null;
+    // Extended fields (from migration 0004) - may not exist in all deployments
+    // These are also stored in aha_fields for flexibility
+    modified_rice_score?: any | null;
+    wsjf_score?: any | null;
+    gtm_link?: string | null;
+    activation_process?: string | null;
+    new_org_setup?: string | null;
+    existing_org_setup?: string | null;
+    pricing_model?: string | null;
     aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     created_at: string;
     updated_at: string;
 }
 
 export async function getEpicByAhaId(ahaId: string): Promise<Epic | null> {
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select('*')
         .eq('aha_id', ahaId)
         .single();
@@ -72,6 +73,7 @@ export async function upsertEpicFromAha(
     // First, check if epic exists
     const existing = await getEpicByAhaId(epicData.aha_id);
 
+    // Include all fields from the mapped epic data
     const upsertData: any = {
         aha_id: epicData.aha_id,
         aha_url: epicData.aha_url,
@@ -92,8 +94,7 @@ export async function upsertEpicFromAha(
         new_org_setup: epicData.new_org_setup,
         existing_org_setup: epicData.existing_org_setup,
         pricing_model: epicData.pricing_model,
-        // aha_fields already contains all standard fields and custom fields from mapEpicToEpic
-        aha_fields: epicData.aha_fields || null,
+        aha_fields: epicData.aha_fields,
         updated_at: new Date().toISOString(),
     };
 
@@ -126,9 +127,8 @@ export async function upsertEpicFromAha(
         upsertData.status = 'PLANNED';
     }
 
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .upsert(upsertData, { onConflict: 'aha_id' })
         .select()
         .single();
@@ -139,7 +139,7 @@ export async function upsertEpicFromAha(
     if (data && !data.console_url) {
         const consoleUrl = `${appUrl}/epics/${data.id}`;
         const { data: updated, error: updateError } = await supabase
-            .from('launch')
+            .from('epic')
             .update({ console_url: consoleUrl })
             .eq('id', data.id)
             .select()
@@ -174,13 +174,38 @@ export async function getFallbackProductOpsUser(): Promise<string> {
         .eq('id', 1)
         .single();
 
-    if (error || !data?.fallback_user_email) {
-        throw new Error('Fallback user email not configured');
-    }
+    // Use env var fallback if settings not configured
+    const fallbackEmail = data?.fallback_user_email 
+        || process.env.FALLBACK_PRODUCT_OPS_EMAIL 
+        || 'agrunwald@clearcompany.com';
 
-    const user = await getUserByEmail(data.fallback_user_email);
+    const user = await getUserByEmail(fallbackEmail);
     if (!user) {
-        throw new Error(`Fallback user not found: ${data.fallback_user_email}`);
+        // If fallback user doesn't exist, try to find any PRODUCT_OPS user
+        const { data: productOpsUser } = await supabase
+            .from('app_user')
+            .select('id')
+            .contains('roles', ['PRODUCT_OPS'])
+            .limit(1)
+            .single();
+        
+        if (productOpsUser) {
+            return productOpsUser.id;
+        }
+        
+        // Last resort: return the first admin user
+        const { data: adminUser } = await supabase
+            .from('app_user')
+            .select('id')
+            .or('roles.cs.{SUPERADMIN},roles.cs.{CPO}')
+            .limit(1)
+            .single();
+            
+        if (adminUser) {
+            return adminUser.id;
+        }
+        
+        throw new Error(`Fallback user not found: ${fallbackEmail}`);
     }
 
     return user.id;
@@ -279,9 +304,8 @@ export async function updateEpicReadiness(
         last_go_no_go_decision_date?: string | null;
     }
 ): Promise<void> {
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { error } = await supabase
-        .from('launch')
+        .from('epic')
         .update({
             readiness_status: readinessData.readiness_status,
             readiness_score: readinessData.readiness_score,

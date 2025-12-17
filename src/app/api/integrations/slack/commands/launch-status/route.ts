@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
         const supabase = (await import('@/lib/supabase/server')).createClient();
 
         const { data: launches, error: launchError } = await supabase
-            .from('launch')
+            .from('epic')
             .select('id, name, aha_reference_num, tier, readiness_status, readiness_score, risk_level, target_launch_date')
             .or(`name.ilike.%${searchTerm}%,aha_reference_num.ilike.%${searchTerm}%`)
             .limit(5);

@@ -1,10 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Epic, CreateEpicDTO, EpicTier } from "@/types/epics";
+import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { TextInput, Select, Group, Card, Box, ActionIcon, Badge, Button, Title, Text, Alert, Stack, Grid } from '@mantine/core';
-import { IconSearch, IconX, IconFilter, IconPlus, IconAlertCircle } from '@tabler/icons-react';
+import { TextInput, Select, Group, Card, Box, ActionIcon, Badge, Button, Title, Text, Alert, Stack } from '@mantine/core';
+import { IconSearch, IconX, IconFilter, IconDownload, IconAlertCircle, IconCheck } from '@tabler/icons-react';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -13,16 +13,13 @@ interface EpicsClientProps {
 export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
-    const [products, setProducts] = useState<any[]>([]);
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [showCreate, setShowCreate] = useState(false);
-
-    const [formData, setFormData] = useState<Partial<CreateEpicDTO>>({
-        name: "",
-        tier: "TIER_3",
-    });
+    const [showImport, setShowImport] = useState(false);
+    const [importLoading, setImportLoading] = useState(false);
+    const [importSuccess, setImportSuccess] = useState<string | null>(null);
+    const [ahaId, setAhaId] = useState("");
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -38,18 +35,13 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         if (initialEpics.length === 0) {
             loadData();
         } else {
-            // Still load products and releases
-            Promise.all([
-                fetch("/api/products", { credentials: 'include' }),
-                fetch("/api/releases", { credentials: 'include' })
-            ]).then(([productsRes, releasesRes]) => {
-                if (productsRes.ok) {
-                    productsRes.json().then(data => setProducts(data));
-                }
-                if (releasesRes.ok) {
-                    releasesRes.json().then(data => setReleaseSchedule(data || []));
-                }
-            });
+            // Still load releases
+            fetch("/api/releases", { credentials: 'include' })
+                .then(releasesRes => {
+                    if (releasesRes.ok) {
+                        releasesRes.json().then(data => setReleaseSchedule(data || []));
+                    }
+                });
         }
     }, [initialEpics.length]);
 
@@ -64,9 +56,8 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 return;
             }
 
-            const [epicsRes, productsRes, releasesRes] = await Promise.all([
+            const [epicsRes, releasesRes] = await Promise.all([
                 fetch("/api/epics", { credentials: 'include' }),
-                fetch("/api/products", { credentials: 'include' }),
                 fetch("/api/releases", { credentials: 'include' })
             ]);
 
@@ -75,14 +66,8 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 return;
             }
             if (!epicsRes.ok) throw new Error("Failed to fetch epics");
-            // Products might fail if table is empty or API error, but let's try
             const epicsData = await epicsRes.json();
             setEpics(epicsData);
-
-            if (productsRes.ok) {
-                const productsData = await productsRes.json();
-                setProducts(productsData);
-            }
 
             if (releasesRes.ok) {
                 const releasesData = await releasesRes.json();
@@ -95,29 +80,44 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }
 
-    async function handleCreate(e: React.FormEvent) {
+    async function handleImport(e: React.FormEvent) {
         e.preventDefault();
         setError(null);
+        setImportSuccess(null);
+        setImportLoading(true);
 
         try {
-            const res = await fetch("/api/epics", {
+            const res = await fetch("/api/epics/import", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
+                credentials: 'include',
+                body: JSON.stringify({ aha_id: ahaId }),
             });
 
+            const data = await res.json();
+
             if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to create epic");
+                if (res.status === 409 && data.existingEpicId) {
+                    // Epic already exists - redirect to it
+                    router.push(`/epics/${data.existingEpicId}`);
+                    return;
+                }
+                throw new Error(data.error || "Failed to import epic");
             }
 
-            const newEpic = await res.json();
-            setEpics([newEpic, ...epics]);
-            setShowCreate(false);
-            setFormData({ name: "", tier: "TIER_3" });
-            alert("Epic created successfully!");
+            // Success - add the new epic to the list and show success message
+            setEpics([data.epic, ...epics]);
+            setImportSuccess(`Successfully imported "${data.epic.name}"`);
+            setAhaId("");
+            
+            // Redirect to the new epic after a brief delay
+            setTimeout(() => {
+                router.push(`/epics/${data.epic.id}`);
+            }, 1500);
         } catch (e: any) {
             setError(e.message);
+        } finally {
+            setImportLoading(false);
         }
     }
 
@@ -218,12 +218,16 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     </Text>
                 </Box>
                 <Button
-                    leftSection={<IconPlus size={16} />}
-                    onClick={() => setShowCreate(!showCreate)}
-                    variant={showCreate ? "subtle" : "filled"}
+                    leftSection={<IconDownload size={16} />}
+                    onClick={() => {
+                        setShowImport(!showImport);
+                        setError(null);
+                        setImportSuccess(null);
+                    }}
+                    variant={showImport ? "subtle" : "filled"}
                     color="indigo"
                 >
-                    {showCreate ? "Cancel" : "New Epic"}
+                    {showImport ? "Cancel" : "Import from Aha"}
                 </Button>
             </Group>
 
@@ -442,80 +446,50 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 )
             }
 
-            {showCreate && (
+            {showImport && (
                 <Card shadow="sm" padding="lg" radius="md" withBorder mb="xl">
                     <Title order={2} mb="lg" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
-                        Create New Epic
+                        Import Epic from Aha
                     </Title>
-                    <form onSubmit={handleCreate}>
+                    <Text size="sm" c="dimmed" mb="md">
+                        Enter the Aha epic reference number (e.g., &quot;EPIC-123&quot;) to import it into the Launch Console.
+                    </Text>
+                    {importSuccess && (
+                        <Alert icon={<IconCheck size={16} />} title="Success" color="green" mb="md">
+                            {importSuccess}
+                        </Alert>
+                    )}
+                    <form onSubmit={handleImport}>
                         <Stack gap="md">
                             <TextInput
-                                label="Epic Name"
-                                placeholder="Enter epic name"
+                                label="Aha Epic ID"
+                                placeholder="e.g., EPIC-123"
                                 required
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                value={ahaId}
+                                onChange={(e) => setAhaId(e.target.value)}
+                                disabled={importLoading}
                             />
-
-                            <Grid>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <Select
-                                        label="Tier"
-                                        required
-                                        value={formData.tier}
-                                        onChange={(value) => setFormData({ ...formData, tier: (value as EpicTier) || "TIER_3" })}
-                                        data={[
-                                            { value: "TIER_1", label: "Tier 1 (Strategic)" },
-                                            { value: "TIER_2", label: "Tier 2 (Major)" },
-                                            { value: "TIER_3", label: "Tier 3 (Minor)" },
-                                        ]}
-                                    />
-                                </Grid.Col>
-
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <Select
-                                        label="Product"
-                                        placeholder="Select Product..."
-                                        value={formData.product_id || null}
-                                        onChange={(value) => setFormData({ ...formData, product_id: value || undefined })}
-                                        data={products.map(p => ({ value: p.id, label: p.name }))}
-                                        clearable
-                                    />
-                                </Grid.Col>
-                            </Grid>
-
-                            <Grid>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <TextInput
-                                        label="Target Date"
-                                        type="date"
-                                        value={formData.target_launch_date || ""}
-                                        onChange={(e) => setFormData({ ...formData, target_launch_date: e.target.value })}
-                                    />
-                                </Grid.Col>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <TextInput
-                                        label="Aha ID"
-                                        placeholder="Optional"
-                                        value={formData.aha_id || ""}
-                                        onChange={(e) => setFormData({ ...formData, aha_id: e.target.value })}
-                                    />
-                                </Grid.Col>
-                            </Grid>
 
                             <Group justify="flex-end" mt="md">
                                 <Button
                                     variant="subtle"
-                                    onClick={() => setShowCreate(false)}
+                                    onClick={() => {
+                                        setShowImport(false);
+                                        setError(null);
+                                        setImportSuccess(null);
+                                        setAhaId("");
+                                    }}
+                                    disabled={importLoading}
                                 >
                                     Cancel
                                 </Button>
                                 <Button
                                     type="submit"
-                                    color="green"
-                                    leftSection={<IconPlus size={16} />}
+                                    color="indigo"
+                                    leftSection={<IconDownload size={16} />}
+                                    loading={importLoading}
                                 >
-                                    Create Epic
+                                    Import Epic
                                 </Button>
                             </Group>
                         </Stack>

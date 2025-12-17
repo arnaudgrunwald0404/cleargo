@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
 
 export interface UserWithRoles {
@@ -78,6 +79,7 @@ export async function getUserWithRoles(request: NextRequest): Promise<UserWithRo
     const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     
+    
     if (!publishableKey) {
         return null;
     }
@@ -114,16 +116,11 @@ export async function getUserWithRoles(request: NextRequest): Promise<UserWithRo
     let userError = null;
     
     if (serviceRoleKey) {
-        // Use service role to bypass RLS
-        const adminSupabase = createServerClient(
+        // Use service role to bypass RLS - use createClient from supabase-js directly
+        // createServerClient from @supabase/ssr doesn't properly bypass RLS with service role
+        const adminSupabase = createSupabaseClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            serviceRoleKey,
-            {
-                cookies: {
-                    getAll() { return [] },
-                    setAll() { },
-                },
-            }
+            serviceRoleKey
         );
         
         const result = await adminSupabase
