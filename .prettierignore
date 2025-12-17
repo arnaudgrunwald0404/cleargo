@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.next/
+out/
+build/
+dist/
+
+# Generated files
+*.min.js
+*.min.css
+package-lock.json
+
+# Supabase
+supabase/.temp/
+
+# Documentation assets
+*.md
+docs/
+
+# Config files that shouldn't be formatted
+*.yaml
+*.yml
+*.toml
+
