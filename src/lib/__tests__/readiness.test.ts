@@ -115,8 +115,8 @@ describe('Readiness Calculation Logic', () => {
     it('should handle empty criteria list', () => {
       const statuses: any[] = [];
 
-      let totalScore = 0;
-      let maxPossibleScore = 0;
+      const totalScore = 0;
+      const maxPossibleScore = 0;
 
       for (const s of statuses) {
         // No iterations
@@ -298,7 +298,7 @@ describe('Readiness Calculation Logic', () => {
 
     it('should handle missing target launch date', () => {
       const targetDate = null;
-      let riskLevel = 'LOW';
+      const riskLevel = 'LOW';
 
       if (targetDate) {
         // Risk calculation logic

@@ -209,7 +209,7 @@ export default function EpicsPage() {
         <div>
           <h1 className="text-2xl font-bold">Epics</h1>
           <p className="text-sm text-gray-600 mt-1">
-            Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
+            Epics appear here if: Launch Candidate = true OR tags contain &quot;LaunchConsole&quot;
           </p>
         </div>
         <button

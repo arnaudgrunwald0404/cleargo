@@ -392,8 +392,8 @@ export default function EmailTemplatesSection({
             </div>
           </div>
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
-            <strong>Note:</strong> This preview uses sample data (firstName: "John", inviteLink:
-            "https://example.com/invite-link"). Actual emails will use real recipient data.
+            <strong>Note:</strong> This preview uses sample data (firstName: &quot;John&quot;, inviteLink:
+            &quot;https://example.com/invite-link&quot;). Actual emails will use real recipient data.
           </div>
         </div>
       </Modal>

@@ -323,7 +323,7 @@ export default function ReleaseScheduleSection(props: Props) {
                 {releases.length === 0 && editingReleaseId !== 'new' && (
                   <tr>
                     <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">
-                      No release mappings configured. Click "+ Add Mapping" to create one.
+                      No release mappings configured. Click &quot;+ Add Mapping&quot; to create one.
                     </td>
                   </tr>
                 )}

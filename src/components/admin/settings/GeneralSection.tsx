@@ -259,11 +259,11 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
                   d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
                 />
               </svg>
-              Only users with the "Update AHA Tags" permission can modify these tags.
+              Only users with the &quot;Update AHA Tags&quot; permission can modify these tags.
             </p>
           )}
           <p className="text-xs text-gray-500 mt-1">
-            Epics with any of these tags (or "Launch Candidate" = true) will be synced.
+            Epics with any of these tags (or &quot;Launch Candidate&quot; = true) will be synced.
           </p>
         </div>
       </div>

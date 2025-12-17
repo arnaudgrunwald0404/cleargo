@@ -39,11 +39,8 @@ interface LastSyncedValues {
 
 const lastSyncCache = new Map<string, LastSyncedValues>();
 
-function hasChanges(
-    epicId: string,
-    current: LastSyncedValues
-): boolean {
-    const last = lastSyncCache.get(epicId);
+function hasChanges(epicId: string, current: LastSyncedValues): boolean {
+  const last = lastSyncCache.get(epicId);
 
   if (!last) return true; // First sync
 
@@ -116,9 +113,9 @@ export async function writeBackEpicReadiness(epicId: string): Promise<void> {
     // Log success
     console.log(
       `Successfully wrote back ${Object.keys(customFields).length} fields for epic ${epicId} (aha_id: ${epic.aha_id})`
-
-    } catch (error) {
-        console.error(`Failed to write back to Aha for epic ${epicId}:`, error);
-        throw error;
-    }
+    );
+  } catch (error) {
+    console.error(`Failed to write back to Aha for epic ${epicId}:`, error);
+    throw error;
+  }
 }

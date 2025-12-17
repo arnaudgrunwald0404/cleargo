@@ -236,7 +236,7 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             Epics
           </Title>
           <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }}>
-            Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
+            Epics appear here if: Launch Candidate = true OR tags contain &quot;LaunchConsole&quot;
           </Text>
         </Box>
         <Button

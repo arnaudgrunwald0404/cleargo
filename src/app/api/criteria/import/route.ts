@@ -319,10 +319,11 @@ export async function POST(req: NextRequest) {
         parseErrors: errors.length > 0 ? errors : undefined,
       });
     }
-
-    } catch (e: any) {
-        console.error("Import error:", e);
-        return NextResponse.json({ error: "Failed to process file", details: e.message, stack: e.stack }, { status: 500 });
+  } catch (e: any) {
+    console.error('Import error:', e);
+    return NextResponse.json(
+      { error: 'Failed to process file', details: e.message, stack: e.stack },
+      { status: 500 }
     );
   }
 }

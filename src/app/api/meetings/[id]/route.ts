@@ -6,7 +6,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const { id } = await params;
     const supabase = createClient();
     // Try with linked_epics first, fallback if table doesn't exist
-    let selectQuery = `
+    const selectQuery = `
             *,
             epic:epic_id(id, name),
             linked_epic:linked_epic_id(id, name),

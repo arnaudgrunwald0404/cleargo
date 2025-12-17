@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest) {
 
   // Use upsert to handle both insert and update cases
   // This ensures the profile is created if it doesn't exist
-  let { data: updatedUser, error } = await supabase
+  const { data: updatedUser, error } = await supabase
     .from('app_user')
     .upsert(
       {

@@ -15,12 +15,9 @@ export default function EpicDetailPage() {
   const params = useParams();
   const id = params?.id as string | undefined;
 
-  if (!id) {
-    return <div className="pt-24 p-8">Invalid epic ID</div>;
-  }
-
+  // All hooks must be called before any conditional returns
   const [epic, setEpic] = useState<Epic | null>(null);
-  const [matrix, setMatrix] = useState<any[]>([]);
+  const [matrix, setMatrix] = useState<unknown[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
@@ -40,6 +37,17 @@ export default function EpicDetailPage() {
   const [instantiating, setInstantiating] = useState(false);
   const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
   const [syncing, setSyncing] = useState(false);
+
+  // useEffect must be called before any conditional returns
+  useEffect(() => {
+    if (id) loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  // Early return AFTER all hooks are called
+  if (!id) {
+    return <div className="pt-24 p-8">Invalid epic ID</div>;
+  }
 
   const getInitials = (email: string) => {
     return email.substring(0, 2).toUpperCase();
@@ -486,11 +494,6 @@ export default function EpicDetailPage() {
       setLoading(false);
     }
   }
-
-  useEffect(() => {
-    if (id) loadData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
 
   if (loading) {
     return <div className="pt-24 p-8">Loading...</div>;

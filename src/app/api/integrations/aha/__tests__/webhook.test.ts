@@ -84,6 +84,7 @@ describe('Aha! Webhook Integration', () => {
 
   it('should reject invalid signature', async () => {
     // Override mock for this test
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { verifyWebhookSignature } = require('@/lib/aha/webhook-validator');
     verifyWebhookSignature.mockResolvedValueOnce(false);
 

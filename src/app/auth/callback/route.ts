@@ -124,13 +124,14 @@ export async function GET(request: NextRequest) {
         ? allCookies.find((c) => c.name === codeVerifierCookieName1)
         : allCookies.find(
             (c) => c.name.includes('code-verifier') || c.name.includes('code_verifier')
+          );
 
-        console.log('OAuth callback:', {
-            hasCode: !!code,
-            hasCodeVerifierCookie: !!codeVerifierCookie,
-            codeVerifierCookieName1,
-            codeVerifierCookieName2,
-            foundCookieName: codeVerifierCookie?.name,
+    console.log('OAuth callback:', {
+      hasCode: !!code,
+      hasCodeVerifierCookie: !!codeVerifierCookie,
+      codeVerifierCookieName1,
+      codeVerifierCookieName2,
+      foundCookieName: codeVerifierCookie?.name,
       allCookieNames: allCookies.map((c) => c.name),
     });
 
