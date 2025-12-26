@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
             } else if (activeError && (activeError.code === '42P01' || activeError.message?.includes('does not exist'))) {
                 // Try launch table
                 const { count: launchActiveCount } = await supabase
-                    .from('launch')
+                    .from('epic')
                     .select('*', { count: 'exact', head: true })
                     .not('readiness_status', 'eq', 'COMPLETED');
                 activeEpicsCount = launchActiveCount || 0;
@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
             } else if (highRiskError && (highRiskError.code === '42P01' || highRiskError.message?.includes('does not exist'))) {
                 // Try launch table
                 const { count: launchHighRiskCount } = await supabase
-                    .from('launch')
+                    .from('epic')
                     .select('*', { count: 'exact', head: true })
                     .eq('risk_level', 'HIGH');
                 highRiskEpicsCount = launchHighRiskCount || 0;

@@ -64,7 +64,7 @@ export async function writeBackEpicReadiness(epicId: string): Promise<void> {
     // Fetch epic with all write-back fields
     // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data: epic, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select('id, aha_id, readiness_status, readiness_score, risk_level, last_go_no_go_decision_date, console_url, tier, target_launch_date')
         .eq('id', epicId)
         .single();

@@ -199,6 +199,10 @@ export default function EpicsPage() {
 
     if (loading) return <div className="pt-24 p-8">Loading...</div>;
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:200',message:'Render state',data:{launchedEpicsCount:launchedEpics.length,releaseGroupsCount:releaseGroups.length,filtersApplied:filters},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
+    // #endregion
+
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center mb-2">
@@ -217,7 +221,10 @@ export default function EpicsPage() {
             </div>
 
             {/* Filters */}
-            <div className="p-4 mb-6 flex gap-4 flex-wrap items-center">
+            <div className="pb-4 mb-6 flex gap-4 flex-wrap items-center">
+                {/* #region agent log */}
+                {(() => { fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:220',message:'Filters div rendered',data:{hasFilters:true,filterClassName:'pb-4 mb-6 flex gap-4 flex-wrap items-center'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{}); return null; })()}
+                {/* #endregion */}
                 <input
                     type="text"
                     placeholder="Search epics..."
@@ -410,7 +417,12 @@ export default function EpicsPage() {
                                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                            epic.status === 'LAUNCHED' ? 'bg-green-100 text-green-800' :
+                                                            epic.status === 'LAUNCHING' ? 'bg-blue-100 text-blue-800' :
+                                                            epic.status === 'PRE_LAUNCH' ? 'bg-yellow-100 text-yellow-800' :
+                                                            'bg-gray-100 text-gray-800'
+                                                        }`}>
                                                             {epic.status}
                                                         </span>
                                                     </td>

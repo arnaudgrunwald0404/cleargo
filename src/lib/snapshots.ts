@@ -28,7 +28,7 @@ export async function createSnapshot(
 ) {
     // 1. Fetch current launch state
     const { data: launch, error: launchError } = await supabase
-        .from('launch')
+        .from('epic')
         .select('*')
         .eq('id', launchId)
         .single();

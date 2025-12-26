@@ -6,8 +6,20 @@ export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string; lcsId: string }> }
 ) {
+    // #region agent log
+    const fs = require('fs');
+    const logEntry = {location:'route.ts:5',message:'PATCH request received',data:{paramsResolved:false},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E',runId:'status-update'};
+    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry) + '\n'); } catch(e) {}
+    // #endregion
+    
     try {
         const { id, lcsId } = await params;
+        
+        // #region agent log
+        const logEntry2 = {location:'route.ts:11',message:'Params resolved',data:{id,lcsId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E',runId:'status-update'};
+        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry2) + '\n'); } catch(e) {}
+        // #endregion
+        
         const supabase = createClient();
         const { data: { user } } = await supabase.auth.getUser();
 
@@ -37,6 +49,12 @@ export async function PATCH(
             .eq('id', lcsId)
             .eq('epic_id', id)
             .single();
+            
+        // #region agent log
+        const logEntry3 = {location:'route.ts:40',message:'Fetched existing criterion status',data:{lcsId,epicId:id,existing,fetchErr},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E',runId:'status-update'};
+        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
+        // #endregion
+        
         if (fetchErr || !existing) {
             console.error('Failed to fetch existing criterion status', fetchErr);
             return NextResponse.json({ error: 'Criterion status not found' }, { status: 404 });
@@ -74,18 +92,22 @@ export async function PATCH(
             body 
         });
 
+        // Build update object, only including defined values
+        const updateData: any = {
+            last_updated_at: new Date().toISOString(),
+            last_updated_by: appUser.id
+        };
+        
+        if (typeof status !== 'undefined') updateData.status = status;
+        if (typeof notes !== 'undefined') updateData.current_status_notes = notes;
+        if (typeof condition !== 'undefined') updateData.condition = condition;
+        if (typeof condition_due_date !== 'undefined') updateData.condition_due_date = condition_due_date;
+        if (typeof condition_owner_id !== 'undefined') updateData.condition_owner_id = condition_owner_id;
+
         // Update the status
         const { data, error } = await supabase
             .from('epic_criterion_status')
-            .update({
-                status,
-                current_status_notes: notes,
-                condition,
-                condition_due_date,
-                condition_owner_id,
-                last_updated_at: new Date().toISOString(),
-                last_updated_by: appUser.id
-            })
+            .update(updateData)
             .eq('id', lcsId)
             .eq('epic_id', id) // Security check
             .select()

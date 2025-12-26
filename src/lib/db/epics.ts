@@ -48,9 +48,8 @@ export interface Epic {
 }
 
 export async function getEpicByAhaId(ahaId: string): Promise<Epic | null> {
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .select('*')
         .eq('aha_id', ahaId)
         .single();
@@ -126,9 +125,8 @@ export async function upsertEpicFromAha(
         upsertData.status = 'PLANNED';
     }
 
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data, error } = await supabase
-        .from('launch')
+        .from('epic')
         .upsert(upsertData, { onConflict: 'aha_id' })
         .select()
         .single();
@@ -139,7 +137,7 @@ export async function upsertEpicFromAha(
     if (data && !data.console_url) {
         const consoleUrl = `${appUrl}/epics/${data.id}`;
         const { data: updated, error: updateError } = await supabase
-            .from('launch')
+            .from('epic')
             .update({ console_url: consoleUrl })
             .eq('id', data.id)
             .select()
@@ -279,9 +277,8 @@ export async function updateEpicReadiness(
         last_go_no_go_decision_date?: string | null;
     }
 ): Promise<void> {
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { error } = await supabase
-        .from('launch')
+        .from('epic')
         .update({
             readiness_status: readinessData.readiness_status,
             readiness_score: readinessData.readiness_score,

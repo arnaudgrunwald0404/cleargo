@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
         // Query launches where user is owner
         const { data: ownedLaunches, error: launchesError } = await supabase
-            .from('launch')
+            .from('epic')
             .select('id, name, tier, readiness_status, readiness_score, risk_level, target_launch_date')
             .eq('owner_id', appUser.id)
             .order('target_launch_date', { ascending: true })

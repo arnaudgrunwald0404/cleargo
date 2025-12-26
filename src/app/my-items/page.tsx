@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { Tooltip } from "@mantine/core";
 
 type MyItem = {
     id: string;
@@ -19,10 +20,138 @@ type MyItem = {
     };
 };
 
+// Read-only Traffic Light Status Indicator
+function StatusTrafficLight({ 
+    status, 
+    itemId, 
+    epicId, 
+    onStatusUpdate,
+    isSaving 
+}: { 
+    status: string; 
+    itemId: string;
+    epicId: string;
+    onStatusUpdate: () => void;
+    isSaving: boolean;
+}) {
+    const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
+    
+    const lights = [
+        { 
+            value: 'GO', 
+            color: '#10b981', // green
+            greyColor: '#d1d5db',
+            label: 'GO',
+            definition: 'Meets all requirements'
+        },
+        { 
+            value: 'CONDITIONAL', 
+            color: '#f59e0b', // yellow/amber
+            greyColor: '#d1d5db',
+            label: 'CONDITIONAL',
+            definition: 'Meets requirements with conditions'
+        },
+        { 
+            value: 'NO_GO', 
+            color: '#ef4444', // red
+            greyColor: '#d1d5db',
+            label: 'NO GO',
+            definition: 'Does not meet requirements'
+        },
+    ];
+
+    const handleStatusChange = async (newStatus: string) => {
+        if (newStatus === status) return;
+        
+        setOptimisticStatus(newStatus);
+        
+        try {
+            const res = await fetch(`/api/epics/${epicId}/criteria/${itemId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus })
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({}));
+                throw new Error(errorData.error || 'Failed to update status');
+            }
+            
+            setOptimisticStatus(null);
+            onStatusUpdate();
+        } catch (error: any) {
+            console.error('Failed to update status:', error);
+            alert(`Failed to update status: ${error.message}`);
+            setOptimisticStatus(null);
+        }
+    };
+
+    const currentStatus = optimisticStatus || status;
+
+    return (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {lights.map((light) => {
+                const isSelected = currentStatus === light.value;
+                
+                return (
+                    <Tooltip
+                        key={light.value}
+                        label={
+                            <div style={{ maxWidth: 400, whiteSpace: 'normal' }}>
+                                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: '0.9rem' }}>{light.label}</div>
+                                <div style={{ fontSize: '0.875rem', lineHeight: '1.5' }}>{light.definition}</div>
+                            </div>
+                        }
+                        position="top"
+                        withArrow
+                        multiline
+                        styles={{
+                            tooltip: {
+                                maxWidth: 400,
+                                padding: '12px 16px',
+                            }
+                        }}
+                    >
+                        <button
+                            onClick={() => !isSaving && handleStatusChange(light.value)}
+                            disabled={isSaving}
+                            style={{
+                                width: 24,
+                                height: 24,
+                                borderRadius: '50%',
+                                border: isSelected ? `3px solid ${light.color}` : '2px solid #e5e7eb',
+                                backgroundColor: isSelected ? light.color : light.greyColor,
+                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                transition: 'all 0.2s ease',
+                                opacity: isSaving ? 0.5 : 1,
+                                boxShadow: isSelected ? `0 0 8px ${light.color}66` : 'none',
+                                transform: isSelected ? 'scale(1.1)' : 'scale(1)',
+                            }}
+                            onMouseEnter={(e) => {
+                                if (!isSaving && !isSelected) {
+                                    e.currentTarget.style.backgroundColor = `${light.color}40`;
+                                    e.currentTarget.style.transform = 'scale(1.05)';
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (!isSaving && !isSelected) {
+                                    e.currentTarget.style.backgroundColor = light.greyColor;
+                                    e.currentTarget.style.transform = 'scale(1)';
+                                }
+                            }}
+                        />
+                    </Tooltip>
+                );
+            })}
+        </div>
+    );
+}
+
 export default function MyItemsPage() {
     const [items, setItems] = useState<MyItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
 
     useEffect(() => {
         loadData();
@@ -87,13 +216,13 @@ export default function MyItemsPage() {
                                         <div className="text-xs text-gray-500">{item.criterion.category}</div>
                                     </td>
                                     <td className="px-4 py-3 whitespace-nowrap w-24">
-                                        <span className={`px-2 py-1 rounded text-xs font-medium ${item.status === 'GO' ? 'bg-green-100 text-green-800' :
-                                            item.status === 'NO_GO' ? 'bg-red-100 text-red-800' :
-                                                item.status === 'CONDITIONAL' ? 'bg-yellow-100 text-yellow-800' :
-                                                    'bg-gray-100 text-gray-800'
-                                            }`}>
-                                            {item.status}
-                                        </span>
+                                        <StatusTrafficLight 
+                                            status={item.status}
+                                            itemId={item.id}
+                                            epicId={item.launch.id}
+                                            onStatusUpdate={loadData}
+                                            isSaving={savingItems.has(item.id)}
+                                        />
                                     </td>
                                     <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
                                         {item.condition_due_date ? (

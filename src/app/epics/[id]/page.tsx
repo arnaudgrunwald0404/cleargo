@@ -4,6 +4,7 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
+import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -33,6 +34,7 @@ export default function EpicDetailPage() {
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
     const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -49,6 +51,13 @@ export default function EpicDetailPage() {
 
     async function loadData() {
         try {
+            // Get current user email and create supabase client once
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) {
+                setCurrentUserEmail(user.email);
+            }
+
             // Fetch epic
             const res = await fetch(`/api/epics/${id}`);
             if (!res.ok) throw new Error("Failed to fetch epic");
@@ -85,7 +94,6 @@ export default function EpicDetailPage() {
             // Fetch matrix
             // We can use Supabase client directly here for ease, or create an API route.
             // Let's use Supabase client for read-only (or authenticated read)
-            const supabase = createClient();
             const { data: matrixData, error: matrixError } = await supabase
                 .from('epic_criterion_status')
                 .select(`
@@ -770,10 +778,15 @@ export default function EpicDetailPage() {
                                 return true;
                             });
                             
-                            return <Matrix epicId={epic.id} epicName={epic.name} items={filteredMatrix} onUpdate={loadData} />;
+                            return <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} />;
                         })()}
                     </>
                 )}
+            </div>
+
+            {/* Feedback Section */}
+            <div className="mb-8">
+                <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
             </div>
 
             <div className="mb-8">

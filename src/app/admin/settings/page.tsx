@@ -93,6 +93,7 @@ export default function AdminSettingsPage() {
     });
     const [emailTemplatesLoading, setEmailTemplatesLoading] = useState(false);
     const [emailTemplatesSaving, setEmailTemplatesSaving] = useState(false);
+    const [emailTemplatesInitialized, setEmailTemplatesInitialized] = useState(false);
     const [previewOpen, setPreviewOpen] = useState(false);
     const [previewType, setPreviewType] = useState<"invite" | "remind" | "update_criteria">("invite");
     const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
@@ -257,6 +258,7 @@ export default function AdminSettingsPage() {
                 update_criteria_subject: data.update_criteria_subject || DEFAULT_EMAIL_TEMPLATES.update_criteria_subject,
                 update_criteria_html: data.update_criteria_html || DEFAULT_EMAIL_TEMPLATES.update_criteria_html,
             });
+            setEmailTemplatesInitialized(true);
             return;
             // Default templates
             const defaultInviteSubject = 'Welcome to ClearGO';
@@ -402,9 +404,13 @@ export default function AdminSettingsPage() {
 
     // Auto-save email templates with debouncing (2 seconds after last change)
     useEffect(() => {
-        debugLog({ location: 'page.tsx:useEffect', message: 'useEffect triggered', data: { emailTemplatesLoading, hasTemplates: !!emailTemplates, invite_subject_length: emailTemplates?.invite_subject?.length }, hypothesisId: 'A' });
-        if (emailTemplatesLoading) return; // Don't auto-save on initial load
-        debugLog({ location: 'page.tsx:useEffect', message: 'Scheduling auto-save', data: { willSaveIn: '2000ms' }, hypothesisId: 'A,D' });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:398',message:'useEffect triggered',data:{emailTemplatesLoading,emailTemplatesInitialized,hasTemplates:!!emailTemplates,invite_subject_length:emailTemplates?.invite_subject?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+        if (emailTemplatesLoading || !emailTemplatesInitialized) return; // Don't auto-save on initial load
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:403',message:'Scheduling auto-save',data:{willSaveIn:'2000ms'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
+        // #endregion
 
         const timer = setTimeout(() => {
             autoSaveEmailTemplates();

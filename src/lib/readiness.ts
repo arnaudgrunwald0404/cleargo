@@ -8,9 +8,8 @@ export async function recomputeEpicReadiness(epicId: string) {
     const supabase = createClient();
 
     // 1. Fetch epic data and criteria statuses
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     const { data: epic, error: epicError } = await supabase
-        .from('launch')
+        .from('epic')
         .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email')
         .eq('id', epicId)
         .single();
@@ -38,9 +37,8 @@ export async function recomputeEpicReadiness(epicId: string) {
     if (statusError) throw statusError;
     if (!statuses || statuses.length === 0) {
         // No applicable criteria → mark as not evaluated to avoid misleading GO/100%
-        // TODO: After migration 0018 is applied, change back to 'epic' table
         await supabase
-            .from('launch')
+            .from('epic')
             .update({
                 readiness_score: null,
                 readiness_status: 'NOT_EVALUATED',
@@ -168,9 +166,8 @@ export async function recomputeEpicReadiness(epicId: string) {
     }
 
     // 5. Update Epic
-    // TODO: After migration 0018 is applied, change back to 'epic' table
     await supabase
-        .from('launch')
+        .from('epic')
         .update({
             readiness_score: readinessScore,
             readiness_status: readinessStatus,
