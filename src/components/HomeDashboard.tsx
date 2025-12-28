@@ -46,10 +46,11 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
       };
 
       try {
-        const [epicsRes, myItemsRes, feedbackRes] = await Promise.all([
+        const [epicsRes, myItemsRes, feedbackRes, highRiskRes] = await Promise.all([
           safeFetch('/api/epics'),
           safeFetch('/api/my-items'),
           safeFetch('/api/dashboard/releases-needing-feedback'),
+          safeFetch('/api/dashboard/high-risk-epics'),
         ]);
 
         let activeEpics = 0;
@@ -64,12 +65,32 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true 
               activeEpics = epics.filter((epic: any) => 
                 epic.readiness_status !== 'COMPLETED' && epic.status !== 'COMPLETED'
               ).length;
-              highRiskEpics = epics.filter((epic: any) => 
-                epic.risk_level === 'HIGH'
-              ).length;
             }
           } catch (e) {
             console.warn('Error parsing epics response:', e);
+          }
+        }
+
+        // Get high-risk epics count from algorithm endpoint
+        if (highRiskRes.ok) {
+          try {
+            const highRiskData = await highRiskRes.json();
+            highRiskEpics = highRiskData.count || 0;
+          } catch (e) {
+            console.warn('Error parsing high-risk epics response:', e);
+            // Fallback: if algorithm endpoint fails, try to get from epics
+            if (epicsRes.ok) {
+              try {
+                const epics = await epicsRes.json();
+                if (Array.isArray(epics)) {
+                  highRiskEpics = epics.filter((epic: any) => 
+                    epic.risk_level === 'HIGH'
+                  ).length;
+                }
+              } catch (e2) {
+                console.warn('Error in fallback risk calculation:', e2);
+              }
+            }
           }
         }
 

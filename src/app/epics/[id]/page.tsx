@@ -6,8 +6,9 @@ import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
@@ -35,6 +36,7 @@ export default function EpicDetailPage() {
     const [instantiating, setInstantiating] = useState(false);
     const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+    const [activeTab, setActiveTab] = useState<string>('readiness');
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -102,6 +104,13 @@ export default function EpicDetailPage() {
                         *,
                         decision_owner_email,
                         rating_timing
+                    ),
+                    decision_owner:decision_owner_id (
+                        id,
+                        email,
+                        first_name,
+                        last_name,
+                        avatar_url
                     )
                 `)
                 .eq('epic_id', id)
@@ -275,16 +284,25 @@ export default function EpicDetailPage() {
             // Resolve PM owner: prioritize pod mapping since that's the source of truth for PM assignment
             // We'll resolve this after we've processed the matrix to also check PM criteria approvers
             
-            // Get unique approver emails first
+            // Get unique approver emails first (including delegated approvers)
             const approverEmails = new Set<string>();
             sorted.forEach((item: any) => {
-                const criterionEmail = item.criterion?.decision_owner_email;
-                let approverEmail = criterionEmail;
+                // Priority: decision_owner_id (delegated) > criterion template email
+                let approverEmail: string | null = null;
                 
-                // If it's a placeholder, resolve using pod mapping
-                if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
-                    if (pod && settingsMapping[pod]) {
-                        approverEmail = settingsMapping[pod];
+                if (item.decision_owner?.email) {
+                    // Use delegated approver if available
+                    approverEmail = item.decision_owner.email;
+                } else {
+                    // Fall back to criterion template
+                    const criterionEmail = item.criterion?.decision_owner_email;
+                    approverEmail = criterionEmail;
+                    
+                    // If it's a placeholder, resolve using pod mapping
+                    if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
+                        if (pod && settingsMapping[pod]) {
+                            approverEmail = settingsMapping[pod];
+                        }
                     }
                 }
                 
@@ -341,13 +359,33 @@ export default function EpicDetailPage() {
             };
             
             const resolvedMatrix = sorted.map((item: any) => {
-                const criterionEmail = item.criterion?.decision_owner_email;
-                let approverEmail = criterionEmail;
+                // Priority: decision_owner_id (delegated) > criterion template email
+                let approverEmail: string | null = null;
+                let approverInfo: { first_name?: string; last_name?: string; avatar_url?: string } | null = null;
                 
-                // If it's a placeholder, resolve using pod mapping
-                if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
-                    if (pod && settingsMapping[pod]) {
-                        approverEmail = settingsMapping[pod];
+                if (item.decision_owner?.email) {
+                    // Use delegated approver if available
+                    approverEmail = item.decision_owner.email;
+                    approverInfo = {
+                        first_name: item.decision_owner.first_name || undefined,
+                        last_name: item.decision_owner.last_name || undefined,
+                        avatar_url: item.decision_owner.avatar_url || undefined,
+                    };
+                } else {
+                    // Fall back to criterion template
+                    const criterionEmail = item.criterion?.decision_owner_email;
+                    approverEmail = criterionEmail;
+                    
+                    // If it's a placeholder, resolve using pod mapping
+                    if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
+                        if (pod && settingsMapping[pod]) {
+                            approverEmail = settingsMapping[pod];
+                        }
+                    }
+                    
+                    // Get approver info from userInfoMap
+                    if (approverEmail) {
+                        approverInfo = userInfoMap[approverEmail.toLowerCase()] || null;
                     }
                 }
                 
@@ -357,7 +395,7 @@ export default function EpicDetailPage() {
                 return {
                     ...item,
                     approverEmail,
-                    approverInfo: approverEmail ? userInfoMap[approverEmail] : null,
+                    approverInfo,
                     notRequired: item.notRequired === true,
                     condition_due_date: calculatedDueDate || item.condition_due_date,
                 };
@@ -581,6 +619,14 @@ export default function EpicDetailPage() {
                     <div className="flex-1">
                         <h1 className="text-3xl font-bold text-gray-900 mb-4">{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
+                        {pmOwner && pmOwner.email && (
+                            <Tooltip label="Product Owner" withArrow>
+                                <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded cursor-help">
+                                    <IconUsers size={14} />
+                                    {pmOwner.name || pmOwner.email}
+                                </span>
+                            </Tooltip>
+                        )}
                         {(() => {
                                 const ahaFields = (epic as any)?.aha_fields || {};
                                 const pod = (epic as any)?.pod || ahaFields?.custom_fields?.dev_backlog_pod || null;
@@ -650,18 +696,47 @@ export default function EpicDetailPage() {
                     </div>
                 </div>
 
-                <div className="border-t border-gray-200 pt-6">
+                <div className="pt-6">
                     <div className="grid grid-cols-4 gap-6">
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
-                            <div className="text-2xl font-bold text-gray-900">{matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}</div>
+                            <div className="text-2xl font-bold text-gray-900">
+                                {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
+                                {epic.readiness_score !== null && epic.readiness_score !== undefined && epic.readiness_status && (
+                                    <span className="ml-2 text-sm font-normal text-gray-600">
+                                        - {epic.readiness_status}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
                             <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'Not set')}</div>
                         </div>
                         <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Risk Level</div>
+                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
+                                Risk Level
+                                <Tooltip
+                                    label={
+                                        <div className="text-xs">
+                                            <div className="font-semibold mb-2">Risk Level Algorithm:</div>
+                                            <div className="space-y-1">
+                                                <div><strong>Default:</strong> LOW</div>
+                                                <div><strong>&lt; 14 days to launch:</strong></div>
+                                                <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
+                                                <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
+                                                <div><strong>14-30 days to launch:</strong></div>
+                                                <div className="pl-2">• MEDIUM if status is NO_GO</div>
+                                            </div>
+                                        </div>
+                                    }
+                                    multiline
+                                    maw={300}
+                                    withArrow
+                                >
+                                    <IconInfoCircle size={14} className="text-gray-400 cursor-help" />
+                                </Tooltip>
+                            </div>
                             <Select
                                 value={epic.risk_level || 'LOW'}
                                 onChange={handleRiskLevelUpdate}
@@ -685,114 +760,145 @@ export default function EpicDetailPage() {
                                 }}
                             />
                         </div>
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Owner</div>
-                            <div className="text-sm text-gray-900">
-                                {pmOwner && pmOwner.email ? (
-                                    <div className="flex items-center gap-2">
-                                        <Avatar
-                                            src={pmOwner.avatar_url}
-                                            alt={pmOwner.email}
-                                            radius="xl"
-                                            size={24}
-                                            color={getAvatarColor(pmOwner.email)}
-                                        >
-                                            {getInitials(pmOwner.email)}
-                                        </Avatar>
-                                        <span>{pmOwner.name || pmOwner.email}</span>
-                                    </div>
-                                ) : (
-                                    'Unassigned'
-                                )}
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
 
-            <div className="mb-8">
-                <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-semibold text-gray-900">Readiness Matrix</h2>
-                    {matrix.length > 0 && (
-                        <Group gap="xs">
-                            <Badge
-                                variant={criterionFilter === 'all' ? 'filled' : 'outline'}
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => setCriterionFilter('all')}
-                            >
-                                All
-                            </Badge>
-                            <Badge
-                                variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
-                                color="red"
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => setCriterionFilter('overdue')}
-                            >
-                                Criterion Overdue
-                            </Badge>
-                            <Badge
-                                variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
-                                color="orange"
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => setCriterionFilter('too_soon')}
-                            >
-                                Criterion Due Soon
-                            </Badge>
-                        </Group>
-                    )}
-                </div>
-                {matrix.length === 0 ? (
-                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
-                        <div>
-                            No criteria configured. Add criteria in <Link href="/admin/settings" className="text-yellow-800 underline hover:text-yellow-900">Admin → Settings</Link>.
-                        </div>
-                        {instantiationFailed && (
-                            <Button size="xs" variant="outline" onClick={retryInstantiate} loading={instantiating} className="border-yellow-600 text-yellow-800 hover:bg-yellow-100">
-                                Retry populate criteria
-                            </Button>
+            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'readiness')} className="mb-8">
+                <Tabs.List>
+                    <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
+                    <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
+                    <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
+                    <Tabs.Tab value="adoption">Adoption</Tabs.Tab>
+                </Tabs.List>
+
+                <Tabs.Panel value="readiness" pt="md">
+                    <div className="flex justify-between items-center mb-4">
+                        {matrix.length > 0 && (
+                            <Group gap="xs">
+                                <Badge
+                                    variant={criterionFilter === 'all' ? 'filled' : 'outline'}
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setCriterionFilter('all')}
+                                >
+                                    All
+                                </Badge>
+                                <Badge
+                                    variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
+                                    color="red"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setCriterionFilter('overdue')}
+                                >
+                                    Criterion Overdue
+                                </Badge>
+                                <Badge
+                                    variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
+                                    color="orange"
+                                    style={{ cursor: 'pointer' }}
+                                    onClick={() => setCriterionFilter('too_soon')}
+                                >
+                                    Criterion Due Soon
+                                </Badge>
+                            </Group>
                         )}
                     </div>
-                ) : (
-                    <>
-                        {(() => {
-                            const today = new Date();
-                            today.setHours(0, 0, 0, 0);
-                            const fourteenDaysFromNow = new Date(today);
-                            fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
-                            
-                            const filteredMatrix = matrix.filter((item: any) => {
-                                if (criterionFilter === 'all') return true;
+                    {matrix.length === 0 ? (
+                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
+                            <div>
+                                No criteria configured. Add criteria in <Link href="/admin/settings" className="text-yellow-800 underline hover:text-yellow-900">Admin → Settings</Link>.
+                            </div>
+                            {instantiationFailed && (
+                                <Button size="xs" variant="outline" onClick={retryInstantiate} loading={instantiating} className="border-yellow-600 text-yellow-800 hover:bg-yellow-100">
+                                    Retry populate criteria
+                                </Button>
+                            )}
+                        </div>
+                    ) : (
+                        <>
+                            {(() => {
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                const fourteenDaysFromNow = new Date(today);
+                                fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
                                 
-                                const dueDate = item.condition_due_date;
-                                if (!dueDate) return false;
+                                // Recalculate due dates for filtering (same logic as in loadData)
+                                const calculateDueDateForFilter = (item: any): string | null => {
+                                    if (!item.criterion?.rating_timing || launchStages.length === 0) {
+                                        return item.condition_due_date || null;
+                                    }
+                                    
+                                    const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
+                                    if (!targetDate) {
+                                        return item.condition_due_date || null;
+                                    }
+                                    
+                                    const ratingTimingId = item.criterion.rating_timing;
+                                    const targetStage = launchStages.find(stage => stage.id === ratingTimingId);
+                                    if (!targetStage) {
+                                        return item.condition_due_date || null;
+                                    }
+                                    
+                                    const stagesBeforeTarget = launchStages.filter(stage => 
+                                        stage.sort_order < targetStage.sort_order && stage.duration_days !== null
+                                    );
+                                    const totalDaysBefore = stagesBeforeTarget.reduce((sum, stage) => 
+                                        sum + (stage.duration_days || 0), 0
+                                    );
+                                    
+                                    const dueDate = new Date(targetDate);
+                                    dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+                                    return dueDate.toISOString().split('T')[0];
+                                };
                                 
-                                const due = new Date(dueDate);
-                                due.setHours(0, 0, 0, 0);
+                                const filteredMatrix = matrix.filter((item: any) => {
+                                    if (criterionFilter === 'all') return true;
+                                    
+                                    // Get due date - use stored or calculate if needed
+                                    const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
+                                    if (!dueDate) {
+                                        return false;
+                                    }
+                                    
+                                    const due = new Date(dueDate);
+                                    due.setHours(0, 0, 0, 0);
+                                    
+                                    if (criterionFilter === 'overdue') {
+                                        // Show items that are overdue AND not completed
+                                        const isOverdue = due.getTime() < today.getTime();
+                                        const status = item.status || 'NOT_SET';
+                                        const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
+                                        return isOverdue && isIncomplete;
+                                    } else if (criterionFilter === 'too_soon') {
+                                        // Show items due within 14 days AND not completed
+                                        const isDueSoon = due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime();
+                                        const status = item.status || 'NOT_SET';
+                                        const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
+                                        return isDueSoon && isIncomplete;
+                                    }
+                                    
+                                    return true;
+                                });
                                 
-                                if (criterionFilter === 'overdue') {
-                                    return due < today;
-                                } else if (criterionFilter === 'too_soon') {
-                                    return due >= today && due <= fourteenDaysFromNow;
-                                }
-                                
-                                return true;
-                            });
-                            
-                            return <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} />;
-                        })()}
-                    </>
-                )}
-            </div>
+                                return <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} />;
+                            })()}
+                        </>
+                    )}
+                </Tabs.Panel>
 
-            {/* Feedback Section */}
-            <div className="mb-8">
-                <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
-            </div>
+                <Tabs.Panel value="decisions" pt="md">
+                    <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
+                </Tabs.Panel>
 
-            <div className="mb-8">
-                <h2 className="text-xl font-semibold text-gray-900 mb-4">Decision History</h2>
-                <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
-            </div>
+                <Tabs.Panel value="feedback" pt="md">
+                    <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="adoption" pt="md">
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+                        <p className="text-gray-600">Adoption metrics and tracking coming soon.</p>
+                    </div>
+                </Tabs.Panel>
+            </Tabs>
 
             <SnapshotModal
                 epicId={epic.id}

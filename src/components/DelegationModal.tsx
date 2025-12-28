@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Modal, Button, Group, Radio, Stack, Text, Loader, TextInput, Avatar } from '@mantine/core';
+import { Modal, Button, Group, Radio, Stack, Text, Loader, TextInput, Avatar, ScrollArea } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 
 export type DelegationType =
@@ -64,16 +64,21 @@ export function DelegationModal({
       const res = await fetch('/api/users', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        setUsers(data);
+        // API returns { users: [...] }, extract the users array
+        const usersArray = Array.isArray(data) ? data : (data.users || []);
+        setUsers(Array.isArray(usersArray) ? usersArray : []);
+      } else {
+        setUsers([]);
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
+      setUsers([]); // Ensure users is always an array
     } finally {
       setLoadingUsers(false);
     }
   };
 
-  const filteredUsers = users.filter(user => {
+  const filteredUsers = Array.isArray(users) ? users.filter(user => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase();
@@ -81,7 +86,7 @@ export function DelegationModal({
       user.email.toLowerCase().includes(query) ||
       fullName.includes(query)
     );
-  });
+  }) : [];
 
   const handleSubmit = async () => {
     if (!selectedUser) {
@@ -232,58 +237,90 @@ export function DelegationModal({
               <Loader size="sm" />
             </div>
           ) : (
-            <div style={{ 
-              maxHeight: '200px', 
-              overflowY: 'auto', 
-              border: '1px solid #e0e0e0', 
-              borderRadius: '8px',
-              padding: '4px'
-            }}>
-              {filteredUsers.length === 0 ? (
-                <Text size="sm" c="dimmed" ta="center" p="md">No users found</Text>
-              ) : (
-                <Stack gap={4}>
-                  {filteredUsers.map(user => (
-                    <div
-                      key={user.email}
-                      onClick={() => setSelectedUser(user)}
-                      style={{
-                        padding: '8px 12px',
-                        cursor: 'pointer',
-                        borderRadius: '6px',
-                        backgroundColor: selectedUser?.email === user.email ? '#f0f0ff' : 'transparent',
-                        border: selectedUser?.email === user.email ? '2px solid #6366F1' : '2px solid transparent',
-                        transition: 'all 0.2s',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (selectedUser?.email !== user.email) {
-                          e.currentTarget.style.backgroundColor = '#fafafa';
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (selectedUser?.email !== user.email) {
-                          e.currentTarget.style.backgroundColor = 'transparent';
-                        }
-                      }}
-                    >
-                      <Group gap="xs">
-                        <Avatar
-                          src={user.avatar_url || undefined}
-                          alt={user.email}
-                          radius="xl"
-                          size={32}
-                          color={getAvatarColor(user.email)}
+            <div style={{ position: 'relative' }}>
+              <ScrollArea
+                h={200}
+                type="scroll"
+                scrollbarSize={14}
+                styles={{
+                  scrollbar: {
+                    backgroundColor: '#f1f1f1',
+                  },
+                  thumb: {
+                    backgroundColor: '#888 !important',
+                    minHeight: 40,
+                    '&:hover': {
+                      backgroundColor: '#555 !important',
+                    },
+                  },
+                }}
+              >
+                <div style={{ 
+                  border: '1px solid #e0e0e0', 
+                  borderRadius: '8px',
+                  padding: '4px'
+                }}>
+                  {filteredUsers.length === 0 ? (
+                    <Text size="sm" c="dimmed" ta="center" p="md">No users found</Text>
+                  ) : (
+                    <Stack gap={4}>
+                      {filteredUsers.map(user => (
+                        <div
+                          key={user.email}
+                          onClick={() => setSelectedUser(user)}
+                          style={{
+                            padding: '8px 12px',
+                            cursor: 'pointer',
+                            borderRadius: '6px',
+                            backgroundColor: selectedUser?.email === user.email ? '#f0f0ff' : 'transparent',
+                            border: selectedUser?.email === user.email ? '2px solid #6366F1' : '2px solid transparent',
+                            transition: 'all 0.2s',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (selectedUser?.email !== user.email) {
+                              e.currentTarget.style.backgroundColor = '#fafafa';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (selectedUser?.email !== user.email) {
+                              e.currentTarget.style.backgroundColor = 'transparent';
+                            }
+                          }}
                         >
-                          {getInitials(user)}
-                        </Avatar>
-                        <div>
-                          <Text size="sm" fw={500}>{getUserDisplayName(user)}</Text>
-                          <Text size="xs" c="dimmed">{user.email}</Text>
+                          <Group gap="xs">
+                            <Avatar
+                              src={user.avatar_url || undefined}
+                              alt={user.email}
+                              radius="xl"
+                              size={32}
+                              color={getAvatarColor(user.email)}
+                            >
+                              {getInitials(user)}
+                            </Avatar>
+                            <div>
+                              <Text size="sm" fw={500}>{getUserDisplayName(user)}</Text>
+                              <Text size="xs" c="dimmed">{user.email}</Text>
+                            </div>
+                          </Group>
                         </div>
-                      </Group>
-                    </div>
-                  ))}
-                </Stack>
+                      ))}
+                    </Stack>
+                  )}
+                </div>
+              </ScrollArea>
+              {filteredUsers.length > 3 && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    right: 14,
+                    height: '30px',
+                    background: 'linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.95))',
+                    pointerEvents: 'none',
+                    borderRadius: '0 0 8px 8px',
+                  }}
+                />
               )}
             </div>
           )}

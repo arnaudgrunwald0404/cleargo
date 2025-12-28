@@ -272,7 +272,7 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
     };
 
     return (
-        <div className="w-100 mr-8 sticky mt-36">
+        <div className="w-80 mr-8 sticky mt-36">
             <div className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
                 <h2 className="text-lg font-semibold text-gray-900 mb-6">Epic Fields</h2>
                 

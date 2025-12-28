@@ -35,8 +35,8 @@ describe('Aha! Write-back Integration', () => {
         mockSupabase = (createClient as jest.Mock)();
     });
 
-    it('should send update to Aha when launch exists', async () => {
-        // Mock launch data
+    it('should send update to Aha when epic exists', async () => {
+        // Mock epic data
         mockSupabase.single.mockResolvedValue({
             data: {
                 id: '123',
@@ -70,7 +70,7 @@ describe('Aha! Write-back Integration', () => {
         );
     });
 
-    it('should handle missing launch gracefully', async () => {
+    it('should handle missing epic gracefully', async () => {
         mockSupabase.single.mockResolvedValue({
             data: null,
             error: { message: 'Not found' },

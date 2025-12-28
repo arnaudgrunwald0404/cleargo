@@ -12,6 +12,7 @@ import {
     buildGoNoGoDecisionMessage,
     buildLeadershipDigestMessage,
     buildLaunchStatusChangeMessage,
+    buildDelegationMessage,
 } from './templates';
 
 /**
@@ -95,6 +96,11 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             case 'launch_status_change':
                 if (!payload.metadata) throw new Error('Missing metadata for launch_status_change');
                 message = buildLaunchStatusChangeMessage(payload.metadata as any);
+                break;
+
+            case 'delegation':
+                if (!payload.metadata) throw new Error('Missing metadata for delegation');
+                message = buildDelegationMessage(payload.metadata as any);
                 break;
 
             default:

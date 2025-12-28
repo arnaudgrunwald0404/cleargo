@@ -1,8 +1,6 @@
 'use client';
 
-import { useState } from 'react';
 import { Epic } from '@/types/epics';
-import EpicForm from './EpicForm';
 import Link from 'next/link';
 
 interface EpicDashboardProps {
@@ -10,7 +8,6 @@ interface EpicDashboardProps {
 }
 
 export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
-    const [isModalOpen, setIsModalOpen] = useState(false);
     // We rely on router.refresh() in EpicForm to update the data prop from the server
     // but we can also optimistically update or just wait for the refresh.
     // Since initialEpics comes from the server page, router.refresh() will update it.
@@ -19,12 +16,6 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
         <div className="space-y-6">
             <div className="flex justify-between items-center">
                 <h1 className="text-2xl font-bold text-gray-900">Portfolio Dashboard</h1>
-                <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium"
-                >
-                    + New Epic
-                </button>
             </div>
 
             <div className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
@@ -98,26 +89,6 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                 </table>
             </div>
 
-            {/* Simple Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-                    <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-                        <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" aria-hidden="true" onClick={() => setIsModalOpen(false)}></div>
-                        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-                        <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-                            <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                                <h3 className="text-lg leading-6 font-medium text-gray-900 mb-4" id="modal-title">
-                                    Create New Epic
-                                </h3>
-                                <EpicForm
-                                    onSuccess={() => setIsModalOpen(false)}
-                                    onCancel={() => setIsModalOpen(false)}
-                                />
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 }

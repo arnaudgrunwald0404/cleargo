@@ -28,12 +28,12 @@ jest.mock('next/server', () => {
 });
 
 // Mock DB functions
-jest.mock('@/lib/db/launches', () => ({
-    upsertLaunchFromAha: jest.fn().mockResolvedValue({ id: 'launch-123', aha_id: 'E-123', tier: 'TIER_1' }),
+jest.mock('@/lib/db/epics', () => ({
+    upsertEpicFromAha: jest.fn().mockResolvedValue({ id: 'epic-123', aha_id: 'E-123', tier: 'TIER_1' }),
     getUserByEmail: jest.fn().mockResolvedValue({ id: 'user-123' }),
     getFallbackProductOpsUser: jest.fn().mockResolvedValue('fallback-user-id'),
-    instantiateCriteriaForLaunch: jest.fn().mockResolvedValue(undefined),
-    getLaunchByAhaId: jest.fn().mockResolvedValue(null), // Simulate new launch
+    instantiateCriteriaForEpic: jest.fn().mockResolvedValue(undefined),
+    getEpicByAhaId: jest.fn().mockResolvedValue(null), // Simulate new epic
 }));
 
 // Mock webhook validator
@@ -44,7 +44,7 @@ jest.mock('@/lib/aha/webhook-validator', () => ({
 // Mock mapping
 jest.mock('@/lib/aha/mapping', () => ({
     shouldProcessEpic: jest.fn().mockResolvedValue(true),
-    mapEpicToLaunch: jest.fn().mockResolvedValue({
+    mapEpicToEpic: jest.fn().mockResolvedValue({
         aha_id: 'E-123',
         name: 'Test Epic',
         tier: 'TIER_1',
@@ -74,8 +74,8 @@ describe('Aha! Webhook Integration', () => {
         expect(res.status).toBe(200);
 
         const body = await res.json();
-        expect(body.message).toBe('Launch created');
-        expect(body.launch_id).toBe('launch-123');
+        expect(body.message).toBe('Epic created');
+        expect(body.epic_id).toBe('epic-123');
     });
 
     it('should reject invalid signature', async () => {

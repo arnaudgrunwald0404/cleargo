@@ -9,7 +9,8 @@ export type SlackNotificationType =
     | 'leadership_digest'
     | 'launch_status_change'
     | 'criterion_update'
-    | 'launch_created';
+    | 'launch_created'
+    | 'delegation';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 

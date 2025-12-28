@@ -81,14 +81,23 @@ export async function getEpic(epicId: string): Promise<AhaEpic> {
     ].join(',');
     
     const url = `${BASE_URL}/epics/${epicId}?fields=${encodeURIComponent(fields)}`;
-    const response = await fetchWithRetry<{ epic: AhaEpic }>(url, {
+    const response = await fetchWithRetry<any>(url, {
         method: 'GET',
         headers: {
             'Authorization': `Bearer ${AHA_API_TOKEN}`,
             'Content-Type': 'application/json',
         },
     });
-    return response.epic;
+    
+    // Handle different response structures
+    if (response.epic) {
+        return response.epic;
+    } else if (response.id || response.reference_num) {
+        // Response is the epic object directly
+        return response;
+    } else {
+        throw new Error(`Unexpected Aha API response structure for epic ${epicId}`);
+    }
 }
 
 export async function updateEpicCustomFields(

@@ -354,20 +354,28 @@ export default function AdminSettingsPage() {
         setEmailTemplatesSaving(true);
         try {
             const payload = {
-                email_template_invite_subject: emailTemplates.invite_subject || null,
-                email_template_invite_html: emailTemplates.invite_html || null,
-                email_template_remind_subject: emailTemplates.remind_subject || null,
-                email_template_remind_html: emailTemplates.remind_html || null,
-                email_template_update_criteria_subject: emailTemplates.update_criteria_subject || null,
-                email_template_update_criteria_html: emailTemplates.update_criteria_html || null,
+                email_template_invite_subject: emailTemplates.invite_subject?.trim() || null,
+                email_template_invite_html: emailTemplates.invite_html?.trim() || null,
+                email_template_remind_subject: emailTemplates.remind_subject?.trim() || null,
+                email_template_remind_html: emailTemplates.remind_html?.trim() || null,
+                email_template_update_criteria_subject: emailTemplates.update_criteria_subject?.trim() || null,
+                email_template_update_criteria_html: emailTemplates.update_criteria_html?.trim() || null,
             };
+            
+            // Convert empty strings to null for zod validation
+            Object.keys(payload).forEach(key => {
+                if (payload[key as keyof typeof payload] === '') {
+                    (payload as any)[key] = null;
+                }
+            });
             debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'Calling patchEmailTemplates', data: { payloadKeys: Object.keys(payload), hasInviteSubject: !!payload.email_template_invite_subject }, hypothesisId: 'B,C' });
             await patchEmailTemplates(payload);
             debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'patchEmailTemplates SUCCESS', data: {}, hypothesisId: 'B' });
         } catch (error: any) {
             debugLog({ location: 'page.tsx:autoSaveEmailTemplates', message: 'autoSaveEmailTemplates ERROR', data: { errorMessage: error?.message, errorName: error?.name, errorString: String(error) }, hypothesisId: 'B,E' });
             console.error("Failed to auto-save email templates:", error);
-            setError("Failed to save email templates. Please try again.");
+            const errorMessage = error?.message || "Failed to save email templates. Please try again.";
+            setError(errorMessage);
         } finally {
             setEmailTemplatesSaving(false);
         }

@@ -293,7 +293,7 @@ export function buildWriteBackPayload(data: {
         payload[getCustomFieldKey('launch_console_url')] = data.console_url;
     }
 
-    // Phase 1: Core launch fields
+    // Phase 1: Core epic fields
     if (data.tier !== undefined && data.tier !== null) {
         payload[getCustomFieldKey('launch_tier')] = mapTierToAha(data.tier);
     }

@@ -1,28 +1,22 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Epic, CreateEpicDTO, EpicTier } from "@/types/epics";
+import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { TextInput, Select, Group, Card, Box, ActionIcon, Badge, Button, Title, Text, Alert, Stack, Grid } from '@mantine/core';
-import { IconSearch, IconX, IconFilter, IconPlus, IconAlertCircle } from '@tabler/icons-react';
+import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert } from '@mantine/core';
+import { IconSearch, IconX, IconFilter, IconAlertCircle } from '@tabler/icons-react';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
 }
 
-export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
+function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [products, setProducts] = useState<any[]>([]);
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [showCreate, setShowCreate] = useState(false);
-
-    const [formData, setFormData] = useState<Partial<CreateEpicDTO>>({
-        name: "",
-        tier: "TIER_3",
-    });
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -95,31 +89,6 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }
 
-    async function handleCreate(e: React.FormEvent) {
-        e.preventDefault();
-        setError(null);
-
-        try {
-            const res = await fetch("/api/epics", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to create epic");
-            }
-
-            const newEpic = await res.json();
-            setEpics([newEpic, ...epics]);
-            setShowCreate(false);
-            setFormData({ name: "", tier: "TIER_3" });
-            alert("Epic created successfully!");
-        } catch (e: any) {
-            setError(e.message);
-        }
-    }
 
     const filteredEpics = epics.filter(l => {
         if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
@@ -208,7 +177,7 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <Group justify="space-between" align="flex-start" mb="xl">
+            <Group justify="space-between" align="flex-start" mb="md">
                 <Box>
                     <Title order={1} mb="xs" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
                         Epics
@@ -217,14 +186,6 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
                     </Text>
                 </Box>
-                <Button
-                    leftSection={<IconPlus size={16} />}
-                    onClick={() => setShowCreate(!showCreate)}
-                    variant={showCreate ? "subtle" : "filled"}
-                    color="indigo"
-                >
-                    {showCreate ? "Cancel" : "New Epic"}
-                </Button>
             </Group>
 
             {/* Modern Search and Filters */}
@@ -442,88 +403,9 @@ export default function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 )
             }
 
-            {showCreate && (
-                <Card shadow="sm" padding="lg" radius="md" withBorder mb="xl">
-                    <Title order={2} mb="lg" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
-                        Create New Epic
-                    </Title>
-                    <form onSubmit={handleCreate}>
-                        <Stack gap="md">
-                            <TextInput
-                                label="Epic Name"
-                                placeholder="Enter epic name"
-                                required
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            />
-
-                            <Grid>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <Select
-                                        label="Tier"
-                                        required
-                                        value={formData.tier}
-                                        onChange={(value) => setFormData({ ...formData, tier: (value as EpicTier) || "TIER_3" })}
-                                        data={[
-                                            { value: "TIER_1", label: "Tier 1 (Strategic)" },
-                                            { value: "TIER_2", label: "Tier 2 (Major)" },
-                                            { value: "TIER_3", label: "Tier 3 (Minor)" },
-                                        ]}
-                                    />
-                                </Grid.Col>
-
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <Select
-                                        label="Product"
-                                        placeholder="Select Product..."
-                                        value={formData.product_id || null}
-                                        onChange={(value) => setFormData({ ...formData, product_id: value || undefined })}
-                                        data={products.map(p => ({ value: p.id, label: p.name }))}
-                                        clearable
-                                    />
-                                </Grid.Col>
-                            </Grid>
-
-                            <Grid>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <TextInput
-                                        label="Target Date"
-                                        type="date"
-                                        value={formData.target_launch_date || ""}
-                                        onChange={(e) => setFormData({ ...formData, target_launch_date: e.target.value })}
-                                    />
-                                </Grid.Col>
-                                <Grid.Col span={{ base: 12, sm: 6 }}>
-                                    <TextInput
-                                        label="Aha ID"
-                                        placeholder="Optional"
-                                        value={formData.aha_id || ""}
-                                        onChange={(e) => setFormData({ ...formData, aha_id: e.target.value })}
-                                    />
-                                </Grid.Col>
-                            </Grid>
-
-                            <Group justify="flex-end" mt="md">
-                                <Button
-                                    variant="subtle"
-                                    onClick={() => setShowCreate(false)}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    type="submit"
-                                    color="green"
-                                    leftSection={<IconPlus size={16} />}
-                                >
-                                    Create Epic
-                                </Button>
-                            </Group>
-                        </Stack>
-                    </form>
-                </Card>
-            )}
 
         </div >
     );
 }
 
+export default EpicsClient;

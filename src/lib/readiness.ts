@@ -3,6 +3,12 @@ import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { SlackNotificationPayload } from '@/types/slack';
 import { sendEmailNotification } from '@/lib/email/notifications';
+import { 
+    computeLaunchReadiness, 
+    isSignoffCriterion, 
+    normalizeStatus,
+    type CriterionInput 
+} from '@/lib/readiness-scoring';
 
 export async function recomputeEpicReadiness(epicId: string) {
     const supabase = createClient();
@@ -28,6 +34,9 @@ export async function recomputeEpicReadiness(epicId: string) {
         .select(`
             *,
             criterion:criterion_id (
+                id,
+                label,
+                category,
                 gate,
                 tier_applicability
             )
@@ -50,102 +59,65 @@ export async function recomputeEpicReadiness(epicId: string) {
         return;
     }
 
-    // 2. Compute Score
-    // Score = (Sum of GO + CONDITIONAL) / Total Applicable Criteria (excluding Gates?)
-    // Plan says: "Exclude gate criteria from score denominator."
-    // Scoring: GO=2, CONDITIONAL=1, NO_GO=0.
-    // Wait, usually score is % of completed items.
-    // Plan says: "Scoring: GO=2, CONDITIONAL=1, NO_GO=0, NOT_SET=null. Exclude NOT_SET. Exclude gate criteria from score denominator."
-    // Let's stick to the plan.
-    // Actually, if we exclude NOT_SET, the score might be misleading early on.
-    // But let's follow the plan.
-
-    let totalScore = 0;
-    let maxPossibleScore = 0;
-    let gateNoGoCount = 0;
-    let unresolvedConditionsCount = 0;
-
     // Helper to determine applicability by tier
     const applies = (app: 'ALL'|'TIER_1_ONLY'|'TIER_1_AND_2', tier: 'TIER_1'|'TIER_2'|'TIER_3') =>
         app === 'ALL' ||
         (app === 'TIER_1_ONLY' && tier === 'TIER_1') ||
         (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2'));
 
+    const tier = (epic?.tier as any) || 'TIER_3';
+
+    // Convert statuses to CriterionInput format for new scoring algorithm
+    const criteriaInputs: CriterionInput[] = [];
+    
     for (const s of statuses) {
         // Skip non-applicable criteria entirely for scoring/verdict
-        const tier = (epic?.tier as any) || 'TIER_3';
         const applicability = s.criterion?.tier_applicability as any;
         if (applicability && !applies(applicability, tier)) {
             continue;
         }
 
-        const isGate = s.criterion?.gate;
+        const criterion = s.criterion;
+        if (!criterion) continue;
 
-        // Verdict checks
-        if (isGate && s.status === 'NO_GO') {
-            gateNoGoCount++;
-        }
-        if (isGate && s.status === 'CONDITIONAL' && !s.condition_due_date) {
-            // "unresolved pre-launch conditions on gates" -> maybe check if condition is met?
-            // For now, let's count conditionals.
-            unresolvedConditionsCount++;
-        }
+        const label = criterion.label as string | null | undefined;
+        const category = criterion.category as string | null | undefined;
+        const isGate = criterion.gate as boolean | null | undefined;
 
-        // Scoring (exclude gates)
-        if (!isGate) {
-            if (s.status === 'GO') {
-                totalScore += 2;
-                maxPossibleScore += 2;
-            } else if (s.status === 'CONDITIONAL') {
-                totalScore += 1;
-                maxPossibleScore += 2;
-            } else if (s.status === 'NO_GO') {
-                totalScore += 0;
-                maxPossibleScore += 2;
-            }
-            // NOT_SET is excluded from denominator
-        }
+        criteriaInputs.push({
+            id: s.id || criterion.id,
+            categoryId: category || 'OTHER',
+            isSignoff: isSignoffCriterion(label),
+            status: normalizeStatus(s.status),
+            isGating: isGate || false,
+            weight: 1, // Default weight, can be customized later
+        });
     }
 
-    const readinessScore = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
+    // Use new scoring algorithm
+    const scoringResult = computeLaunchReadiness(criteriaInputs);
 
-    // If no applicable criteria contributed to the score and no gate violations/conditions, mark as NOT_EVALUATED
-    if (maxPossibleScore === 0 && gateNoGoCount === 0 && unresolvedConditionsCount === 0) {
-        await supabase
-            .from('epic')
-            .update({
-                readiness_score: null,
-                readiness_status: 'NOT_EVALUATED',
-                risk_level: epic?.risk_level || 'LOW',
-                updated_at: new Date().toISOString()
-            })
-            .eq('id', epicId);
-        return;
-    }
+    const readinessScore = scoringResult.readiness;
+    let readinessStatus: string;
 
-    // 3. Compute Verdict (Readiness Status)
-    // "any gate NO_GO → NO_GO; else unresolved pre-launch conditions on gates → CONDITIONAL; else tier thresholds..."
-    let readinessStatus = 'NOT_EVALUATED';
-
-    if (gateNoGoCount > 0) {
-        readinessStatus = 'NO_GO';
-    } else {
-        // Check thresholds (mocked for now, should come from settings)
-        // T1: 0.9, T2: 0.8, T3: 0.7
-        // We need to know the epic tier.
-        const tier = epic?.tier || 'TIER_3';
-
-        // TODO: Fetch from app_settings
-        const thresholds: Record<string, number> = { 'TIER_1': 0.9, 'TIER_2': 0.8, 'TIER_3': 0.7 };
-        const threshold = thresholds[tier] || 0.7;
-
-        if (readinessScore >= threshold) {
+    // Map verdict to database status format
+    switch (scoringResult.verdict) {
+        case 'GO':
             readinessStatus = 'GO';
-        } else if (readinessScore > 0.5) { // Arbitrary "close enough" for Conditional?
+            break;
+        case 'CONDITIONAL_GO':
             readinessStatus = 'CONDITIONAL_GO';
-        } else {
+            break;
+        case 'NO_GO_BLOCKED_BY_GATING':
             readinessStatus = 'NO_GO';
-        }
+            break;
+        case 'AT_RISK':
+            readinessStatus = 'CONDITIONAL_GO'; // Map AT_RISK to CONDITIONAL_GO for now
+            break;
+        case 'NOT_EVALUATED':
+        default:
+            readinessStatus = 'NOT_EVALUATED';
+            break;
     }
 
     // 4. Compute Risk

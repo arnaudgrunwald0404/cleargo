@@ -464,6 +464,84 @@ export function buildLaunchStatusChangeMessage(data: {
 }
 
 /**
+ * Delegation Notification
+ */
+export function buildDelegationMessage(data: {
+    epic_name: string;
+    epic_id: string;
+    task_label: string;
+    category: string;
+    delegation_type: string;
+    delegated_by: string;
+    epic_url?: string;
+}): { text: string; blocks: SlackBlock[] } {
+    const delegationTypeLabels: Record<string, string> = {
+        'SINGLE_TASK': 'This task only',
+        'CATEGORY_EXCLUDING_GATES': `All ${data.category} tasks (excluding GATE)`,
+        'CATEGORY_INCLUDING_GATES': `All ${data.category} tasks (including GATE)`,
+        'TEMPLATE_EXCLUDING_GATES': `All future epics - ${data.category} (excluding GATE)`,
+        'TEMPLATE_INCLUDING_GATES': `All future epics - ${data.category} (including GATE)`,
+    };
+
+    return {
+        text: `You've been assigned to approve: ${data.task_label} for ${data.epic_name}`,
+        blocks: [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: '📋 Approval Task Delegated',
+                    emoji: true,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${data.epic_name}*\n_${data.task_label}_`,
+                },
+            },
+            {
+                type: 'section',
+                fields: [
+                    {
+                        type: 'mrkdwn',
+                        text: `*Category:*\n${data.category}`,
+                    },
+                    {
+                        type: 'mrkdwn',
+                        text: `*Delegation Scope:*\n${delegationTypeLabels[data.delegation_type] || data.delegation_type}`,
+                    },
+                    {
+                        type: 'mrkdwn',
+                        text: `*Delegated By:*\n${data.delegated_by}`,
+                    },
+                ],
+            },
+            {
+                type: 'actions',
+                elements: [
+                    {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'View Epic',
+                            emoji: true,
+                        },
+                        style: 'primary',
+                        url: data.epic_url || `${APP_URL}/epics/${data.epic_id}`,
+                        action_id: 'view_epic',
+                    },
+                ],
+            },
+            {
+                type: 'divider',
+            },
+        ],
+    };
+}
+
+/**
  * URL Unfurl for launch links
  */
 export function buildLaunchUnfurl(data: {

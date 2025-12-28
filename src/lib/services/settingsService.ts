@@ -92,7 +92,22 @@ export async function patchEmailTemplates(payload: any) {
     body: JSON.stringify(payload),
   });
   debugLog({ location: 'settingsService.ts:patchEmailTemplates', message: 'patchEmailTemplates API response', data: { ok: res.ok, status: res.status, statusText: res.statusText }, hypothesisId: 'C' });
-  if (!res.ok) throw new Error("Failed to save email templates");
+  if (!res.ok) {
+    let errorMessage = "Failed to save email templates";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorData.details || errorMessage;
+      if (errorData.details && typeof errorData.details === 'object') {
+        errorMessage += `: ${JSON.stringify(errorData.details)}`;
+      } else if (errorData.details) {
+        errorMessage += `: ${errorData.details}`;
+      }
+    } catch (e) {
+      // If response is not JSON, use status text
+      errorMessage = `Failed to save email templates: ${res.status} ${res.statusText}`;
+    }
+    throw new Error(errorMessage);
+  }
   return res.json().catch(() => ({}));
 }
 

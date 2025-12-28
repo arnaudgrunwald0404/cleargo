@@ -5,7 +5,7 @@ export const dynamic = 'force-dynamic';
 
 export interface ActivityFeedItem {
     id: string;
-    type: 'criterion_change' | 'epic_added' | 'release_updated' | 'feedback_added';
+    type: 'criterion_change' | 'epic_added' | 'release_updated' | 'feedback_added' | 'delegation';
     title: string;
     description: string;
     timestamp: string;
@@ -154,6 +154,32 @@ export async function GET(req: NextRequest) {
                         entity_id: log.entity_id,
                     };
                 }
+            } else if (log.entity_type === 'delegation') {
+                // Delegation event
+                const diff = log.json_diff;
+                const delegationTypeLabels: Record<string, string> = {
+                    'SINGLE_TASK': 'task',
+                    'CATEGORY_EXCLUDING_GATES': 'category (excluding GATE)',
+                    'CATEGORY_INCLUDING_GATES': 'category (including GATE)',
+                    'TEMPLATE_EXCLUDING_GATES': 'template (excluding GATE)',
+                    'TEMPLATE_INCLUDING_GATES': 'template (including GATE)',
+                };
+                
+                const scope = delegationTypeLabels[diff?.delegation_type] || diff?.delegation_type || 'task';
+                const taskLabel = diff?.task_label || 'Approval task';
+                const epicName = diff?.epic_name || 'Unknown epic';
+                const newApproverEmail = diff?.new_approver_email || 'Unknown';
+                
+                activity = {
+                    id: log.id,
+                    type: 'delegation',
+                    title: 'Task Delegated',
+                    description: `${taskLabel} for ${epicName} delegated to ${newApproverEmail} (${scope})`,
+                    timestamp: log.taken_at,
+                    actor: normalizeActor(log.actor),
+                    entity_type: log.entity_type,
+                    entity_id: log.entity_id,
+                };
             }
 
             if (activity) {

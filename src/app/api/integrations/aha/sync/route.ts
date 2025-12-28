@@ -52,8 +52,46 @@ export async function POST(req: NextRequest) {
         const fieldsToLoad = settings.aha_fields_to_load || [];
 
         // Fetch epics from Aha
-        const response = await client.getEpics({ product, per_page: perPage, page });
-        const epics = response.epics || [];
+        let response: any;
+        try {
+            response = await client.getEpics({ product, per_page: perPage, page });
+            console.log('📥 Raw Aha API response:', {
+                type: typeof response,
+                isArray: Array.isArray(response),
+                keys: response ? Object.keys(response) : [],
+                hasEpics: !!response?.epics,
+                epicsLength: response?.epics?.length,
+                sample: JSON.stringify(response).substring(0, 500)
+            });
+        } catch (fetchError) {
+            console.error('❌ Failed to fetch epics from Aha:', fetchError);
+            throw new Error(`Failed to fetch epics from Aha: ${(fetchError as Error).message}`);
+        }
+        
+        // Handle different response structures
+        let epics: any[] = [];
+        if (Array.isArray(response)) {
+            // Response is directly an array
+            epics = response;
+            console.log('✅ Parsed response as direct array');
+        } else if (response?.epics && Array.isArray(response.epics)) {
+            // Response has epics property (most common)
+            epics = response.epics;
+            console.log('✅ Parsed response.epics array');
+        } else if (response?.data && Array.isArray(response.data)) {
+            // Alternative response structure
+            epics = response.data;
+            console.log('✅ Parsed response.data array');
+        } else {
+            // Log unexpected structure for debugging
+            console.error('⚠️ Unexpected Aha API response structure:', {
+                responseType: typeof response,
+                isArray: Array.isArray(response),
+                keys: response ? Object.keys(response) : [],
+                response: JSON.stringify(response).substring(0, 500)
+            });
+            throw new Error('Unexpected Aha API response structure. Check logs for details.');
+        }
 
         console.log(`📥 Fetched ${epics.length} epics from Aha`);
 

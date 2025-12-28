@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { Epic, CreateEpicDTO, EpicTier } from "@/types/epics";
+import { Epic } from "@/types/epics";
 import Link from "next/link";
 
 interface ReleaseGroup {
@@ -15,12 +15,6 @@ export default function EpicsPage() {
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [showCreate, setShowCreate] = useState(false);
-
-    const [formData, setFormData] = useState<Partial<CreateEpicDTO>>({
-        name: "",
-        tier: "TIER_3",
-    });
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -76,31 +70,6 @@ export default function EpicsPage() {
         }
     }
 
-    async function handleCreate(e: React.FormEvent) {
-        e.preventDefault();
-        setError(null);
-
-        try {
-            const res = await fetch("/api/epics", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(formData),
-            });
-
-            if (!res.ok) {
-                const data = await res.json();
-                throw new Error(data.error || "Failed to create epic");
-            }
-
-            const newEpic = await res.json();
-            setEpics([newEpic, ...epics]);
-            setShowCreate(false);
-            setFormData({ name: "", tier: "TIER_3" });
-            alert("Epic created successfully!");
-        } catch (e: any) {
-            setError(e.message);
-        }
-    }
 
     const filteredEpics = epics.filter(l => {
         if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
@@ -212,12 +181,6 @@ export default function EpicsPage() {
                         Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
                     </p>
                 </div>
-                <button
-                    onClick={() => setShowCreate(!showCreate)}
-                    className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-                >
-                    {showCreate ? "Cancel" : "New Epic"}
-                </button>
             </div>
 
             {/* Filters */}
@@ -451,83 +414,6 @@ export default function EpicsPage() {
                                 </div>
                             </div>
                         ))}
-                    </div>
-                )
-            }
-
-            {
-                showCreate && (
-                    <div className="bg-white p-6 rounded shadow mb-8 border">
-                        <h2 className="text-xl font-semibold mb-4">Create New Epic</h2>
-                        <form onSubmit={handleCreate} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium mb-1">Epic Name</label>
-                                <input
-                                    type="text"
-                                    required
-                                    value={formData.name}
-                                    onChange={e => setFormData({ ...formData, name: e.target.value })}
-                                    className="w-full p-2 border rounded"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Tier</label>
-                                    <select
-                                        value={formData.tier}
-                                        onChange={e => setFormData({ ...formData, tier: e.target.value as EpicTier })}
-                                        className="w-full p-2 border rounded"
-                                    >
-                                        <option value="TIER_1">Tier 1 (Strategic)</option>
-                                        <option value="TIER_2">Tier 2 (Major)</option>
-                                        <option value="TIER_3">Tier 3 (Minor)</option>
-                                    </select>
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Product</label>
-                                    <select
-                                        value={formData.product_id || ""}
-                                        onChange={e => setFormData({ ...formData, product_id: e.target.value })}
-                                        className="w-full p-2 border rounded"
-                                    >
-                                        <option value="">Select Product...</option>
-                                        {products.map(p => (
-                                            <option key={p.id} value={p.id}>{p.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Target Date</label>
-                                    <input
-                                        type="date"
-                                        value={formData.target_launch_date || ""}
-                                        onChange={e => setFormData({ ...formData, target_launch_date: e.target.value })}
-                                        className="w-full p-2 border rounded"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium mb-1">Aha ID (Optional)</label>
-                                    <input
-                                        type="text"
-                                        value={formData.aha_id || ""}
-                                        onChange={e => setFormData({ ...formData, aha_id: e.target.value })}
-                                        className="w-full p-2 border rounded"
-                                    />
-                                </div>
-                            </div>
-
-                            <button
-                                type="submit"
-                                className="bg-green-600 text-white px-6 py-2 rounded hover:bg-green-700"
-                            >
-                                Create Epic
-                            </button>
-                        </form>
                     </div>
                 )
             }

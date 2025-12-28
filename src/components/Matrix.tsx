@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Select, Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
-import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle } from "@tabler/icons-react";
+import { notifications } from "@mantine/notifications";
+import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
 import { UserDisplayWithDelegation } from "./UserDisplayWithDelegation";
 import { RichText } from "./admin/RichText";
 import { FileAttachmentModal } from "./FileAttachmentModal";
 import { CommentsModal } from "./CommentsModal";
+import { DelegationModal, DelegationType } from "./DelegationModal";
 import { createClient } from "@/lib/supabase/client";
 
 type MatrixItem = {
@@ -133,8 +135,33 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions }: 
     );
 }
 
-const getInitials = (email: string) => {
+const getInitials = (email: string, firstName?: string | null, lastName?: string | null): string => {
+    if (firstName && lastName) {
+        return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    if (firstName) {
+        return firstName.substring(0, 2).toUpperCase();
+    }
+    if (lastName) {
+        return lastName.substring(0, 2).toUpperCase();
+    }
     return email.substring(0, 2).toUpperCase();
+};
+
+const getDisplayName = (firstName?: string | null, lastName?: string | null, email?: string | null): string => {
+    if (firstName && lastName) {
+        return `${firstName} ${lastName.charAt(0)}.`;
+    }
+    if (firstName) {
+        return firstName;
+    }
+    if (lastName) {
+        return lastName;
+    }
+    if (email) {
+        return email.split('@')[0];
+    }
+    return 'Unknown';
 };
 
 const getAvatarColor = (email: string) => {
@@ -166,17 +193,47 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
         () => {
-            // If epic is launched, collapse all categories by default
-            if (epicStatus === 'LAUNCHED') {
-                return new Set(Object.keys(items.reduce((acc, item) => {
-                    const cat = item.criterion.category || 'OTHER';
-                    acc[cat] = true;
-                    return acc;
-                }, {} as Record<string, boolean>)));
-            }
+            // All categories expanded by default
             return new Set();
         }
     );
+    
+    // Track which items are shown within each category
+    const [shownItems, setShownItems] = useState<Set<string>>(() => {
+        const shown = new Set<string>();
+        // Initialize based on the rules
+        const categoryGroups = items.reduce((acc, item) => {
+            const cat = item.criterion.category || 'OTHER';
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(item);
+            return acc;
+        }, {} as Record<string, MatrixItem[]>);
+        
+        Object.keys(categoryGroups).forEach(cat => {
+            const categoryItems = categoryGroups[cat];
+            const hasSignoff = categoryItems.some(item => 
+                item.criterion.label?.toLowerCase().includes('signoff')
+            );
+            
+            if (hasSignoff) {
+                // Show signoff items, hide others
+                categoryItems.forEach(item => {
+                    if (item.criterion.label?.toLowerCase().includes('signoff')) {
+                        shown.add(item.id);
+                    }
+                });
+            } else {
+                // Show required items, hide non-required
+                categoryItems.forEach(item => {
+                    if (!item.notRequired) {
+                        shown.add(item.id);
+                    }
+                });
+            }
+        });
+        
+        return shown;
+    });
     const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
     const [editingNotes, setEditingNotes] = useState<string>("");
     const [savingNotes, setSavingNotes] = useState(false);
@@ -186,6 +243,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const [selectedItemForAttachment, setSelectedItemForAttachment] = useState<MatrixItem | null>(null);
     const [commentsModalOpen, setCommentsModalOpen] = useState(false);
     const [selectedItemForComments, setSelectedItemForComments] = useState<MatrixItem | null>(null);
+    const [pendingStatusChange, setPendingStatusChange] = useState<{ itemId: string; status: string } | null>(null);
+    const [delegationModalOpen, setDelegationModalOpen] = useState(false);
+    const [selectedItemForDelegation, setSelectedItemForDelegation] = useState<MatrixItem | null>(null);
 
     // Get current user email and check if Super Admin
     useEffect(() => {
@@ -282,6 +342,20 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
         fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Matrix.tsx:268',message:'handleStatusChange called',data:{id,newStatus,epicId,currentItem:{id:currentItem?.id,criterion_id:currentItem?.criterion_id,status:currentItem?.status}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B',runId:'status-update'})}).catch(()=>{});
         // #endregion
         
+        // If CONDITIONAL or NO_GO, require a comment before saving
+        if (newStatus === 'CONDITIONAL' || newStatus === 'NO_GO') {
+            // Store pending status change
+            setPendingStatusChange({ itemId: id, status: newStatus });
+            // Open comments modal for this item
+            const item = items.find(item => item.id === id);
+            if (item) {
+                setSelectedItemForComments(item);
+                setCommentsModalOpen(true);
+            }
+            return; // Don't save status yet, wait for comment
+        }
+        
+        // For GO status, proceed with normal save
         // Optimistically update the UI immediately
         setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
         setSavingItems(prev => new Set(prev).add(id));
@@ -357,6 +431,20 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
             return next;
         });
     };
+    
+    const toggleShowCollapsedItems = (itemsToToggle: MatrixItem[], currentlyShown: boolean) => {
+        setShownItems(prev => {
+            const next = new Set(prev);
+            itemsToToggle.forEach(item => {
+                if (currentlyShown) {
+                    next.delete(item.id);
+                } else {
+                    next.add(item.id);
+                }
+            });
+            return next;
+        });
+    };
 
     const handleEditNotes = (item: MatrixItem) => {
         setEditingNotesId(item.id);
@@ -413,14 +501,182 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const handleCloseComments = () => {
         setCommentsModalOpen(false);
         setSelectedItemForComments(null);
+        setPendingStatusChange(null);
+    };
+
+    const handleCloseCommentsWithoutComment = () => {
+        // Revert the status change if modal closes without comment
+        if (pendingStatusChange) {
+            const { itemId } = pendingStatusChange;
+            // Revert optimistic status update
+            setOptimisticStatuses(prev => {
+                const next = { ...prev };
+                const currentItem = items.find(item => item.id === itemId);
+                if (currentItem?.status) {
+                    next[itemId] = currentItem.status;
+                } else {
+                    delete next[itemId];
+                }
+                return next;
+            });
+            setPendingStatusChange(null);
+        }
+        handleCloseComments();
+    };
+
+    const handleCancelRating = () => {
+        // Revert the status change and show toast
+        if (pendingStatusChange) {
+            const { itemId } = pendingStatusChange;
+            // Revert optimistic status update
+            setOptimisticStatuses(prev => {
+                const next = { ...prev };
+                const currentItem = items.find(item => item.id === itemId);
+                if (currentItem?.status) {
+                    next[itemId] = currentItem.status;
+                } else {
+                    delete next[itemId];
+                }
+                return next;
+            });
+            setPendingStatusChange(null);
+            
+            // Show toast explaining rating wasn't saved
+            notifications.show({
+                title: 'Rating cancelled',
+                message: 'The rating change has been cancelled and was not saved. A comment is required for CONDITIONAL or NO_GO ratings.',
+                color: 'orange',
+                autoClose: 5000,
+            });
+        }
+        handleCloseComments();
+    };
+
+    const handleCommentAdded = async () => {
+        // After comment is added, save the pending status change
+        if (pendingStatusChange && selectedItemForComments?.id === pendingStatusChange.itemId) {
+            const id = pendingStatusChange.itemId;
+            const newStatus = pendingStatusChange.status;
+            const currentItem = items.find(item => item.id === id);
+            const oldStatus = currentItem?.status;
+            
+            // Optimistically update the UI
+            setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
+            setSavingItems(prev => new Set(prev).add(id));
+            
+            try {
+                const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                let responseData = null;
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await res.json();
+                } else {
+                    const text = await res.text();
+                    responseData = { error: text || 'Unknown error' };
+                }
+                
+                if (!res.ok) {
+                    setOptimisticStatuses(prev => {
+                        const next = { ...prev };
+                        if (oldStatus) {
+                            next[id] = oldStatus;
+                        } else {
+                            delete next[id];
+                        }
+                        return next;
+                    });
+                    const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                    throw new Error(errorMsg);
+                }
+                
+                setOptimisticStatuses(prev => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                });
+                setPendingStatusChange(null);
+                onUpdate();
+            } catch (e: any) {
+                console.error('Failed to update status:', e);
+                alert(`Failed to update status: ${e.message || e}`);
+            } finally {
+                setSavingItems(prev => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }
+        }
+    };
+
+    const handleOpenDelegation = (item: MatrixItem) => {
+        setSelectedItemForDelegation(item);
+        setDelegationModalOpen(true);
+    };
+
+    const handleCloseDelegation = () => {
+        setDelegationModalOpen(false);
+        setSelectedItemForDelegation(null);
+    };
+
+    const handleDelegate = async (delegationType: DelegationType, newApproverEmail: string) => {
+        if (!selectedItemForDelegation) return;
+        
+        try {
+            const res = await fetch(`/api/epics/${epicId}/delegate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    delegationType,
+                    newApproverEmail,
+                    taskId: selectedItemForDelegation.id,
+                    category: selectedItemForDelegation.criterion.category,
+                    isGate: selectedItemForDelegation.criterion.gate,
+                    taskLabel: selectedItemForDelegation.criterion.label,
+                }),
+            });
+
+            if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.error || 'Failed to delegate');
+            }
+
+            handleCloseDelegation();
+            
+            // Show success toast with Slack message info
+            notifications.show({
+                title: 'Delegation successful',
+                message: `Task has been delegated to ${newApproverEmail}. A Slack notification has been sent to notify them.`,
+                color: 'green',
+                autoClose: 5000,
+            });
+            
+            // Force refresh to update approver info
+            onUpdate();
+        } catch (error) {
+            console.error('Delegation error:', error);
+            notifications.show({
+                title: 'Delegation failed',
+                message: error instanceof Error ? error.message : 'Failed to delegate task',
+                color: 'red',
+                autoClose: 5000,
+            });
+            throw error;
+        }
     };
 
     const isCollapsed = (cat: string) => collapsedCategories.has(cat);
     const hasOverall = (cat: string) => categoryOverallItems[cat] !== null;
 
     return (
-        <div className="space-y-8">
-            {categories.map(cat => {
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            {categories.map((cat, index) => {
                 const overallItem = categoryOverallItems[cat];
                 const regularItems = categoryRegularItems[cat];
                 const allItems = overallItem 
@@ -428,11 +684,40 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     : regularItems;
                 const collapsed = isCollapsed(cat);
                 const showOverall = hasOverall(cat);
+                const isLastCategory = index === categories.length - 1;
+                
+                // Check if category has signoff items
+                const hasSignoff = allItems.some(item => 
+                    item.criterion.label?.toLowerCase().includes('signoff')
+                );
+                
+                // Split items based on rules
+                let primaryItems: MatrixItem[] = [];
+                let secondaryItems: MatrixItem[] = [];
+                
+                if (hasSignoff) {
+                    // Show signoff items, hide others
+                    primaryItems = allItems.filter(item => 
+                        item.criterion.label?.toLowerCase().includes('signoff')
+                    );
+                    secondaryItems = allItems.filter(item => 
+                        !item.criterion.label?.toLowerCase().includes('signoff')
+                    );
+                } else {
+                    // Show required items, hide non-required
+                    primaryItems = allItems.filter(item => !item.notRequired);
+                    secondaryItems = allItems.filter(item => item.notRequired);
+                }
+                
+                // Filter items based on visibility
+                const visibleItems = allItems.filter(item => shownItems.has(item.id));
+                const hiddenItems = secondaryItems.filter(item => !shownItems.has(item.id));
+                const hiddenCount = hiddenItems.length;
 
                 return (
-                    <div key={cat} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                    <div key={cat}>
                         <div 
-                            className="flex items-center gap-2 mb-4 cursor-pointer select-none hover:bg-gray-50 -mx-2 px-2 py-2 rounded transition-colors"
+                            className="flex items-center gap-2 px-6 py-3 cursor-pointer select-none hover:bg-gray-50 transition-colors"
                             onClick={() => toggleCategory(cat)}
                         >
                             <span className="text-gray-500">
@@ -445,20 +730,21 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                             <h3 className="text-sm font-semibold text-gray-900">{cat}</h3>
                         </div>
                         {!collapsed && (
+                            <div className="px-6 pb-6">
                             <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                             <table className="min-w-full divide-y divide-purple-200 table-fixed w-full">
                                 <colgroup>
                                     <col style={{ width: 'auto' }} />
-                                    <col style={{ width: '160px' }} />
-                                    <col style={{ width: '200px' }} />
+                                    <col style={{ width: '120px' }} />
+                                    <col style={{ width: '150px' }} />
                                     <col style={{ width: '120px' }} />
                                     <col style={{ width: 'auto' }} />
                                 </colgroup>
                                 <thead className="bg-purple-100">
                                     <tr>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Criterion</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '160px', textTransform: 'none' }}>Status</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '200px' }}>Approver</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Status</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Approver</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Notes</th>
                                     </tr>
@@ -466,17 +752,23 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                 <tbody className="bg-white divide-y divide-purple-200">
                                     {allItems.map((item, index) => {
                                         const isOverall = showOverall && index === 0;
+                                        const isSignoff = item.criterion.label?.toLowerCase().includes('signoff');
                                         
-                                        // Hide regular items when collapsed
+                                        // Hide regular items when category is collapsed
                                         if (!isOverall && collapsed) {
                                             return null;
                                         }
                                         
+                                        // Hide items that are not in shownItems set
+                                        if (!shownItems.has(item.id)) {
+                                            return null;
+                                        }
+                                        
                                         return (
-                                            <tr key={item.id} className={`hover:bg-purple-50 transition-colors ${isOverall ? 'cursor-pointer' : ''} ${item.notRequired ? 'opacity-60' : ''}`} onClick={isOverall ? () => toggleCategory(cat) : undefined}>
+                                            <tr key={item.id} className={`hover:bg-purple-50 transition-colors ${isOverall && !isSignoff ? 'cursor-pointer' : ''} ${item.notRequired ? 'opacity-60' : ''}`} onClick={isOverall && !isSignoff ? () => toggleCategory(cat) : undefined}>
                                         <td className="px-4 py-3">
-                                            <div className={`font-medium flex items-center gap-2 ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
-                                                {isOverall && (
+                                            <div className={`font-medium flex items-center gap-2 text-sm ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
+                                                {isOverall && !isSignoff && (
                                                     <span className="text-gray-500">
                                                         {collapsed ? (
                                                             <IconChevronRight size={16} />
@@ -485,16 +777,18 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                         )}
                                                     </span>
                                                 )}
-                                                {item.criterion.label}
-                                                {item.criterion.gate && (
-                                                    <span className="ml-2 bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
-                                                )}
+                                                <span className="flex items-center gap-1.5">
+                                                    {item.criterion.label}
+                                                    {item.criterion.gate && (
+                                                        <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                    )}
+                                                </span>
                                             </div>
                                             {item.criterion.description && (
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: '160px' }}>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: '120px' }}>
                                             {item.notRequired ? (
                                                 <div className="text-xs font-medium text-gray-500">Not required</div>
                                             ) : (
@@ -510,24 +804,39 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                 />
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '200px' }}>
+                                        <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '150px' }}>
                                             {item.approverEmail ? (
-                                                <UserDisplayWithDelegation
-                                                    email={item.approverEmail}
-                                                    firstName={item.approverInfo?.first_name}
-                                                    lastName={item.approverInfo?.last_name}
-                                                    avatarUrl={item.approverInfo?.avatar_url}
-                                                    size="sm"
-                                                    epicId={epicId}
-                                                    epicName={epicName}
-                                                    taskId={item.id}
-                                                    taskLabel={item.criterion.label}
-                                                    category={item.criterion.category}
-                                                    isGate={item.criterion.gate}
-                                                    currentUserEmail={currentUserEmail}
-                                                    showDelegationButton={isSuperAdmin || currentUserEmail === item.approverEmail}
-                                                    onDelegationComplete={onUpdate}
-                                                />
+                                                <div 
+                                                    className="flex items-center gap-2 min-w-0"
+                                                >
+                                                    <Avatar
+                                                        src={item.approverInfo?.avatar_url || undefined}
+                                                        alt={item.approverEmail}
+                                                        radius="xl"
+                                                        size={24}
+                                                        color={getAvatarColor(item.approverEmail)}
+                                                        className="flex-shrink-0"
+                                                    >
+                                                        {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
+                                                    </Avatar>
+                                                    <span className="text-sm truncate min-w-0 flex-1">
+                                                        {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
+                                                    </span>
+                                                    {(isSuperAdmin || currentUserEmail === item.approverEmail) && (
+                                                        <Tooltip label="Delegate this task" position="top" withArrow>
+                                                            <button
+                                                                className="delegation-btn ml-auto opacity-100 transition-opacity flex-shrink-0 hover:opacity-80"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleOpenDelegation(item);
+                                                                }}
+                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                                                            >
+                                                                <IconArrowsRightLeft size={16} className="text-gray-600" />
+                                                            </button>
+                                                        </Tooltip>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 '-'
                                             )}
@@ -588,6 +897,35 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                     })}
                                 </tbody>
                             </table>
+                            </div>
+                            {hiddenCount > 0 && (
+                                <div className="mt-3 text-sm text-gray-600">
+                                    + {hiddenCount} {hasSignoff ? 'secondary' : 'non-required'} {hiddenCount === 1 ? 'item' : 'items'} (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleShowCollapsedItems(hiddenItems, false);
+                                        }}
+                                        className="text-indigo-600 hover:text-indigo-800 underline"
+                                    >
+                                        show
+                                    </button>
+                                    )
+                                </div>
+                            )}
+                            {hiddenCount === 0 && secondaryItems.length > 0 && (
+                                <div className="mt-3 text-sm text-gray-600">
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            toggleShowCollapsedItems(secondaryItems, true);
+                                        }}
+                                        className="text-indigo-600 hover:text-indigo-800 underline"
+                                    >
+                                        hide {hasSignoff ? 'secondary' : 'non-required'} items
+                                    </button>
+                                </div>
+                            )}
                         </div>
                         )}
                     </div>
@@ -639,6 +977,26 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     taskId={selectedItemForComments.id}
                     taskLabel={selectedItemForComments.criterion.label}
                     currentUserEmail={currentUserEmail}
+                    requireComment={pendingStatusChange?.itemId === selectedItemForComments.id}
+                    onCommentAdded={handleCommentAdded}
+                    onCloseWithoutComment={handleCloseCommentsWithoutComment}
+                    onCancel={handleCancelRating}
+                />
+            )}
+
+            {/* Delegation Modal */}
+            {selectedItemForDelegation && (
+                <DelegationModal
+                    opened={delegationModalOpen}
+                    onClose={handleCloseDelegation}
+                    epicId={epicId}
+                    epicName={epicName}
+                    taskId={selectedItemForDelegation.id}
+                    taskLabel={selectedItemForDelegation.criterion.label}
+                    category={selectedItemForDelegation.criterion.category}
+                    isGate={selectedItemForDelegation.criterion.gate}
+                    currentApproverEmail={selectedItemForDelegation.approverEmail || ''}
+                    onDelegate={handleDelegate}
                 />
             )}
         </div>

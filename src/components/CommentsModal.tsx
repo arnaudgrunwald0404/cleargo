@@ -22,6 +22,10 @@ interface CommentsModalProps {
   taskId: string; // launch_criterion_status id
   taskLabel: string;
   currentUserEmail: string;
+  requireComment?: boolean; // If true, user must add a comment before closing
+  onCommentAdded?: () => void; // Callback when comment is added (for mandatory mode)
+  onCloseWithoutComment?: () => void; // Callback when modal closes without comment (for reverting status)
+  onCancel?: () => void; // Callback when user cancels (for reverting status with toast)
 }
 
 export function CommentsModal({
@@ -31,11 +35,16 @@ export function CommentsModal({
   taskId,
   taskLabel,
   currentUserEmail,
+  requireComment = false,
+  onCommentAdded,
+  onCloseWithoutComment,
+  onCancel,
 }: CommentsModalProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [hasAddedComment, setHasAddedComment] = useState(false);
 
   // Fetch comments when modal opens
   const fetchComments = async () => {
@@ -73,8 +82,15 @@ export function CommentsModal({
         throw new Error(error.error || 'Failed to post comment');
       }
 
+      const commentText = newComment.trim();
       setNewComment('');
       await fetchComments();
+      setHasAddedComment(true); // Mark that a comment was added
+      
+      // If comment was required and we just added one, notify parent
+      if (requireComment && onCommentAdded) {
+        onCommentAdded();
+      }
     } catch (error: any) {
       alert(`Failed to post comment: ${error.message}`);
     } finally {
@@ -132,17 +148,45 @@ export function CommentsModal({
   useEffect(() => {
     if (opened) {
       fetchComments();
+      setHasAddedComment(false); // Reset when modal opens
     }
   }, [opened]);
+
+  const handleClose = () => {
+    // If comment is required and no comments exist yet, prevent closing
+    const hasComment = comments.length > 0 || newComment.trim().length > 0;
+    if (requireComment && !hasComment) {
+      alert('Please add a comment before closing. A comment is required for CONDITIONAL or NO_GO ratings.');
+      return;
+    }
+    
+    // If closing without comment when required, notify parent to revert status
+    if (requireComment && !hasComment && onCloseWithoutComment) {
+      onCloseWithoutComment();
+    }
+    
+    onClose();
+  };
+
+  const hasComment = comments.length > 0 || newComment.trim().length > 0 || hasAddedComment;
+  const canClose = !requireComment || hasComment;
 
   return (
     <Modal
       opened={opened}
-      onClose={onClose}
+      onClose={handleClose}
+      closeOnClickOutside={canClose}
+      closeOnEscape={canClose}
+      withCloseButton={canClose}
       title={
         <div>
-          <Text fw={600} size="lg">Comments</Text>
+          <Text fw={600} size="lg">Comments{requireComment && !hasComment ? ' (Required)' : ''}</Text>
           <Text size="sm" c="dimmed">{taskLabel}</Text>
+          {requireComment && !hasComment && (
+            <Text size="xs" c="red" mt={4}>
+              A comment is required for CONDITIONAL or NO_GO ratings. Please add a comment before closing.
+            </Text>
+          )}
         </div>
       }
       size="lg"
@@ -214,9 +258,28 @@ export function CommentsModal({
             disabled={submitting}
           />
           <Group justify="space-between" mt="sm">
-            <Button variant="outline" onClick={onClose}>
-              Close
-            </Button>
+            <Group>
+              {requireComment && !hasComment && onCancel && (
+                <Button 
+                  variant="outline" 
+                  color="red"
+                  onClick={() => {
+                    if (onCancel) {
+                      onCancel();
+                    }
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button 
+                variant="outline" 
+                onClick={handleClose}
+                disabled={requireComment && !hasComment}
+              >
+                {requireComment && !hasComment ? 'Add Comment to Close' : 'Close'}
+              </Button>
+            </Group>
             <Button
               leftSection={<IconSend size={16} />}
               onClick={handleSubmitComment}
