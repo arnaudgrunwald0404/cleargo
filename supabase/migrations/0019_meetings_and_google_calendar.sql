@@ -83,74 +83,88 @@ ALTER TABLE meeting_snippet ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for google_calendar_integrations
 -- Allow authenticated users - API routes will filter by current user
+DROP POLICY IF EXISTS "Authenticated users can view calendar integrations" ON google_calendar_integrations;
 CREATE POLICY "Authenticated users can view calendar integrations" 
   ON google_calendar_integrations FOR SELECT 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert calendar integrations" ON google_calendar_integrations;
 CREATE POLICY "Authenticated users can insert calendar integrations" 
   ON google_calendar_integrations FOR INSERT 
   TO authenticated 
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update calendar integrations" ON google_calendar_integrations;
 CREATE POLICY "Authenticated users can update calendar integrations" 
   ON google_calendar_integrations FOR UPDATE 
   TO authenticated 
   USING (true);
 
 -- RLS Policies for meeting
+DROP POLICY IF EXISTS "Authenticated users can view meetings" ON meeting;
 CREATE POLICY "Authenticated users can view meetings" 
   ON meeting FOR SELECT 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert meetings" ON meeting;
 CREATE POLICY "Authenticated users can insert meetings" 
   ON meeting FOR INSERT 
   TO authenticated 
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update meetings" ON meeting;
 CREATE POLICY "Authenticated users can update meetings" 
   ON meeting FOR UPDATE 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can delete meetings" ON meeting;
 CREATE POLICY "Authenticated users can delete meetings" 
   ON meeting FOR DELETE 
   TO authenticated 
   USING (true);
 
 -- RLS Policies for meeting_transcript
+DROP POLICY IF EXISTS "Authenticated users can view transcripts" ON meeting_transcript;
 CREATE POLICY "Authenticated users can view transcripts" 
   ON meeting_transcript FOR SELECT 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert transcripts" ON meeting_transcript;
 CREATE POLICY "Authenticated users can insert transcripts" 
   ON meeting_transcript FOR INSERT 
   TO authenticated 
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update transcripts" ON meeting_transcript;
 CREATE POLICY "Authenticated users can update transcripts" 
   ON meeting_transcript FOR UPDATE 
   TO authenticated 
   USING (true);
 
 -- RLS Policies for meeting_snippet
+DROP POLICY IF EXISTS "Authenticated users can view snippets" ON meeting_snippet;
 CREATE POLICY "Authenticated users can view snippets" 
   ON meeting_snippet FOR SELECT 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert snippets" ON meeting_snippet;
 CREATE POLICY "Authenticated users can insert snippets" 
   ON meeting_snippet FOR INSERT 
   TO authenticated 
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update snippets" ON meeting_snippet;
 CREATE POLICY "Authenticated users can update snippets" 
   ON meeting_snippet FOR UPDATE 
   TO authenticated 
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can delete snippets" ON meeting_snippet;
 CREATE POLICY "Authenticated users can delete snippets" 
   ON meeting_snippet FOR DELETE 
   TO authenticated 

@@ -377,6 +377,77 @@ export async function updateEpic(id: string, updates: Partial<CreateEpicDTO>) {
 export async function deleteEpic(id: string) {
     const supabase = createClient();
 
+    // Before deleting the epic, we need to clean up storage files for attachments
+    // The database records will cascade delete, but storage files need explicit deletion
+    
+    // Get all criterion status IDs for this epic
+    const { data: criterionStatuses, error: statusError } = await supabase
+        .from('epic_criterion_status')
+        .select('id')
+        .eq('epic_id', id);
+
+    if (statusError) {
+        console.error('Error fetching criterion statuses for epic deletion:', statusError);
+        // Continue with deletion even if we can't fetch statuses
+    } else if (criterionStatuses && criterionStatuses.length > 0) {
+        const statusIds = criterionStatuses.map(cs => cs.id);
+        const allStoragePaths: string[] = [];
+        
+        // Get attachments linked directly to criterion statuses
+        const { data: statusAttachments } = await supabase
+            .from('criterion_attachment')
+            .select('storage_path')
+            .in('launch_criterion_status_id', statusIds);
+
+        if (statusAttachments) {
+            statusAttachments.forEach(a => {
+                if (a.storage_path) allStoragePaths.push(a.storage_path);
+            });
+        }
+
+        // Get comment IDs for these criterion statuses
+        const { data: comments } = await supabase
+            .from('criterion_comment')
+            .select('id')
+            .in('launch_criterion_status_id', statusIds);
+
+        if (comments && comments.length > 0) {
+            const commentIds = comments.map(c => c.id);
+            
+            // Get attachments linked to comments
+            const { data: commentAttachments } = await supabase
+                .from('criterion_attachment')
+                .select('storage_path')
+                .in('comment_id', commentIds);
+
+            if (commentAttachments) {
+                commentAttachments.forEach(a => {
+                    if (a.storage_path) allStoragePaths.push(a.storage_path);
+                });
+            }
+        }
+
+        // Delete all attachment files from storage
+        if (allStoragePaths.length > 0) {
+            const { error: storageError } = await supabase.storage
+                .from('criterion-attachments')
+                .remove(allStoragePaths);
+
+            if (storageError) {
+                console.warn('Failed to delete some attachment files from storage:', storageError);
+                // Continue with deletion even if storage cleanup fails
+            } else {
+                console.log(`Deleted ${allStoragePaths.length} attachment file(s) from storage`);
+            }
+        }
+    }
+
+    // Now delete the epic - this will cascade delete:
+    // - epic_criterion_status (which cascades to criterion_comment and criterion_attachment records)
+    // - decision_snapshot
+    // - feedback
+    // - meeting_epic junction records
+    // - notification_log entries
     const { error } = await supabase
         .from('epic')
         .delete()

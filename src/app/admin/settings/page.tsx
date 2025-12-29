@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { AppSettings } from "@/lib/settings-db";
 import { Drawer, TextInput, Select, Checkbox, Button, Group, Stack, MultiSelect, Menu, NumberInput, Modal } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { IconPencil, IconCheck, IconTrash, IconX, IconGripVertical, IconMail, IconMailOpened } from "@tabler/icons-react";
 import { CriteriaManager } from "@/components/admin/CriteriaManager";
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
@@ -11,11 +12,11 @@ import { RichText } from "@/components/admin/RichText";
 import { DEFAULT_EMAIL_TEMPLATES } from "@/lib/constants/settings";
 import { getPermissions, getUsers, getPods, getReleases, addRelease, deleteRelease, updateRelease, getSettings, patchSettings, getAhaFields, syncAhaFields, patchEmailTemplates, getLaunchStages, addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
 import { debugLog } from "@/lib/debug";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import EmailTemplatesSection from "@/components/admin/settings/EmailTemplatesSection";
 import PermissionsSection from "@/components/admin/settings/PermissionsSection";
 import GeneralSection from "@/components/admin/settings/GeneralSection";
 import IntegrationsSection from "@/components/admin/settings/IntegrationsSection";
-import AhaFieldsSection from "@/components/admin/settings/AhaFieldsSection";
 import LaunchStagesSection from "@/components/admin/settings/LaunchStagesSection";
 import ReleaseScheduleSection from "@/components/admin/settings/ReleaseScheduleSection";
 import UserManagementSection from "@/components/admin/settings/UserManagementSection";
@@ -44,7 +45,9 @@ export default function AdminSettingsPage() {
     const [bulkImportLoading, setBulkImportLoading] = useState(false);
 
     // Navigation state
-    const [activeSection, setActiveSection] = useState<string>("users");
+    const [activeSection, setActiveSection] = useState<string>("users-users");
+    const [integrationsExpanded, setIntegrationsExpanded] = useState<boolean>(false);
+    const [userManagementExpanded, setUserManagementExpanded] = useState<boolean>(true);
 
     // Permissions state
     const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -99,21 +102,37 @@ export default function AdminSettingsPage() {
     const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
 
     useEffect(() => {
+        // Stagger API calls to avoid rate limiting
+        // Batch 1: Critical data (load immediately)
         fetchSettings();
-        fetchUsers();
-        fetchReleases();
-        fetchPods();
-        fetchAhaFields();
-        fetchLaunchReleaseDates();
-        fetchLaunchStages();
-        fetchEmailTemplates();
-        fetchPermissions();
         fetchCurrentUser();
+        
+        // Batch 2: User-related data (after 200ms)
+        setTimeout(() => {
+            fetchUsers();
+            fetchPermissions();
+        }, 200);
+        
+        // Batch 3: Release and launch data (after 400ms)
+        setTimeout(() => {
+            fetchReleases();
+            fetchLaunchReleaseDates();
+            fetchLaunchStages();
+        }, 400);
+        
+        // Batch 4: Configuration data (after 600ms)
+        setTimeout(() => {
+            fetchPods();
+            fetchAhaFields();
+            fetchEmailTemplates();
+        }, 600);
     }, []);
 
     const fetchCurrentUser = async () => {
         try {
-            const res = await fetch("/api/me");
+            const res = await fetchWithRateLimit("/api/me", {
+                maxRetries: 1,
+            });
             if (res.ok) {
                 const data = await res.json();
                 setCurrentUserRoles(data.user?.roles || []);
@@ -126,12 +145,25 @@ export default function AdminSettingsPage() {
     const fetchLaunchReleaseDates = async () => {
         setLaunchReleasesLoading(true);
         try {
-            const res = await fetch("/api/epics/release-dates");
-            if (!res.ok) throw new Error("Failed to fetch epic releases");
+            const res = await fetch("/api/epics/release-dates", {
+                credentials: 'include',
+            });
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}: ${res.statusText}` }));
+                throw new Error(errorData.error || `Failed to fetch epic releases: ${res.status} ${res.statusText}`);
+            }
             const data = await res.json();
             setLaunchReleases(data.releases || []);
         } catch (error: any) {
             console.error("Failed to fetch epic releases:", error);
+            // Don't show alert for 401 (unauthorized) as user might not be logged in yet
+            if (error.message && !error.message.includes('401')) {
+                notifications.show({
+                    title: 'Error',
+                    message: error.message || 'Failed to fetch epic releases',
+                    color: 'red',
+                });
+            }
         } finally {
             setLaunchReleasesLoading(false);
         }
@@ -245,7 +277,9 @@ export default function AdminSettingsPage() {
     const fetchEmailTemplates = async () => {
         setEmailTemplatesLoading(true);
         try {
-            const res = await fetch("/api/settings/email-templates");
+            const res = await fetchWithRateLimit("/api/settings/email-templates", {
+                maxRetries: 1,
+            });
             if (!res.ok) throw new Error("Failed to fetch email templates");
             const data = await res.json();
 
@@ -412,13 +446,7 @@ export default function AdminSettingsPage() {
 
     // Auto-save email templates with debouncing (2 seconds after last change)
     useEffect(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:398',message:'useEffect triggered',data:{emailTemplatesLoading,emailTemplatesInitialized,hasTemplates:!!emailTemplates,invite_subject_length:emailTemplates?.invite_subject?.length},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         if (emailTemplatesLoading || !emailTemplatesInitialized) return; // Don't auto-save on initial load
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:403',message:'Scheduling auto-save',data:{willSaveIn:'2000ms'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{});
-        // #endregion
 
         const timer = setTimeout(() => {
             autoSaveEmailTemplates();
@@ -668,14 +696,78 @@ export default function AdminSettingsPage() {
                             <ul className="space-y-1">
                                 <li>
                                     <button
-                                        onClick={() => setActiveSection("users")}
-                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "users"
-                                            ? "bg-indigo-50 text-indigo-700 font-medium"
-                                            : "text-gray-700 hover:bg-gray-50"
-                                            }`}
+                                        onClick={() => {
+                                            const newExpanded = !userManagementExpanded;
+                                            setUserManagementExpanded(newExpanded);
+                                            if (newExpanded && !activeSection.startsWith("users-")) {
+                                                setActiveSection("users-users");
+                                            }
+                                        }}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                                            activeSection.startsWith("users-")
+                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                : "text-gray-700 hover:bg-gray-50"
+                                        }`}
                                     >
-                                        User Management
+                                        <span>User Management</span>
+                                        <svg
+                                            className={`w-4 h-4 transition-transform ${userManagementExpanded || activeSection.startsWith("users-") ? "rotate-90" : ""}`}
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
                                     </button>
+                                    {(userManagementExpanded || activeSection.startsWith("users-")) && (
+                                        <ul className="ml-4 mt-1 space-y-1">
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setUserManagementExpanded(true);
+                                                        setActiveSection("users-users");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "users-users"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Users
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setUserManagementExpanded(true);
+                                                        setActiveSection("users-pm-mapping");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "users-pm-mapping"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    PM Mapping
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setUserManagementExpanded(true);
+                                                        setActiveSection("users-domains");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "users-domains"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Domains
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    )}
                                 </li>
                                 <li>
                                     <button
@@ -686,17 +778,6 @@ export default function AdminSettingsPage() {
                                             }`}
                                     >
                                         Permissions
-                                    </button>
-                                </li>
-                                <li>
-                                    <button
-                                        onClick={() => setActiveSection("aha-fields")}
-                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "aha-fields"
-                                            ? "bg-indigo-50 text-indigo-700 font-medium"
-                                            : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                    >
-                                        AHA Epic Fields
                                     </button>
                                 </li>
                                 <li>
@@ -745,6 +826,96 @@ export default function AdminSettingsPage() {
                                 </li>
                                 <li>
                                     <button
+                                        onClick={() => {
+                                            const newExpanded = !integrationsExpanded;
+                                            setIntegrationsExpanded(newExpanded);
+                                            if (newExpanded && !activeSection.startsWith("integrations-")) {
+                                                setActiveSection("integrations-email");
+                                            }
+                                        }}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                                            activeSection.startsWith("integrations-")
+                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                : "text-gray-700 hover:bg-gray-50"
+                                        }`}
+                                    >
+                                        <span>Integrations</span>
+                                        <svg
+                                            className={`w-4 h-4 transition-transform ${integrationsExpanded || activeSection.startsWith("integrations-") ? "rotate-90" : ""}`}
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    </button>
+                                    {(integrationsExpanded || activeSection.startsWith("integrations-")) && (
+                                        <ul className="ml-4 mt-1 space-y-1">
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setIntegrationsExpanded(true);
+                                                        setActiveSection("integrations-aha");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "integrations-aha"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Aha
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setIntegrationsExpanded(true);
+                                                        setActiveSection("integrations-slack");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "integrations-slack"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Slack
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setIntegrationsExpanded(true);
+                                                        setActiveSection("integrations-email");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "integrations-email"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Email
+                                                </button>
+                                            </li>
+                                            <li>
+                                                <button
+                                                    onClick={() => {
+                                                        setIntegrationsExpanded(true);
+                                                        setActiveSection("integrations-calendar");
+                                                    }}
+                                                    className={`w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        activeSection === "integrations-calendar"
+                                                            ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                            : "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Calendar
+                                                </button>
+                                            </li>
+                                        </ul>
+                                    )}
+                                </li>
+                                <li>
+                                    <button
                                         onClick={() => setActiveSection("general")}
                                         className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${activeSection === "general"
                                             ? "bg-indigo-50 text-indigo-700 font-medium"
@@ -779,6 +950,27 @@ export default function AdminSettingsPage() {
                                 setPreviewOpen={setPreviewOpen}
                                 previewType={previewType}
                                 setPreviewType={setPreviewType}
+                            />
+                        )}
+
+                        {(activeSection === "integrations-aha" || 
+                          activeSection === "integrations-slack" || 
+                          activeSection === "integrations-email" || 
+                          activeSection === "integrations-calendar") && (
+                            <IntegrationsSection
+                                settings={settings}
+                                setSettings={setSettings}
+                                currentUserRoles={currentUserRoles}
+                                availableAhaFields={availableAhaFields}
+                                ahaFieldsLoading={ahaFieldsLoading}
+                                draggedFieldAlias={draggedFieldAlias}
+                                setDraggedFieldAlias={setDraggedFieldAlias}
+                                ahaFieldsSaving={ahaFieldsSaving}
+                                syncing={syncing}
+                                syncResult={syncResult}
+                                onAutoSaveFields={autoSaveAhaFields}
+                                onSynchronize={handleSynchronizeFields}
+                                activeSubSection={activeSection.replace("integrations-", "")}
                             />
                         )}
 
@@ -926,8 +1118,6 @@ export default function AdminSettingsPage() {
 
                         {activeSection === "general" && (
                             <form onSubmit={handleSave} className="space-y-6">
-                                <IntegrationsSection settings={settings} setSettings={setSettings} />
-
                                 {/* Save Button */}
                                 <div className="flex justify-end">
                                     <button
@@ -997,7 +1187,9 @@ export default function AdminSettingsPage() {
                         {/* Edit Stage Drawer moved into LaunchStagesSection */}
                         {/* EditStageDrawer moved into LaunchStagesSection */}
 
-                        {activeSection === "users" && (
+                        {(activeSection === "users-users" || 
+                          activeSection === "users-pm-mapping" || 
+                          activeSection === "users-domains") && (
                             <UserManagementSection
                                 users={users}
                                 loading={usersLoading}
@@ -1023,6 +1215,7 @@ export default function AdminSettingsPage() {
                                 setDomainInput={setDomainInput}
                                 addDomain={addDomain}
                                 removeDomain={removeDomain}
+                                activeSubSection={activeSection.replace("users-", "")}
                             />
                         )}
 
@@ -1030,21 +1223,6 @@ export default function AdminSettingsPage() {
                             <CriteriaManager />
                         )}
 
-                        {activeSection === "aha-fields" && (
-                            <AhaFieldsSection
-                                settings={settings}
-                                setSettings={setSettings}
-                                availableAhaFields={availableAhaFields}
-                                loading={ahaFieldsLoading}
-                                draggedFieldAlias={draggedFieldAlias}
-                                setDraggedFieldAlias={setDraggedFieldAlias}
-                                saving={ahaFieldsSaving}
-                                syncing={syncing}
-                                syncResult={syncResult}
-                                onAutoSaveFields={autoSaveAhaFields}
-                                onSynchronize={handleSynchronizeFields}
-                            />
-                        )}
                     </div>
                 </div>
             </div>

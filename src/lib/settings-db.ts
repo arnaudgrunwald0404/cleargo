@@ -15,6 +15,7 @@ export interface AppSettings {
     allowlisted_domains: string[];
     fallback_user_email: string;
     aha_webhook_secret: string | null;
+    aha_webhook_url?: string | null; // Custom webhook URL, if null uses computed URL
     email_sender: string;
     pod_product_manager_mapping?: Record<string, string>; // pod_name -> email
     aha_fields_to_load?: string[]; // List of AHA custom field aliases to load
@@ -59,6 +60,7 @@ export async function getSettings(): Promise<AppSettings> {
             allowlisted_domains: defaults.allowlistDomains,
             fallback_user_email: defaults.fallbackProductOpsEmail,
             aha_webhook_secret: process.env.AHA_WEBHOOK_SECRET || null,
+            aha_webhook_url: "https://indiscerptible-gail-metalline.ngrok-free.dev/api/integrations/aha/webhook",
             email_sender: defaults.emailSender,
             aha_fields_to_load: [
                 'dev_backlog_pod',
@@ -107,44 +109,99 @@ export async function updateSettings(
     const supabase = await createClient();
     debugLog({ location: 'settings-db.ts:updateSettings-START', message: 'updateSettings called', data: { updateKeys: Object.keys(updates), ahaFieldsInUpdate: updates.aha_fields_to_load, hasDuplicatesInUpdate: updates.aha_fields_to_load ? new Set(updates.aha_fields_to_load).size !== updates.aha_fields_to_load.length : false }, hypothesisId: 'A' });
 
-    // First, get current settings to ensure we have all required fields
-    const currentSettings = await getSettings();
+    // Handle webhook URL separately if it's being updated (to bypass schema cache issues)
+    const { aha_webhook_url, ...otherUpdates } = updates;
+    let webhookUrlUpdatedViaRpc = false;
 
-    // Merge updates with current settings, ensuring all required fields are present
-    const mergedData = {
-        ...currentSettings,
-        ...updates,
-        updated_at: new Date().toISOString()
-    };
-
-    // Remove id and updated_at from the object before update (id is used in .eq(), updated_at is set explicitly)
-    const { id, updated_at, ...updateData } = mergedData;
-    debugLog({ location: 'settings-db.ts:updateSettings-MERGED', message: 'After merge with currentSettings', data: { mergedAhaFields: updateData.aha_fields_to_load, hasDuplicatesAfterMerge: updateData.aha_fields_to_load ? new Set(updateData.aha_fields_to_load).size !== updateData.aha_fields_to_load.length : false }, hypothesisId: 'A' });
-
-    // Use update instead of upsert to avoid issues with required fields
-    const { data, error } = await supabase
-        .from("app_settings")
-        .update({ ...updateData, updated_at: new Date().toISOString() })
-        .eq("id", 1)
-        .select()
-        .single();
-    debugLog({ location: 'settings-db.ts:updateSettings-RESPONSE', message: 'DB update response', data: { hasData: !!data, hasError: !!error, errorCode: error?.code, errorMessage: error?.message, errorDetails: error?.details }, hypothesisId: 'E' });
-
-    if (error) {
-        console.error("Supabase error updating settings:", {
-            message: error.message,
-            code: error.code,
-            details: error.details,
-            hint: error.hint
-        });
-        throw new Error(`Failed to update settings: ${error.message}`);
+    // If updating webhook URL, try RPC function first to bypass schema cache
+    if (aha_webhook_url !== undefined) {
+        try {
+            const { error: rpcError } = await supabase.rpc('update_webhook_url', {
+                new_url: aha_webhook_url
+            });
+            
+            if (!rpcError) {
+                webhookUrlUpdatedViaRpc = true;
+                console.log("Successfully updated webhook URL via RPC");
+            } else {
+                console.warn("RPC error updating webhook URL, will try regular update:", rpcError);
+            }
+        } catch (err) {
+            console.warn("RPC function not available, will try regular update:", err);
+        }
     }
 
-    if (!data) {
+    // Prepare update data - exclude webhook URL if it was updated via RPC
+    const updateData: any = {
+        ...otherUpdates,
+        updated_at: new Date().toISOString()
+    };
+    
+    // Only include webhook URL in regular update if RPC didn't work
+    if (aha_webhook_url !== undefined && !webhookUrlUpdatedViaRpc) {
+        updateData.aha_webhook_url = aha_webhook_url;
+    }
+
+    // Only update other fields if there are any (excluding updated_at)
+    const fieldsToUpdate = Object.keys(updateData).filter(k => k !== 'updated_at');
+    if (fieldsToUpdate.length > 0) {
+        debugLog({ location: 'settings-db.ts:updateSettings-MERGED', message: 'After merge with currentSettings', data: { mergedAhaFields: updateData.aha_fields_to_load, hasDuplicatesAfterMerge: updateData.aha_fields_to_load ? new Set(updateData.aha_fields_to_load).size !== updateData.aha_fields_to_load.length : false }, hypothesisId: 'A' });
+
+        // Use update instead of upsert to avoid issues with required fields
+        const { data, error } = await supabase
+            .from("app_settings")
+            .update(updateData)
+            .eq("id", 1)
+            .select()
+            .single();
+        debugLog({ location: 'settings-db.ts:updateSettings-RESPONSE', message: 'DB update response', data: { hasData: !!data, hasError: !!error, errorCode: error?.code, errorMessage: error?.message, errorDetails: error?.details }, hypothesisId: 'E' });
+
+        if (error) {
+            console.error("Supabase error updating settings:", {
+                message: error.message,
+                code: error.code,
+                details: error.details,
+                hint: error.hint
+            });
+            
+            // If schema cache error and webhook URL was updated via RPC, continue
+            if (error.message?.includes('schema cache') && webhookUrlUpdatedViaRpc) {
+                console.warn("Schema cache error for other fields, but webhook URL was updated via RPC");
+                // Continue to fetch updated settings
+            } else if (error.message?.includes('schema cache')) {
+                throw new Error(`Schema cache error: The database column may exist but PostgREST hasn't refreshed its cache. Please wait a few minutes or contact your Supabase admin to refresh the schema cache. Original error: ${error.message}`);
+            } else {
+                throw new Error(`Failed to update settings: ${error.message}`);
+            }
+        }
+
+        if (data) {
+            return data as AppSettings;
+        }
+    }
+
+    // Fetch updated settings to return
+    const { data: currentSettings, error: fetchError } = await supabase
+        .from("app_settings")
+        .select("*")
+        .eq("id", 1)
+        .single();
+
+    if (fetchError) {
+        console.error("Error fetching updated settings:", fetchError);
+        throw new Error(`Failed to fetch updated settings: ${fetchError.message}`);
+    }
+
+    if (!currentSettings) {
         // If no row exists, insert it
+        const insertData: any = {
+            id: 1,
+            ...updates,
+            updated_at: new Date().toISOString()
+        };
         const { data: inserted, error: insertError } = await supabase
             .from("app_settings")
-            .insert({ id: 1, ...updateData, updated_at: new Date().toISOString() })
+            .insert(insertData)
             .select()
             .single();
 
@@ -161,5 +218,5 @@ export async function updateSettings(
         return inserted as AppSettings;
     }
 
-    return data as AppSettings;
+    return currentSettings as AppSettings;
 }

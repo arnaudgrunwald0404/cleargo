@@ -1,55 +1,83 @@
 "use client";
 import React from "react";
 import type { AppSettings } from "@/lib/settings-db";
+import EmailIntegrationSection from "./EmailIntegrationSection";
+import AhaIntegrationSection from "./AhaIntegrationSection";
+import SlackIntegrationSection from "./SlackIntegrationSection";
+import CalendarIntegrationSection from "./CalendarIntegrationSection";
+
+type AhaField = { alias: string; label: string; key: string | null; type?: string };
+
+type SyncResult = {
+  success: boolean;
+  message: string;
+  synced: number;
+  failed: number;
+  total: number;
+  errors?: Array<{ aha_id: string; name: string; error: string }>;
+};
 
 type Props = {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
+  currentUserRoles: string[];
+  availableAhaFields?: AhaField[];
+  ahaFieldsLoading?: boolean;
+  draggedFieldAlias?: string | null;
+  setDraggedFieldAlias?: (alias: string | null) => void;
+  ahaFieldsSaving?: boolean;
+  syncing?: boolean;
+  syncResult?: SyncResult | null;
+  onAutoSaveFields?: (fields: string[]) => void;
+  onSynchronize?: () => void;
+  activeSubSection?: string;
 };
 
-export default function IntegrationsSection({ settings, setSettings }: Props) {
+export default function IntegrationsSection({ 
+  settings, 
+  setSettings, 
+  currentUserRoles,
+  availableAhaFields,
+  ahaFieldsLoading,
+  draggedFieldAlias,
+  setDraggedFieldAlias,
+  ahaFieldsSaving,
+  syncing,
+  syncResult,
+  onAutoSaveFields,
+  onSynchronize,
+  activeSubSection = "email",
+}: Props) {
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-lg flex items-center justify-center">
-          <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Integrations & Fallbacks</h2>
-          <p className="text-sm text-gray-500">Email, webhooks, and fallback user configuration</p>
-        </div>
-      </div>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Fallback Product Ops Email</label>
-          <input
-            type="email"
-            value={settings.fallback_user_email}
-            onChange={(e) => setSettings({ ...settings, fallback_user_email: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Email Sender</label>
-          <input
-            type="text"
-            value={settings.email_sender}
-            onChange={(e) => setSettings({ ...settings, email_sender: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Aha Webhook Secret</label>
-          <input
-            type="password"
-            value={settings.aha_webhook_secret || ""}
-            onChange={(e) => setSettings({ ...settings, aha_webhook_secret: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
-        </div>
-      </div>
+    <div className="space-y-6">
+      {activeSubSection === "email" && (
+        <EmailIntegrationSection settings={settings} setSettings={setSettings} />
+      )}
+
+      {activeSubSection === "aha" && (
+        <AhaIntegrationSection 
+          settings={settings} 
+          setSettings={setSettings} 
+          currentUserRoles={currentUserRoles}
+          availableAhaFields={availableAhaFields}
+          ahaFieldsLoading={ahaFieldsLoading}
+          draggedFieldAlias={draggedFieldAlias}
+          setDraggedFieldAlias={setDraggedFieldAlias}
+          ahaFieldsSaving={ahaFieldsSaving}
+          syncing={syncing}
+          syncResult={syncResult}
+          onAutoSaveFields={onAutoSaveFields}
+          onSynchronize={onSynchronize}
+        />
+      )}
+
+      {activeSubSection === "slack" && (
+        <SlackIntegrationSection settings={settings} setSettings={setSettings} />
+      )}
+
+      {activeSubSection === "calendar" && (
+        <CalendarIntegrationSection settings={settings} setSettings={setSettings} />
+      )}
     </div>
   );
 }

@@ -1,17 +1,18 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Modal, TextInput } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
+import { IconInfoCircle, IconUsers, IconCalendar } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
+import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 export default function EpicDetailPage() {
     const params = useParams();
@@ -31,12 +32,28 @@ export default function EpicDetailPage() {
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
+    const [releaseName, setReleaseName] = useState<string | null>(null);
+    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
+    const [releaseDateInput, setReleaseDateInput] = useState("");
     const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
+    const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
+    const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
     const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
+    const [showFilters, setShowFilters] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [activeTab, setActiveTab] = useState<string>('readiness');
+    const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
+    const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
+    
+    // Refs to track and cleanup async operations
+    const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const pendingAttachmentRequestsRef = useRef<Set<string>>(new Set());
+    const failedAttachmentRequestsRef = useRef<Set<string>>(new Set());
+    const loadDataInProgressRef = useRef<boolean>(false);
+    const loadDataTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastLoadDataRef = useRef<number>(0);
     
     const getInitials = (email: string) => {
         return email.substring(0, 2).toUpperCase();
@@ -52,6 +69,29 @@ export default function EpicDetailPage() {
     };
 
     async function loadData() {
+        // Prevent multiple simultaneous calls
+        if (loadDataInProgressRef.current) {
+            console.warn('loadData already in progress, skipping duplicate call');
+            return;
+        }
+        
+        // Debounce rapid successive calls (min 500ms between calls)
+        const now = Date.now();
+        const timeSinceLastCall = now - lastLoadDataRef.current;
+        if (timeSinceLastCall < 500) {
+            console.warn(`loadData called too soon (${timeSinceLastCall}ms ago), debouncing`);
+            if (loadDataTimeoutRef.current) {
+                clearTimeout(loadDataTimeoutRef.current);
+            }
+            loadDataTimeoutRef.current = setTimeout(() => {
+                loadData();
+            }, 500 - timeSinceLastCall);
+            return;
+        }
+        
+        loadDataInProgressRef.current = true;
+        lastLoadDataRef.current = Date.now();
+        
         try {
             // Get current user email and create supabase client once
             const supabase = createClient();
@@ -60,78 +100,228 @@ export default function EpicDetailPage() {
                 setCurrentUserEmail(user.email);
             }
 
-            // Fetch epic
-            const res = await fetch(`/api/epics/${id}`);
-            if (!res.ok) throw new Error("Failed to fetch epic");
-            const data = await res.json();
+            // Use shared rate-limit-aware fetch utility
+            const fetchWithRetry = (url: string) => fetchWithRateLimit(url, { maxRetries: 1 });
+
+            // PARALLEL FETCH: Fetch epic, settings, criteria, matrix, launch stages, and release schedule simultaneously
+            // This dramatically reduces load time
+            const [
+                epicRes,
+                settingsRes,
+                criteriaRes,
+                matrixQuery,
+                launchStagesQuery,
+                releaseScheduleQuery
+            ] = await Promise.all([
+                fetchWithRetry(`/api/epics/${id}`),
+                fetchWithRetry('/api/settings'),
+                fetchWithRetry('/api/criteria'),
+                supabase
+                    .from('epic_criterion_status')
+                    .select(`
+                        *,
+                        criterion:criterion_id (
+                            *,
+                            decision_owner_email,
+                            rating_timing
+                        ),
+                        decision_owner:decision_owner_id (
+                            id,
+                            email,
+                            first_name,
+                            last_name,
+                            avatar_url
+                        )
+                    `)
+                    .eq('epic_id', id),
+                supabase
+                    .from('launch_stages')
+                    .select('id, name, sort_order, duration_days')
+                    .order('sort_order', { ascending: true }),
+                // Release schedule will be fetched conditionally after we get epic data
+                Promise.resolve({ data: null, error: null })
+            ]);
+
+            // Process epic data
+            if (!epicRes.ok) {
+                let errorMessage = "Failed to fetch epic";
+                try {
+                    const errorData = await epicRes.json();
+                    errorMessage = errorData.error || errorMessage;
+                    if (errorData.details) {
+                        errorMessage += `: ${errorData.details}`;
+                    }
+                } catch {
+                    errorMessage = `Failed to fetch epic: ${epicRes.status} ${epicRes.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
+            const data = await epicRes.json();
             setEpic(data);
 
-            // Ensure criteria are instantiated for this epic (especially ALL criteria)
-            // This will backfill any missing criteria that should apply
-            try {
-                const resp = await fetch(`/api/epics/${id}/instantiate-criteria`, {
-                    method: 'POST',
-                });
-                if (!resp.ok) {
-                    setInstantiationFailed(true);
-                    notifications.show({
-                        title: 'Could not populate criteria',
-                        message: 'We were unable to instantiate criteria for this epic. You can retry below.',
-                        color: 'orange',
-                    });
-                } else {
-                    setInstantiationFailed(false);
-                }
-            } catch (e) {
-                // Non-fatal if instantiation fails
-                console.warn('Failed to instantiate criteria:', e);
-                setInstantiationFailed(true);
-                notifications.show({
-                    title: 'Could not populate criteria',
-                    message: 'Network or server error. You can retry below.',
-                    color: 'orange',
-                });
+            // Process settings once (used for both threshold and pod mapping)
+            let settings: any = {};
+            let settingsMapping: Record<string, string> = {};
+            if (settingsRes.ok) {
+                settings = await settingsRes.json();
+                settingsMapping = settings.pod_product_manager_mapping || {};
+                
+                // Set threshold immediately
+                const tier = data.tier || 'TIER_3';
+                const thresholds: Record<string, number> = {
+                    'TIER_1': settings.threshold_tier1 || 0.9,
+                    'TIER_2': settings.threshold_tier2 || 0.8,
+                    'TIER_3': settings.threshold_tier3 || 0.7,
+                };
+                setReadinessThreshold(thresholds[tier] || 0.7);
+            } else {
+                // Fallback to defaults
+                const tier = data.tier || 'TIER_3';
+                const defaultThresholds: Record<string, number> = {
+                    'TIER_1': 0.9,
+                    'TIER_2': 0.8,
+                    'TIER_3': 0.7,
+                };
+                setReadinessThreshold(defaultThresholds[tier] || 0.7);
             }
 
-            // Fetch matrix
-            // We can use Supabase client directly here for ease, or create an API route.
-            // Let's use Supabase client for read-only (or authenticated read)
-            const { data: matrixData, error: matrixError } = await supabase
-                .from('epic_criterion_status')
-                .select(`
-                    *,
-                    criterion:criterion_id (
-                        *,
-                        decision_owner_email,
-                        rating_timing
-                    ),
-                    decision_owner:decision_owner_id (
-                        id,
-                        email,
-                        first_name,
-                        last_name,
-                        avatar_url
-                    )
-                `)
-                .eq('epic_id', id)
-                .order('criterion(sort_order)'); // This might fail if sort_order is not on the join? 
-            // Supabase join sorting syntax is tricky. Let's sort in JS.
-
+            // Process matrix data
+            const { data: matrixData, error: matrixError } = matrixQuery;
             if (matrixError) throw matrixError;
 
-            // Fetch all ACTIVE criteria to display non-applicable ones as "Not required"
-            // Use API route instead of direct Supabase query to ensure proper authentication
+            // Process criteria
             let allActiveCriteria: any[] = [];
-            try {
-                const criteriaRes = await fetch('/api/criteria');
-                if (criteriaRes.ok) {
-                    const criteriaData = await criteriaRes.json();
-                    // Filter to only active criteria
-                    allActiveCriteria = (criteriaData.items || []).filter((c: any) => c.is_active === true);
-                }
-            } catch (e) {
-                console.warn('Failed to fetch criteria:', e);
+            if (criteriaRes.ok) {
+                const criteriaData = await criteriaRes.json();
+                allActiveCriteria = (criteriaData.items || []).filter((c: any) => c.is_active === true);
             }
+
+            // Process launch stages
+            const { data: stagesData, error: stagesError } = launchStagesQuery;
+            let fetchedLaunchStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null }> = [];
+            // Pre-calculate days-before-launch for each stage (optimization: calculate once, reuse many times)
+            const calculatedDaysBeforeLaunch = new Map<number, number>();
+            const calculatedDaysAfterLaunch = new Map<number, number>();
+            
+            if (!stagesError && stagesData) {
+                fetchedLaunchStages = stagesData;
+                setLaunchStages(stagesData);
+                
+                // Find the last pre-launch stage (Internal Readiness, sort_order 3)
+                const lastPreLaunchStage = fetchedLaunchStages
+                    .filter(stage => stage.duration_days !== null && stage.sort_order <= 3)
+                    .sort((a, b) => b.sort_order - a.sort_order)[0];
+                
+                const lastPreLaunchSortOrder = lastPreLaunchStage?.sort_order ?? 3;
+                
+                // Pre-calculate days-before-launch for each pre-launch stage
+                fetchedLaunchStages.forEach(stage => {
+                    if (stage.sort_order <= lastPreLaunchSortOrder && stage.duration_days !== null) {
+                        const targetStageDuration = stage.duration_days || 0;
+                        const stagesAfterTarget = fetchedLaunchStages.filter(s => 
+                            s.sort_order > stage.sort_order && 
+                            s.sort_order <= lastPreLaunchSortOrder &&
+                            s.duration_days !== null
+                        );
+                        const totalDaysBefore = targetStageDuration + stagesAfterTarget.reduce((sum, s) => 
+                            sum + (s.duration_days || 0), 0
+                        );
+                        calculatedDaysBeforeLaunch.set(stage.id, totalDaysBefore);
+                    } else if (stage.sort_order > lastPreLaunchSortOrder && stage.duration_days !== null) {
+                        // Pre-calculate days-after-launch for post-launch stages
+                        const stagesFromPreLaunchToTarget = fetchedLaunchStages.filter(s => 
+                            s.sort_order > lastPreLaunchSortOrder && 
+                            s.sort_order <= stage.sort_order &&
+                            s.duration_days !== null
+                        );
+                        const totalDaysAfter = stagesFromPreLaunchToTarget.reduce((sum, s) => 
+                            sum + (s.duration_days || 0), 0
+                        );
+                        calculatedDaysAfterLaunch.set(stage.id, totalDaysAfter);
+                    }
+                });
+                
+                // Store pre-calculated maps in state for reuse
+                setStageDaysBeforeLaunch(calculatedDaysBeforeLaunch);
+                setStageDaysAfterLaunch(calculatedDaysAfterLaunch);
+                
+                // #region agent log
+                console.log('[DEBUG] Launch stages loaded', stagesData);
+                console.log('[DEBUG] Pre-calculated days-before-launch', Object.fromEntries(calculatedDaysBeforeLaunch));
+                console.log('[DEBUG] Pre-calculated days-after-launch', Object.fromEntries(calculatedDaysAfterLaunch));
+                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:202',message:'Launch stages loaded',data:{stages:stagesData,count:stagesData.length,daysBeforeLaunch:Object.fromEntries(calculatedDaysBeforeLaunch),daysAfterLaunch:Object.fromEntries(calculatedDaysAfterLaunch)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(()=>{});
+                // #endregion
+            } else {
+                // #region agent log
+                console.error('[DEBUG] Launch stages error', stagesError);
+                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:207',message:'Launch stages error',data:{error:stagesError},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+                // #endregion
+            }
+
+            // Fetch release schedule if needed (after we have epic data)
+            const ahaFields = (data as any).aha_fields || {};
+            const getReleaseName = (): string | null => {
+                if (!ahaFields || typeof ahaFields !== 'object') return null;
+                
+                if (ahaFields.standard_fields && typeof ahaFields.standard_fields === 'object') {
+                    const standardFields = ahaFields.standard_fields;
+                    const releaseName = standardFields?.aha_release_name || 
+                                      standardFields?.release?.name || null;
+                    if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
+                        return releaseName.trim();
+                    }
+                }
+                
+                if (ahaFields.custom_fields && typeof ahaFields.custom_fields === 'object') {
+                    const customFields = ahaFields.custom_fields;
+                    const releaseName = customFields?.release_target_after_pod_planning;
+                    if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
+                        return releaseName.trim();
+                    }
+                }
+                
+                return null;
+            };
+            
+            const extractedReleaseName = getReleaseName();
+            setReleaseName(extractedReleaseName);
+            let fetchedReleaseDate: string | null = null;
+            if (extractedReleaseName) {
+                const { data: releaseSchedule, error: releaseError } = await supabase
+                    .from('release_schedule')
+                    .select('launch_date')
+                    .eq('release_name', extractedReleaseName)
+                    .maybeSingle();
+                
+                if (!releaseError && releaseSchedule?.launch_date) {
+                    fetchedReleaseDate = releaseSchedule.launch_date;
+                    setReleaseDate(releaseSchedule.launch_date);
+                } else {
+                    setReleaseDate(null);
+                }
+            } else {
+                setReleaseDate(null);
+            }
+
+            // NON-BLOCKING: Instantiate criteria in parallel (don't wait for it)
+            // This allows the page to load faster while criteria are being instantiated
+            fetch(`/api/epics/${id}/instantiate-criteria`, { method: 'POST' })
+                .then(resp => {
+                    if (!resp.ok) {
+                        setInstantiationFailed(true);
+                        notifications.show({
+                            title: 'Could not populate criteria',
+                            message: 'We were unable to instantiate criteria for this epic. You can retry below.',
+                            color: 'orange',
+                        });
+                    } else {
+                        setInstantiationFailed(false);
+                    }
+                })
+                .catch(e => {
+                    console.warn('Failed to instantiate criteria:', e);
+                    setInstantiationFailed(true);
+                });
 
             // Deduplicate by criterion_id (keep the most recently updated one)
             const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
@@ -181,6 +371,20 @@ export default function EpicDetailPage() {
                 }
             });
 
+            // #region agent log
+            const businessJustificationItem = merged.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
+            if (businessJustificationItem) {
+                console.log('[DEBUG] Business Justification raw data', {
+                    criterionId: businessJustificationItem.criterion_id,
+                    criterionLabel: businessJustificationItem.criterion?.label,
+                    ratingTiming: businessJustificationItem.criterion?.rating_timing,
+                    storedDueDate: businessJustificationItem.condition_due_date,
+                    hasCriterion: !!businessJustificationItem.criterion
+                });
+                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:319',message:'Business Justification raw data',data:{criterionId:businessJustificationItem.criterion_id,criterionLabel:businessJustificationItem.criterion?.label,ratingTiming:businessJustificationItem.criterion?.rating_timing,storedDueDate:businessJustificationItem.condition_due_date,hasCriterion:!!businessJustificationItem.criterion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            }
+            // #endregion
+            
             // Annotate applicability for existing statuses
             const withApplicability = merged.map((item: any) => ({
                 ...item,
@@ -195,83 +399,8 @@ export default function EpicDetailPage() {
             );
 
             // Resolve approver emails using pod mapping if needed
-            const ahaFields = (data as any).aha_fields || {};
             const podRaw = (data as any).pod || ahaFields.custom_fields?.dev_backlog_pod || null;
             const pod = podRaw ? String(podRaw).trim() : null;
-            let settingsMapping: Record<string, string> = {};
-            
-            // Fetch settings once for all items
-            try {
-                const settingsRes = await fetch('/api/settings');
-                if (settingsRes.ok) {
-                    const settings = await settingsRes.json();
-                    settingsMapping = settings.pod_product_manager_mapping || {};
-                }
-            } catch (e) {
-                console.warn('Failed to fetch settings for pod mapping:', e);
-            }
-            
-            // Get release name and fetch release date from release schedule
-            const getReleaseName = (): string | null => {
-                if (!ahaFields || typeof ahaFields !== 'object') return null;
-                
-                // Check standard fields
-                if (ahaFields.standard_fields && typeof ahaFields.standard_fields === 'object') {
-                    const standardFields = ahaFields.standard_fields;
-                    const releaseName = standardFields?.aha_release_name || 
-                                      standardFields?.release?.name || null;
-                    if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
-                        return releaseName.trim();
-                    }
-                }
-                
-                // Check custom fields
-                if (ahaFields.custom_fields && typeof ahaFields.custom_fields === 'object') {
-                    const customFields = ahaFields.custom_fields;
-                    const releaseName = customFields?.release_target_after_pod_planning;
-                    if (releaseName && typeof releaseName === 'string' && releaseName.trim()) {
-                        return releaseName.trim();
-                    }
-                }
-                
-                return null;
-            };
-            
-            const releaseName = getReleaseName();
-            if (releaseName) {
-                // Fetch release date from release schedule
-                // Use maybeSingle() to avoid PGRST116 error when release doesn't exist
-                const { data: releaseSchedule, error: releaseError } = await supabase
-                    .from('release_schedule')
-                    .select('launch_date')
-                    .eq('release_name', releaseName)
-                    .maybeSingle();
-                
-                if (releaseError) {
-                    console.warn('Error fetching release schedule:', releaseError);
-                    setReleaseDate(null);
-                } else if (releaseSchedule?.launch_date) {
-                    setReleaseDate(releaseSchedule.launch_date);
-                } else {
-                    setReleaseDate(null);
-                }
-            } else {
-                setReleaseDate(null);
-            }
-            
-            // Fetch launch stages to calculate Go/NoGo date
-            try {
-                const { data: stagesData, error: stagesError } = await supabase
-                    .from('launch_stages')
-                    .select('id, name, sort_order, duration_days')
-                    .order('sort_order', { ascending: true });
-                
-                if (!stagesError && stagesData) {
-                    setLaunchStages(stagesData);
-                }
-            } catch (e) {
-                console.warn('Failed to fetch launch stages:', e);
-            }
             
             // Debug logging
             if (pod) {
@@ -300,13 +429,24 @@ export default function EpicDetailPage() {
                     
                     // If it's a placeholder, resolve using pod mapping
                     if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
-                        if (pod && settingsMapping[pod]) {
-                            approverEmail = settingsMapping[pod];
+                        if (pod) {
+                            // Try exact match first
+                            if (settingsMapping[pod]) {
+                                approverEmail = settingsMapping[pod];
+                            } else {
+                                // Try case-insensitive match
+                                const podLower = pod.toLowerCase();
+                                const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
+                                if (matchingKey && settingsMapping[matchingKey]) {
+                                    approverEmail = settingsMapping[matchingKey];
+                                }
+                            }
                         }
                     }
                 }
                 
-                if (approverEmail) {
+                // Only add to approverEmails if it's a real email (not a placeholder)
+                if (approverEmail && approverEmail !== "[name of pod's product manager]" && approverEmail.includes("@")) {
                     approverEmails.add(approverEmail);
                 }
             });
@@ -331,32 +471,205 @@ export default function EpicDetailPage() {
             }
             
             // Calculate due dates for criteria based on rating_timing and launch stages
-            const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
+            // Use fetched values directly instead of state (state updates are async)
+            const targetDate = fetchedReleaseDate || data.target_launch_date || null;
+            // #region agent log
+            fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:414',message:'calculateDueDate setup',data:{targetDate,fetchedReleaseDate,dataTargetLaunchDate:data.target_launch_date,launchStagesCount:fetchedLaunchStages.length,launchStages:fetchedLaunchStages.map(s=>({id:s.id,name:s.name,sort_order:s.sort_order,duration_days:s.duration_days}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C,E'})}).catch(()=>{});
+            console.log('[DEBUG] calculateDueDate setup', {targetDate, fetchedReleaseDate, dataTargetLaunchDate: data.target_launch_date, launchStagesCount: fetchedLaunchStages.length, launchStages: fetchedLaunchStages});
+            // #endregion
             const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
-                if (!targetDate || !ratingTimingId || launchStages.length === 0) {
+                if (!targetDate || !ratingTimingId || fetchedLaunchStages.length === 0) {
                     return null;
                 }
                 
-                // Find the launch stage for this criterion
-                const targetStage = launchStages.find(stage => stage.id === ratingTimingId);
-                if (!targetStage) {
+                // Use pre-calculated values from local variables (state updates are async)
+                const daysBefore = calculatedDaysBeforeLaunch.get(ratingTimingId);
+                const daysAfter = calculatedDaysAfterLaunch.get(ratingTimingId);
+                
+                if (daysBefore === undefined && daysAfter === undefined) {
+                    // Stage not found in pre-calculated maps
                     return null;
                 }
                 
-                // Sum durations of all stages that come BEFORE the target stage
-                const stagesBeforeTarget = launchStages.filter(stage => 
-                    stage.sort_order < targetStage.sort_order && stage.duration_days !== null
-                );
-                const totalDaysBefore = stagesBeforeTarget.reduce((sum, stage) => 
-                    sum + (stage.duration_days || 0), 0
-                );
-                
-                // Calculate due date: target date minus days before target stage
                 const dueDate = new Date(targetDate);
-                dueDate.setDate(dueDate.getDate() - totalDaysBefore);
                 
-                return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
+                if (daysBefore !== undefined) {
+                    // Pre-launch stage: subtract days before launch
+                    dueDate.setDate(dueDate.getDate() - daysBefore);
+                } else if (daysAfter !== undefined) {
+                    // Post-launch stage: add days after launch
+                    dueDate.setDate(dueDate.getDate() + daysAfter);
+                }
+                
+                const result = dueDate.toISOString().split('T')[0];
+                // #region agent log
+                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:463',message:'calculateDueDate result',data:{ratingTimingId,result,targetDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                console.log('[DEBUG] calculateDueDate result', {ratingTimingId, result, targetDate});
+                // #endregion
+                return result; // Return as YYYY-MM-DD
             };
+            
+            // LAZY LOAD: Initialize with empty data, fetch after initial render (non-blocking)
+            // This dramatically improves initial page load time
+            const commentsData: Record<string, { count: number; lastComment?: any }> = {};
+            const attachmentsData: Record<string, number> = {};
+            
+            // Initialize with empty data
+            sorted.forEach((item: any) => {
+                commentsData[item.id] = { count: 0 };
+                attachmentsData[item.id] = 0;
+            });
+            
+            // Fetch comments/attachments AFTER initial render (non-blocking)
+            // This allows the page to show immediately while counts load in background
+            const itemIds = sorted.map((item: any) => item.id);
+            if (itemIds.length > 0) {
+                // Clear any existing timeout to prevent duplicate requests
+                if (attachmentFetchTimeoutRef.current) {
+                    clearTimeout(attachmentFetchTimeoutRef.current);
+                }
+                
+                // Use setTimeout to defer until after initial render
+                attachmentFetchTimeoutRef.current = setTimeout(() => {
+                    // Fetch comments counts and last comment for each item using batch fetching
+                    const commentUrls = itemIds.map(
+                        (itemId: string) => `/api/epics/${id}/criteria/${itemId}/comments`
+                    );
+
+                    batchFetchWithRateLimit(commentUrls, {
+                        batchSize: 5,
+                        batchDelay: 200,
+                        maxRetries: 1,
+                    }).then((results) => {
+                        results.forEach(({ url, response, error }, index) => {
+                            const itemId = itemIds[index];
+                            
+                            if (error || !response) {
+                                console.warn(`Failed to fetch comments for ${itemId}:`, error);
+                                commentsData[itemId] = { count: 0 };
+                                return;
+                            }
+
+                            if (response.ok) {
+                                response.json().then((comments: any[]) => {
+                                    const lastComment = comments && comments.length > 0 
+                                        ? comments[comments.length - 1] 
+                                        : null;
+                                    commentsData[itemId] = {
+                                        count: comments?.length || 0,
+                                        lastComment: lastComment ? {
+                                            comment_text: lastComment.comment_text,
+                                            created_at: lastComment.created_at,
+                                            created_by: lastComment.created_by,
+                                        } : undefined,
+                                    };
+                                    // Update matrix with new comment data
+                                    setMatrix(prevMatrix => prevMatrix.map((item: any) => {
+                                        const commentsInfo = commentsData[item.id] || { count: 0 };
+                                        return {
+                                            ...item,
+                                            commentCount: commentsInfo.count,
+                                            lastComment: commentsInfo.lastComment,
+                                        };
+                                    }));
+                                }).catch((e) => {
+                                    console.warn(`Failed to parse comments for ${itemId}:`, e);
+                                    commentsData[itemId] = { count: 0 };
+                                });
+                            } else {
+                                commentsData[itemId] = { count: 0 };
+                            }
+                        });
+                        
+                        // Final update of matrix with all comment data
+                        setMatrix(prevMatrix => prevMatrix.map((item: any) => {
+                            const commentsInfo = commentsData[item.id] || { count: 0 };
+                            return {
+                                ...item,
+                                commentCount: commentsInfo.count,
+                                lastComment: commentsInfo.lastComment,
+                            };
+                        }));
+                    });
+                    
+                    // Fetch attachments counts for each item with deduplication and error handling
+                    // Use batch fetching with rate limit handling to avoid overwhelming the server
+                    const attachmentItemIds = itemIds.filter((itemId: string) => {
+                        // Skip if already pending or previously failed with 500
+                        const requestKey = `${id}-${itemId}`;
+                        if (pendingAttachmentRequestsRef.current.has(requestKey)) {
+                            return false;
+                        }
+                        if (failedAttachmentRequestsRef.current.has(requestKey)) {
+                            return false;
+                        }
+                        pendingAttachmentRequestsRef.current.add(requestKey);
+                        return true;
+                    });
+
+                    if (attachmentItemIds.length > 0) {
+                        // Build URLs for batch fetching
+                        const attachmentUrls = attachmentItemIds.map(
+                            (itemId: string) => `/api/epics/${id}/criteria/${itemId}/attachments`
+                        );
+
+                        // Use batch fetch with rate limit handling (processes in batches of 5)
+                        batchFetchWithRateLimit(attachmentUrls, {
+                            batchSize: 5,
+                            batchDelay: 200,
+                            maxRetries: 1,
+                        }).then((results) => {
+                            results.forEach(({ url, response, error }, index) => {
+                                const itemId = attachmentItemIds[index];
+                                const requestKey = `${id}-${itemId}`;
+                                
+                                // Remove from pending set
+                                pendingAttachmentRequestsRef.current.delete(requestKey);
+                                
+                                if (error) {
+                                    console.warn(`Failed to fetch attachments for ${itemId}:`, error);
+                                    attachmentsData[itemId] = 0;
+                                    return;
+                                }
+
+                                if (!response) {
+                                    attachmentsData[itemId] = 0;
+                                    return;
+                                }
+
+                                if (response.ok) {
+                                    response.json().then((attachments: any[]) => {
+                                        attachmentsData[itemId] = attachments?.length || 0;
+                                        // Update matrix with new attachment data
+                                        setMatrix(prevMatrix => prevMatrix.map((item: any) => ({
+                                            ...item,
+                                            attachmentCount: attachmentsData[item.id] || 0,
+                                        })));
+                                    }).catch((e) => {
+                                        console.warn(`Failed to parse attachments for ${itemId}:`, e);
+                                        attachmentsData[itemId] = 0;
+                                    });
+                                } else if (response.status === 500) {
+                                    // Don't retry 500 errors - mark as failed
+                                    failedAttachmentRequestsRef.current.add(requestKey);
+                                    console.warn(`Server error (500) fetching attachments for ${itemId}, skipping retries`);
+                                    attachmentsData[itemId] = 0;
+                                } else {
+                                    // Other errors - don't retry
+                                    failedAttachmentRequestsRef.current.add(requestKey);
+                                    attachmentsData[itemId] = 0;
+                                }
+                            });
+                            
+                            // Final update of matrix with all attachment data
+                            setMatrix(prevMatrix => prevMatrix.map((item: any) => ({
+                                ...item,
+                                attachmentCount: attachmentsData[item.id] || 0,
+                            })));
+                        });
+                    }
+                }, 100); // Small delay to let initial render complete
+            }
             
             const resolvedMatrix = sorted.map((item: any) => {
                 // Priority: decision_owner_id (delegated) > criterion template email
@@ -378,29 +691,62 @@ export default function EpicDetailPage() {
                     
                     // If it's a placeholder, resolve using pod mapping
                     if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
-                        if (pod && settingsMapping[pod]) {
-                            approverEmail = settingsMapping[pod];
+                        if (pod) {
+                            // Try exact match first
+                            if (settingsMapping[pod]) {
+                                approverEmail = settingsMapping[pod];
+                            } else {
+                                // Try case-insensitive match
+                                const podLower = pod.toLowerCase();
+                                const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
+                                if (matchingKey && settingsMapping[matchingKey]) {
+                                    approverEmail = settingsMapping[matchingKey];
+                                }
+                            }
                         }
                     }
                     
                     // Get approver info from userInfoMap
-                    if (approverEmail) {
+                    if (approverEmail && approverEmail !== "[name of pod's product manager]") {
                         approverInfo = userInfoMap[approverEmail.toLowerCase()] || null;
                     }
                 }
                 
-                // Calculate due date based on rating_timing if not already set
-                const calculatedDueDate = item.condition_due_date || calculateDueDate(item.criterion?.rating_timing);
+                // Calculate due date based on rating_timing
+                // If rating_timing is set, always calculate (override stored date)
+                // Otherwise, use stored date if available
+                const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing);
+                const finalDueDate = calculatedDueDate || item.condition_due_date || null;
+                // #region agent log
+                if (item.criterion?.label?.toLowerCase().includes('business justification')) {
+                    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:673',message:'Business Justification due date calculation',data:{criterionLabel:item.criterion?.label,ratingTiming:item.criterion?.rating_timing,storedDueDate:item.condition_due_date,calculatedDueDate,finalDueDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D,F'})}).catch(()=>{});
+                    console.log('[DEBUG] Business Justification due date calculation', {criterionLabel: item.criterion?.label, ratingTiming: item.criterion?.rating_timing, storedDueDate: item.condition_due_date, calculatedDueDate, finalDueDate});
+                }
+                // #endregion
+                
+                // Get comments and attachments data for this item
+                const commentsInfo = commentsData[item.id] || { count: 0 };
+                const attachmentCount = attachmentsData[item.id] || 0;
                 
                 return {
                     ...item,
                     approverEmail,
                     approverInfo,
                     notRequired: item.notRequired === true,
-                    condition_due_date: calculatedDueDate || item.condition_due_date,
+                    condition_due_date: finalDueDate,
+                    commentCount: commentsInfo.count,
+                    lastComment: commentsInfo.lastComment,
+                    attachmentCount,
                 };
             });
 
+            // #region agent log
+            const businessJustificationInMatrix = resolvedMatrix.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
+            if (businessJustificationInMatrix) {
+                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:751',message:'Matrix data set - Business Justification',data:{conditionDueDate:businessJustificationInMatrix.condition_due_date,criterionLabel:businessJustificationInMatrix.criterion?.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                console.log('[DEBUG] Matrix data set - Business Justification', {conditionDueDate: businessJustificationInMatrix.condition_due_date, criterionLabel: businessJustificationInMatrix.criterion?.label});
+            }
+            // #endregion
             setMatrix(resolvedMatrix);
             
             // Resolve PM owner: prioritize pod mapping (source of truth), then fallback to assigned_to_user or PM criteria approver
@@ -483,13 +829,75 @@ export default function EpicDetailPage() {
             setError(e.message);
         } finally {
             setLoading(false);
+            loadDataInProgressRef.current = false;
         }
     }
 
     useEffect(() => {
-        if (id) loadData();
+        if (id) {
+            // Clear any pending attachment requests when loading new data
+            pendingAttachmentRequestsRef.current.clear();
+            failedAttachmentRequestsRef.current.clear();
+            
+            // Clear any pending loadData timeout
+            if (loadDataTimeoutRef.current) {
+                clearTimeout(loadDataTimeoutRef.current);
+                loadDataTimeoutRef.current = null;
+            }
+            
+            // Reset loadData in progress flag
+            loadDataInProgressRef.current = false;
+            
+            loadData();
+        }
+        
+        // Cleanup function to clear timeouts on unmount or when id changes
+        return () => {
+            if (attachmentFetchTimeoutRef.current) {
+                clearTimeout(attachmentFetchTimeoutRef.current);
+                attachmentFetchTimeoutRef.current = null;
+            }
+            if (loadDataTimeoutRef.current) {
+                clearTimeout(loadDataTimeoutRef.current);
+                loadDataTimeoutRef.current = null;
+            }
+            pendingAttachmentRequestsRef.current.clear();
+            loadDataInProgressRef.current = false;
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [id]);
+
+    // Update threshold when epic tier changes
+    useEffect(() => {
+        const currentTier = epic?.tier;
+        if (!currentTier) return;
+        
+        async function updateThreshold(tier: string) {
+            try {
+                const settingsRes = await fetch('/api/settings');
+                if (settingsRes.ok) {
+                    const settings = await settingsRes.json();
+                    const thresholds: Record<string, number> = {
+                        'TIER_1': settings.threshold_tier1 || 0.9,
+                        'TIER_2': settings.threshold_tier2 || 0.8,
+                        'TIER_3': settings.threshold_tier3 || 0.7,
+                    };
+                    setReadinessThreshold(thresholds[tier] || 0.7);
+                }
+            } catch (e) {
+                console.warn('Failed to fetch settings for threshold:', e);
+                // Fallback to defaults
+                const defaultThresholds: Record<string, number> = {
+                    'TIER_1': 0.9,
+                    'TIER_2': 0.8,
+                    'TIER_3': 0.7,
+                };
+                setReadinessThreshold(defaultThresholds[tier] || 0.7);
+            }
+        }
+        
+        updateThreshold(currentTier);
+    }, [epic?.tier]);
 
     if (loading) {
         return <div className="pt-24 p-8">Loading...</div>;
@@ -603,21 +1011,14 @@ export default function EpicDetailPage() {
 
     return (
         <div className="flex">
-            <div className="flex-1 pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="mb-6 flex justify-between items-center">
-                    <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline">← Back to Epics</Link>
-                    <Button 
-                        size="xs" 
-                        onClick={() => setSnapshotModalOpen(true)}
-                    >
-                        Take Snapshot
-                    </Button>
+            <div className="flex-1 pt-16 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div className="mb-1">
+                    <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline text-sm">← Back to Epics</Link>
                 </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
-                <div className="flex justify-between items-start mb-6">
+            <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
-                        <h1 className="text-3xl font-bold text-gray-900 mb-4">{epic.name}</h1>
+                        <h1 className="text-3xl font-bold text-gray-900 mb-2">{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
                         {pmOwner && pmOwner.email && (
                             <Tooltip label="Product Owner" withArrow>
@@ -688,16 +1089,33 @@ export default function EpicDetailPage() {
                             })()}
                             <div className="text-right">
                                 <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Release Date</div>
-                                <div className="text-lg font-semibold text-gray-900">
-                                    {releaseDate ? new Date(releaseDate).toLocaleDateString() : (epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set')}
-                                </div>
+                                {releaseDate ? (
+                                    <div className="text-lg font-semibold text-gray-900">
+                                        {new Date(releaseDate).toLocaleDateString()}
+                                    </div>
+                                ) : epic.target_launch_date ? (
+                                    <div className="text-lg font-semibold text-gray-900">
+                                        {new Date(epic.target_launch_date).toLocaleDateString()}
+                                    </div>
+                                ) : releaseName ? (
+                                    <Button
+                                        leftSection={<IconCalendar size={18} />}
+                                        color="orange"
+                                        size="md"
+                                        onClick={() => setReleaseMappingModalOpen(true)}
+                                        className="mt-1"
+                                    >
+                                        Map Release Date
+                                    </Button>
+                                ) : (
+                                    <div className="text-lg font-semibold text-gray-500">Not set</div>
+                                )}
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <div className="pt-6">
-                    <div className="grid grid-cols-4 gap-6">
+                <div className="grid grid-cols-4 gap-6 mt-6">
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
                             <div className="text-2xl font-bold text-gray-900">
@@ -708,10 +1126,15 @@ export default function EpicDetailPage() {
                                     </span>
                                 )}
                             </div>
+                            {readinessThreshold !== null && epic.tier && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                    Threshold: <span className="font-medium">{Math.round(readinessThreshold * 100)}%</span> (Tier {epic.tier.replace('TIER_', '')})
+                                </div>
+                            )}
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'Not set')}</div>
+                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}</div>
                         </div>
                         <div>
                             <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
@@ -761,45 +1184,79 @@ export default function EpicDetailPage() {
                             />
                         </div>
                     </div>
-                </div>
-            </div>
 
-            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'readiness')} className="mb-8">
-                <Tabs.List>
-                    <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
-                    <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
-                    <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
-                    <Tabs.Tab value="adoption">Adoption</Tabs.Tab>
-                </Tabs.List>
+            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'readiness')} className="mt-8 mb-8" variant="pills">
+                <div style={{ backgroundColor: '#E7F5FF', padding: '4px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Tabs.List style={{ backgroundColor: 'transparent', padding: 0 }}>
+                        <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
+                        <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
+                        <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
+                        <Tabs.Tab value="adoption">Adoption</Tabs.Tab>
+                    </Tabs.List>
+                    <div className="flex gap-2" style={{ marginLeft: 'auto', paddingRight: '4px' }}>
+                        <Button 
+                            size="xs" 
+                            variant={showFieldsSidebar ? "filled" : "outline"}
+                            onClick={() => setShowFieldsSidebar(!showFieldsSidebar)}
+                        >
+                            {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
+                        </Button>
+                        <Button 
+                            size="xs" 
+                            onClick={() => setSnapshotModalOpen(true)}
+                        >
+                            Take Snapshot
+                        </Button>
+                    </div>
+                </div>
 
                 <Tabs.Panel value="readiness" pt="md">
                     <div className="flex justify-between items-center mb-4">
                         {matrix.length > 0 && (
-                            <Group gap="xs">
-                                <Badge
-                                    variant={criterionFilter === 'all' ? 'filled' : 'outline'}
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={() => setCriterionFilter('all')}
-                                >
-                                    All
-                                </Badge>
-                                <Badge
-                                    variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
-                                    color="red"
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={() => setCriterionFilter('overdue')}
-                                >
-                                    Criterion Overdue
-                                </Badge>
-                                <Badge
-                                    variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
-                                    color="orange"
-                                    style={{ cursor: 'pointer' }}
-                                    onClick={() => setCriterionFilter('too_soon')}
-                                >
-                                    Criterion Due Soon
-                                </Badge>
-                            </Group>
+                            <>
+                                {showFilters ? (
+                                    <Group gap="xs">
+                                        <Badge
+                                            variant={criterionFilter === 'all' ? 'filled' : 'outline'}
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => setCriterionFilter('all')}
+                                        >
+                                            All
+                                        </Badge>
+                                        <Badge
+                                            variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
+                                            color="red"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => setCriterionFilter('overdue')}
+                                        >
+                                            Criterion Overdue
+                                        </Badge>
+                                        <Badge
+                                            variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
+                                            color="orange"
+                                            style={{ cursor: 'pointer' }}
+                                            onClick={() => setCriterionFilter('too_soon')}
+                                        >
+                                            Criterion Due Soon
+                                        </Badge>
+                                        <Button
+                                            size="xs"
+                                            variant="subtle"
+                                            onClick={() => setShowFilters(false)}
+                                        >
+                                            Hide Filters
+                                        </Button>
+                                    </Group>
+                                ) : (
+                                    <Button
+                                        size="xs"
+                                        variant="subtle"
+                                        onClick={() => setShowFilters(true)}
+                                    >
+                                        Show Filters
+                                    </Button>
+                                )}
+                            </>
                         )}
                     </div>
                     {matrix.length === 0 ? (
@@ -821,7 +1278,7 @@ export default function EpicDetailPage() {
                                 const fourteenDaysFromNow = new Date(today);
                                 fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
                                 
-                                // Recalculate due dates for filtering (same logic as in loadData)
+                                // Use pre-calculated values for filtering (optimization: reuse pre-calculated maps)
                                 const calculateDueDateForFilter = (item: any): string | null => {
                                     if (!item.criterion?.rating_timing || launchStages.length === 0) {
                                         return item.condition_due_date || null;
@@ -833,20 +1290,23 @@ export default function EpicDetailPage() {
                                     }
                                     
                                     const ratingTimingId = item.criterion.rating_timing;
-                                    const targetStage = launchStages.find(stage => stage.id === ratingTimingId);
-                                    if (!targetStage) {
+                                    
+                                    // Use pre-calculated values instead of recalculating
+                                    const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+                                    const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+                                    
+                                    if (daysBefore === undefined && daysAfter === undefined) {
                                         return item.condition_due_date || null;
                                     }
                                     
-                                    const stagesBeforeTarget = launchStages.filter(stage => 
-                                        stage.sort_order < targetStage.sort_order && stage.duration_days !== null
-                                    );
-                                    const totalDaysBefore = stagesBeforeTarget.reduce((sum, stage) => 
-                                        sum + (stage.duration_days || 0), 0
-                                    );
-                                    
                                     const dueDate = new Date(targetDate);
-                                    dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+                                    
+                                    if (daysBefore !== undefined) {
+                                        dueDate.setDate(dueDate.getDate() - daysBefore);
+                                    } else if (daysAfter !== undefined) {
+                                        dueDate.setDate(dueDate.getDate() + daysAfter);
+                                    }
+                                    
                                     return dueDate.toISOString().split('T')[0];
                                 };
                                 
@@ -906,8 +1366,122 @@ export default function EpicDetailPage() {
                 onClose={() => setSnapshotModalOpen(false)}
                 onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
             />
+
+            {/* Release Date Mapping Modal */}
+            <Modal
+                opened={releaseMappingModalOpen}
+                onClose={() => {
+                    setReleaseMappingModalOpen(false);
+                    setReleaseDateInput("");
+                }}
+                title="Map Release Date"
+                centered
+            >
+                <div className="space-y-4">
+                    <div>
+                        <div className="text-sm font-medium text-gray-700 mb-1">Release Name</div>
+                        <div className="text-lg font-semibold text-gray-900">{releaseName}</div>
+                    </div>
+                    <TextInput
+                        label="Launch Date"
+                        placeholder="MM/DD/YYYY"
+                        value={releaseDateInput}
+                        onChange={(e) => setReleaseDateInput(e.currentTarget.value)}
+                        description="Enter the launch date for this release"
+                    />
+                    <Group justify="flex-end" mt="md">
+                        <Button
+                            variant="subtle"
+                            onClick={() => {
+                                setReleaseMappingModalOpen(false);
+                                setReleaseDateInput("");
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={async () => {
+                                if (!releaseDateInput.trim()) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: 'Please enter a launch date',
+                                        color: 'red',
+                                    });
+                                    return;
+                                }
+                                
+                                if (!releaseName) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: 'Release name is missing',
+                                        color: 'red',
+                                    });
+                                    return;
+                                }
+
+                                try {
+                                    // Parse date - support MM/DD/YYYY format
+                                    let parsedDate: string;
+                                    if (releaseDateInput.includes("/")) {
+                                        const parts = releaseDateInput.split("/");
+                                        if (parts.length !== 3) {
+                                            throw new Error("Invalid date format. Use MM/DD/YYYY");
+                                        }
+                                        const [month, day, year] = parts;
+                                        parsedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                                        
+                                        // Validate the date
+                                        const dateObj = new Date(parsedDate);
+                                        if (isNaN(dateObj.getTime())) {
+                                            throw new Error("Invalid date. Please check the date format.");
+                                        }
+                                    } else {
+                                        parsedDate = releaseDateInput; // Assume YYYY-MM-DD format
+                                    }
+
+                                    const res = await fetch("/api/releases", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        credentials: 'include',
+                                        body: JSON.stringify({
+                                            release_name: releaseName.trim(),
+                                            launch_date: parsedDate,
+                                        }),
+                                    });
+
+                                    if (!res.ok) {
+                                        const errorData = await res.json();
+                                        throw new Error(errorData.error || "Failed to create release mapping");
+                                    }
+
+                                    notifications.show({
+                                        title: 'Success',
+                                        message: 'Release date mapped successfully',
+                                        color: 'green',
+                                    });
+
+                                    setReleaseMappingModalOpen(false);
+                                    setReleaseDateInput("");
+                                    
+                                    // Reload data to get the updated release date
+                                    await loadData();
+                                } catch (error: any) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: error.message || 'Failed to map release date',
+                                        color: 'red',
+                                    });
+                                }
+                            }}
+                            disabled={!releaseDateInput.trim()}
+                        >
+                            Map Date
+                        </Button>
+                    </Group>
+                </div>
+            </Modal>
             </div>
-            <EpicFieldsSidebar epic={epic} />
+            {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} />}
         </div>
     );
 }

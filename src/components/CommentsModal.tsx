@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Modal, Button, Group, Text, Stack, Textarea, ActionIcon, Loader, ScrollArea } from '@mantine/core';
-import { IconTrash, IconSend } from '@tabler/icons-react';
+import { Modal, Button, Group, Text, Stack, ActionIcon, Loader, ScrollArea, FileButton, Badge } from '@mantine/core';
+import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
+import { RichText } from './admin/RichText';
 
 interface Comment {
   id: string;
@@ -13,6 +14,15 @@ interface Comment {
     first_name?: string;
     last_name?: string;
   };
+  attachments?: Attachment[];
+}
+
+interface Attachment {
+  id: string;
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  uploaded_at: string;
 }
 
 interface CommentsModalProps {
@@ -45,6 +55,16 @@ export function CommentsModal({
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hasAddedComment, setHasAddedComment] = useState(false);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
+  
+  // Expose comments count for parent component
+  useEffect(() => {
+    // Notify parent when comments change (for displaying count)
+    if (opened && comments.length > 0) {
+      // Could emit event or use callback if needed
+    }
+  }, [comments, opened]);
 
   // Fetch comments when modal opens
   const fetchComments = async () => {
@@ -55,7 +75,24 @@ export function CommentsModal({
       });
       if (res.ok) {
         const data = await res.json();
-        setComments(data);
+        // Fetch attachments for each comment
+        const commentsWithAttachments = await Promise.all(
+          data.map(async (comment: Comment) => {
+            try {
+              const attRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/comments/${comment.id}/attachments`, {
+                credentials: 'include',
+              });
+              if (attRes.ok) {
+                const attachments = await attRes.json();
+                return { ...comment, attachments };
+              }
+            } catch (e) {
+              console.warn('Failed to fetch attachments for comment:', e);
+            }
+            return { ...comment, attachments: [] };
+          })
+        );
+        setComments(commentsWithAttachments);
       }
     } catch (error) {
       console.error('Failed to fetch comments:', error);
@@ -64,37 +101,70 @@ export function CommentsModal({
     }
   };
 
-  // Post new comment
+  // Post new comment with attachments
   const handleSubmitComment = async () => {
-    if (!newComment.trim()) return;
+    // Check if comment has actual content (strip HTML tags for validation) or files
+    const textContent = newComment.replace(/<[^>]*>/g, '').trim();
+    if (!textContent && selectedFiles.length === 0) return;
 
     setSubmitting(true);
+    setUploadingFiles(true);
     try {
-      const res = await fetch(`/api/epics/${epicId}/criteria/${taskId}/comments`, {
+      // First, create the comment
+      const commentRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/comments`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ comment_text: newComment.trim() }),
+        body: JSON.stringify({ comment_text: newComment || '' }), // Send HTML as-is
       });
 
-      if (!res.ok) {
-        const error = await res.json();
+      if (!commentRes.ok) {
+        const error = await commentRes.json();
         throw new Error(error.error || 'Failed to post comment');
       }
 
-      const commentText = newComment.trim();
+      const comment = await commentRes.json();
+      const commentId = comment.id;
+
+      // Then, upload attachments if any
+      if (selectedFiles.length > 0) {
+        const uploadPromises = selectedFiles.map(async (file) => {
+          const formData = new FormData();
+          formData.append('file', file);
+          formData.append('comment_id', commentId);
+
+          const uploadRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/attachments`, {
+            method: 'POST',
+            credentials: 'include',
+            body: formData,
+          });
+
+          if (!uploadRes.ok) {
+            const error = await uploadRes.json();
+            throw new Error(error.error || `Failed to upload ${file.name}`);
+          }
+        });
+
+        await Promise.all(uploadPromises);
+      }
+
       setNewComment('');
+      setSelectedFiles([]);
       await fetchComments();
       setHasAddedComment(true); // Mark that a comment was added
       
-      // If comment was required and we just added one, notify parent
-      if (requireComment && onCommentAdded) {
+      // Always notify parent when comment is added (for refresh)
+      if (onCommentAdded) {
         onCommentAdded();
       }
+      
+      // Close the modal after adding comment
+      onClose();
     } catch (error: any) {
       alert(`Failed to post comment: ${error.message}`);
     } finally {
       setSubmitting(false);
+      setUploadingFiles(false);
     }
   };
 
@@ -237,9 +307,32 @@ export function CommentsModal({
                       </ActionIcon>
                     )}
                   </Group>
-                  <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                    {comment.comment_text}
-                  </Text>
+                  <div 
+                    className="text-sm text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                    dangerouslySetInnerHTML={{ __html: comment.comment_text }}
+                    style={{
+                      whiteSpace: "pre-wrap",
+                      wordBreak: "break-word",
+                    }}
+                  />
+                  {/* Show attachments if any */}
+                  {comment.attachments && comment.attachments.length > 0 && (
+                    <Group gap="xs" mt="xs">
+                      {comment.attachments.map((attachment) => (
+                        <Badge
+                          key={attachment.id}
+                          variant="light"
+                          leftSection={<IconPaperclip size={12} />}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            window.open(`/api/epics/${epicId}/criteria/${taskId}/attachments/${attachment.id}`, '_blank');
+                          }}
+                        >
+                          {attachment.file_name}
+                        </Badge>
+                      ))}
+                    </Group>
+                  )}
                 </div>
               ))}
             </Stack>
@@ -249,14 +342,70 @@ export function CommentsModal({
         {/* New Comment Input */}
         <div>
           <Text size="sm" fw={600} mb="xs">Add Comment</Text>
-          <Textarea
-            placeholder="Type your comment here..."
+          <RichText
             value={newComment}
-            onChange={(e) => setNewComment(e.currentTarget.value)}
-            minRows={3}
-            maxRows={6}
-            disabled={submitting}
+            onChange={setNewComment}
+            placeholder="Type your comment here..."
+            rows={4}
           />
+          
+          {/* File attachments */}
+          <div className="mt-2">
+            <FileButton
+              onChange={(files) => {
+                if (files) {
+                  const filesArray: File[] = Array.isArray(files) ? files : [files];
+                  setSelectedFiles((prev) => {
+                    const newFiles: File[] = [...prev];
+                    newFiles.push(...filesArray);
+                    return newFiles;
+                  });
+                }
+              }}
+              accept="*"
+              multiple
+            >
+              {(props) => (
+                <Button
+                  {...props}
+                  size="xs"
+                  variant="light"
+                  leftSection={<IconPaperclip size={14} />}
+                  disabled={submitting}
+                >
+                  Attach File
+                </Button>
+              )}
+            </FileButton>
+            
+            {/* Show selected files */}
+            {selectedFiles.length > 0 && (
+              <Stack gap="xs" mt="xs">
+                {selectedFiles.map((file, index) => (
+                  <Group key={index} justify="space-between" className="bg-gray-50 p-2 rounded">
+                    <Group gap="xs">
+                      <IconPaperclip size={14} />
+                      <Text size="xs">{file.name}</Text>
+                      <Text size="xs" c="dimmed">
+                        ({(file.size / 1024).toFixed(1)} KB)
+                      </Text>
+                    </Group>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        setSelectedFiles((prev) => prev.filter((_, i) => i !== index));
+                      }}
+                    >
+                      <IconX size={14} />
+                    </ActionIcon>
+                  </Group>
+                ))}
+              </Stack>
+            )}
+          </div>
+          
           <Group justify="space-between" mt="sm">
             <Group>
               {requireComment && !hasComment && onCancel && (
@@ -283,10 +432,10 @@ export function CommentsModal({
             <Button
               leftSection={<IconSend size={16} />}
               onClick={handleSubmitComment}
-              loading={submitting}
-              disabled={!newComment.trim() || submitting}
+              loading={submitting || uploadingFiles}
+              disabled={(!newComment.replace(/<[^>]*>/g, '').trim() && selectedFiles.length === 0) || submitting || uploadingFiles}
             >
-              Post Comment
+              {uploadingFiles ? 'Uploading...' : 'Post Comment'}
             </Button>
           </Group>
         </div>

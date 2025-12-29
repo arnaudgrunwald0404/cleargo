@@ -185,6 +185,47 @@ export async function getEpics(params?: { per_page?: number; page?: number; prod
     });
 }
 
+export async function getReleases(params?: { per_page?: number; page?: number; product?: string }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.per_page) queryParams.set('per_page', params.per_page.toString());
+    if (params?.page) queryParams.set('page', params.page.toString());
+    
+    const fields = ['id', 'reference_num', 'name', 'start_date', 'end_date'].join(',');
+    queryParams.set('fields', fields);
+    
+    let url = `${BASE_URL}/releases`;
+    if (queryParams.toString()) {
+        url += `?${queryParams.toString()}`;
+    }
+    
+    return await fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${AHA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
+export async function getReleaseEpics(releaseId: string, params?: { per_page?: number; page?: number }): Promise<any> {
+    const queryParams = new URLSearchParams();
+    if (params?.per_page) queryParams.set('per_page', params.per_page.toString());
+    if (params?.page) queryParams.set('page', params.page.toString());
+    
+    let url = `${BASE_URL}/releases/${releaseId}/epics`;
+    if (queryParams.toString()) {
+        url += `?${queryParams.toString()}`;
+    }
+    
+    return await fetchWithRetry(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': `Bearer ${AHA_API_TOKEN}`,
+            'Content-Type': 'application/json',
+        },
+    });
+}
+
 export async function testConnection(): Promise<any> {
     // Test connection by fetching current user info
     const url = `${BASE_URL}/me`;
@@ -203,6 +244,8 @@ export function getAhaClient() {
         getEpic,
         getEpics,
         getProducts,
+        getReleases,
+        getReleaseEpics,
         updateEpicCustomFields,
         getCustomFields,
         testConnection,

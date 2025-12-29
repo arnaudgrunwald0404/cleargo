@@ -23,6 +23,7 @@ interface FileAttachmentModalProps {
   epicId: string;
   taskId: string; // launch_criterion_status id
   taskLabel: string;
+  onAttachmentAdded?: () => void; // Callback when attachment is added (for refresh)
 }
 
 export function FileAttachmentModal({
@@ -31,6 +32,7 @@ export function FileAttachmentModal({
   epicId,
   taskId,
   taskLabel,
+  onAttachmentAdded,
 }: FileAttachmentModalProps) {
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -82,6 +84,11 @@ export function FileAttachmentModal({
 
       // Refresh attachments list
       await fetchAttachments();
+      
+      // Notify parent to refresh counts
+      if (onAttachmentAdded) {
+        onAttachmentAdded();
+      }
     } catch (error: any) {
       alert(`Failed to upload file: ${error.message}`);
     } finally {
@@ -129,6 +136,11 @@ export function FileAttachmentModal({
 
       // Refresh attachments list
       await fetchAttachments();
+      
+      // Notify parent to refresh counts
+      if (onAttachmentAdded) {
+        onAttachmentAdded();
+      }
     } catch (error: any) {
       alert(`Failed to delete file: ${error.message}`);
     }

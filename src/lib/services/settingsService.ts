@@ -2,10 +2,25 @@
 // Keep fetch semantics and JSON shapes identical to current usage in page.tsx
 
 import { debugLog } from "@/lib/debug";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 export async function getSettings() {
-  const res = await fetch(`/api/settings?t=${Date.now()}`);
-  if (!res.ok) throw new Error("Failed to fetch settings");
+  const res = await fetchWithRateLimit(`/api/settings?t=${Date.now()}`, {
+    maxRetries: 1,
+  });
+  if (!res.ok) {
+    let errorMessage = "Failed to fetch settings";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorMessage;
+      if (errorData.details) {
+        errorMessage += `: ${errorData.details}`;
+      }
+    } catch {
+      errorMessage = `Failed to fetch settings: ${res.status} ${res.statusText}`;
+    }
+    throw new Error(errorMessage);
+  }
   return res.json();
 }
 
@@ -15,24 +30,66 @@ export async function patchSettings(payload: any) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to save settings");
+  if (!res.ok) {
+    let errorMessage = "Failed to save settings";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorData.details || errorMessage;
+      if (errorData.details && typeof errorData.details === 'object') {
+        errorMessage += `: ${JSON.stringify(errorData.details)}`;
+      } else if (errorData.details && typeof errorData.details === 'string') {
+        errorMessage += `: ${errorData.details}`;
+      }
+      if (errorData.code) {
+        errorMessage += ` (code: ${errorData.code})`;
+      }
+    } catch {
+      // If response is not JSON, use status text
+      errorMessage = `Failed to save settings: ${res.status} ${res.statusText}`;
+    }
+    console.error("patchSettings error:", {
+      status: res.status,
+      statusText: res.statusText,
+      errorMessage,
+      payload
+    });
+    throw new Error(errorMessage);
+  }
   return res.json();
 }
 
 export async function getUsers() {
-  const res = await fetch("/api/users");
-  if (!res.ok) throw new Error("Failed to fetch users");
+  const res = await fetchWithRateLimit("/api/users", {
+    maxRetries: 1,
+  });
+  if (!res.ok) {
+    let errorMessage = "Failed to fetch users";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorMessage;
+      if (errorData.details) {
+        errorMessage += `: ${errorData.details}`;
+      }
+    } catch {
+      errorMessage = `Failed to fetch users: ${res.status} ${res.statusText}`;
+    }
+    throw new Error(errorMessage);
+  }
   return res.json();
 }
 
 export async function getPods() {
-  const res = await fetch("/api/admin/pods");
+  const res = await fetchWithRateLimit("/api/admin/pods", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch pods");
   return res.json();
 }
 
 export async function getReleases() {
-  const res = await fetch("/api/releases");
+  const res = await fetchWithRateLimit("/api/releases", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch releases");
   return res.json();
 }
@@ -64,7 +121,9 @@ export async function updateRelease(id: number, payload: { release_name: string;
 }
 
 export async function getAhaFields() {
-  const res = await fetch("/api/settings/aha-fields");
+  const res = await fetchWithRateLimit("/api/settings/aha-fields", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch AHA fields");
   return res.json();
 }
@@ -79,17 +138,20 @@ export async function syncAhaFields() {
 }
 
 export async function getEmailTemplates() {
-  const res = await fetch("/api/settings/email-templates");
+  const res = await fetchWithRateLimit("/api/settings/email-templates", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch email templates");
   return res.json();
 }
 
 export async function patchEmailTemplates(payload: any) {
   debugLog({ location: 'settingsService.ts:patchEmailTemplates', message: 'patchEmailTemplates API call START', data: { payloadKeys: Object.keys(payload) }, hypothesisId: 'C' });
-  const res = await fetch("/api/settings/email-templates", {
+  const res = await fetchWithRateLimit("/api/settings/email-templates", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+    maxRetries: 1,
   });
   debugLog({ location: 'settingsService.ts:patchEmailTemplates', message: 'patchEmailTemplates API response', data: { ok: res.ok, status: res.status, statusText: res.statusText }, hypothesisId: 'C' });
   if (!res.ok) {
@@ -112,7 +174,9 @@ export async function patchEmailTemplates(payload: any) {
 }
 
 export async function getPermissions() {
-  const res = await fetch("/api/settings/permissions");
+  const res = await fetchWithRateLimit("/api/settings/permissions", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch permissions");
   return res.json();
 }
@@ -128,7 +192,9 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
 }
 
 export async function getLaunchStages() {
-  const res = await fetch("/api/launch-stages");
+  const res = await fetchWithRateLimit("/api/launch-stages", {
+    maxRetries: 1,
+  });
   if (!res.ok) throw new Error("Failed to fetch launch stages");
   return res.json();
 }

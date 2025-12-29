@@ -2,6 +2,9 @@
 import { useEffect, useState } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
+import { Button, Modal, TextInput, Group } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { IconCalendar } from "@tabler/icons-react";
 
 interface ReleaseGroup {
     releaseName: string;
@@ -15,6 +18,10 @@ export default function EpicsPage() {
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [configuredTags, setConfiguredTags] = useState<string[]>(['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']);
+    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
+    const [selectedReleaseName, setSelectedReleaseName] = useState<string | null>(null);
+    const [releaseDateInput, setReleaseDateInput] = useState("");
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -23,8 +30,19 @@ export default function EpicsPage() {
         status: "ALL",
         risk: "ALL"
     });
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
+        // Load settings to get configured tags
+        fetch("/api/settings", { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
+                    setConfiguredTags(data.aha_tags);
+                }
+            })
+            .catch(err => console.error("Failed to load settings:", err));
+
         loadData();
     }, []);
 
@@ -168,64 +186,72 @@ export default function EpicsPage() {
 
     if (loading) return <div className="pt-24 p-8">Loading...</div>;
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:200',message:'Render state',data:{launchedEpicsCount:launchedEpics.length,releaseGroupsCount:releaseGroups.length,filtersApplied:filters},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B,C'})}).catch(()=>{});
-    // #endregion
-
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center mb-2">
                 <div>
                     <h1 className="text-2xl font-bold">Epics</h1>
                     <p className="text-sm text-gray-600 mt-1">
-                        Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
+                        Epics appear here if: Launch Candidate = true OR tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
                     </p>
                 </div>
             </div>
 
             {/* Filters */}
-            <div className="pb-4 mb-6 flex gap-4 flex-wrap items-center">
-                {/* #region agent log */}
-                {(() => { fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:220',message:'Filters div rendered',data:{hasFilters:true,filterClassName:'pb-4 mb-6 flex gap-4 flex-wrap items-center'},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,D'})}).catch(()=>{}); return null; })()}
-                {/* #endregion */}
-                <input
-                    type="text"
-                    placeholder="Search epics..."
-                    value={filters.search}
-                    onChange={e => setFilters({ ...filters, search: e.target.value })}
-                    className="p-2 border rounded w-64"
-                />
-                <select
-                    value={filters.tier}
-                    onChange={e => setFilters({ ...filters, tier: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Tiers</option>
-                    <option value="TIER_1">Tier 1</option>
-                    <option value="TIER_2">Tier 2</option>
-                    <option value="TIER_3">Tier 3</option>
-                </select>
-                <select
-                    value={filters.status}
-                    onChange={e => setFilters({ ...filters, status: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Statuses</option>
-                    <option value="PLANNED">Planned</option>
-                    <option value="PRE_LAUNCH">Pre-Launch</option>
-                    <option value="LAUNCHING">Launching</option>
-                    <option value="LAUNCHED">Launched</option>
-                </select>
-                <select
-                    value={filters.risk}
-                    onChange={e => setFilters({ ...filters, risk: e.target.value })}
-                    className="p-2 border rounded"
-                >
-                    <option value="ALL">All Risks</option>
-                    <option value="LOW">Low</option>
-                    <option value="MEDIUM">Medium</option>
-                    <option value="HIGH">High</option>
-                </select>
+            <div className={`pb-4 mb-6 ${showFilters ? '' : 'mb-2'}`}>
+                <div className="flex gap-4 flex-wrap items-center">
+                    <input
+                        type="text"
+                        placeholder="Search epics..."
+                        value={filters.search}
+                        onChange={e => setFilters({ ...filters, search: e.target.value })}
+                        className="p-2 border rounded w-64"
+                    />
+                    <button
+                        onClick={() => setShowFilters(!showFilters)}
+                        className={`px-3 py-2 border rounded flex items-center gap-2 ${showFilters ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                        </svg>
+                        Filters
+                    </button>
+                </div>
+                {showFilters && (
+                    <div className="flex gap-4 flex-wrap items-center mt-4">
+                        <select
+                            value={filters.tier}
+                            onChange={e => setFilters({ ...filters, tier: e.target.value })}
+                            className="p-2 border rounded"
+                        >
+                            <option value="ALL">All Tiers</option>
+                            <option value="TIER_1">Tier 1</option>
+                            <option value="TIER_2">Tier 2</option>
+                            <option value="TIER_3">Tier 3</option>
+                        </select>
+                        <select
+                            value={filters.status}
+                            onChange={e => setFilters({ ...filters, status: e.target.value })}
+                            className="p-2 border rounded"
+                        >
+                            <option value="ALL">All Statuses</option>
+                            <option value="PLANNED">Planned</option>
+                            <option value="PRE_LAUNCH">Pre-Launch</option>
+                            <option value="LAUNCHING">Launching</option>
+                            <option value="LAUNCHED">Launched</option>
+                        </select>
+                        <select
+                            value={filters.risk}
+                            onChange={e => setFilters({ ...filters, risk: e.target.value })}
+                            className="p-2 border rounded"
+                        >
+                            <option value="ALL">All Risks</option>
+                            <option value="LOW">Low</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="HIGH">High</option>
+                        </select>
+                    </div>
+                )}
             </div>
 
             {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
@@ -325,14 +351,30 @@ export default function EpicsPage() {
                         {/* Regular Release Groups */}
                         {releaseGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="space-y-2">
-                                <h2 className="text-lg font-semibold text-gray-900">
-                                    {group.releaseName}
-                                    {group.releaseDate && (
-                                        <span className="ml-2 text-base font-normal text-gray-600">
-                                            - {new Date(group.releaseDate).toLocaleDateString()}
-                                        </span>
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        {group.releaseName}
+                                        {group.releaseDate && (
+                                            <span className="ml-2 text-base font-normal text-gray-600">
+                                                - {new Date(group.releaseDate).toLocaleDateString()}
+                                            </span>
+                                        )}
+                                    </h2>
+                                    {!group.releaseDate && (
+                                        <Button
+                                            leftSection={<IconCalendar size={16} />}
+                                            color="orange"
+                                            size="xs"
+                                            variant="filled"
+                                            onClick={() => {
+                                                setSelectedReleaseName(group.releaseName);
+                                                setReleaseMappingModalOpen(true);
+                                            }}
+                                        >
+                                            Map Date
+                                        </Button>
                                     )}
-                                </h2>
+                                </div>
                                 <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                                     <table className="min-w-full divide-y divide-purple-200 table-fixed">
                                         <colgroup>

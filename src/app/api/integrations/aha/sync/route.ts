@@ -16,13 +16,14 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Manual sync endpoint to pull epics from Aha on-demand.
- * This is useful when webhooks aren't set up or you need to do an initial import.
+ * This complements webhooks by allowing bulk syncs and recovery from missed webhooks.
  * 
  * Query params:
  * - product: (optional) Aha product/workspace ID to filter by
  * - per_page: (optional) Number of epics to fetch per page (default: 50, max: 200)
- * - page: (optional) Page number for pagination (default: 1)
+ * - page: (optional) Page number for pagination (default: 1) - ignored if sync_all=true
  * - force: (optional) If "true", process all epics regardless of filter criteria
+ * - sync_all: (optional) If "true", sync all pages of epics (complements webhook system)
  */
 export async function POST(req: NextRequest) {
     try {
@@ -44,67 +45,106 @@ export async function POST(req: NextRequest) {
         const perPage = Math.min(parseInt(searchParams.get('per_page') || '50'), 200);
         const page = parseInt(searchParams.get('page') || '1');
         const force = searchParams.get('force') === 'true';
+        const syncAll = searchParams.get('sync_all') === 'true';
+        const releaseName = searchParams.get('release') || undefined;
 
-        console.log('🔄 Manual Aha sync started', { product, perPage, page, force, user: user.email });
+        console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, user: user.email });
 
         const client = getAhaClient();
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];
 
-        // Fetch epics from Aha
-        let response: any;
-        try {
-            response = await client.getEpics({ product, per_page: perPage, page });
-            console.log('📥 Raw Aha API response:', {
-                type: typeof response,
-                isArray: Array.isArray(response),
-                keys: response ? Object.keys(response) : [],
-                hasEpics: !!response?.epics,
-                epicsLength: response?.epics?.length,
-                sample: JSON.stringify(response).substring(0, 500)
-            });
-        } catch (fetchError) {
-            console.error('❌ Failed to fetch epics from Aha:', fetchError);
-            throw new Error(`Failed to fetch epics from Aha: ${(fetchError as Error).message}`);
+        // Fetch all epics from Aha (paginated if sync_all=true)
+        let allEpics: any[] = [];
+        
+        if (syncAll) {
+            // Fetch all pages
+            let currentPage = 1;
+            let hasMore = true;
+            
+            while (hasMore) {
+                try {
+                    const response = await client.getEpics({ product, per_page: perPage, page: currentPage });
+                    
+                    // Handle different response structures
+                    let epics: any[] = [];
+                    if (Array.isArray(response)) {
+                        epics = response;
+                    } else if (response?.epics && Array.isArray(response.epics)) {
+                        epics = response.epics;
+                    } else if (response?.data && Array.isArray(response.data)) {
+                        epics = response.data;
+                    }
+                    
+                    allEpics = allEpics.concat(epics);
+                    hasMore = epics.length === perPage;
+                    currentPage++;
+                    
+                    console.log(`📥 Fetched page ${currentPage - 1}: ${epics.length} epics (total: ${allEpics.length})`);
+                } catch (fetchError) {
+                    console.error(`❌ Failed to fetch page ${currentPage} from Aha:`, fetchError);
+                    throw new Error(`Failed to fetch epics from Aha (page ${currentPage}): ${(fetchError as Error).message}`);
+                }
+            }
+            
+            console.log(`📥 Fetched ${allEpics.length} total epics from Aha (${currentPage - 1} pages)`);
+        } else {
+            // Single page fetch (backward compatible)
+            let response: any;
+            try {
+                response = await client.getEpics({ product, per_page: perPage, page });
+            } catch (fetchError) {
+                console.error('❌ Failed to fetch epics from Aha:', fetchError);
+                throw new Error(`Failed to fetch epics from Aha: ${(fetchError as Error).message}`);
+            }
+            
+            // Handle different response structures
+            if (Array.isArray(response)) {
+                allEpics = response;
+            } else if (response?.epics && Array.isArray(response.epics)) {
+                allEpics = response.epics;
+            } else if (response?.data && Array.isArray(response.data)) {
+                allEpics = response.data;
+            } else {
+                console.error('⚠️ Unexpected Aha API response structure:', {
+                    responseType: typeof response,
+                    isArray: Array.isArray(response),
+                    keys: response ? Object.keys(response) : [],
+                    response: JSON.stringify(response).substring(0, 500)
+                });
+                throw new Error('Unexpected Aha API response structure. Check logs for details.');
+            }
+            
+            console.log(`📥 Fetched ${allEpics.length} epics from Aha (page ${page})`);
+        }
+
+        // Fetch all synced release names from release_schedule table
+        const { data: syncedReleases, error: releasesError } = await supabase
+            .from('release_schedule')
+            .select('release_name');
+        
+        if (releasesError) {
+            console.warn('⚠️ Failed to fetch synced releases:', releasesError);
         }
         
-        // Handle different response structures
-        let epics: any[] = [];
-        if (Array.isArray(response)) {
-            // Response is directly an array
-            epics = response;
-            console.log('✅ Parsed response as direct array');
-        } else if (response?.epics && Array.isArray(response.epics)) {
-            // Response has epics property (most common)
-            epics = response.epics;
-            console.log('✅ Parsed response.epics array');
-        } else if (response?.data && Array.isArray(response.data)) {
-            // Alternative response structure
-            epics = response.data;
-            console.log('✅ Parsed response.data array');
-        } else {
-            // Log unexpected structure for debugging
-            console.error('⚠️ Unexpected Aha API response structure:', {
-                responseType: typeof response,
-                isArray: Array.isArray(response),
-                keys: response ? Object.keys(response) : [],
-                response: JSON.stringify(response).substring(0, 500)
-            });
-            throw new Error('Unexpected Aha API response structure. Check logs for details.');
-        }
-
-        console.log(`📥 Fetched ${epics.length} epics from Aha`);
+        const syncedReleaseNames = new Set<string>(
+            (syncedReleases || []).map((r: any) => r.release_name)
+        );
+        
+        console.log(`📋 Found ${syncedReleaseNames.size} synced releases in system`);
 
         const results = {
-            total: epics.length,
+            total: allEpics.length,
             processed: 0,
             created: 0,
             updated: 0,
             skipped: 0,
+            skipped_no_release: 0,
+            skipped_release_not_synced: 0,
             errors: [] as string[],
         };
 
-        for (const ahaEpic of epics) {
+        for (const ahaEpic of allEpics) {
             try {
                 // Check filter criteria (unless force is true)
                 if (!force && !(await shouldProcessEpic(ahaEpic))) {
@@ -123,6 +163,29 @@ export async function POST(req: NextRequest) {
 
                 // Map Aha epic to our schema
                 const epicData = await mapEpicToEpic(fullEpic, fieldsToLoad);
+                
+                // Check if epic's release is synced in the system
+                const epicReleaseName = epicData.aha_release_name;
+                if (!epicReleaseName) {
+                    console.log(`⏭️  Skipping epic ${epicData.aha_id}: No release assigned`);
+                    results.skipped_no_release++;
+                    results.skipped++;
+                    continue;
+                }
+                
+                // If release filter is specified, only process epics for that release
+                if (releaseName && epicReleaseName !== releaseName) {
+                    console.log(`⏭️  Skipping epic ${epicData.aha_id}: Release "${epicReleaseName}" does not match filter "${releaseName}"`);
+                    results.skipped++;
+                    continue;
+                }
+                
+                if (!syncedReleaseNames.has(epicReleaseName)) {
+                    console.log(`⏭️  Skipping epic ${epicData.aha_id}: Release "${epicReleaseName}" not synced in system`);
+                    results.skipped_release_not_synced++;
+                    results.skipped++;
+                    continue;
+                }
 
                 // Check if epic already exists
                 const existingEpic = await getEpicByAhaId(epicData.aha_id);
@@ -165,9 +228,18 @@ export async function POST(req: NextRequest) {
 
         console.log('✅ Manual Aha sync completed', results);
 
+        const skipReasons = [];
+        if (results.skipped_no_release > 0) {
+            skipReasons.push(`${results.skipped_no_release} with no release`);
+        }
+        if (results.skipped_release_not_synced > 0) {
+            skipReasons.push(`${results.skipped_release_not_synced} with unsynced release`);
+        }
+        const skipMessage = skipReasons.length > 0 ? ` (${skipReasons.join(', ')})` : '';
+        
         return NextResponse.json({
             success: true,
-            message: `Sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
+            message: `Sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped${skipMessage}`,
             results,
         });
 

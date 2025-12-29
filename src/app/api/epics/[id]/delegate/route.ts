@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { getEpic } from '@/lib/epics';
+import { canRolesPerform } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,10 +57,10 @@ export async function POST(
 
     const newApproverId = newApprover.id;
 
-    // Get delegator's user ID
+    // Get delegator's user ID and roles
     const { data: delegator } = await supabase
       .from('app_user')
-      .select('id, first_name, last_name, email')
+      .select('id, first_name, last_name, email, roles')
       .eq('email', user.email)
       .single();
 
@@ -69,6 +70,7 @@ export async function POST(
 
     const delegatorId = delegator.id;
     const delegatorName = `${delegator.first_name || ''} ${delegator.last_name || ''}`.trim() || delegator.email;
+    const delegatorRoles = delegator.roles as string[] | null || [];
 
     // Get epic information for notification
     const epic = await getEpic(epicId);
@@ -76,7 +78,7 @@ export async function POST(
       return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
     }
 
-    // Get old approver info for logging
+    // Get old approver info for logging and permission check
     const { data: oldTask } = await supabase
       .from('epic_criterion_status')
       .select('decision_owner_id, criterion:criterion_id(label)')
@@ -85,6 +87,16 @@ export async function POST(
 
     const oldApproverId = oldTask?.decision_owner_id || null;
     const resolvedTaskLabel = oldTask?.criterion?.label || taskLabel || 'Approval task';
+
+    // Permission check: Use permission matrix + allow current approver to delegate their own tasks
+    const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
+    const isCurrentApprover = oldApproverId === delegatorId;
+
+    if (!hasDelegationPermission && !isCurrentApprover) {
+      return NextResponse.json({ 
+        error: 'Forbidden: You do not have permission to delegate this task. Only CPO, Super Admin, or the current approver can delegate tasks.' 
+      }, { status: 403 });
+    }
 
     // Handle different delegation types
     switch (delegationType) {

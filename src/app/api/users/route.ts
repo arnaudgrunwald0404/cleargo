@@ -28,9 +28,25 @@ export async function GET(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  // AUTH DISABLED: Superadmin bypasses role checks
-  if (!isAdminRole(role)) return forbid();
+  
+  // Permission check: users.read
+  const { data: me, error: userError } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+  
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+  }
+  if (userError) {
+    return NextResponse.json({ error: "Failed to fetch user profile", details: userError.message }, { status: 500 });
+  }
+  
+  const { canRolesPerform } = await import("@/lib/permissions");
+  const canRead = canRolesPerform((me?.roles as string[]) || [], "users.read");
+  if (!canRead) return forbid();
 
   // Get users from app_user table
   const { data: users, error } = await supabase

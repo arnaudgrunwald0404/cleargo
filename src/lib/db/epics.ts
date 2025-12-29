@@ -134,6 +134,7 @@ export async function upsertEpicFromAha(
     if (error) throw error;
 
     // Update console_url after we have the ID
+    let finalEpic = data;
     if (data && !data.console_url) {
         const consoleUrl = `${appUrl}/epics/${data.id}`;
         const { data: updated, error: updateError } = await supabase
@@ -144,10 +145,37 @@ export async function upsertEpicFromAha(
             .single();
 
         if (updateError) throw updateError;
-        return updated;
+        finalEpic = updated;
     }
 
-    return data;
+    // Log to activity feed if this is a new epic
+    if (!existing && finalEpic) {
+        // Use ownerId as actor, or fallback to Product Ops user
+        const actorId = ownerId || await getFallbackProductOpsUser();
+        
+        try {
+            await supabase.from('audit_log').insert({
+                actor_id: actorId,
+                entity_type: 'epic',
+                entity_id: finalEpic.id,
+                json_diff: {
+                    name: { new: finalEpic.name },
+                    tier: { new: finalEpic.tier },
+                    aha_id: { new: finalEpic.aha_id },
+                    aha_url: { new: finalEpic.aha_url },
+                    target_launch_date: { new: finalEpic.target_launch_date },
+                    status: { new: finalEpic.status },
+                    source: 'aha_sync',
+                },
+            });
+            console.log(`📝 Logged epic_added activity for ${finalEpic.name} (${finalEpic.id})`);
+        } catch (auditError) {
+            // Don't fail the epic creation if audit logging fails
+            console.warn('Failed to log epic_added activity:', auditError);
+        }
+    }
+
+    return finalEpic;
 }
 
 export async function getUserByEmail(email: string): Promise<{ id: string } | null> {

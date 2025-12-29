@@ -53,7 +53,9 @@ export async function POST(req: NextRequest) {
         }
 
         // Always fetch full epic details to ensure custom_fields (including pod) are loaded
-        if (epicId) {
+        // Skip fetch for test epics (they won't exist in Aha)
+        const isTestEpic = epicId && (epicId.startsWith('TEST-') || epicId.includes('TEST-WEBHOOK'));
+        if (epicId && !isTestEpic) {
             console.log(`🔄 Fetching full epic details for ${epicId} to ensure all custom fields are loaded...`);
             try {
                 epic = await getEpic(epicId);
@@ -62,10 +64,15 @@ export async function POST(req: NextRequest) {
                 console.error('Failed to fetch epic details:', error);
                 // If we have epic from payload, use it as fallback
                 if (!epic) {
-                    return NextResponse.json({ error: 'Failed to fetch epic details' }, { status: 500 });
+                    return NextResponse.json({ 
+                        error: 'Failed to fetch epic details', 
+                        details: error instanceof Error ? error.message : String(error)
+                    }, { status: 500 });
                 }
                 console.warn('Using epic from payload (may be missing some custom fields)');
             }
+        } else if (isTestEpic) {
+            console.log('🧪 Test epic detected, skipping Aha fetch and using payload data');
         }
 
         // Only process epic events
@@ -147,8 +154,19 @@ export async function POST(req: NextRequest) {
 
     } catch (error) {
         console.error('Webhook processing error:', error);
+        const errorMessage = error instanceof Error 
+            ? error.message 
+            : typeof error === 'string' 
+                ? error 
+                : JSON.stringify(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        console.error('Error details:', { message: errorMessage, stack: errorStack });
         return NextResponse.json(
-            { error: 'Internal server error', details: (error as Error).message },
+            { 
+                error: 'Internal server error', 
+                details: errorMessage,
+                ...(errorStack && { stack: errorStack })
+            },
             { status: 500 }
         );
     }

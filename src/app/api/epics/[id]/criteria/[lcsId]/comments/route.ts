@@ -71,7 +71,9 @@ export async function POST(
     const body = await req.json();
     const { comment_text } = body;
 
-    if (!comment_text || !comment_text.trim()) {
+    // Validate that comment has content (strip HTML tags for validation)
+    const textContent = comment_text ? comment_text.replace(/<[^>]*>/g, '').trim() : '';
+    if (!textContent) {
       return NextResponse.json({ error: 'Comment text is required' }, { status: 400 });
     }
 
@@ -80,7 +82,7 @@ export async function POST(
       .from('criterion_comment')
       .insert({
         launch_criterion_status_id: lcsId,
-        comment_text: comment_text.trim(),
+        comment_text: comment_text, // Store HTML as-is
         created_by: appUser.id,
       })
       .select()

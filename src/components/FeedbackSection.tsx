@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button, Textarea, Group, Text, ActionIcon, Loader } from '@mantine/core';
 import { IconTrash, IconSend } from '@tabler/icons-react';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 interface FeedbackItem {
   id: string;
@@ -25,16 +26,39 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
   const [loading, setLoading] = useState(false);
   const [newFeedback, setNewFeedback] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastFetchRef = useRef<number>(0);
 
   useEffect(() => {
-    fetchFeedbacks();
+    // Debounce rapid successive calls (min 500ms between requests)
+    const now = Date.now();
+    const timeSinceLastFetch = now - lastFetchRef.current;
+    
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+    
+    if (timeSinceLastFetch < 500) {
+      fetchTimeoutRef.current = setTimeout(() => {
+        fetchFeedbacks();
+      }, 500 - timeSinceLastFetch);
+    } else {
+      fetchFeedbacks();
+    }
+    
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
   }, [epicId]);
 
   const fetchFeedbacks = async () => {
+    lastFetchRef.current = Date.now();
     setLoading(true);
     try {
-      const res = await fetch(`/api/epics/${epicId}/feedback`, {
-        credentials: 'include',
+      const res = await fetchWithRateLimit(`/api/epics/${epicId}/feedback`, {
+        maxRetries: 1,
       });
       if (res.ok) {
         const data = await res.json();
@@ -189,6 +213,7 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
     </div>
   );
 }
+
 
 
 

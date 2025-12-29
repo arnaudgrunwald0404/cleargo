@@ -3,8 +3,10 @@ import { useEffect, useState } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert } from '@mantine/core';
-import { IconSearch, IconX, IconFilter, IconAlertCircle } from '@tabler/icons-react';
+import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button } from '@mantine/core';
+import { IconSearch, IconX, IconFilter, IconAlertCircle, IconTrash, IconCalendar, IconRefresh } from '@tabler/icons-react';
+import { canRolesPerform } from '@/lib/permissions';
+import { notifications } from '@mantine/notifications';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -17,6 +19,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [configuredTags, setConfiguredTags] = useState<string[]>(['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']);
+    const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
+    const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
+    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+    const [epicToDelete, setEpicToDelete] = useState<{ id: string; name: string } | null>(null);
+    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
+    const [selectedReleaseName, setSelectedReleaseName] = useState<string | null>(null);
+    const [releaseDateInput, setReleaseDateInput] = useState("");
+    const [syncingReleaseName, setSyncingReleaseName] = useState<string | null>(null);
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -25,9 +36,29 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         status: "ALL",
         risk: "ALL"
     });
-    const [showFilters, setShowFilters] = useState(true);
+    const [showFilters, setShowFilters] = useState(false);
 
     useEffect(() => {
+        // Load current user roles
+        fetch("/api/me", { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.user?.roles && Array.isArray(data.user.roles)) {
+                    setCurrentUserRoles(data.user.roles);
+                }
+            })
+            .catch(err => console.error("Failed to load user roles:", err));
+
+        // Load settings to get configured tags
+        fetch("/api/settings", { credentials: 'include' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
+                    setConfiguredTags(data.aha_tags);
+                }
+            })
+            .catch(err => console.error("Failed to load settings:", err));
+
         // Only load additional data if we don't have initial epics
         if (initialEpics.length === 0) {
             loadData();
@@ -89,6 +120,50 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }
 
+
+    const canDeleteEpic = canRolesPerform(currentUserRoles, 'launch.delete');
+
+    const handleDeleteClick = (epicId: string, epicName: string) => {
+        setEpicToDelete({ id: epicId, name: epicName });
+        setDeleteModalOpen(true);
+    };
+
+    const handleDeleteConfirm = async () => {
+        if (!epicToDelete) return;
+
+        setDeletingEpicId(epicToDelete.id);
+        setDeleteModalOpen(false);
+        
+        try {
+            const res = await fetch(`/api/epics/${epicToDelete.id}`, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+
+            if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.error || 'Failed to delete epic');
+            }
+
+            // Remove epic from state
+            setEpics(epics.filter(e => e.id !== epicToDelete.id));
+            
+            notifications.show({
+                title: 'Epic deleted',
+                message: `"${epicToDelete.name}" has been deleted successfully.`,
+                color: 'green',
+            });
+        } catch (error: any) {
+            notifications.show({
+                title: 'Delete failed',
+                message: error.message || 'Failed to delete epic',
+                color: 'red',
+            });
+        } finally {
+            setDeletingEpicId(null);
+            setEpicToDelete(null);
+        }
+    };
 
     const filteredEpics = epics.filter(l => {
         if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
@@ -183,22 +258,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         Epics
                     </Title>
                     <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }}>
-                        Epics appear here if: Launch Candidate = true OR tags contain "LaunchConsole"
+                        Epics appear here if: Launch Candidate = true OR tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
                     </Text>
                 </Box>
             </Group>
 
             {/* Modern Search and Filters */}
-            <Box
-                style={{
-                    backgroundColor: 'white',
-                    padding: '16px',
-                    borderRadius: '8px',
-                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)',
-                }}
-                mb="md"
-            >
-                <Group justify="space-between" align="center" mb={showFilters ? "md" : 0}>
+            <Group justify="space-between" align="center" mb={showFilters ? "md" : 0}>
                     <Group gap="md" style={{ flex: 1 }}>
                         <TextInput
                             placeholder="Search epics..."
@@ -296,7 +362,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         />
                     </Group>
                 )}
-            </Box>
 
             {error && (
                 <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
@@ -312,17 +377,94 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-8">
+                    <div className="space-y-8 pt-6">
                         {releaseGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="space-y-2">
-                                <h2 className="text-lg font-semibold text-gray-900">
-                                    {group.releaseName}
-                                    {group.releaseDate && (
-                                        <span className="ml-2 text-base font-normal text-gray-600">
-                                            - {new Date(group.releaseDate).toLocaleDateString()}
-                                        </span>
+                                <div className="flex items-center gap-3">
+                                    <h2 className="text-lg font-semibold text-gray-900">
+                                        {group.releaseName}
+                                        {group.releaseDate && (
+                                            <span className="ml-2 text-base font-normal text-gray-600">
+                                                - {new Date(group.releaseDate).toLocaleDateString()}
+                                            </span>
+                                        )}
+                                    </h2>
+                                    {group.releaseName !== "Ungrouped" && (
+                                        <ActionIcon
+                                            variant="subtle"
+                                            color="indigo"
+                                            size="md"
+                                            disabled={syncingReleaseName === group.releaseName}
+                                            onClick={async () => {
+                                                if (!confirm(`Sync epics for release "${group.releaseName}"? This will sync all epics with matching tags for this release.`)) {
+                                                    return;
+                                                }
+                                                
+                                                setSyncingReleaseName(group.releaseName);
+                                                try {
+                                                    const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
+                                                        method: "POST",
+                                                        credentials: "include",
+                                                        headers: { "Content-Type": "application/json" },
+                                                    });
+                                                    
+                                                    if (!res.ok) {
+                                                        const errorData = await res.json();
+                                                        throw new Error(errorData.error || "Failed to sync epics");
+                                                    }
+                                                    
+                                                    const result = await res.json();
+                                                    const skipDetails = [];
+                                                    if (result.results.skipped_no_release > 0) {
+                                                        skipDetails.push(`${result.results.skipped_no_release} with no release`);
+                                                    }
+                                                    if (result.results.skipped_release_not_synced > 0) {
+                                                        skipDetails.push(`${result.results.skipped_release_not_synced} with unsynced release`);
+                                                    }
+                                                    const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
+                                                    
+                                                    notifications.show({
+                                                        title: 'Sync Complete',
+                                                        message: `Created: ${result.results.created}, Updated: ${result.results.updated}${skipMessage}`,
+                                                        color: 'green',
+                                                    });
+                                                    
+                                                    // Reload epics to show updated data
+                                                    loadData();
+                                                } catch (error: any) {
+                                                    notifications.show({
+                                                        title: 'Sync Failed',
+                                                        message: error.message,
+                                                        color: 'red',
+                                                    });
+                                                } finally {
+                                                    setSyncingReleaseName(null);
+                                                }
+                                            }}
+                                            title="Sync epics for this release"
+                                        >
+                                            {syncingReleaseName === group.releaseName ? (
+                                                <IconRefresh size={18} className="animate-spin" />
+                                            ) : (
+                                                <IconRefresh size={18} />
+                                            )}
+                                        </ActionIcon>
                                     )}
-                                </h2>
+                                    {!group.releaseDate && (
+                                        <Button
+                                            leftSection={<IconCalendar size={16} />}
+                                            color="orange"
+                                            size="xs"
+                                            variant="filled"
+                                            onClick={() => {
+                                                setSelectedReleaseName(group.releaseName);
+                                                setReleaseMappingModalOpen(true);
+                                            }}
+                                        >
+                                            Map Date
+                                        </Button>
+                                    )}
+                                </div>
                                 <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                                     <table className="min-w-full divide-y divide-purple-200 table-fixed">
                                         <colgroup>
@@ -388,9 +530,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 text-right whitespace-nowrap w-24">
-                                                        <Link href={`/epics/${epic.id}`} prefetch={false} className="text-sm text-gray-600 hover:text-gray-900">
-                                                            View
-                                                        </Link>
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <Link href={`/epics/${epic.id}`} prefetch={false} className="text-sm text-gray-600 hover:text-gray-900">
+                                                                View
+                                                            </Link>
+                                                            {canDeleteEpic && (
+                                                                <button
+                                                                    onClick={() => handleDeleteClick(epic.id, epic.name)}
+                                                                    disabled={deletingEpicId === epic.id}
+                                                                    className="text-sm text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                                    title="Delete epic"
+                                                                >
+                                                                    {deletingEpicId === epic.id ? (
+                                                                        <span className="text-xs">...</span>
+                                                                    ) : (
+                                                                        <IconTrash size={14} />
+                                                                    )}
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -403,6 +561,166 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 )
             }
 
+            {/* Delete Confirmation Modal */}
+            <Modal
+                opened={deleteModalOpen}
+                onClose={() => {
+                    setDeleteModalOpen(false);
+                    setEpicToDelete(null);
+                }}
+                title={
+                    <div className="flex items-center gap-2">
+                        <IconTrash size={20} className="text-red-600" />
+                        <span className="font-semibold">Delete Epic</span>
+                    </div>
+                }
+                centered
+                size="md"
+            >
+                <div className="space-y-4">
+                    <Text size="sm" c="dimmed">
+                        Are you sure you want to delete <strong>"{epicToDelete?.name}"</strong>?
+                    </Text>
+                    <Alert icon={<IconAlertCircle size={16} />} title="Warning" color="red" variant="light">
+                        This action cannot be undone. All criteria, comments, attachments, feedback, and snapshots associated with this epic will be permanently deleted.
+                    </Alert>
+                    <Group justify="flex-end" mt="xl">
+                        <Button
+                            variant="subtle"
+                            onClick={() => {
+                                setDeleteModalOpen(false);
+                                setEpicToDelete(null);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            color="red"
+                            onClick={handleDeleteConfirm}
+                            leftSection={<IconTrash size={16} />}
+                        >
+                            Delete Epic
+                        </Button>
+                    </Group>
+                </div>
+            </Modal>
+
+            {/* Release Date Mapping Modal */}
+            <Modal
+                opened={releaseMappingModalOpen}
+                onClose={() => {
+                    setReleaseMappingModalOpen(false);
+                    setReleaseDateInput("");
+                    setSelectedReleaseName(null);
+                }}
+                title="Map Release Date"
+                centered
+            >
+                <div className="space-y-4">
+                    <div>
+                        <div className="text-sm font-medium text-gray-700 mb-1">Release Name</div>
+                        <div className="text-lg font-semibold text-gray-900">{selectedReleaseName}</div>
+                    </div>
+                    <TextInput
+                        label="Launch Date"
+                        placeholder="MM/DD/YYYY"
+                        value={releaseDateInput}
+                        onChange={(e) => setReleaseDateInput(e.currentTarget.value)}
+                        description="Enter the launch date for this release"
+                    />
+                    <Group justify="flex-end" mt="md">
+                        <Button
+                            variant="subtle"
+                            onClick={() => {
+                                setReleaseMappingModalOpen(false);
+                                setReleaseDateInput("");
+                                setSelectedReleaseName(null);
+                            }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={async () => {
+                                if (!releaseDateInput.trim()) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: 'Please enter a launch date',
+                                        color: 'red',
+                                    });
+                                    return;
+                                }
+                                
+                                if (!selectedReleaseName) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: 'Release name is missing',
+                                        color: 'red',
+                                    });
+                                    return;
+                                }
+
+                                try {
+                                    // Parse date - support MM/DD/YYYY format
+                                    let parsedDate: string;
+                                    if (releaseDateInput.includes("/")) {
+                                        const parts = releaseDateInput.split("/");
+                                        if (parts.length !== 3) {
+                                            throw new Error("Invalid date format. Use MM/DD/YYYY");
+                                        }
+                                        const [month, day, year] = parts;
+                                        parsedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                                        
+                                        // Validate the date
+                                        const dateObj = new Date(parsedDate);
+                                        if (isNaN(dateObj.getTime())) {
+                                            throw new Error("Invalid date. Please check the date format.");
+                                        }
+                                    } else {
+                                        parsedDate = releaseDateInput; // Assume YYYY-MM-DD format
+                                    }
+
+                                    const res = await fetch("/api/releases", {
+                                        method: "POST",
+                                        headers: { "Content-Type": "application/json" },
+                                        credentials: 'include',
+                                        body: JSON.stringify({
+                                            release_name: selectedReleaseName.trim(),
+                                            launch_date: parsedDate,
+                                        }),
+                                    });
+
+                                    if (!res.ok) {
+                                        const errorData = await res.json();
+                                        throw new Error(errorData.error || "Failed to create release mapping");
+                                    }
+
+                                    notifications.show({
+                                        title: 'Success',
+                                        message: 'Release date mapped successfully',
+                                        color: 'green',
+                                    });
+
+                                    setReleaseMappingModalOpen(false);
+                                    setReleaseDateInput("");
+                                    setSelectedReleaseName(null);
+                                    
+                                    // Reload data to get the updated release date
+                                    loadData();
+                                } catch (error: any) {
+                                    notifications.show({
+                                        title: 'Error',
+                                        message: error.message || 'Failed to map release date',
+                                        color: 'red',
+                                    });
+                                }
+                            }}
+                            disabled={!releaseDateInput.trim()}
+                        >
+                            Map Date
+                        </Button>
+                    </Group>
+                </div>
+            </Modal>
 
         </div >
     );

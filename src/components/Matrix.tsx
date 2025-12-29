@@ -5,11 +5,11 @@ import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
 import { UserDisplayWithDelegation } from "./UserDisplayWithDelegation";
-import { RichText } from "./admin/RichText";
 import { FileAttachmentModal } from "./FileAttachmentModal";
 import { CommentsModal } from "./CommentsModal";
 import { DelegationModal, DelegationType } from "./DelegationModal";
 import { createClient } from "@/lib/supabase/client";
+import { canRolesPerform } from "@/lib/permissions";
 
 type MatrixItem = {
     id: string;
@@ -24,6 +24,17 @@ type MatrixItem = {
         avatar_url?: string;
     } | null;
     notRequired?: boolean;
+    commentCount?: number;
+    lastComment?: {
+        comment_text: string;
+        created_at: string;
+        created_by?: {
+            email: string;
+            first_name?: string;
+            last_name?: string;
+        };
+    };
+    attachmentCount?: number;
     criterion: {
         id: string;
         label: string;
@@ -32,6 +43,7 @@ type MatrixItem = {
         description?: string;
         sort_order?: number;
         decision_owner_email?: string | null;
+        rating_timing?: number | null;
         status_definition_go?: string;
         status_definition_conditional?: string;
         status_definition_no_go?: string;
@@ -48,9 +60,10 @@ interface TrafficLightProps {
         conditional?: string;
         no_go?: string;
     };
+    isMobile?: boolean;
 }
 
-function TrafficLight({ currentStatus, onStatusChange, disabled, definitions }: TrafficLightProps) {
+function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, isMobile = false }: TrafficLightProps) {
     const lights = [
         { 
             value: 'GO', 
@@ -75,8 +88,11 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions }: 
         },
     ];
 
+    const buttonSize = isMobile ? 32 : 24;
+    const gap = isMobile ? '12px' : '8px';
+
     return (
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap, alignItems: 'center' }}>
             {lights.map((light) => {
                 const isSelected = currentStatus === light.value;
                 const isNotSet = currentStatus === 'NOT_SET';
@@ -104,8 +120,10 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions }: 
                             onClick={() => !disabled && onStatusChange(light.value)}
                             disabled={disabled}
                             style={{
-                                width: 24,
-                                height: 24,
+                                width: buttonSize,
+                                height: buttonSize,
+                                minWidth: buttonSize,
+                                minHeight: buttonSize,
                                 borderRadius: '50%',
                                 border: isSelected ? `3px solid ${light.color}` : '2px solid #e5e7eb',
                                 backgroundColor: isSelected ? light.color : light.greyColor,
@@ -182,11 +200,6 @@ type Props = {
 };
 
 export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }: Props) {
-    // #region agent log
-    useEffect(() => {
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Matrix.tsx:157',message:'Matrix component rendered',data:{epicId,itemsCount:items.length,firstItem:items[0]?{id:items[0].id,criterion_id:items[0].criterion_id,status:items[0].status}:null},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'C,D',runId:'status-update'})}).catch(()=>{});
-    }, []);
-    // #endregion
     
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
@@ -234,11 +247,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
         
         return shown;
     });
-    const [editingNotesId, setEditingNotesId] = useState<string | null>(null);
-    const [editingNotes, setEditingNotes] = useState<string>("");
-    const [savingNotes, setSavingNotes] = useState(false);
+    // Removed notes editing - using comments instead
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
-    const [isSuperAdmin, setIsSuperAdmin] = useState<boolean>(false);
+    const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
     const [attachmentModalOpen, setAttachmentModalOpen] = useState(false);
     const [selectedItemForAttachment, setSelectedItemForAttachment] = useState<MatrixItem | null>(null);
     const [commentsModalOpen, setCommentsModalOpen] = useState(false);
@@ -256,15 +267,60 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                 if (user?.email) {
                     setCurrentUserEmail(user.email);
                     
-                    // Check if user is Super Admin
-                    const { data: appUser } = await supabase
+                    // Direct database query (avoiding /api/me to prevent rate limiting)
+                    const { data: appUser, error: appUserError } = await supabase
                         .from('app_user')
-                        .select('roles')
+                        .select('roles, role')
                         .eq('email', user.email)
                         .single();
                     
-                    if (appUser?.roles && Array.isArray(appUser.roles)) {
-                        setIsSuperAdmin(appUser.roles.includes('SUPERADMIN'));
+                    console.log('Matrix: Direct DB query result:', { 
+                        appUser, 
+                        appUserType: typeof appUser,
+                        isArray: Array.isArray(appUser),
+                        error: appUserError 
+                    });
+                    
+                    // Handle case where appUser might be an array (shouldn't happen with .single(), but handle it)
+                    const userData = Array.isArray(appUser) ? appUser[0] : appUser;
+                    
+                    // Handle both 'roles' array and legacy 'role' string field
+                    let roles: string[] = [];
+                    if (userData?.roles) {
+                        if (Array.isArray(userData.roles) && userData.roles.length > 0) {
+                            roles = userData.roles;
+                        } else if (typeof userData.roles === 'string') {
+                            roles = [userData.roles];
+                        }
+                    } else if (userData?.role && typeof userData.role === 'string') {
+                        roles = [userData.role];
+                    }
+                    
+                    console.log('Matrix: Extracted roles:', {
+                        userData,
+                        roles,
+                        rolesLength: roles.length,
+                        rolesType: typeof roles,
+                        isRolesArray: Array.isArray(roles)
+                    });
+                    
+                    if (roles.length > 0) {
+                        setCurrentUserRoles(roles);
+                        const canDelegate = canRolesPerform(roles, 'criteria.delegate');
+                        console.log('Matrix: User email:', user.email);
+                        console.log('Matrix: User roles from DB:', roles);
+                        console.log('Matrix: Can delegate (criteria.delegate):', canDelegate);
+                        console.log('Matrix: Permission check details:', {
+                            roles: roles,
+                            normalizedRoles: roles.map(r => String(r).toUpperCase()),
+                            capability: 'criteria.delegate',
+                            allowedRoles: ['CPO', 'PRODUCT_OPS'],
+                            result: canDelegate
+                        });
+                    } else {
+                        console.warn('Matrix: No roles found for user:', user.email, 'userData:', userData, 'error:', appUserError);
+                        // Set empty array explicitly so component knows roles were checked
+                        setCurrentUserRoles([]);
                     }
                 }
             } catch (error) {
@@ -337,10 +393,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
         // Find the current status for this item
         const currentItem = items.find(item => item.id === id);
         const oldStatus = currentItem?.status;
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'Matrix.tsx:268',message:'handleStatusChange called',data:{id,newStatus,epicId,currentItem:{id:currentItem?.id,criterion_id:currentItem?.criterion_id,status:currentItem?.status}},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,B',runId:'status-update'})}).catch(()=>{});
-        // #endregion
         
         // If CONDITIONAL or NO_GO, require a comment before saving
         if (newStatus === 'CONDITIONAL' || newStatus === 'NO_GO') {
@@ -446,41 +498,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
         });
     };
 
+    // Notes editing removed - use comments modal instead
     const handleEditNotes = (item: MatrixItem) => {
-        setEditingNotesId(item.id);
-        setEditingNotes(item.current_status_notes || "");
-    };
-
-    const handleSaveNotes = async () => {
-        if (!editingNotesId) return;
-        
-        setSavingNotes(true);
-        try {
-            const res = await fetch(`/api/epics/${epicId}/criteria/${editingNotesId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ notes: editingNotes })
-            });
-            
-            if (!res.ok) {
-                const errorData = await res.json().catch(() => ({ error: 'Failed to update notes' }));
-                throw new Error(errorData.error || `Failed to update notes: ${res.status}`);
-            }
-            
-            setEditingNotesId(null);
-            setEditingNotes("");
-            onUpdate(); // Refresh parent to get latest data
-        } catch (e: any) {
-            console.error('Failed to update notes:', e);
-            alert(`Failed to update notes: ${e.message || e}`);
-        } finally {
-            setSavingNotes(false);
-        }
-    };
-
-    const handleCancelEditNotes = () => {
-        setEditingNotesId(null);
-        setEditingNotes("");
+        // Open comments modal instead of editing notes inline
+        handleOpenComments(item);
     };
 
     const handleOpenAttachments = (item: MatrixItem) => {
@@ -553,6 +574,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     };
 
     const handleCommentAdded = async () => {
+        // Refresh the matrix to update comment counts
+        onUpdate();
+        
         // After comment is added, save the pending status change
         if (pendingStatusChange && selectedItemForComments?.id === pendingStatusChange.itemId) {
             const id = pendingStatusChange.itemId;
@@ -615,6 +639,14 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     };
 
     const handleOpenDelegation = (item: MatrixItem) => {
+        console.log('Opening delegation modal for:', {
+            itemId: item.id,
+            criterionLabel: item.criterion.label,
+            category: item.criterion.category,
+            approverEmail: item.approverEmail,
+            currentUserRoles,
+            canDelegate: canRolesPerform(currentUserRoles, 'criteria.delegate')
+        });
         setSelectedItemForDelegation(item);
         setDelegationModalOpen(true);
     };
@@ -717,7 +749,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                 return (
                     <div key={cat}>
                         <div 
-                            className="flex items-center gap-2 px-6 py-3 cursor-pointer select-none hover:bg-gray-50 transition-colors"
+                            className="flex items-center gap-2 px-3 md:px-6 py-3 cursor-pointer select-none hover:bg-gray-50 transition-colors"
                             onClick={() => toggleCategory(cat)}
                         >
                             <span className="text-gray-500">
@@ -730,8 +762,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                             <h3 className="text-sm font-semibold text-gray-900">{cat}</h3>
                         </div>
                         {!collapsed && (
-                            <div className="px-6 pb-6">
-                            <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                            <div className="px-3 md:px-6 pb-6">
+                            {/* Desktop Table View - hidden on mobile */}
+                            <div className="hidden md:block border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                             <table className="min-w-full divide-y divide-purple-200 table-fixed w-full">
                                 <colgroup>
                                     <col style={{ width: 'auto' }} />
@@ -746,7 +779,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Status</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Approver</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Notes</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Comments</th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-purple-200">
@@ -805,7 +838,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '150px' }}>
-                                            {item.approverEmail ? (
+                                            {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                 <div 
                                                     className="flex items-center gap-2 min-w-0"
                                                 >
@@ -822,72 +855,174 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                     <span className="text-sm truncate min-w-0 flex-1">
                                                         {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
                                                     </span>
-                                                    {(isSuperAdmin || currentUserEmail === item.approverEmail) && (
-                                                        <Tooltip label="Delegate this task" position="top" withArrow>
-                                                            <button
-                                                                className="delegation-btn ml-auto opacity-100 transition-opacity flex-shrink-0 hover:opacity-80"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    handleOpenDelegation(item);
-                                                                }}
-                                                                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                                            >
-                                                                <IconArrowsRightLeft size={16} className="text-gray-600" />
-                                                            </button>
-                                                        </Tooltip>
-                                                    )}
+                                                    {(() => {
+                                                        const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                        const isApprover = currentUserEmail === item.approverEmail;
+                                                        const shouldShow = hasPermission || isApprover;
+                                                        if (index === 0 && cat === categories[0]) {
+                                                            console.log('Matrix Render Debug:', {
+                                                                currentUserRoles,
+                                                                currentUserEmail,
+                                                                itemApproverEmail: item.approverEmail,
+                                                                hasPermission,
+                                                                isApprover,
+                                                                shouldShow,
+                                                                criterionLabel: item.criterion.label
+                                                            });
+                                                        }
+                                                        return shouldShow && (
+                                                            <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                <button
+                                                                    className="delegation-btn ml-auto opacity-100 transition-opacity flex-shrink-0 hover:opacity-80"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenDelegation(item);
+                                                                    }}
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                                                                >
+                                                                    <IconArrowsRightLeft size={16} className="text-gray-600" />
+                                                                </button>
+                                                            </Tooltip>
+                                                        );
+                                                    })()}
                                                 </div>
                                             ) : (
-                                                '-'
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm text-gray-500">-</span>
+                                                    {(() => {
+                                                        const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                        if (index === 0 && cat === categories[0]) {
+                                                            console.log('Matrix Render Debug (no approver):', {
+                                                                currentUserRoles,
+                                                                hasPermission,
+                                                                criterionLabel: item.criterion.label
+                                                            });
+                                                        }
+                                                        return hasPermission && (
+                                                            <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                <button
+                                                                    className="delegation-btn opacity-100 transition-opacity flex-shrink-0 hover:opacity-80"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenDelegation(item);
+                                                                    }}
+                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
+                                                                >
+                                                                    <IconArrowsRightLeft size={16} className="text-gray-600" />
+                                                                </button>
+                                                            </Tooltip>
+                                                        );
+                                                    })()}
+                                                </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap" style={{ width: '120px' }}>
-                                            {item.last_updated_at ? (
-                                                new Date(item.last_updated_at).toLocaleDateString()
-                                            ) : (
-                                                '-'
-                                            )}
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ width: '120px' }}>
+                                            {(() => {
+                                                const dueDateStr = item.condition_due_date;
+                                                // Check for null, undefined, or empty string
+                                                if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                                    return '-';
+                                                }
+                                                
+                                                try {
+                                                    const dueDate = new Date(dueDateStr);
+                                                    // Check if date is valid
+                                                    if (isNaN(dueDate.getTime())) {
+                                                        console.warn('Invalid due date:', dueDateStr, 'for item:', item.id);
+                                                        return '-';
+                                                    }
+                                                    
+                                                    const today = new Date();
+                                                    today.setHours(0, 0, 0, 0);
+                                                    dueDate.setHours(0, 0, 0, 0);
+                                                    const isOverdue = dueDate < today;
+                                                    
+                                                    return (
+                                                        <div className={`${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                                                            <span>{dueDate.toLocaleDateString()}</span>
+                                                        </div>
+                                                    );
+                                                } catch (e) {
+                                                    console.warn('Error parsing due date:', dueDateStr, e);
+                                                    return '-';
+                                                }
+                                            })()}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700">
                                             <div className="flex items-start gap-2">
-                                                <div className="flex-1">
-                                                    {item.current_status_notes ? (
-                                                        <div 
-                                                            className="[&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
-                                                            dangerouslySetInnerHTML={{ __html: item.current_status_notes }}
-                                                            style={{
-                                                                whiteSpace: "pre-wrap",
-                                                                wordBreak: "break-word",
-                                                            }}
-                                                        />
-                                                    ) : (
-                                                        <span className="text-gray-400">-</span>
-                                                    )}
-                                                </div>
-                                                <div className="flex gap-1">
-                                                    {/* Show comment bubble only if notes exist (we'll assume attachments enable it too) */}
-                                                    {item.current_status_notes && (
+                                                <div className="flex-1 min-w-0">
+                                                    {/* Show last comment preview */}
+                                                    {item.lastComment ? (
                                                         <button
                                                             onClick={() => handleOpenComments(item)}
-                                                            className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0"
-                                                            title="View comments"
+                                                            className="text-left w-full hover:text-blue-600 transition-colors group"
+                                                            title="View/add comments"
                                                         >
-                                                            <IconMessageCircle className="w-4 h-4" />
+                                                            <div 
+                                                                className="text-xs text-gray-600 line-clamp-2"
+                                                                style={{
+                                                                    wordBreak: "break-word",
+                                                                }}
+                                                            >
+                                                                {(() => {
+                                                                    // Strip HTML tags and get plain text preview
+                                                                    const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
+                                                                    const preview = textContent.length > 100 
+                                                                        ? textContent.substring(0, 100) + '...'
+                                                                        : textContent;
+                                                                    return preview;
+                                                                })()}
+                                                            </div>
+                                                            <div className="text-xs text-gray-400 mt-1">
+                                                                {(() => {
+                                                                    const date = new Date(item.lastComment.created_at);
+                                                                    const now = new Date();
+                                                                    const diffMs = now.getTime() - date.getTime();
+                                                                    const diffMins = Math.floor(diffMs / 60000);
+                                                                    const diffHours = Math.floor(diffMs / 3600000);
+                                                                    const diffDays = Math.floor(diffMs / 86400000);
+                                                                    if (diffMins < 1) return 'Just now';
+                                                                    if (diffMins < 60) return `${diffMins}m ago`;
+                                                                    if (diffHours < 24) return `${diffHours}h ago`;
+                                                                    if (diffDays < 7) return `${diffDays}d ago`;
+                                                                    return date.toLocaleDateString();
+                                                                })()}
+                                                            </div>
+                                                        </button>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => handleOpenComments(item)}
+                                                            className="text-left w-full hover:text-blue-600 transition-colors"
+                                                            title="View/add comments"
+                                                        >
+                                                            <span className="text-gray-400 italic text-xs">Click to add comment</span>
                                                         </button>
                                                     )}
+                                                </div>
+                                                <div className="flex gap-1 flex-shrink-0">
+                                                    <button
+                                                        onClick={() => handleOpenComments(item)}
+                                                        className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative"
+                                                        title="View/add comments"
+                                                    >
+                                                        <IconMessageCircle className="w-4 h-4" />
+                                                        {(item.commentCount || 0) > 0 && (
+                                                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                                {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
+                                                            </span>
+                                                        )}
+                                                    </button>
                                                     <button
                                                         onClick={() => handleOpenAttachments(item)}
-                                                        className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0"
+                                                        className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative"
                                                         title="Attach files"
                                                     >
                                                         <IconPaperclip className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleEditNotes(item)}
-                                                        className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0"
-                                                        title="Edit notes"
-                                                    >
-                                                        <IconPencil className="w-4 h-4" />
+                                                        {(item.attachmentCount || 0) > 0 && (
+                                                            <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                                {(item.attachmentCount || 0) > 99 ? '99+' : item.attachmentCount}
+                                                            </span>
+                                                        )}
                                                     </button>
                                                 </div>
                                             </div>
@@ -898,8 +1033,250 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                 </tbody>
                             </table>
                             </div>
+                            
+                            {/* Mobile Card View - visible on mobile */}
+                            <div className="block md:hidden space-y-3">
+                                {allItems.map((item, index) => {
+                                    const isOverall = showOverall && index === 0;
+                                    const isSignoff = item.criterion.label?.toLowerCase().includes('signoff');
+                                    
+                                    // Hide regular items when category is collapsed
+                                    if (!isOverall && collapsed) {
+                                        return null;
+                                    }
+                                    
+                                    // Hide items that are not in shownItems set
+                                    if (!shownItems.has(item.id)) {
+                                        return null;
+                                    }
+                                    
+                                    // Render due date
+                                    const renderDueDate = () => {
+                                        const dueDateStr = item.condition_due_date;
+                                        if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                            return '-';
+                                        }
+                                        
+                                        try {
+                                            const dueDate = new Date(dueDateStr);
+                                            if (isNaN(dueDate.getTime())) {
+                                                return '-';
+                                            }
+                                            
+                                            const today = new Date();
+                                            today.setHours(0, 0, 0, 0);
+                                            dueDate.setHours(0, 0, 0, 0);
+                                            const isOverdue = dueDate < today;
+                                            
+                                            return (
+                                                <div className={`${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                                                    <span>{dueDate.toLocaleDateString()}</span>
+                                                </div>
+                                            );
+                                        } catch (e) {
+                                            return '-';
+                                        }
+                                    };
+                                    
+                                    // Render comment preview
+                                    const renderCommentPreview = () => {
+                                        if (item.lastComment) {
+                                            const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
+                                            const preview = textContent.length > 100 
+                                                ? textContent.substring(0, 100) + '...'
+                                                : textContent;
+                                            
+                                            const date = new Date(item.lastComment.created_at);
+                                            const now = new Date();
+                                            const diffMs = now.getTime() - date.getTime();
+                                            const diffMins = Math.floor(diffMs / 60000);
+                                            const diffHours = Math.floor(diffMs / 3600000);
+                                            const diffDays = Math.floor(diffMs / 86400000);
+                                            
+                                            let timeAgo = 'Just now';
+                                            if (diffMins >= 1 && diffMins < 60) timeAgo = `${diffMins}m ago`;
+                                            else if (diffHours < 24) timeAgo = `${diffHours}h ago`;
+                                            else if (diffDays < 7) timeAgo = `${diffDays}d ago`;
+                                            else timeAgo = date.toLocaleDateString();
+                                            
+                                            return (
+                                                <button
+                                                    onClick={() => handleOpenComments(item)}
+                                                    className="text-left w-full hover:text-blue-600 transition-colors"
+                                                >
+                                                    <div className="text-xs text-gray-600 line-clamp-2 break-words">
+                                                        {preview}
+                                                    </div>
+                                                    <div className="text-xs text-gray-400 mt-1">{timeAgo}</div>
+                                                </button>
+                                            );
+                                        } else {
+                                            return (
+                                                <button
+                                                    onClick={() => handleOpenComments(item)}
+                                                    className="text-left w-full hover:text-blue-600 transition-colors"
+                                                >
+                                                    <span className="text-gray-400 italic text-xs">Click to add comment</span>
+                                                </button>
+                                            );
+                                        }
+                                    };
+                                    
+                                    return (
+                                        <div 
+                                            key={item.id} 
+                                            className={`bg-white border border-purple-200 rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''}`}
+                                        >
+                                            {/* Header: Criterion name */}
+                                            <div className="mb-3">
+                                                <div className={`font-medium flex items-center gap-2 text-sm mb-1 ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
+                                                    {isOverall && !isSignoff && (
+                                                        <span className="text-gray-500">
+                                                            {collapsed ? (
+                                                                <IconChevronRight size={16} />
+                                                            ) : (
+                                                                <IconChevronDown size={16} />
+                                                            )}
+                                                        </span>
+                                                    )}
+                                                    <span className="flex items-center gap-1.5">
+                                                        {item.criterion.label}
+                                                        {item.criterion.gate && (
+                                                            <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                {item.criterion.description && (
+                                                    <div className="text-xs text-gray-500 mt-1">{item.criterion.description}</div>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Status Section */}
+                                            <div className="mb-3">
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Status</div>
+                                                {item.notRequired ? (
+                                                    <div className="text-xs font-medium text-gray-500">Not required</div>
+                                                ) : (
+                                                    <TrafficLight
+                                                        currentStatus={item.status}
+                                                        onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
+                                                        disabled={savingItems.has(item.id)}
+                                                        definitions={{
+                                                            go: item.criterion.status_definition_go,
+                                                            conditional: item.criterion.status_definition_conditional,
+                                                            no_go: item.criterion.status_definition_no_go,
+                                                        }}
+                                                        isMobile={true}
+                                                    />
+                                                )}
+                                            </div>
+                                            
+                                            {/* Approver Section */}
+                                            <div className="mb-3">
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Approver</div>
+                                                {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <Avatar
+                                                            src={item.approverInfo?.avatar_url || undefined}
+                                                            alt={item.approverEmail}
+                                                            radius="xl"
+                                                            size={32}
+                                                            color={getAvatarColor(item.approverEmail)}
+                                                            className="flex-shrink-0"
+                                                        >
+                                                            {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
+                                                        </Avatar>
+                                                        <span className="text-sm flex-1 min-w-0 truncate">
+                                                            {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
+                                                        </span>
+                                                        {(() => {
+                                                            const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                            const isApprover = currentUserEmail === item.approverEmail;
+                                                            const shouldShow = hasPermission || isApprover;
+                                                            return shouldShow && (
+                                                                <button
+                                                                    className="p-2.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenDelegation(item);
+                                                                    }}
+                                                                    title="Delegate this task"
+                                                                >
+                                                                    <IconArrowsRightLeft size={20} className="text-gray-600" />
+                                                                </button>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-sm text-gray-500">-</span>
+                                                        {(() => {
+                                                            const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                            return hasPermission && (
+                                                                <button
+                                                                    className="p-2.5 rounded hover:bg-gray-100 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleOpenDelegation(item);
+                                                                    }}
+                                                                    title="Delegate this task"
+                                                                >
+                                                                    <IconArrowsRightLeft size={20} className="text-gray-600" />
+                                                                </button>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            {/* Due Date Section */}
+                                            <div className="mb-3">
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Due On</div>
+                                                <div className="text-sm">{renderDueDate()}</div>
+                                            </div>
+                                            
+                                            {/* Comments Section */}
+                                            <div>
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Comments</div>
+                                                <div className="flex items-start gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        {renderCommentPreview()}
+                                                    </div>
+                                                    <div className="flex gap-2 flex-shrink-0">
+                                                        <button
+                                                            onClick={() => handleOpenComments(item)}
+                                                            className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
+                                                            title="View/add comments"
+                                                        >
+                                                            <IconMessageCircle className="w-5 h-5" />
+                                                            {(item.commentCount || 0) > 0 && (
+                                                                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                                    {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleOpenAttachments(item)}
+                                                            className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
+                                                            title="Attach files"
+                                                        >
+                                                            <IconPaperclip className="w-5 h-5" />
+                                                            {(item.attachmentCount || 0) > 0 && (
+                                                                <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                                    {(item.attachmentCount || 0) > 99 ? '99+' : item.attachmentCount}
+                                                                </span>
+                                                            )}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                            
                             {hiddenCount > 0 && (
-                                <div className="mt-3 text-sm text-gray-600">
+                                <div className="mt-3 text-sm text-gray-600 px-3 md:px-0">
                                     + {hiddenCount} {hasSignoff ? 'secondary' : 'non-required'} {hiddenCount === 1 ? 'item' : 'items'} (
                                     <button
                                         onClick={(e) => {
@@ -914,7 +1291,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                 </div>
                             )}
                             {hiddenCount === 0 && secondaryItems.length > 0 && (
-                                <div className="mt-3 text-sm text-gray-600">
+                                <div className="mt-3 text-sm text-gray-600 px-3 md:px-0">
                                     <button
                                         onClick={(e) => {
                                             e.stopPropagation();
@@ -931,31 +1308,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     </div>
                 );
             })}
-            
-            {/* Notes Editing Modal */}
-            <Modal
-                opened={editingNotesId !== null}
-                onClose={handleCancelEditNotes}
-                title="Edit Notes"
-                size="xl"
-            >
-                <div className="space-y-4">
-                    <RichText
-                        value={editingNotes}
-                        onChange={setEditingNotes}
-                        placeholder="Enter notes with formatting, links, and bullet points..."
-                        rows={10}
-                    />
-                    <Group justify="flex-end" mt="xl">
-                        <Button variant="outline" onClick={handleCancelEditNotes}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleSaveNotes} loading={savingNotes}>
-                            Save
-                        </Button>
-                    </Group>
-                </div>
-            </Modal>
 
             {/* File Attachment Modal */}
             {selectedItemForAttachment && (
@@ -965,6 +1317,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     epicId={epicId}
                     taskId={selectedItemForAttachment.id}
                     taskLabel={selectedItemForAttachment.criterion.label}
+                    onAttachmentAdded={onUpdate}
                 />
             )}
 

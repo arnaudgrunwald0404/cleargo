@@ -12,12 +12,44 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
     console.log("GET /api/settings called");
     try {
+        // Check authentication
+        const supabase = createClient();
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        
+        if (authError || !user?.email) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
+        // Capability: settings.read
+        const { data: me, error: userError } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+        
+        // Handle case where user doesn't exist in app_user table
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) {
+            return NextResponse.json({ error: "Failed to fetch user profile", details: userError.message }, { status: 500 });
+        }
+        
+        const { canRolesPerform } = await import('@/lib/permissions');
+        const ok = canRolesPerform((me?.roles as string[]) || [], 'settings.read');
+        if (!ok) {
+            return NextResponse.json({ error: 'Forbidden: You do not have permission to view settings' }, { status: 403 });
+        }
+
         const settings = await getSettings();
         return NextResponse.json(settings);
-    } catch (error) {
+    } catch (error: any) {
         console.error("Error fetching settings:", error);
         return NextResponse.json(
-            { error: "Failed to fetch settings" },
+            { 
+                error: "Failed to fetch settings",
+                details: error?.message || String(error)
+            },
             { status: 500 }
         );
     }

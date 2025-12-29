@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Table, Badge, Text, Group, Paper } from '@mantine/core';
 import { UserDisplay } from './UserDisplay';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 interface Snapshot {
     id: string;
@@ -26,14 +27,39 @@ interface SnapshotListProps {
 export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListProps) {
     const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
     const [loading, setLoading] = useState(true);
+    const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const lastFetchRef = useRef<number>(0);
 
     useEffect(() => {
-        fetchSnapshots();
+        // Debounce rapid successive calls (min 500ms between requests)
+        const now = Date.now();
+        const timeSinceLastFetch = now - lastFetchRef.current;
+        
+        if (fetchTimeoutRef.current) {
+            clearTimeout(fetchTimeoutRef.current);
+        }
+        
+        if (timeSinceLastFetch < 500) {
+            fetchTimeoutRef.current = setTimeout(() => {
+                fetchSnapshots();
+            }, 500 - timeSinceLastFetch);
+        } else {
+            fetchSnapshots();
+        }
+        
+        return () => {
+            if (fetchTimeoutRef.current) {
+                clearTimeout(fetchTimeoutRef.current);
+            }
+        };
     }, [epicId, refreshTrigger]);
 
     const fetchSnapshots = async () => {
+        lastFetchRef.current = Date.now();
         try {
-            const res = await fetch(`/api/epics/${epicId}/snapshots`);
+            const res = await fetchWithRateLimit(`/api/epics/${epicId}/snapshots`, {
+                maxRetries: 1,
+            });
             if (res.ok) {
                 const data = await res.json();
                 setSnapshots(data);

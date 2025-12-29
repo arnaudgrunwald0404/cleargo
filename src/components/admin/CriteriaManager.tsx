@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar } from "@mantine/core";
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
+import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 type Item = {
   id: string;
@@ -158,7 +159,7 @@ export function CriteriaManager() {
       setImportPreview(null);
       setImportFile(null);
       // Refresh list
-      const listRes = await fetch("/api/criteria");
+      const listRes = await fetchWithRateLimit("/api/criteria", { maxRetries: 1 });
       const listData = await listRes.json();
       setItems(listData.items || []);
     } catch (e: any) {
@@ -172,8 +173,8 @@ export function CriteriaManager() {
     (async () => {
       try {
         const [criteriaRes, stagesRes] = await Promise.all([
-          fetch("/api/criteria"),
-          fetch("/api/launch-stages")
+          fetchWithRateLimit("/api/criteria", { maxRetries: 1 }),
+          fetchWithRateLimit("/api/launch-stages", { maxRetries: 1 })
         ]);
 
         const criteriaData = await criteriaRes.json();
@@ -292,23 +293,36 @@ export function CriteriaManager() {
       sort_order: index,
     }));
 
-    // Update all items in parallel
-    try {
-      await Promise.all(
-        updates.map((update) =>
-          fetch(`/api/criteria/${update.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ sort_order: update.sort_order }),
-          })
-        )
-      );
+    // Optimistically update local state immediately
+    setItems(newItems.map((item, index) => ({ ...item, sort_order: index })));
 
-      // Update local state
-      setItems(newItems.map((item, index) => ({ ...item, sort_order: index })));
+    // Update items in batches to avoid rate limiting
+    try {
+      const batchSize = 5;
+      for (let i = 0; i < updates.length; i += batchSize) {
+        const batch = updates.slice(i, i + batchSize);
+        
+        await Promise.all(
+          batch.map((update) =>
+            fetchWithRateLimit(`/api/criteria/${update.id}`, {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ sort_order: update.sort_order }),
+              maxRetries: 1,
+            })
+          )
+        );
+
+        // Small delay between batches to avoid overwhelming the server
+        if (i + batchSize < updates.length) {
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
     } catch (error) {
       console.error("Failed to reorder:", error);
       setError("Failed to reorder items");
+      // Revert optimistic update on error
+      setItems(items);
     }
   }
 
@@ -697,7 +711,7 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await fetch("/api/users");
+      const res = await fetchWithRateLimit("/api/users", { maxRetries: 1 });
       if (!res.ok) throw new Error("Failed to fetch users");
       const data = await res.json();
       setUsers(data.users || []);

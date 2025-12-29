@@ -41,6 +41,7 @@ type Props = {
   setDomainInput: (input: string) => void;
   addDomain: () => void;
   removeDomain: (domain: string) => void;
+  activeSubSection?: string;
 };
 
 export default function UserManagementSection(props: Props) {
@@ -69,6 +70,7 @@ export default function UserManagementSection(props: Props) {
     setDomainInput,
     addDomain,
     removeDomain,
+    activeSubSection = "users",
   } = props;
 
   const [newUser, setNewUser] = useState({ email: "", first_name: "", last_name: "", roles: [] as string[], is_active: true });
@@ -181,157 +183,51 @@ export default function UserManagementSection(props: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Allowlisted Domains */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
             <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
             </svg>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Allowlisted Domains</h2>
-            <p className="text-sm text-gray-500">Email domains permitted to access the application</p>
+            <h2 className="text-lg font-semibold text-gray-900">User Management</h2>
+            <p className="text-sm text-gray-500">Manage users, roles, PM mapping, and domains</p>
           </div>
         </div>
-        <div>
-          <div className="flex gap-3 mb-4">
-            <input
-              type="text"
-              value={domainInput}
-              onChange={(e) => setDomainInput(e.target.value)}
-              placeholder="example.com"
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addDomain();
-                }
-              }}
-              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <button type="button" onClick={addDomain} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors">
-              Add Domain
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {settings.allowlisted_domains.map((domain) => (
-              <span key={domain} className="inline-flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
-                <span className="text-sm text-gray-700">{domain}</span>
-                <button type="button" onClick={() => removeDomain(domain)} className="text-gray-400 hover:text-red-600 transition-colors">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
 
-      {/* Pod → Product Manager Mapping */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
-            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-            </svg>
-          </div>
+        {activeSubSection === "users" && (
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">Pod → Product Manager Mapping</h2>
-            <p className="text-sm text-gray-500">Map pod names to product managers for criteria resolution</p>
-          </div>
-        </div>
-        <div>
-          {podsLoading ? (
-            <div className="text-center py-8 text-gray-500">Loading pods...</div>
-          ) : pods.length === 0 ? (
-            <p className="text-sm text-gray-500 italic">No pods found. Pods will appear here once launches are synced from AHA.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pod</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Manager</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {pods.map((pod: string) => {
-                    const currentMapping = settings.pod_product_manager_mapping || {};
-                    const currentEmail = currentMapping[pod] || "";
-                    return (
-                      <tr key={pod} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className="text-sm font-medium text-gray-900">{pod}</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <select
-                            value={currentEmail}
-                            onChange={(e) => updatePodMapping(pod, e.target.value || null)}
-                            className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
-                          >
-                            <option value="">— Select Product Manager —</option>
-                            {users
-                              .filter((u) => u.is_active !== false)
-                              .map((user) => {
-                                const displayName = user.first_name || user.last_name ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : user.email;
-                                return (
-                                  <option key={user.id} value={user.email}>
-                                    {displayName} {user.email !== displayName ? `(${user.email})` : ""}
-                                  </option>
-                                );
-                              })}
-                          </select>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* User Management */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900">User Management</h2>
-              <p className="text-sm text-gray-500">Manage users, roles, and permissions</p>
-            </div>
-          </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setShowAddUser(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors">
-              Add User
-            </button>
-            <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors cursor-pointer">
-              Import Bulk
-              <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => setBulkImportFile(e.target.files?.[0] || null)} />
-            </label>
-            {selectedUserIds.size > 0 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => handleBulkInvite("invite")}
-                  className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors flex items-center gap-2"
-                >
-                  <IconMail className="w-4 h-4" />
-                  Invite Selected ({selectedUserIds.size})
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-md font-semibold text-gray-900">Users</h3>
+                <p className="text-sm text-gray-500">Manage users, roles, and permissions</p>
+              </div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setShowAddUser(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors">
+                  Add User
                 </button>
-                <button type="button" onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors">
-                  Delete Selected ({selectedUserIds.size})
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+                <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors cursor-pointer">
+                  Import Bulk
+                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => setBulkImportFile(e.target.files?.[0] || null)} />
+                </label>
+                {selectedUserIds.size > 0 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkInvite("invite")}
+                      className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors flex items-center gap-2"
+                    >
+                      <IconMail className="w-4 h-4" />
+                      Invite Selected ({selectedUserIds.size})
+                    </button>
+                    <button type="button" onClick={handleBulkDelete} className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors">
+                      Delete Selected ({selectedUserIds.size})
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
 
         {bulkImportFile && (
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
@@ -378,11 +274,11 @@ export default function UserManagementSection(props: Props) {
           </div>
         )}
 
-        {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading users...</div>
-        ) : (
-          <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-            <table className="min-w-full divide-y divide-purple-200 table-fixed">
+            {loading ? (
+              <div className="text-center py-8 text-gray-500">Loading users...</div>
+            ) : (
+              <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
+                <table className="min-w-full divide-y divide-purple-200 table-fixed">
               <colgroup>
                 <col className="w-12" />
                 <col className="w-auto" />
@@ -456,6 +352,110 @@ export default function UserManagementSection(props: Props) {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+          </div>
+        )}
+
+        {activeSubSection === "pm-mapping" && (
+          <div>
+            {/* Pod → Product Manager Mapping */}
+            <div className="mb-4">
+              <h3 className="text-md font-semibold text-gray-900">Pod → Product Manager Mapping</h3>
+              <p className="text-sm text-gray-500">Map pod names to product managers for criteria resolution</p>
+            </div>
+            <div>
+              {podsLoading ? (
+                <div className="text-center py-8 text-gray-500">Loading pods...</div>
+              ) : pods.length === 0 ? (
+                <p className="text-sm text-gray-500 italic">No pods found. Pods will appear here once launches are synced from AHA.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pod</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Manager</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {pods.map((pod: string) => {
+                        const currentMapping = settings.pod_product_manager_mapping || {};
+                        const currentEmail = currentMapping[pod] || "";
+                        return (
+                          <tr key={pod} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className="text-sm font-medium text-gray-900">{pod}</span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <select
+                                value={currentEmail}
+                                onChange={(e) => updatePodMapping(pod, e.target.value || null)}
+                                className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
+                              >
+                                <option value="">— Select Product Manager —</option>
+                                {users
+                                  .filter((u) => u.is_active !== false)
+                                  .map((user) => {
+                                    const displayName = user.first_name || user.last_name ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : user.email;
+                                    return (
+                                      <option key={user.id} value={user.email}>
+                                        {displayName} {user.email !== displayName ? `(${user.email})` : ""}
+                                      </option>
+                                    );
+                                  })}
+                              </select>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {activeSubSection === "domains" && (
+          <div>
+            {/* Allowlisted Domains */}
+            <div className="mb-4">
+              <h3 className="text-md font-semibold text-gray-900">Allowlisted Domains</h3>
+              <p className="text-sm text-gray-500">Email domains permitted to access the application</p>
+            </div>
+            <div>
+              <div className="flex gap-3 mb-4">
+                <input
+                  type="text"
+                  value={domainInput}
+                  onChange={(e) => setDomainInput(e.target.value)}
+                  placeholder="example.com"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addDomain();
+                    }
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                />
+                <button type="button" onClick={addDomain} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors">
+                  Add Domain
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {settings.allowlisted_domains.map((domain) => (
+                  <span key={domain} className="inline-flex items-center gap-2 bg-gray-100 px-3 py-1.5 rounded-lg border border-gray-200">
+                    <span className="text-sm text-gray-700">{domain}</span>
+                    <button type="button" onClick={() => removeDomain(domain)} className="text-gray-400 hover:text-red-600 transition-colors">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
       </div>
