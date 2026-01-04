@@ -3,6 +3,7 @@ import React from "react";
 import { Drawer, Button, Group, Stack, TextInput, NumberInput } from "@mantine/core";
 import { IconGripVertical, IconPencil } from "@tabler/icons-react";
 import { RichText } from "@/components/admin/RichText";
+import { PurpleLoader } from '../../PurpleLoader';
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
 
 export type LaunchStage = {
@@ -88,7 +89,10 @@ export default function LaunchStagesSection({
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading...</div>
+          <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+            <PurpleLoader size="sm" />
+            <span>Loading...</span>
+          </div>
         ) : stages.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-gray-500 mb-4">No launch stages found.</p>

@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole, isAdminRole } from "@/lib/roles";
+import { syncUserSlackHandle } from "@/lib/slack/notifications";
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -133,6 +134,13 @@ export async function POST(req: NextRequest) {
 
   if (error) {
     return NextResponse.json({ error: "Failed to create user", details: error.message }, { status: 500 });
+  }
+
+  // Auto-sync Slack handle for new user (non-blocking)
+  if (newUser?.email) {
+    syncUserSlackHandle(newUser.email).catch((err) => {
+      console.error(`Failed to sync Slack handle for ${newUser.email}:`, err);
+    });
   }
 
   return NextResponse.json({ user: newUser }, { status: 201 });

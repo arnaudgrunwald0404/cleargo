@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Tooltip } from "@mantine/core";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 type MyItem = {
     id: string;
@@ -171,7 +172,13 @@ export default function MyItemsPage() {
         }
     }
 
-    if (loading) return <div className="pt-24 p-8">Loading...</div>;
+    if (loading) {
+        return (
+            <div className="pt-24 p-8 flex items-center justify-center">
+                <PurpleLoader size="md" />
+            </div>
+        );
+    }
 
     return (
         <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">

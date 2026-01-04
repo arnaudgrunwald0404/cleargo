@@ -1,4 +1,5 @@
 "use client";
+import { PurpleLoader } from '../../PurpleLoader';
 import React, { useState } from "react";
 import { Drawer, Stack, Group, TextInput, MultiSelect, Checkbox, Button } from "@mantine/core";
 import { IconTrash, IconMail, IconPencil } from "@tabler/icons-react";
@@ -275,7 +276,10 @@ export default function UserManagementSection(props: Props) {
         )}
 
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading users...</div>
+              <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+                <PurpleLoader size="sm" />
+                <span>Loading users...</span>
+              </div>
             ) : (
               <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                 <table className="min-w-full divide-y divide-purple-200 table-fixed">

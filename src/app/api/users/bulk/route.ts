@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
 import * as XLSX from "xlsx";
+import { syncUserSlackHandle } from "@/lib/slack/notifications";
 
 const bulkCreateSchema = z.object({
   users: z.array(z.object({
@@ -88,6 +89,17 @@ export async function POST(req: NextRequest) {
 
     if (insertError) {
       return NextResponse.json({ error: "Failed to import users", details: insertError.message }, { status: 500 });
+    }
+
+    // Auto-sync Slack handles for all imported users (non-blocking, in background)
+    if (insertedUsers && insertedUsers.length > 0) {
+      for (const user of insertedUsers) {
+        if (user.email) {
+          syncUserSlackHandle(user.email).catch((err) => {
+            console.error(`Failed to sync Slack handle for ${user.email}:`, err);
+          });
+        }
+      }
     }
 
     return NextResponse.json({

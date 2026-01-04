@@ -46,7 +46,7 @@ export default function IntegrationsSection({
   syncResult,
   onAutoSaveFields,
   onSynchronize,
-  activeSubSection = "email",
+  activeSubSection = "aha",
 }: Props) {
   return (
     <div className="space-y-6">

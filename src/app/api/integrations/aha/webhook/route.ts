@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { getEpic } from '@/lib/aha/client';
 import type { AhaWebhookPayload } from '@/lib/aha/types';
 import { verifyWebhookSignature } from '@/lib/aha/webhook-validator';
@@ -9,6 +10,7 @@ import {
     getFallbackProductOpsUser,
     instantiateCriteriaForEpic,
     getEpicByAhaId,
+    fetchAndUpsertReleaseFromAha,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
@@ -81,12 +83,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ message: 'Not an epic event, skipping' }, { status: 200 });
         }
 
-        // Apply filter: only process if launch candidate or has LaunchConsole tag
+        // Apply filter: only process if ClearGO Candidate = Yes or has LaunchConsole tag
         if (!(await shouldProcessEpic(epic))) {
             console.log('⏭️  Skipping: Epic does not match filter criteria', {
                 epic_id: epic.id,
                 tags: epic.tags,
-                launch_candidate: epic.custom_fields?.launch_candidate?.value
+                cleargo_candidate: Array.isArray(epic.custom_fields) 
+                    ? epic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')?.value 
+                    : null
             });
             return NextResponse.json(
                 { message: 'Epic does not match filter criteria, skipping' },
@@ -110,6 +114,25 @@ export async function POST(req: NextRequest) {
             aha_fields: epicData.aha_fields,
             fields_to_load: fieldsToLoad
         });
+
+        // Auto-fetch release from Aha API if it doesn't exist in system
+        if (epicData.aha_release_name) {
+            const supabase = createClient();
+            const { data: existingRelease } = await supabase
+                .from('release_schedule')
+                .select('release_name')
+                .eq('release_name', epicData.aha_release_name)
+                .maybeSingle();
+            
+            if (!existingRelease) {
+                try {
+                    await fetchAndUpsertReleaseFromAha(epicData.aha_release_name);
+                } catch (fetchError) {
+                    // Log error but continue processing epic
+                    console.warn(`Failed to auto-fetch release "${epicData.aha_release_name}" from Aha:`, fetchError);
+                }
+            }
+        }
 
         // Resolve owner
         let ownerId: string | null = null;

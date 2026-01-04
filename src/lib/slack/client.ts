@@ -7,6 +7,8 @@ import type {
     SlackPostMessageResponse,
     SlackUserInfoResponse,
     SlackApiResponse,
+    SlackConversationsOpenResponse,
+    SlackChannelCreateResponse,
 } from '@/types/slack';
 
 const SLACK_API_BASE = 'https://slack.com/api';
@@ -119,6 +121,37 @@ export class SlackClient {
         }
 
         return data as SlackUserInfoResponse;
+    }
+
+    /**
+     * Open a direct message conversation with a user
+     * Returns the channel ID for the DM conversation
+     */
+    async openConversation(userId: string): Promise<string> {
+        const response = await fetch(`${SLACK_API_BASE}/conversations.open`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${this.botToken}`,
+            },
+            body: JSON.stringify({
+                users: userId,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            console.error('Slack API error opening conversation:', data.error);
+            throw new Error(`Failed to open DM conversation: ${data.error}`);
+        }
+
+        const openResponse = data as SlackConversationsOpenResponse;
+        if (!openResponse.channel?.id) {
+            throw new Error('No channel ID returned from conversations.open');
+        }
+
+        return openResponse.channel.id;
     }
 
     /**
@@ -259,6 +292,69 @@ export class SlackClient {
 
         if (!data.ok) {
             console.error('Slack API error:', data.error);
+            throw new Error(`Slack API error: ${data.error}`);
+        }
+
+        return data;
+    }
+
+    /**
+     * Create a new Slack channel
+     * @param name Channel name (without #, will be normalized by Slack)
+     * @param isPrivate Whether the channel should be private (default: false)
+     * @returns Channel creation response with channel details
+     */
+    async createChannel(name: string, isPrivate: boolean = false): Promise<SlackChannelCreateResponse> {
+        const response = await fetch(`${SLACK_API_BASE}/conversations.create`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${this.botToken}`,
+            },
+            body: JSON.stringify({
+                name: name.replace(/^#/, ''), // Remove # if present
+                is_private: isPrivate,
+            }),
+        });
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            console.error('Slack API error creating channel:', data.error);
+            throw new Error(`Slack API error: ${data.error}`);
+        }
+
+        return data as SlackChannelCreateResponse;
+    }
+
+    /**
+     * Invite users to a Slack channel
+     * @param channelId Channel ID to invite users to
+     * @param userIds Array of Slack user IDs to invite
+     * @returns API response
+     */
+    async inviteUsersToChannel(channelId: string, userIds: string[]): Promise<SlackApiResponse> {
+        const response = await fetch(`${SLACK_API_BASE}/conversations.invite`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${this.botToken}`,
+            },
+            body: JSON.stringify({
+                channel: channelId,
+                users: userIds.join(','),
+            }),
+        });
+
+        const data = await response.json();
+
+        // Handle case where user is already in channel (not a fatal error)
+        if (!data.ok) {
+            if (data.error === 'already_in_channel' || data.error === 'cant_invite_self') {
+                console.log(`User(s) already in channel or is creator: ${data.error}`);
+                return data; // Return the response anyway, it's not a critical error
+            }
+            console.error('Slack API error inviting users:', data.error);
             throw new Error(`Slack API error: ${data.error}`);
         }
 

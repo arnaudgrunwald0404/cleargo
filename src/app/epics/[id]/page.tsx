@@ -6,13 +6,14 @@ import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Modal, TextInput } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUsers, IconCalendar } from "@tabler/icons-react";
+import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 export default function EpicDetailPage() {
     const params = useParams();
@@ -33,8 +34,7 @@ export default function EpicDetailPage() {
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
-    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
-    const [releaseDateInput, setReleaseDateInput] = useState("");
+    const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
     const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
     const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
     const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
@@ -69,6 +69,9 @@ export default function EpicDetailPage() {
     };
 
     async function loadData() {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:70',message:'loadData called',data:{inProgress:loadDataInProgressRef.current,timeSinceLastCall:Date.now()-lastLoadDataRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,D'})}).catch(()=>{});
+        // #endregion
         // Prevent multiple simultaneous calls
         if (loadDataInProgressRef.current) {
             console.warn('loadData already in progress, skipping duplicate call');
@@ -249,6 +252,7 @@ export default function EpicDetailPage() {
                 console.log('[DEBUG] Launch stages loaded', stagesData);
                 console.log('[DEBUG] Pre-calculated days-before-launch', Object.fromEntries(calculatedDaysBeforeLaunch));
                 console.log('[DEBUG] Pre-calculated days-after-launch', Object.fromEntries(calculatedDaysAfterLaunch));
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:251',message:'Debug log call - Launch stages loaded',data:{callCount:'tracking',stagesCount:stagesData.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
                 fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:202',message:'Launch stages loaded',data:{stages:stagesData,count:stagesData.length,daysBeforeLaunch:Object.fromEntries(calculatedDaysBeforeLaunch),daysAfterLaunch:Object.fromEntries(calculatedDaysAfterLaunch)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(()=>{});
                 // #endregion
             } else {
@@ -293,11 +297,61 @@ export default function EpicDetailPage() {
                     .eq('release_name', extractedReleaseName)
                     .maybeSingle();
                 
-                if (!releaseError && releaseSchedule?.launch_date) {
+                // Check if we have a date in the schedule
+                if (releaseSchedule?.launch_date) {
                     fetchedReleaseDate = releaseSchedule.launch_date;
                     setReleaseDate(releaseSchedule.launch_date);
                 } else {
-                    setReleaseDate(null);
+                    // Automatically fetch release date from API if not in schedule
+                    setFetchingReleaseDate(true);
+                    try {
+                        console.log(`[Epic Detail] Fetching release date for: ${extractedReleaseName}`);
+                        const releaseDatesRes = await fetch("/api/epics/release-dates", { credentials: 'include' });
+                        if (releaseDatesRes.ok) {
+                            const releaseDatesData = await releaseDatesRes.json();
+                            console.log(`[Epic Detail] Release dates API response:`, releaseDatesData);
+                            const releaseDates = releaseDatesData.releases || [];
+                            const found = releaseDates.find((r: any) => r.releaseName === extractedReleaseName);
+                            console.log(`[Epic Detail] Found release date:`, found);
+                            
+                            if (found && found.launchDate) {
+                                // Save to release_schedule
+                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate });
+                                const saveRes = await fetch("/api/releases", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: 'include',
+                                    body: JSON.stringify({
+                                        release_name: extractedReleaseName,
+                                        launch_date: found.launchDate,
+                                    }),
+                                });
+                                
+                                if (saveRes.ok) {
+                                    const savedData = await saveRes.json();
+                                    console.log(`[Epic Detail] Successfully saved release date:`, savedData);
+                                    fetchedReleaseDate = found.launchDate;
+                                    setReleaseDate(found.launchDate);
+                                } else {
+                                    const errorData = await saveRes.json().catch(() => ({}));
+                                    console.error("[Epic Detail] Failed to save release date:", errorData);
+                                    setReleaseDate(null);
+                                }
+                            } else {
+                                console.log(`[Epic Detail] No release date found for: ${extractedReleaseName}`);
+                                setReleaseDate(null);
+                            }
+                        } else {
+                            const errorData = await releaseDatesRes.json().catch(() => ({}));
+                            console.error("[Epic Detail] Failed to fetch release dates:", errorData);
+                            setReleaseDate(null);
+                        }
+                    } catch (error) {
+                        console.error("[Epic Detail] Exception while fetching release date:", error);
+                        setReleaseDate(null);
+                    } finally {
+                        setFetchingReleaseDate(false);
+                    }
                 }
             } else {
                 setReleaseDate(null);
@@ -371,19 +425,6 @@ export default function EpicDetailPage() {
                 }
             });
 
-            // #region agent log
-            const businessJustificationItem = merged.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
-            if (businessJustificationItem) {
-                console.log('[DEBUG] Business Justification raw data', {
-                    criterionId: businessJustificationItem.criterion_id,
-                    criterionLabel: businessJustificationItem.criterion?.label,
-                    ratingTiming: businessJustificationItem.criterion?.rating_timing,
-                    storedDueDate: businessJustificationItem.condition_due_date,
-                    hasCriterion: !!businessJustificationItem.criterion
-                });
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:319',message:'Business Justification raw data',data:{criterionId:businessJustificationItem.criterion_id,criterionLabel:businessJustificationItem.criterion?.label,ratingTiming:businessJustificationItem.criterion?.rating_timing,storedDueDate:businessJustificationItem.condition_due_date,hasCriterion:!!businessJustificationItem.criterion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            }
-            // #endregion
             
             // Annotate applicability for existing statuses
             const withApplicability = merged.map((item: any) => ({
@@ -455,9 +496,15 @@ export default function EpicDetailPage() {
             // This works even without authentication, allowing email-to-name translation
             const userInfoMap: Record<string, { first_name?: string; last_name?: string; avatar_url?: string }> = {};
             if (approverEmails.size > 0) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:493',message:'Before /api/users/by-email call for approvers',data:{approverCount:approverEmails.size,emails:Array.from(approverEmails)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 try {
                     const emailsParam = Array.from(approverEmails).join(',');
                     const userInfoRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(emailsParam)}`);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:496',message:'After /api/users/by-email call for approvers',data:{status:userInfoRes.status,ok:userInfoRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
                     if (userInfoRes.ok) {
                         const fetchedUserMap = await userInfoRes.json();
                         // Merge fetched user info into userInfoMap
@@ -473,13 +520,18 @@ export default function EpicDetailPage() {
             // Calculate due dates for criteria based on rating_timing and launch stages
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
-            // #region agent log
-            fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:414',message:'calculateDueDate setup',data:{targetDate,fetchedReleaseDate,dataTargetLaunchDate:data.target_launch_date,launchStagesCount:fetchedLaunchStages.length,launchStages:fetchedLaunchStages.map(s=>({id:s.id,name:s.name,sort_order:s.sort_order,duration_days:s.duration_days}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C,E'})}).catch(()=>{});
-            console.log('[DEBUG] calculateDueDate setup', {targetDate, fetchedReleaseDate, dataTargetLaunchDate: data.target_launch_date, launchStagesCount: fetchedLaunchStages.length, launchStages: fetchedLaunchStages});
-            // #endregion
+            
+            // Memoization cache for calculateDueDate to avoid redundant calculations
+            const dueDateCache = new Map<number, string | null>();
+            
             const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
                 if (!targetDate || !ratingTimingId || fetchedLaunchStages.length === 0) {
                     return null;
+                }
+                
+                // Check cache first
+                if (dueDateCache.has(ratingTimingId)) {
+                    return dueDateCache.get(ratingTimingId)!;
                 }
                 
                 // Use pre-calculated values from local variables (state updates are async)
@@ -488,6 +540,7 @@ export default function EpicDetailPage() {
                 
                 if (daysBefore === undefined && daysAfter === undefined) {
                     // Stage not found in pre-calculated maps
+                    dueDateCache.set(ratingTimingId, null);
                     return null;
                 }
                 
@@ -502,10 +555,8 @@ export default function EpicDetailPage() {
                 }
                 
                 const result = dueDate.toISOString().split('T')[0];
-                // #region agent log
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:463',message:'calculateDueDate result',data:{ratingTimingId,result,targetDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                console.log('[DEBUG] calculateDueDate result', {ratingTimingId, result, targetDate});
-                // #endregion
+                // Cache the result
+                dueDateCache.set(ratingTimingId, result);
                 return result; // Return as YYYY-MM-DD
             };
             
@@ -523,6 +574,12 @@ export default function EpicDetailPage() {
             // Fetch comments/attachments AFTER initial render (non-blocking)
             // This allows the page to show immediately while counts load in background
             const itemIds = sorted.map((item: any) => item.id);
+            
+            // #region agent log
+            const virtualIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:575',message:'Before fetching comments/attachments',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualIds.length,virtualIds:virtualIds.slice(0,5),allItemIds:itemIds.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            
             if (itemIds.length > 0) {
                 // Clear any existing timeout to prevent duplicate requests
                 if (attachmentFetchTimeoutRef.current) {
@@ -531,8 +588,16 @@ export default function EpicDetailPage() {
                 
                 // Use setTimeout to defer until after initial render
                 attachmentFetchTimeoutRef.current = setTimeout(() => {
+                    // Filter out virtual IDs - they don't have status rows and can't have comments/attachments
+                    const realItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
+                    
+                    // #region agent log
+                    const virtualCommentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:582',message:'Fetching comments for itemIds',data:{totalIds:itemIds.length,virtualIdsCount:virtualCommentIds.length,virtualIds:virtualCommentIds.slice(0,5),realIdsCount:realItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
+                    // #endregion
+                    
                     // Fetch comments counts and last comment for each item using batch fetching
-                    const commentUrls = itemIds.map(
+                    const commentUrls = realItemIds.map(
                         (itemId: string) => `/api/epics/${id}/criteria/${itemId}/comments`
                     );
 
@@ -542,7 +607,7 @@ export default function EpicDetailPage() {
                         maxRetries: 1,
                     }).then((results) => {
                         results.forEach(({ url, response, error }, index) => {
-                            const itemId = itemIds[index];
+                            const itemId = realItemIds[index];
                             
                             if (error || !response) {
                                 console.warn(`Failed to fetch comments for ${itemId}:`, error);
@@ -594,7 +659,15 @@ export default function EpicDetailPage() {
                     
                     // Fetch attachments counts for each item with deduplication and error handling
                     // Use batch fetching with rate limit handling to avoid overwhelming the server
-                    const attachmentItemIds = itemIds.filter((itemId: string) => {
+                    // Filter out virtual IDs - they don't have status rows and can't have attachments
+                    const realAttachmentItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
+                    
+                    // #region agent log
+                    const virtualAttachmentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:644',message:'Before filtering attachment itemIds',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualAttachmentIds.length,virtualIds:virtualAttachmentIds.slice(0,5),realIdsCount:realAttachmentItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'G'})}).catch(()=>{});
+                    // #endregion
+                    
+                    const attachmentItemIds = realAttachmentItemIds.filter((itemId: string) => {
                         // Skip if already pending or previously failed with 500
                         const requestKey = `${id}-${itemId}`;
                         if (pendingAttachmentRequestsRef.current.has(requestKey)) {
@@ -717,12 +790,6 @@ export default function EpicDetailPage() {
                 // Otherwise, use stored date if available
                 const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing);
                 const finalDueDate = calculatedDueDate || item.condition_due_date || null;
-                // #region agent log
-                if (item.criterion?.label?.toLowerCase().includes('business justification')) {
-                    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:673',message:'Business Justification due date calculation',data:{criterionLabel:item.criterion?.label,ratingTiming:item.criterion?.rating_timing,storedDueDate:item.condition_due_date,calculatedDueDate,finalDueDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D,F'})}).catch(()=>{});
-                    console.log('[DEBUG] Business Justification due date calculation', {criterionLabel: item.criterion?.label, ratingTiming: item.criterion?.rating_timing, storedDueDate: item.condition_due_date, calculatedDueDate, finalDueDate});
-                }
-                // #endregion
                 
                 // Get comments and attachments data for this item
                 const commentsInfo = commentsData[item.id] || { count: 0 };
@@ -740,13 +807,6 @@ export default function EpicDetailPage() {
                 };
             });
 
-            // #region agent log
-            const businessJustificationInMatrix = resolvedMatrix.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
-            if (businessJustificationInMatrix) {
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:751',message:'Matrix data set - Business Justification',data:{conditionDueDate:businessJustificationInMatrix.condition_due_date,criterionLabel:businessJustificationInMatrix.criterion?.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-                console.log('[DEBUG] Matrix data set - Business Justification', {conditionDueDate: businessJustificationInMatrix.condition_due_date, criterionLabel: businessJustificationInMatrix.criterion?.label});
-            }
-            // #endregion
             setMatrix(resolvedMatrix);
             
             // Resolve PM owner: prioritize pod mapping (source of truth), then fallback to assigned_to_user or PM criteria approver
@@ -789,10 +849,16 @@ export default function EpicDetailPage() {
             
             // Fetch PM owner info if email is available using API endpoint
             if (pmEmail) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:818',message:'Before /api/users/by-email call for PM owner',data:{pmEmail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 // Normalize email to lowercase for consistent lookup
                 const normalizedEmail = pmEmail.toLowerCase().trim();
                 try {
                     const pmUserRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(normalizedEmail)}`);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:822',message:'After /api/users/by-email call for PM owner',data:{status:pmUserRes.status,ok:pmUserRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
                     if (pmUserRes.ok) {
                         const pmUserMap = await pmUserRes.json();
                         const pmUser = pmUserMap[normalizedEmail];
@@ -900,7 +966,11 @@ export default function EpicDetailPage() {
     }, [epic?.tier]);
 
     if (loading) {
-        return <div className="pt-24 p-8">Loading...</div>;
+        return (
+            <div className="pt-24 p-8 flex items-center justify-center">
+                <PurpleLoader size="md" />
+            </div>
+        );
     }
     if (error) {
         return <div className="pt-24 p-8 text-red-600">Error: {error}</div>;
@@ -1098,15 +1168,13 @@ export default function EpicDetailPage() {
                                         {new Date(epic.target_launch_date).toLocaleDateString()}
                                     </div>
                                 ) : releaseName ? (
-                                    <Button
-                                        leftSection={<IconCalendar size={18} />}
-                                        color="orange"
-                                        size="md"
-                                        onClick={() => setReleaseMappingModalOpen(true)}
-                                        className="mt-1"
-                                    >
-                                        Map Release Date
-                                    </Button>
+                                    fetchingReleaseDate ? (
+                                        <div className="text-sm text-gray-500 flex items-center gap-2">
+                                            <PurpleLoader size="sm" />
+                                        </div>
+                                    ) : (
+                                        <div className="text-lg font-semibold text-gray-500">Not set</div>
+                                    )
                                 ) : (
                                     <div className="text-lg font-semibold text-gray-500">Not set</div>
                                 )}
@@ -1278,6 +1346,9 @@ export default function EpicDetailPage() {
                                 const fourteenDaysFromNow = new Date(today);
                                 fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
                                 
+                                // Memoization cache for filter calculations
+                                const filterDueDateCache = new Map<number, string | null>();
+                                
                                 // Use pre-calculated values for filtering (optimization: reuse pre-calculated maps)
                                 const calculateDueDateForFilter = (item: any): string | null => {
                                     if (!item.criterion?.rating_timing || launchStages.length === 0) {
@@ -1291,11 +1362,17 @@ export default function EpicDetailPage() {
                                     
                                     const ratingTimingId = item.criterion.rating_timing;
                                     
+                                    // Check cache first
+                                    if (filterDueDateCache.has(ratingTimingId)) {
+                                        return filterDueDateCache.get(ratingTimingId)!;
+                                    }
+                                    
                                     // Use pre-calculated values instead of recalculating
                                     const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
                                     const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
                                     
                                     if (daysBefore === undefined && daysAfter === undefined) {
+                                        filterDueDateCache.set(ratingTimingId, null);
                                         return item.condition_due_date || null;
                                     }
                                     
@@ -1307,7 +1384,9 @@ export default function EpicDetailPage() {
                                         dueDate.setDate(dueDate.getDate() + daysAfter);
                                     }
                                     
-                                    return dueDate.toISOString().split('T')[0];
+                                    const result = dueDate.toISOString().split('T')[0];
+                                    filterDueDateCache.set(ratingTimingId, result);
+                                    return result;
                                 };
                                 
                                 const filteredMatrix = matrix.filter((item: any) => {
@@ -1367,119 +1446,6 @@ export default function EpicDetailPage() {
                 onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
             />
 
-            {/* Release Date Mapping Modal */}
-            <Modal
-                opened={releaseMappingModalOpen}
-                onClose={() => {
-                    setReleaseMappingModalOpen(false);
-                    setReleaseDateInput("");
-                }}
-                title="Map Release Date"
-                centered
-            >
-                <div className="space-y-4">
-                    <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Release Name</div>
-                        <div className="text-lg font-semibold text-gray-900">{releaseName}</div>
-                    </div>
-                    <TextInput
-                        label="Launch Date"
-                        placeholder="MM/DD/YYYY"
-                        value={releaseDateInput}
-                        onChange={(e) => setReleaseDateInput(e.currentTarget.value)}
-                        description="Enter the launch date for this release"
-                    />
-                    <Group justify="flex-end" mt="md">
-                        <Button
-                            variant="subtle"
-                            onClick={() => {
-                                setReleaseMappingModalOpen(false);
-                                setReleaseDateInput("");
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={async () => {
-                                if (!releaseDateInput.trim()) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Please enter a launch date',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
-                                
-                                if (!releaseName) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Release name is missing',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
-
-                                try {
-                                    // Parse date - support MM/DD/YYYY format
-                                    let parsedDate: string;
-                                    if (releaseDateInput.includes("/")) {
-                                        const parts = releaseDateInput.split("/");
-                                        if (parts.length !== 3) {
-                                            throw new Error("Invalid date format. Use MM/DD/YYYY");
-                                        }
-                                        const [month, day, year] = parts;
-                                        parsedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                                        
-                                        // Validate the date
-                                        const dateObj = new Date(parsedDate);
-                                        if (isNaN(dateObj.getTime())) {
-                                            throw new Error("Invalid date. Please check the date format.");
-                                        }
-                                    } else {
-                                        parsedDate = releaseDateInput; // Assume YYYY-MM-DD format
-                                    }
-
-                                    const res = await fetch("/api/releases", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        credentials: 'include',
-                                        body: JSON.stringify({
-                                            release_name: releaseName.trim(),
-                                            launch_date: parsedDate,
-                                        }),
-                                    });
-
-                                    if (!res.ok) {
-                                        const errorData = await res.json();
-                                        throw new Error(errorData.error || "Failed to create release mapping");
-                                    }
-
-                                    notifications.show({
-                                        title: 'Success',
-                                        message: 'Release date mapped successfully',
-                                        color: 'green',
-                                    });
-
-                                    setReleaseMappingModalOpen(false);
-                                    setReleaseDateInput("");
-                                    
-                                    // Reload data to get the updated release date
-                                    await loadData();
-                                } catch (error: any) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: error.message || 'Failed to map release date',
-                                        color: 'red',
-                                    });
-                                }
-                            }}
-                            disabled={!releaseDateInput.trim()}
-                        >
-                            Map Date
-                        </Button>
-                    </Group>
-                </div>
-            </Modal>
             </div>
             {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} />}
         </div>

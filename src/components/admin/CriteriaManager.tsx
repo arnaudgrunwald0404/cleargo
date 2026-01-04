@@ -5,6 +5,7 @@ import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, Si
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { PurpleLoader } from '../PurpleLoader';
 
 type Item = {
   id: string;
@@ -330,7 +331,7 @@ export function CriteriaManager() {
     return (
       <div className="flex items-center justify-center p-12">
         <div className="text-center">
-          <div className="inline-block w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+          <PurpleLoader size="lg" className="mb-4" />
           <p className="text-gray-600">Loading criteria...</p>
         </div>
       </div>

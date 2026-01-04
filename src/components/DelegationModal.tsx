@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Modal, Button, Group, Radio, Stack, Text, Loader, TextInput, Avatar, ScrollArea } from '@mantine/core';
+import { Modal, Button, Group, Radio, Stack, Text, TextInput, Avatar, ScrollArea } from '@mantine/core';
+import { PurpleLoader } from './PurpleLoader';
 import { IconSearch } from '@tabler/icons-react';
 
 export type DelegationType =
@@ -234,7 +235,7 @@ export function DelegationModal({
 
           {loadingUsers ? (
             <div style={{ textAlign: 'center', padding: '20px' }}>
-              <Loader size="sm" />
+              <PurpleLoader size="sm" />
             </div>
           ) : (
             <div style={{ position: 'relative' }}>

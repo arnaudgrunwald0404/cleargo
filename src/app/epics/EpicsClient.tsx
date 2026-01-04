@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button } from '@mantine/core';
-import { IconSearch, IconX, IconFilter, IconAlertCircle, IconTrash, IconCalendar, IconRefresh } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconTrash } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
+import { PurpleLoader } from '@/components/PurpleLoader';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -14,9 +15,10 @@ interface EpicsClientProps {
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [products, setProducts] = useState<any[]>([]);
-    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
+    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [configuredTags, setConfiguredTags] = useState<string[]>(['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']);
@@ -24,10 +26,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
     const [deleteModalOpen, setDeleteModalOpen] = useState(false);
     const [epicToDelete, setEpicToDelete] = useState<{ id: string; name: string } | null>(null);
-    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
-    const [selectedReleaseName, setSelectedReleaseName] = useState<string | null>(null);
-    const [releaseDateInput, setReleaseDateInput] = useState("");
     const [syncingReleaseName, setSyncingReleaseName] = useState<string | null>(null);
+    const [fetchingReleaseDates, setFetchingReleaseDates] = useState<Set<string>>(new Set());
+    const fetchedReleaseDatesRef = useRef<Set<string>>(new Set());
+    const [ahaEpicCounts, setAhaEpicCounts] = useState<Map<string, number | null>>(new Map());
+    const fetchingAhaCountsRef = useRef<Set<string>>(new Set());
+    const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
+    const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
+    const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean }>>([]);
+    const [isDeterminingOrder, setIsDeterminingOrder] = useState(true);
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -37,6 +45,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         risk: "ALL"
     });
     const [showFilters, setShowFilters] = useState(false);
+    const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
 
     useEffect(() => {
         // Load current user roles
@@ -72,7 +81,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     productsRes.json().then(data => setProducts(data));
                 }
                 if (releasesRes.ok) {
-                    releasesRes.json().then(data => setReleaseSchedule(data || []));
+                    releasesRes.json().then(data => {
+                        setReleaseSchedule(data || []);
+                        setReleaseScheduleWithIds(data || []);
+                        // After releases are loaded, check if order needs to be determined
+                        // This will be handled by the useEffect that fetches missing dates
+                    });
                 }
             });
         }
@@ -112,11 +126,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             if (releasesRes.ok) {
                 const releasesData = await releasesRes.json();
                 setReleaseSchedule(releasesData || []);
+                setReleaseScheduleWithIds(releasesData || []);
             }
         } catch (e: any) {
             setError(e.message);
         } finally {
             setLoading(false);
+            // After initial load, check if we need to determine order
+            // This will be handled by the useEffect that fetches missing dates
         }
     }
 
@@ -231,6 +248,239 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         epics
     }));
 
+    // Automatically fetch release dates from API when needed (only if not in database)
+    useEffect(() => {
+        const fetchMissingReleaseDates = async () => {
+            // If we don't have epics or release schedule yet, keep determining order
+            if (epics.length === 0 || releaseSchedule.length === 0) {
+                setIsDeterminingOrder(true);
+                return;
+            }
+            
+            // First, check the database (releaseSchedule) to see which releases already have dates
+            const releasesInDb = new Set<string>();
+            releaseSchedule.forEach(release => {
+                if (release.release_name && release.launch_date) {
+                    releasesInDb.add(release.release_name);
+                }
+            });
+            
+            // Only fetch dates for releases that:
+            // 1. Are not "Ungrouped"
+            // 2. Don't have a date in the current releaseDateMap (from releaseSchedule)
+            // 3. Are not already in the database
+            // 4. Haven't been fetched in this session
+            const releasesNeedingDates = releaseGroups
+                .filter(group => 
+                    group.releaseName !== "Ungrouped" && 
+                    !group.releaseDate && 
+                    !releasesInDb.has(group.releaseName) &&
+                    !fetchedReleaseDatesRef.current.has(group.releaseName)
+                )
+                .map(group => group.releaseName);
+
+            if (releasesNeedingDates.length === 0) {
+                // No releases need dates, order is determined
+                setIsDeterminingOrder(false);
+                return;
+            }
+            
+            // We're fetching dates, so order is not yet determined
+            setIsDeterminingOrder(true);
+
+            // Mark as fetched to prevent duplicate requests and set loading state
+            releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.add(name));
+            setFetchingReleaseDates(new Set(releasesNeedingDates));
+
+            try {
+                const res = await fetch("/api/epics/release-dates", { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const releaseDates = data.releases || [];
+                    
+                    // Find dates for missing releases
+                    const datesToSave: Array<{ release_name: string; launch_date: string }> = [];
+                    
+                    releasesNeedingDates.forEach(releaseName => {
+                        // Try exact match first
+                        let found = releaseDates.find((r: any) => r.releaseName === releaseName);
+                        
+                        // If no exact match, try case-insensitive match
+                        if (!found) {
+                            found = releaseDates.find((r: any) => 
+                                r.releaseName && r.releaseName.toLowerCase() === releaseName.toLowerCase()
+                            );
+                        }
+                        
+                        if (found && found.launchDate) {
+                            console.log(`[EpicsClient] Found date for "${releaseName}": ${found.launchDate} (matched with "${found.releaseName}") - saving to database`);
+                            datesToSave.push({
+                                release_name: found.releaseName, // Use the exact name from API response
+                                launch_date: found.launchDate
+                            });
+                        } else {
+                            console.warn(`[EpicsClient] No date found for release: "${releaseName}"`);
+                            console.log(`[EpicsClient] Available releases in API response:`, releaseDates.map((r: any) => r.releaseName));
+                        }
+                    });
+
+                    // Save all found dates
+                    if (datesToSave.length > 0) {
+                        const saveResults = await Promise.all(
+                            datesToSave.map(async ({ release_name, launch_date }) => {
+                                const res = await fetch("/api/releases", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: 'include',
+                                    body: JSON.stringify({
+                                        release_name,
+                                        launch_date,
+                                    }),
+                                });
+                                
+                                if (!res.ok) {
+                                    const errorData = await res.json().catch(() => ({}));
+                                    console.error(`Failed to save release date for ${release_name}:`, errorData);
+                                    return { success: false, release_name, error: errorData };
+                                }
+                                
+                                const data = await res.json();
+                                console.log(`Successfully saved release date for ${release_name}:`, data);
+                                return { success: true, release_name, data };
+                            })
+                        );
+                        
+                        const successfulSaves = saveResults.filter(r => r.success);
+                        const failedSaves = saveResults.filter(r => !r.success);
+                        
+                        if (failedSaves.length > 0) {
+                            console.error("Failed to save release dates:", failedSaves);
+                            notifications.show({
+                                title: 'Failed to save release dates',
+                                message: `Could not save dates for ${failedSaves.length} release(s). Check console for details.`,
+                                color: 'red',
+                            });
+                        }
+                        
+                        if (successfulSaves.length > 0) {
+                            console.log(`Successfully saved ${successfulSaves.length} release date(s) to database:`, successfulSaves.map(r => r.release_name));
+                            
+                            // Mark these releases as saved so we don't fetch them again
+                            successfulSaves.forEach(({ release_name }) => {
+                                fetchedReleaseDatesRef.current.add(release_name);
+                            });
+                            
+                            // Small delay to ensure database write is committed
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                            
+                            // Refresh only the release schedule to show the new dates (without showing full page loading)
+                            const releasesRes = await fetch("/api/releases", { credentials: 'include' });
+                            if (releasesRes.ok) {
+                                const releasesData = await releasesRes.json();
+                                console.log("Refreshed release schedule from database:", releasesData);
+                                
+                                // Verify the saved releases are in the refreshed data
+                                successfulSaves.forEach(({ release_name }) => {
+                                    const saved = releasesData.find((r: any) => r.release_name === release_name);
+                                    if (saved && saved.launch_date) {
+                                        console.log(`✅ Verified: ${release_name} has date ${saved.launch_date} in database - will not fetch from API again`);
+                                    } else {
+                                        console.error(`❌ Verification failed: ${release_name} not found or has no date in refreshed data`);
+                                    }
+                                });
+                                
+                                setReleaseSchedule(releasesData || []);
+                                setReleaseScheduleWithIds(releasesData || []);
+                                
+                                // Order is now determined after refresh
+                                setIsDeterminingOrder(false);
+                            } else {
+                                const errorText = await releasesRes.text();
+                                let errorMessage = "Failed to refresh release schedule after save";
+                                try {
+                                    const errorData = JSON.parse(errorText);
+                                    errorMessage = errorData.error || errorMessage;
+                                } catch {
+                                    errorMessage = errorText || errorMessage;
+                                }
+                                console.error(errorMessage, { status: releasesRes.status, statusText: releasesRes.statusText });
+                                // Even on error, we've done what we can - order is determined
+                                setIsDeterminingOrder(false);
+                            }
+                        } else {
+                            // No dates to save, order is determined
+                            setIsDeterminingOrder(false);
+                        }
+                    } else {
+                        // No dates found, order is determined
+                        setIsDeterminingOrder(false);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch release dates:", error);
+                // Remove from fetched set on error so we can retry
+                releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.delete(name));
+                // Even on error, we've done what we can - order is determined
+                setIsDeterminingOrder(false);
+            } finally {
+                // Clear loading state
+                setFetchingReleaseDates(new Set());
+            }
+        };
+
+        fetchMissingReleaseDates();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [releaseSchedule, epics.length, releaseGroups.length]);
+
+    // Fetch Aha epic counts for releases
+    useEffect(() => {
+        const fetchAhaEpicCounts = async () => {
+            const releasesToFetch = releaseGroups
+                .filter(group => 
+                    group.releaseName !== "Ungrouped" && 
+                    !ahaEpicCounts.has(group.releaseName) &&
+                    !fetchingAhaCountsRef.current.has(group.releaseName)
+                )
+                .map(group => group.releaseName);
+
+            if (releasesToFetch.length === 0) return;
+
+            // Mark as fetching
+            releasesToFetch.forEach(name => fetchingAhaCountsRef.current.add(name));
+
+            // Fetch counts for all releases in parallel
+            const countPromises = releasesToFetch.map(async (releaseName) => {
+                try {
+                    const res = await fetch(`/api/releases/epic-count/${encodeURIComponent(releaseName)}`, {
+                        credentials: 'include'
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        return { releaseName, count: data.count };
+                    }
+                    // Silently fail - API route may not exist
+                    return { releaseName, count: null };
+                } catch (error) {
+                    // Silently fail - API route may not exist
+                    return { releaseName, count: null };
+                }
+            });
+
+            const results = await Promise.all(countPromises);
+            const newCounts = new Map(ahaEpicCounts);
+            results.forEach(({ releaseName, count }) => {
+                newCounts.set(releaseName, count);
+            });
+            setAhaEpicCounts(newCounts);
+
+            // Clear fetching state
+            releasesToFetch.forEach(name => fetchingAhaCountsRef.current.delete(name));
+        };
+
+        fetchAhaEpicCounts();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [releaseGroups.length]);
+
     // Sort release groups by date (ascending), with null dates at the end
     releaseGroups.sort((a, b) => {
         if (!a.releaseDate && !b.releaseDate) return 0;
@@ -248,75 +498,258 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         });
     }
 
-    if (loading) return <div className="pt-24 p-8">Loading...</div>;
+    // Check for celebration condition: all epics LAUNCHED for 90+ days
+    const checkedReleasesRef = useRef<Set<string>>(new Set());
+    useEffect(() => {
+        const checkCelebrationCondition = () => {
+            const ninetyDaysAgo = new Date();
+            ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+            ninetyDaysAgo.setHours(0, 0, 0, 0);
+            
+            for (const group of releaseGroups) {
+                if (group.releaseName === "Ungrouped" || group.epics.length === 0) continue;
+                
+                // Skip if we've already checked this release
+                if (checkedReleasesRef.current.has(group.releaseName)) continue;
+                
+                // Check if all epics are LAUNCHED
+                const allLaunched = group.epics.every(epic => epic.status === 'LAUNCHED');
+                if (!allLaunched) {
+                    checkedReleasesRef.current.add(group.releaseName);
+                    continue;
+                }
+                
+                // Check if all epics have been LAUNCHED for 90+ days
+                // We'll check updated_at as a proxy for when status was set to LAUNCHED
+                const allLaunched90Days = group.epics.every(epic => {
+                    if (!epic.updated_at) return false;
+                    const updatedDate = new Date(epic.updated_at);
+                    updatedDate.setHours(0, 0, 0, 0);
+                    return updatedDate < ninetyDaysAgo;
+                });
+                
+                if (allLaunched90Days) {
+                    // Find the release ID
+                    const release = releaseScheduleWithIds.find(r => r.release_name === group.releaseName);
+                    if (release && !release.archived) {
+                        checkedReleasesRef.current.add(group.releaseName);
+                        setReleaseToCelebrate({ releaseName: group.releaseName, releaseId: release.id });
+                        setCelebrationModalOpen(true);
+                        break; // Only show one at a time
+                    }
+                } else {
+                    checkedReleasesRef.current.add(group.releaseName);
+                }
+            }
+        };
+        
+        if (releaseGroups.length > 0 && releaseScheduleWithIds.length > 0 && !celebrationModalOpen) {
+            checkCelebrationCondition();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [releaseGroups.length, releaseScheduleWithIds.length]);
+
+    // Calculate stats for each release group
+    const releaseStats = releaseGroups.map(group => {
+        const highRiskCount = group.epics.filter(epic => epic.risk_level === 'HIGH').length;
+        const ahaCount = group.releaseName !== "Ungrouped" ? ahaEpicCounts.get(group.releaseName) : null;
+        return {
+            ...group,
+            highRiskCount,
+            epicsLoaded: group.epics.length,
+            ahaEpicCount: ahaCount
+        };
+    });
+
+    // Filter release groups if a release is selected
+    const filteredReleaseGroups = selectedRelease 
+        ? releaseGroups.filter(group => group.releaseName === selectedRelease)
+        : releaseGroups;
+
+    if (loading) {
+        return (
+            <div className="pt-24 p-8 flex items-center justify-center">
+                <PurpleLoader size="md" />
+            </div>
+        );
+    }
 
     return (
-        <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <Group justify="space-between" align="flex-start" mb="md">
+        <div className="pt-24 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <Group align="flex-start" mb="sm">
                 <Box>
-                    <Title order={1} mb="xs" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
-                        Epics
-                    </Title>
-                    <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }}>
-                        Epics appear here if: Launch Candidate = true OR tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
-                    </Text>
+                    <Title>Releases</Title>
                 </Box>
             </Group>
 
-            {/* Modern Search and Filters */}
-            <Group justify="space-between" align="center" mb={showFilters ? "md" : 0}>
-                    <Group gap="md" style={{ flex: 1 }}>
-                        <TextInput
-                            placeholder="Search epics..."
-                            value={filters.search}
-                            onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                            leftSection={<IconSearch size={16} />}
-                            rightSection={
-                                filters.search && (
-                                    <ActionIcon
-                                        size="sm"
-                                        variant="transparent"
-                                        onClick={() => setFilters({ ...filters, search: "" })}
-                                    >
-                                        <IconX size={14} />
-                                    </ActionIcon>
-                                )
-                            }
-                            style={{ flex: 1, maxWidth: 400 }}
-                        />
-                        <ActionIcon
-                            variant={showFilters ? "filled" : "subtle"}
-                            color="indigo"
-                            onClick={() => setShowFilters(!showFilters)}
-                            size="lg"
-                        >
-                            <IconFilter size={18} />
-                        </ActionIcon>
-                    </Group>
-                    {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.search) && (
-                        <Badge
-                            variant="light"
-                            color="indigo"
-                            size="lg"
-                            rightSection={
-                                <ActionIcon
-                                    size="xs"
-                                    color="indigo"
-                                    radius="xl"
-                                    variant="transparent"
-                                    onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" })}
-                                >
-                                    <IconX size={12} />
-                                </ActionIcon>
-                            }
-                        >
-                            {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk].filter(Boolean).length} active
-                        </Badge>
-                    )}
-                </Group>
+            {error && (
+                <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
+                    {error}
+                </Alert>
+            )}
 
-                {showFilters && (
-                    <Group gap="md" mt="md">
+            {/* Release Cards */}
+            {releaseStats.length > 0 && (
+                <Box mb="md">
+                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: 'thin' }}>
+                        {isDeterminingOrder ? (
+                            // Show skeleton cards while determining order
+                            Array.from({ length: Math.max(releaseStats.length, 3) }).map((_, index) => (
+                                <div
+                                    key={`skeleton-${index}`}
+                                    className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-gray-50 animate-pulse"
+                                    style={{ fontFamily: "'Public Sans', sans-serif" }}
+                                >
+                                    <div className="space-y-2">
+                                        <div className="h-6 bg-gray-300 rounded w-3/4"></div>
+                                        <div className="h-4 bg-gray-300 rounded w-1/2"></div>
+                                        <div className="pt-2 space-y-1 border-t border-gray-200">
+                                            <div className="flex justify-between text-sm">
+                                                <div className="h-4 bg-gray-300 rounded w-24"></div>
+                                                <div className="h-4 bg-gray-300 rounded w-12"></div>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <div className="h-4 bg-gray-300 rounded w-20"></div>
+                                                <div className="h-4 bg-gray-300 rounded w-8"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))
+                        ) : (
+                            // Show actual cards once order is determined
+                            releaseStats.map((stat, index) => {
+                                const isSelected = selectedRelease === stat.releaseName;
+                                return (
+                                    <div
+                                        key={index}
+                                        onClick={() => {
+                                            const newRelease = isSelected ? null : stat.releaseName;
+                                            setSelectedRelease(newRelease);
+                                            // Update URL without page reload
+                                            const params = new URLSearchParams(searchParams.toString());
+                                            if (newRelease) {
+                                                params.set('release', newRelease);
+                                            } else {
+                                                params.delete('release');
+                                            }
+                                            router.push(`/epics?${params.toString()}`, { scroll: false });
+                                        }}
+                                        className={`
+                                            flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all
+                                            ${isSelected 
+                                                ? 'border-indigo-500 bg-indigo-50 shadow-md' 
+                                                : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm'
+                                            }
+                                        `}
+                                        style={{ fontFamily: "'Public Sans', sans-serif" }}
+                                    >
+                                        <div className="space-y-2">
+                                            <h3 
+                                                className="font-semibold text-lg text-gray-900"
+                                                style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}
+                                            >
+                                                {stat.releaseName}
+                                            </h3>
+                                            {stat.releaseDate && (
+                                                <p className="text-sm text-gray-600">
+                                                    {new Date(stat.releaseDate).toLocaleDateString('en-US', { 
+                                                        year: 'numeric', 
+                                                        month: 'short', 
+                                                        day: 'numeric' 
+                                                    })}
+                                                </p>
+                                            )}
+                                            <div className="pt-2 space-y-1 border-t border-gray-200">
+                                                <div className="flex justify-between text-sm">
+                                                    <span className="text-gray-600">Epics loaded:</span>
+                                                    <span className="font-medium text-gray-900">
+                                                        {stat.epicsLoaded}
+                                                        {stat.releaseName !== "Ungrouped" && (
+                                                            <span className="text-gray-500 ml-1">
+                                                                {stat.ahaEpicCount !== null && stat.ahaEpicCount !== undefined
+                                                                    ? ` / ${stat.ahaEpicCount}`
+                                                                    : ' / -'
+                                                                }
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </div>
+                                                <div className="flex justify-between text-sm">
+                                                    <span className="text-gray-600">High risk:</span>
+                                                    <span className={`font-medium ${stat.highRiskCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                                        {stat.highRiskCount}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                </Box>
+            )}
+
+            {/* Search and Filters - Hidden by default */}
+            {showFilters && (
+                <Box className="bg-gray-50 rounded-lg p-4" mb="lg">
+                    <Group justify="flex-start" align="center" mb="md">
+                        <a
+                            href="#"
+                            onClick={(e) => {
+                                e.preventDefault();
+                                setShowFilters(false);
+                            }}
+                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                        >
+                            Hide search and filters
+                        </a>
+                    </Group>
+                    <Group justify="space-between" align="center" mb="md">
+                        <Group gap="md" style={{ flex: 1 }}>
+                            <TextInput
+                                placeholder="Search epics..."
+                                value={filters.search}
+                                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                                leftSection={<IconSearch size={16} />}
+                                rightSection={
+                                    filters.search && (
+                                        <ActionIcon
+                                            size="sm"
+                                            variant="transparent"
+                                            onClick={() => setFilters({ ...filters, search: "" })}
+                                        >
+                                            <IconX size={14} />
+                                        </ActionIcon>
+                                    )
+                                }
+                                style={{ flex: 1, maxWidth: 400 }}
+                            />
+                        </Group>
+                        {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.search) && (
+                            <Badge
+                                variant="light"
+                                color="indigo"
+                                size="lg"
+                                rightSection={
+                                    <ActionIcon
+                                        size="xs"
+                                        color="indigo"
+                                        radius="xl"
+                                        variant="transparent"
+                                        onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" })}
+                                    >
+                                        <IconX size={12} />
+                                    </ActionIcon>
+                                }
+                            >
+                                {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk].filter(Boolean).length} active
+                            </Badge>
+                        )}
+                    </Group>
+
+                    <Group gap="md">
                         <Select
                             label="Tier"
                             placeholder="All Tiers"
@@ -361,52 +794,77 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             style={{ flex: 1 }}
                         />
                     </Group>
-                )}
-
-            {error && (
-                <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
-                    {error}
-                </Alert>
+                </Box>
             )}
 
-            {
-                releaseGroups.length === 0 ? (
+            {/* Toggle link to show filters - only show when filters are hidden */}
+            {!showFilters && (
+                <Group justify="flex-start" mb="md">
+                    <a
+                        href="#"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setShowFilters(true);
+                        }}
+                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                    >
+                        Search and filter epics.
+                    </a>
+                </Group>
+            )}
+
+            <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }} mt="md">
+                Epics appear below if in Aha! : ClearGO Candidate = Yes OR Tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
+            </Text>
+                
+            {filteredReleaseGroups.length === 0 ? (
                     <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
                         <div className="px-4 py-8 text-center text-gray-500">
                             No epics found matching filters.
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-8 pt-6">
-                        {releaseGroups.map((group, groupIndex) => (
+                    <div className="space-y-8 pt-2">
+                        {filteredReleaseGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="space-y-2">
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center justify-between gap-3">
                                     <h2 className="text-lg font-semibold text-gray-900">
                                         {group.releaseName}
-                                        {group.releaseDate && (
+                                        {group.releaseDate ? (
                                             <span className="ml-2 text-base font-normal text-gray-600">
                                                 - {new Date(group.releaseDate).toLocaleDateString()}
                                             </span>
-                                        )}
+                                        ) : fetchingReleaseDates.has(group.releaseName) ? (
+                                            <span className="ml-2 text-sm font-normal text-gray-500 italic inline-flex items-center gap-1">
+                                                - <PurpleLoader size="sm" />
+                                            </span>
+                                        ) : null}
                                     </h2>
                                     {group.releaseName !== "Ungrouped" && (
-                                        <ActionIcon
-                                            variant="subtle"
-                                            color="indigo"
-                                            size="md"
-                                            disabled={syncingReleaseName === group.releaseName}
-                                            onClick={async () => {
+                                        <div className="flex items-center gap-3">
+                                            <button
+                                                disabled={syncingReleaseName === group.releaseName}
+                                                className="text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                                style={{ fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                                                onClick={async () => {
                                                 if (!confirm(`Sync epics for release "${group.releaseName}"? This will sync all epics with matching tags for this release.`)) {
                                                     return;
                                                 }
                                                 
                                                 setSyncingReleaseName(group.releaseName);
                                                 try {
+                                                    // #region agent log
+                                                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:478',message:'Making sync request',data:{releaseName:group.releaseName,url:`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`,hasCredentials:'include'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B,D'})}).catch(()=>{});
+                                                    // #endregion
                                                     const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
                                                         method: "POST",
                                                         credentials: "include",
                                                         headers: { "Content-Type": "application/json" },
                                                     });
+                                                    
+                                                    // #region agent log
+                                                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:485',message:'Sync request response',data:{status:res.status,statusText:res.statusText,ok:res.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B,D'})}).catch(()=>{});
+                                                    // #endregion
                                                     
                                                     if (!res.ok) {
                                                         const errorData = await res.json();
@@ -444,25 +902,60 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             title="Sync epics for this release"
                                         >
                                             {syncingReleaseName === group.releaseName ? (
-                                                <IconRefresh size={18} className="animate-spin" />
+                                                <span className="animate-pulse">Refreshing...</span>
                                             ) : (
-                                                <IconRefresh size={18} />
+                                                "Refresh"
                                             )}
-                                        </ActionIcon>
-                                    )}
-                                    {!group.releaseDate && (
-                                        <Button
-                                            leftSection={<IconCalendar size={16} />}
-                                            color="orange"
-                                            size="xs"
-                                            variant="filled"
-                                            onClick={() => {
-                                                setSelectedReleaseName(group.releaseName);
-                                                setReleaseMappingModalOpen(true);
+                                        </button>
+                                        <button
+                                            disabled={archivingReleaseName === group.releaseName}
+                                            className="text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                            style={{ fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                                            onClick={async () => {
+                                                const release = releaseScheduleWithIds.find(r => r.release_name === group.releaseName);
+                                                if (!release) return;
+                                                
+                                                if (!confirm(`Archive release "${group.releaseName}"? This will hide it from the releases page.`)) {
+                                                    return;
+                                                }
+                                                
+                                                setArchivingReleaseName(group.releaseName);
+                                                try {
+                                                    const res = await fetch(`/api/releases/${release.id}/archive`, {
+                                                        method: "PATCH",
+                                                        credentials: "include",
+                                                        headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({ archived: true }),
+                                                    });
+                                                    
+                                                    if (!res.ok) {
+                                                        const errorData = await res.json();
+                                                        throw new Error(errorData.error || "Failed to archive release");
+                                                    }
+                                                    
+                                                    notifications.show({
+                                                        title: 'Release Archived',
+                                                        message: `"${group.releaseName}" has been archived and hidden from the releases page.`,
+                                                        color: 'green',
+                                                    });
+                                                    
+                                                    // Reload data to refresh the list
+                                                    loadData();
+                                                } catch (error: any) {
+                                                    notifications.show({
+                                                        title: 'Archive Failed',
+                                                        message: error.message,
+                                                        color: 'red',
+                                                    });
+                                                } finally {
+                                                    setArchivingReleaseName(null);
+                                                }
                                             }}
+                                            title="Archive this release"
                                         >
-                                            Map Date
-                                        </Button>
+                                            Archive
+                                        </button>
+                                        </div>
                                     )}
                                 </div>
                                 <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
@@ -481,7 +974,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <tr>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Name</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Tier</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Product</th>
+                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Dev Backlog Pod</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Date</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
                                                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Readiness</th>
@@ -506,7 +999,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-700">
-                                                        {(epic as any).product?.name || '-'}
+                                                        {epic.pod || '-'}
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
                                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
@@ -605,122 +1098,83 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 </div>
             </Modal>
 
-            {/* Release Date Mapping Modal */}
+            {/* Celebration Modal */}
             <Modal
-                opened={releaseMappingModalOpen}
+                opened={celebrationModalOpen}
                 onClose={() => {
-                    setReleaseMappingModalOpen(false);
-                    setReleaseDateInput("");
-                    setSelectedReleaseName(null);
+                    setCelebrationModalOpen(false);
+                    setReleaseToCelebrate(null);
                 }}
-                title="Map Release Date"
+                title={
+                    <div className="flex items-center gap-2">
+                        <span className="text-2xl">🎉</span>
+                        <span className="font-semibold">Congratulations!</span>
+                    </div>
+                }
                 centered
+                size="md"
             >
                 <div className="space-y-4">
-                    <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Release Name</div>
-                        <div className="text-lg font-semibold text-gray-900">{selectedReleaseName}</div>
-                    </div>
-                    <TextInput
-                        label="Launch Date"
-                        placeholder="MM/DD/YYYY"
-                        value={releaseDateInput}
-                        onChange={(e) => setReleaseDateInput(e.currentTarget.value)}
-                        description="Enter the launch date for this release"
-                    />
-                    <Group justify="flex-end" mt="md">
+                    <Text size="sm">
+                        All epics in <strong>"{releaseToCelebrate?.releaseName}"</strong> have been launched for more than 90 days!
+                    </Text>
+                    <Text size="sm" c="dimmed">
+                        Would you like to archive this release? Archived releases will be hidden from the main releases page but can be viewed and unarchived in settings.
+                    </Text>
+                    <Group justify="flex-end" mt="xl">
                         <Button
                             variant="subtle"
                             onClick={() => {
-                                setReleaseMappingModalOpen(false);
-                                setReleaseDateInput("");
-                                setSelectedReleaseName(null);
+                                setCelebrationModalOpen(false);
+                                setReleaseToCelebrate(null);
                             }}
                         >
-                            Cancel
+                            Not Now
                         </Button>
                         <Button
+                            color="indigo"
                             onClick={async () => {
-                                if (!releaseDateInput.trim()) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Please enter a launch date',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
+                                if (!releaseToCelebrate?.releaseId) return;
                                 
-                                if (!selectedReleaseName) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Release name is missing',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
-
                                 try {
-                                    // Parse date - support MM/DD/YYYY format
-                                    let parsedDate: string;
-                                    if (releaseDateInput.includes("/")) {
-                                        const parts = releaseDateInput.split("/");
-                                        if (parts.length !== 3) {
-                                            throw new Error("Invalid date format. Use MM/DD/YYYY");
-                                        }
-                                        const [month, day, year] = parts;
-                                        parsedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                                        
-                                        // Validate the date
-                                        const dateObj = new Date(parsedDate);
-                                        if (isNaN(dateObj.getTime())) {
-                                            throw new Error("Invalid date. Please check the date format.");
-                                        }
-                                    } else {
-                                        parsedDate = releaseDateInput; // Assume YYYY-MM-DD format
-                                    }
-
-                                    const res = await fetch("/api/releases", {
-                                        method: "POST",
+                                    const res = await fetch(`/api/releases/${releaseToCelebrate.releaseId}/archive`, {
+                                        method: "PATCH",
+                                        credentials: "include",
                                         headers: { "Content-Type": "application/json" },
-                                        credentials: 'include',
-                                        body: JSON.stringify({
-                                            release_name: selectedReleaseName.trim(),
-                                            launch_date: parsedDate,
-                                        }),
+                                        body: JSON.stringify({ archived: true }),
                                     });
-
+                                    
                                     if (!res.ok) {
                                         const errorData = await res.json();
-                                        throw new Error(errorData.error || "Failed to create release mapping");
+                                        throw new Error(errorData.error || "Failed to archive release");
                                     }
-
+                                    
                                     notifications.show({
-                                        title: 'Success',
-                                        message: 'Release date mapped successfully',
+                                        title: 'Release Archived',
+                                        message: `"${releaseToCelebrate.releaseName}" has been archived.`,
                                         color: 'green',
                                     });
-
-                                    setReleaseMappingModalOpen(false);
-                                    setReleaseDateInput("");
-                                    setSelectedReleaseName(null);
                                     
-                                    // Reload data to get the updated release date
+                                    setCelebrationModalOpen(false);
+                                    setReleaseToCelebrate(null);
+                                    
+                                    // Reload data to refresh the list
                                     loadData();
                                 } catch (error: any) {
                                     notifications.show({
-                                        title: 'Error',
-                                        message: error.message || 'Failed to map release date',
+                                        title: 'Archive Failed',
+                                        message: error.message,
                                         color: 'red',
                                     });
                                 }
                             }}
-                            disabled={!releaseDateInput.trim()}
                         >
-                            Map Date
+                            Archive Release
                         </Button>
                     </Group>
                 </div>
             </Modal>
+
 
         </div >
     );

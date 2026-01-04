@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Table, Badge, Text, Group, Paper } from '@mantine/core';
 import { UserDisplay } from './UserDisplay';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { PurpleLoader } from './PurpleLoader';
 
 interface Snapshot {
     id: string;
@@ -71,7 +72,14 @@ export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListPro
         }
     };
 
-    if (loading) return <Text size="sm" c="dimmed">Loading history...</Text>;
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center gap-2 py-4">
+                <PurpleLoader size="sm" />
+                <Text size="sm" c="dimmed">Loading history...</Text>
+            </div>
+        );
+    }
     if (snapshots.length === 0) return <Text size="sm" c="dimmed">No snapshots taken yet.</Text>;
 
     return (

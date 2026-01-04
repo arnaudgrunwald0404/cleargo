@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { Button, Textarea, Group, Text, ActionIcon, Loader } from '@mantine/core';
+import { Button, Textarea, Group, Text, ActionIcon } from '@mantine/core';
+import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend } from '@tabler/icons-react';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
@@ -162,7 +163,7 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
       {/* Feedback List */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>
-          <Loader size="sm" />
+          <PurpleLoader size="sm" />
         </div>
       ) : feedbacks.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>

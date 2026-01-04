@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
     try {
         const supabase = createClient();
         
@@ -11,10 +11,32 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
-        const { data, error } = await supabase
+        // Check if include_archived query parameter is set
+        const { searchParams } = new URL(request.url);
+        const includeArchived = searchParams.get('include_archived') === 'true';
+        
+        let query = supabase
             .from("release_schedule")
-            .select("*")
-            .order("launch_date", { ascending: true });
+            .select("*");
+        
+        // Filter out archived releases by default (unless include_archived=true)
+        // Handle case where archived column doesn't exist yet (migration not applied)
+        if (!includeArchived) {
+            query = query.eq("archived", false);
+        }
+        
+        let { data, error } = await query.order("launch_date", { ascending: true });
+
+        // If error is about missing archived column, retry without the filter
+        if (error && error.message && error.message.includes("archived") && error.message.includes("does not exist")) {
+            console.warn("archived column does not exist, fetching all releases without archived filter");
+            const retryQuery = supabase
+                .from("release_schedule")
+                .select("*");
+            const retryResult = await retryQuery.order("launch_date", { ascending: true });
+            data = retryResult.data;
+            error = retryResult.error;
+        }
 
         if (error) {
             console.error("Error fetching releases:", error);

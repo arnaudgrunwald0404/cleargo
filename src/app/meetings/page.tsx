@@ -5,6 +5,7 @@ import { Button, Card, Textarea, Modal, MultiSelect, Badge, Text, Group, Stack, 
 import { notifications } from "@mantine/notifications";
 import { IconCalendar, IconUpload, IconBrain, IconLink, IconRefresh, IconAlertCircle, IconX } from "@tabler/icons-react";
 import Link from "next/link";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 interface Meeting {
     id: string;
@@ -439,7 +440,7 @@ export default function MeetingsPage() {
         return (
             <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="inline-block w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                    <PurpleLoader size="lg" className="mb-4" />
                     <p className="text-gray-600">Loading...</p>
                 </div>
             </div>
@@ -536,11 +537,6 @@ export default function MeetingsPage() {
                                             <Badge color="green" variant="light" mb="sm">
                                                 Linked: {meeting.linked_epic.name}
                                             </Badge>
-                                        )}
-                                        {meeting.description && (
-                                            <Text size="sm" c="dimmed" className="mt-2">
-                                                {meeting.description}
-                                            </Text>
                                         )}
                                     </div>
                                 </div>

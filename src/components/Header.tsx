@@ -21,7 +21,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
     const links = [
         { link: '/', label: 'Home' },
-        { link: '/epics', label: 'Epics' },
+        { link: '/epics', label: 'Releases' },
         { link: '/meetings', label: 'Meetings' },
         { link: '/my-items', label: 'My Items' },
         { link: '/admin/settings', label: 'Settings' },

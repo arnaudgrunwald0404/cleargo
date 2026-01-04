@@ -20,6 +20,7 @@ import IntegrationsSection from "@/components/admin/settings/IntegrationsSection
 import LaunchStagesSection from "@/components/admin/settings/LaunchStagesSection";
 import ReleaseScheduleSection from "@/components/admin/settings/ReleaseScheduleSection";
 import UserManagementSection from "@/components/admin/settings/UserManagementSection";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 export default function AdminSettingsPage() {
     const [loading, setLoading] = useState(true);
@@ -102,30 +103,35 @@ export default function AdminSettingsPage() {
     const [activeTemplateType, setActiveTemplateType] = useState<"invite" | "remind" | "update_criteria">("invite");
 
     useEffect(() => {
-        // Stagger API calls to avoid rate limiting
+        // Stagger API calls sequentially to avoid rate limiting
         // Batch 1: Critical data (load immediately)
         fetchSettings();
         fetchCurrentUser();
         
-        // Batch 2: User-related data (after 200ms)
-        setTimeout(() => {
-            fetchUsers();
-            fetchPermissions();
-        }, 200);
+        // Batch 2: User-related data (after 500ms, sequential)
+        setTimeout(async () => {
+            await fetchUsers();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchPermissions();
+        }, 500);
         
-        // Batch 3: Release and launch data (after 400ms)
-        setTimeout(() => {
-            fetchReleases();
-            fetchLaunchReleaseDates();
-            fetchLaunchStages();
-        }, 400);
+        // Batch 3: Release and launch data (after 1500ms, sequential)
+        setTimeout(async () => {
+            await fetchReleases();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchLaunchReleaseDates();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchLaunchStages();
+        }, 1500);
         
-        // Batch 4: Configuration data (after 600ms)
-        setTimeout(() => {
-            fetchPods();
-            fetchAhaFields();
-            fetchEmailTemplates();
-        }, 600);
+        // Batch 4: Configuration data (after 3000ms, sequential)
+        setTimeout(async () => {
+            await fetchPods();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchAhaFields();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchEmailTemplates();
+        }, 3000);
     }, []);
 
     const fetchCurrentUser = async () => {
@@ -145,8 +151,8 @@ export default function AdminSettingsPage() {
     const fetchLaunchReleaseDates = async () => {
         setLaunchReleasesLoading(true);
         try {
-            const res = await fetch("/api/epics/release-dates", {
-                credentials: 'include',
+            const res = await fetchWithRateLimit("/api/epics/release-dates", {
+                maxRetries: 2,
             });
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}: ${res.statusText}` }));
@@ -480,10 +486,10 @@ export default function AdminSettingsPage() {
         }
     };
 
-    const fetchReleases = async () => {
+    const fetchReleases = async (includeArchived: boolean = true) => {
         setReleasesLoading(true);
         try {
-            const data = await getReleases();
+            const data = await getReleases(includeArchived);
             setReleases(data || []);
         } catch (error: any) {
             console.error("Failed to fetch releases:", error);
@@ -663,7 +669,7 @@ export default function AdminSettingsPage() {
         return (
             <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
                 <div className="text-center">
-                    <div className="inline-block w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mb-4"></div>
+                    <PurpleLoader size="lg" className="mb-4" />
                     <p className="text-gray-600">Loading settings...</p>
                 </div>
             </main>
@@ -830,7 +836,7 @@ export default function AdminSettingsPage() {
                                             const newExpanded = !integrationsExpanded;
                                             setIntegrationsExpanded(newExpanded);
                                             if (newExpanded && !activeSection.startsWith("integrations-")) {
-                                                setActiveSection("integrations-email");
+                                                setActiveSection("integrations-aha");
                                             }
                                         }}
                                         className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${

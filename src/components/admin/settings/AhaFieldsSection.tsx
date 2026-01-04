@@ -1,4 +1,5 @@
 "use client";
+import { PurpleLoader } from '../../PurpleLoader';
 import React from "react";
 import type { AppSettings } from "@/lib/settings-db";
 
@@ -105,7 +106,10 @@ export default function AhaFieldsSection({
         )}
 
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading available fields...</div>
+          <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+            <PurpleLoader size="sm" />
+            <span>Loading available fields...</span>
+          </div>
         ) : (
           <div className="space-y-6">
             <p className="text-sm text-gray-600">

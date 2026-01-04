@@ -10,7 +10,9 @@ export type SlackNotificationType =
     | 'launch_status_change'
     | 'criterion_update'
     | 'launch_created'
-    | 'delegation';
+    | 'delegation'
+    | 'criteria_nudge'
+    | 'criteria_assignment';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -172,5 +174,45 @@ export interface SlackUserInfoResponse extends SlackApiResponse {
             image_192?: string;
             image_512?: string;
         };
+    };
+}
+
+export interface SlackConversationsOpenResponse extends SlackApiResponse {
+    channel?: {
+        id: string;
+    };
+}
+
+export interface SlackChannelCreateResponse extends SlackApiResponse {
+    channel?: {
+        id: string;
+        name: string;
+        is_channel: boolean;
+        is_group: boolean;
+        is_im: boolean;
+        created: number;
+        creator: string;
+        is_archived: boolean;
+        is_general: boolean;
+        unlinked: number;
+        name_normalized: string;
+        is_shared: boolean;
+        is_org_shared: boolean;
+        is_member: boolean;
+        is_private: boolean;
+        is_mpim: boolean;
+        members: string[];
+        topic: {
+            value: string;
+            creator: string;
+            last_set: number;
+        };
+        purpose: {
+            value: string;
+            creator: string;
+            last_set: number;
+        };
+        previous_names: string[];
+        num_members: number;
     };
 }

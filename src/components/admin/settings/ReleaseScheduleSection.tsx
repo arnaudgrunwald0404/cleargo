@@ -1,5 +1,6 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { PurpleLoader } from '../../PurpleLoader';
 
 type LaunchRelease = { releaseName: string; launchDate: string | null };
 
@@ -49,13 +50,86 @@ export default function ReleaseScheduleSection(props: Props) {
     return `${month}/${day}/${year}`;
   };
 
-  const formatDateForInput = (dateString: string) => {
-    if (!dateString) return "";
-    return formatDateForDisplay(dateString);
-  };
-
   const [syncing, setSyncing] = useState(false);
   const [syncingReleaseId, setSyncingReleaseId] = useState<number | null>(null);
+  const [epicCounts, setEpicCounts] = useState<Map<string, { cleargoCount: number | null; ahaCount: number | null }>>(new Map());
+  const fetchingCountsRef = useRef<Set<string>>(new Set());
+
+  // Filter releases to show only those with launch dates before today (excluding archived)
+  const pastReleases = useMemo(() => {
+    // Get today's date in YYYY-MM-DD format for comparison
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    return releases.filter((release) => {
+      if (!release.launch_date || release.archived) return false;
+      
+      // launch_date comes from Supabase as YYYY-MM-DD string
+      const launchDateString = typeof release.launch_date === 'string' 
+        ? release.launch_date.split('T')[0] // Handle ISO strings if any
+        : new Date(release.launch_date).toISOString().split('T')[0];
+      
+      // Compare date strings directly (YYYY-MM-DD format)
+      // This works because YYYY-MM-DD format is lexicographically sortable
+      return launchDateString < todayString;
+    });
+  }, [releases]);
+
+  // Separate archived releases
+  const archivedReleases = useMemo(() => {
+    return releases.filter((release) => release.archived === true);
+  }, [releases]);
+
+  // Fetch epic counts for releases (both past and archived)
+  useEffect(() => {
+    const fetchEpicCounts = async () => {
+      const releasesToFetch = [...pastReleases, ...archivedReleases]
+        .filter(release => 
+          release.release_name && 
+          !epicCounts.has(release.release_name) &&
+          !fetchingCountsRef.current.has(release.release_name)
+        )
+        .map(release => release.release_name);
+
+      if (releasesToFetch.length === 0) return;
+
+      // Mark as fetching
+      releasesToFetch.forEach(name => fetchingCountsRef.current.add(name));
+
+      // Fetch counts for all releases in parallel
+      const countPromises = releasesToFetch.map(async (releaseName) => {
+        try {
+          const res = await fetch(`/api/releases/epic-count/${encodeURIComponent(releaseName)}`, {
+            credentials: 'include'
+          });
+          if (res.ok) {
+            const data = await res.json();
+            return { 
+              releaseName, 
+              cleargoCount: data.cleargoCount ?? null,
+              ahaCount: data.ahaCount ?? null
+            };
+          }
+          return { releaseName, cleargoCount: null, ahaCount: null };
+        } catch (error) {
+          return { releaseName, cleargoCount: null, ahaCount: null };
+        }
+      });
+
+      const results = await Promise.all(countPromises);
+      const newCounts = new Map(epicCounts);
+      results.forEach(({ releaseName, cleargoCount, ahaCount }) => {
+        newCounts.set(releaseName, { cleargoCount, ahaCount });
+      });
+      setEpicCounts(newCounts);
+
+      // Clear fetching state
+      releasesToFetch.forEach(name => fetchingCountsRef.current.delete(name));
+    };
+
+    fetchEpicCounts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pastReleases.length]);
 
   const handleSyncReleases = async () => {
     if (!confirm("This will sync releases from Aha that contain epics. Continue?")) {
@@ -76,11 +150,16 @@ export default function ReleaseScheduleSection(props: Props) {
       }
       
       const result = await res.json();
-      alert(`Success: ${result.message}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
+      const withoutDatesMsg = result.releases_without_dates && result.releases_without_dates.length > 0
+        ? `\nReleases without dates: ${result.releases_without_dates.length} (${result.releases_without_dates.map((r: any) => r.name).join(', ')})`
+        : '';
+      alert(`Success: ${result.message}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${withoutDatesMsg}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
       
       // Refresh the release list
       await onRefreshReleases();
       await onRefresh();
+      // Clear epic counts to trigger refetch
+      setEpicCounts(new Map());
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     } finally {
@@ -88,42 +167,6 @@ export default function ReleaseScheduleSection(props: Props) {
     }
   };
 
-  const handleMapReleaseName = async (releaseName: string, launchDate: string) => {
-    if (!launchDate.trim()) {
-      alert("Please enter a launch date");
-      return;
-    }
-    try {
-      const res = await fetch("/api/releases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          release_name: releaseName.trim(),
-          launch_date: formatDateForInput(launchDate),
-        }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to create release mapping");
-      }
-      await onRefreshReleases();
-      await onRefresh();
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    }
-  };
-
-  const releaseNameToDateMap = new Map<string, string>();
-  releases.forEach((release) => {
-    if (release.release_name && release.launch_date) {
-      releaseNameToDateMap.set(release.release_name, release.launch_date);
-    }
-  });
-
-  const releasesWithoutDates = launchReleases.filter((launchRelease) => {
-    const existingLaunchDate = releaseNameToDateMap.get(launchRelease.releaseName);
-    return !existingLaunchDate;
-  });
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -139,54 +182,9 @@ export default function ReleaseScheduleSection(props: Props) {
         </div>
       </div>
 
-      <div className="mb-6">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-md font-semibold text-gray-900">Releases Without Launch Dates</h3>
-          <button
-            onClick={onRefresh}
-            disabled={launchReleasesLoading}
-            className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Refresh
-          </button>
-        </div>
-        {launchReleasesLoading ? (
-          <div className="text-center py-4 text-gray-500 text-sm">Loading release names from launches...</div>
-        ) : releasesWithoutDates.length === 0 ? (
-          <p className="text-sm text-gray-500 italic">All releases have launch dates mapped</p>
-        ) : (
-          <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-            <table className="min-w-full divide-y divide-purple-200 table-fixed">
-              <colgroup>
-                <col className="w-2/5" />
-                <col className="w-2/5" />
-                <col className="w-24" />
-              </colgroup>
-              <thead className="bg-purple-100">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Release Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Launch Date</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-purple-900">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-purple-200">
-                {releasesWithoutDates.map((launchRelease) => (
-                  <ReleaseWithoutDateRow
-                    key={launchRelease.releaseName}
-                    launchRelease={launchRelease}
-                    formatDateForInput={formatDateForInput}
-                    handleMapReleaseName={handleMapReleaseName}
-                  />
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       <div>
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-md font-semibold text-gray-900">Current Mappings</h3>
+          <h3 className="text-md font-semibold text-gray-900">Releases with Launch Dates Before Today ({pastReleases.length})</h3>
           <div className="flex gap-2">
             <button
               onClick={handleSyncReleases}
@@ -198,65 +196,32 @@ export default function ReleaseScheduleSection(props: Props) {
               </svg>
               {syncing ? "Syncing..." : "Sync from Aha"}
             </button>
-            <button
-              onClick={() => setEditingReleaseId("new")}
-              className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:text-gray-900 transition-colors"
-            >
-              + Add Mapping
-            </button>
           </div>
         </div>
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading releases...</div>
+          <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+            <PurpleLoader size="sm" />
+            <span>Loading releases...</span>
+          </div>
         ) : (
           <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
             <table className="min-w-full divide-y divide-indigo-200 table-fixed">
               <colgroup>
                 <col className="w-2/5" />
-                <col className="w-2/5" />
+                <col className="w-1/5" />
+                <col className="w-1/5" />
                 <col className="w-40" />
               </colgroup>
               <thead className="bg-indigo-100">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Name</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Epics Loaded vs. Total</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-indigo-900">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-indigo-200">
-                {editingReleaseId === "new" && (
-                  <tr className="hover:bg-indigo-50 transition-colors">
-                    <td className="px-4 py-3">
-                      <input type="text" placeholder="e.g. APP-R-304 Release 2025.10" id="release-name-new" className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <input type="text" placeholder="MM/DD/YYYY" id="release-date-new" className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => {
-                          const nameInput = document.getElementById("release-name-new") as HTMLInputElement;
-                          const dateInput = document.getElementById("release-date-new") as HTMLInputElement;
-                          if (nameInput && dateInput && nameInput.value && dateInput.value) {
-                            setReleaseNameInput(nameInput.value);
-                            setReleaseDateInput(dateInput.value);
-                            onAdd();
-                            setEditingReleaseId(null);
-                          } else {
-                            alert("Please fill in both release name and date");
-                          }
-                        }}
-                        className="text-indigo-600 hover:text-indigo-900 mr-4"
-                      >
-                        Save
-                      </button>
-                      <button onClick={() => setEditingReleaseId(null)} className="text-gray-600 hover:text-gray-900">
-                        Cancel
-                      </button>
-                    </td>
-                  </tr>
-                )}
-                {releases.map((release) => (
+                {pastReleases.map((release) => (
                   <tr key={release.id} className="hover:bg-indigo-50 transition-colors">
                     {editingReleaseId === release.id ? (
                       <>
@@ -265,6 +230,9 @@ export default function ReleaseScheduleSection(props: Props) {
                         </td>
                         <td className="px-4 py-3">
                           <input type="text" defaultValue={formatDateForDisplay(release.launch_date)} id={`release-date-${release.id}`} placeholder="MM/DD/YYYY" className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 text-sm">-</span>
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -291,6 +259,26 @@ export default function ReleaseScheduleSection(props: Props) {
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-gray-600">{formatDateForDisplay(release.launch_date)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const counts = epicCounts.get(release.release_name);
+                            const cleargoCount = counts?.cleargoCount ?? null;
+                            const ahaCount = counts?.ahaCount ?? null;
+                            
+                            if (cleargoCount === null && ahaCount === null) {
+                              return <span className="text-gray-400 text-sm">-</span>;
+                            }
+                            
+                            const displayCleargo = cleargoCount !== null ? cleargoCount : '-';
+                            const displayAha = ahaCount !== null ? ahaCount : '-';
+                            
+                            return (
+                              <span className="text-gray-700 text-sm font-medium">
+                                {displayCleargo} / {displayAha}
+                              </span>
+                            );
+                          })()}
                         </td>
                         <td className="px-4 py-3 text-right text-sm font-medium">
                           <div className="flex items-center justify-end gap-2">
@@ -324,6 +312,11 @@ export default function ReleaseScheduleSection(props: Props) {
                                   const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
                                   
                                   alert(`Success: ${result.message}\n\nTotal epics fetched: ${result.results.total}\nCreated: ${result.results.created}\nUpdated: ${result.results.updated}${skipMessage}${result.results.errors.length > 0 ? `\nErrors: ${result.results.errors.length}` : ""}`);
+                                  
+                                  // Refresh epic counts for this release
+                                  const newCounts = new Map(epicCounts);
+                                  newCounts.delete(release.release_name);
+                                  setEpicCounts(newCounts);
                                 } catch (error: any) {
                                   alert(`Error: ${error.message}`);
                                 } finally {
@@ -331,18 +324,13 @@ export default function ReleaseScheduleSection(props: Props) {
                                 }
                               }}
                               disabled={syncingReleaseId === release.id}
-                              className="p-1.5 text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                              className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-2 py-1 text-sm"
                               title="Sync epics for this release"
                             >
                               {syncingReleaseId === release.id ? (
-                                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
+                                <span className="animate-pulse">Refreshing...</span>
                               ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
+                                "Refresh"
                               )}
                             </button>
                             <button onClick={() => setEditingReleaseId(release.id)} className="text-indigo-600 hover:text-indigo-900">
@@ -357,10 +345,10 @@ export default function ReleaseScheduleSection(props: Props) {
                     )}
                   </tr>
                 ))}
-                {releases.length === 0 && editingReleaseId !== "new" && (
+                {pastReleases.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-4 py-4 text-center text-sm text-gray-500">
-                      No release mappings configured. Click "+ Add Mapping" to create one.
+                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500">
+                      No releases with launch dates before today.
                     </td>
                   </tr>
                 )}
@@ -369,51 +357,104 @@ export default function ReleaseScheduleSection(props: Props) {
           </div>
         )}
       </div>
+
+      {/* Archived Releases Section */}
+      {archivedReleases.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-md font-semibold text-gray-900">Archived Releases ({archivedReleases.length})</h3>
+          </div>
+          <div className="border-2 border-gray-200 rounded-lg bg-gray-50 overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200 table-fixed">
+              <colgroup>
+                <col className="w-2/5" />
+                <col className="w-1/5" />
+                <col className="w-1/5" />
+                <col className="w-40" />
+              </colgroup>
+              <thead className="bg-gray-100">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Epics Loaded vs. Total</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-900">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {archivedReleases.map((release) => (
+                  <tr key={release.id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">{release.release_name}</span>
+                        <span className="px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-700">
+                          archived
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-gray-600">{formatDateForDisplay(release.launch_date)}</span>
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const counts = epicCounts.get(release.release_name);
+                        const cleargoCount = counts?.cleargoCount ?? null;
+                        const ahaCount = counts?.ahaCount ?? null;
+                        
+                        if (cleargoCount === null && ahaCount === null) {
+                          return <span className="text-gray-400 text-sm">-</span>;
+                        }
+                        
+                        const displayCleargo = cleargoCount !== null ? cleargoCount : '-';
+                        const displayAha = ahaCount !== null ? ahaCount : '-';
+                        
+                        return (
+                          <span className="text-gray-700 text-sm font-medium">
+                            {displayCleargo} / {displayAha}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-right text-sm font-medium">
+                      <button
+                        onClick={async () => {
+                          if (!confirm(`Unarchive release "${release.release_name}"?`)) {
+                            return;
+                          }
+                          
+                          try {
+                            const res = await fetch(`/api/releases/${release.id}/archive`, {
+                              method: "PATCH",
+                              credentials: "include",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ archived: false }),
+                            });
+                            
+                            if (!res.ok) {
+                              const errorData = await res.json();
+                              throw new Error(errorData.error || "Failed to unarchive release");
+                            }
+                            
+                            await onRefreshReleases();
+                            await onRefresh();
+                            // Clear epic counts to trigger refetch
+                            setEpicCounts(new Map());
+                          } catch (error: any) {
+                            alert(`Error: ${error.message}`);
+                          }
+                        }}
+                        className="text-indigo-600 hover:text-indigo-900"
+                      >
+                        Unarchive
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ReleaseWithoutDateRow({ launchRelease, formatDateForInput, handleMapReleaseName }: {
-  launchRelease: LaunchRelease;
-  formatDateForInput: (date: string) => string;
-  handleMapReleaseName: (releaseName: string, launchDate: string) => Promise<void>;
-}) {
-  const [dateInput, setDateInput] = useState(launchRelease.launchDate ? formatDateForInput(launchRelease.launchDate) : "");
-  return (
-    <tr className="hover:bg-purple-50 transition-colors">
-      <td className="px-4 py-3 whitespace-nowrap">
-        <span className="font-medium text-gray-900">{launchRelease.releaseName}</span>
-      </td>
-      <td className="px-4 py-3 whitespace-nowrap">
-        <input
-          type="text"
-          placeholder="MM/DD/YYYY"
-          value={dateInput}
-          onChange={(e) => setDateInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && dateInput.trim()) {
-              handleMapReleaseName(launchRelease.releaseName, dateInput);
-              setDateInput("");
-            }
-          }}
-          className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 text-sm"
-        />
-      </td>
-      <td className="px-4 py-3 text-right">
-        <button
-          onClick={() => {
-            if (dateInput.trim()) {
-              handleMapReleaseName(launchRelease.releaseName, dateInput);
-              setDateInput("");
-            } else {
-              alert("Please enter a launch date");
-            }
-          }}
-          className="text-purple-600 hover:text-purple-900 text-sm font-medium"
-        >
-          Map
-        </button>
-      </td>
-    </tr>
-  );
-}

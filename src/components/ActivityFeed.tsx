@@ -1,25 +1,49 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { Card, Text, Stack, Group, Avatar, Badge, ScrollArea, Box, Loader } from '@mantine/core';
+import { Card, Text, Stack, Group, Avatar, Badge, ScrollArea, Box } from '@mantine/core';
+import { PurpleLoader } from './PurpleLoader';
 import { IconBolt, IconFolderCheck, IconCalendar, IconMessage } from '@tabler/icons-react';
+import { useRouter } from 'next/navigation';
 import { ActivityFeedItem } from '@/app/api/activity-feed/route';
 
 export function ActivityFeed() {
     const [activities, setActivities] = useState<ActivityFeedItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const router = useRouter();
 
     useEffect(() => {
         fetchActivities();
     }, []);
 
     const fetchActivities = async () => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:16',message:'fetchActivities entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4'})}).catch(()=>{});
+        // #endregion
         try {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:18',message:'Before fetch request',data:{url:'/api/activity-feed?limit=15'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4'})}).catch(()=>{});
+            // #endregion
             const res = await fetch('/api/activity-feed?limit=15');
-            if (!res.ok) throw new Error('Failed to fetch activities');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:20',message:'After fetch response',data:{status:res.status,statusText:res.statusText,ok:res.ok,headers:Object.fromEntries(res.headers.entries())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'1,2,3,4,5'})}).catch(()=>{});
+            // #endregion
+            if (!res.ok) {
+                // #region agent log
+                const errorText = await res.text().catch(() => 'Failed to read error body');
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:22',message:'Response not ok',data:{status:res.status,statusText:res.statusText,errorBody:errorText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'1,2,3,5'})}).catch(()=>{});
+                // #endregion
+                throw new Error('Failed to fetch activities');
+            }
             const data = await res.json();
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:26',message:'Successfully parsed response',data:{activitiesCount:data.activities?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'SUCCESS'})}).catch(()=>{});
+            // #endregion
             setActivities(data.activities || []);
         } catch (error) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:29',message:'Error caught in fetchActivities',data:{errorMessage:error instanceof Error?error.message:String(error),errorStack:error instanceof Error?error.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4,5'})}).catch(()=>{});
+            // #endregion
             console.error('Error fetching activities:', error);
         } finally {
             setLoading(false);
@@ -95,6 +119,40 @@ export function ActivityFeed() {
         return 'U';
     };
 
+    const getActivityUrl = (activity: ActivityFeedItem): string | null => {
+        // Epic or Launch activities -> epic detail page
+        if ((activity.entity_type === 'epic' || activity.entity_type === 'launch') && activity.entity_id) {
+            return `/epics/${activity.entity_id}`;
+        }
+        
+        // Feedback activities -> epic detail page (if epic_id is available)
+        if (activity.type === 'feedback_added' && activity.epic_id) {
+            return `/epics/${activity.epic_id}`;
+        }
+        
+        // Criterion status changes -> epic detail page (if epic_id is available)
+        if (activity.type === 'criterion_change' && activity.epic_id) {
+            return `/epics/${activity.epic_id}`;
+        }
+        
+        // Criterion changes without epic_id -> criteria admin page
+        if (activity.type === 'criterion_change' && activity.entity_type === 'criterion') {
+            return '/admin/criteria';
+        }
+        
+        // Delegation activities -> try to get epic_id from entity_id if it's a delegation
+        // For now, delegation might not have epic_id, so we'll skip it
+        
+        return null;
+    };
+
+    const handleActivityClick = (activity: ActivityFeedItem) => {
+        const url = getActivityUrl(activity);
+        if (url) {
+            router.push(url);
+        }
+    };
+
     return (
         <Card 
             shadow="sm" 
@@ -120,7 +178,7 @@ export function ActivityFeed() {
 
             {loading ? (
                 <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 200 }}>
-                    <Loader size="md" />
+                    <PurpleLoader size="md" />
                 </Box>
             ) : activities.length === 0 ? (
                 <Box style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flex: 1, minHeight: 200 }}>
@@ -129,16 +187,35 @@ export function ActivityFeed() {
             ) : (
                 <ScrollArea style={{ flex: 1 }} type="auto">
                     <Stack gap="sm">
-                        {activities.map((activity) => (
-                            <Card 
-                                key={activity.id} 
-                                padding="sm" 
-                                radius="sm"
-                                style={{ 
-                                    backgroundColor: 'var(--mantine-color-gray-0)',
-                                    border: '1px solid var(--mantine-color-gray-2)',
-                                }}
-                            >
+                        {activities.map((activity) => {
+                            const url = getActivityUrl(activity);
+                            const isClickable = url !== null;
+                            
+                            return (
+                                <Card 
+                                    key={activity.id} 
+                                    padding="sm" 
+                                    radius="sm"
+                                    style={{ 
+                                        backgroundColor: 'var(--mantine-color-gray-0)',
+                                        border: '1px solid var(--mantine-color-gray-2)',
+                                        cursor: isClickable ? 'pointer' : 'default',
+                                        transition: 'all 0.2s ease',
+                                    }}
+                                    onClick={() => isClickable && handleActivityClick(activity)}
+                                    onMouseEnter={(e) => {
+                                        if (isClickable) {
+                                            e.currentTarget.style.backgroundColor = 'var(--mantine-color-gray-1)';
+                                            e.currentTarget.style.borderColor = 'var(--mantine-color-gray-3)';
+                                        }
+                                    }}
+                                    onMouseLeave={(e) => {
+                                        if (isClickable) {
+                                            e.currentTarget.style.backgroundColor = 'var(--mantine-color-gray-0)';
+                                            e.currentTarget.style.borderColor = 'var(--mantine-color-gray-2)';
+                                        }
+                                    }}
+                                >
                                 <Group align="flex-start" gap="sm" wrap="nowrap">
                                     <Box
                                         style={{
@@ -188,7 +265,8 @@ export function ActivityFeed() {
                                     </Box>
                                 </Group>
                             </Card>
-                        ))}
+                        );
+                        })}
                     </Stack>
                 </ScrollArea>
             )}
