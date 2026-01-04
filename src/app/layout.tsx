@@ -5,7 +5,7 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { HeaderTest as Header } from "@/components/HeaderTest";
+import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";

@@ -12,7 +12,11 @@ export type SlackNotificationType =
     | 'launch_created'
     | 'delegation'
     | 'criteria_nudge'
-    | 'criteria_assignment';
+    | 'criteria_assignment'
+    | 'retro_reminder'
+    | 'scorecard_alert'
+    | 'escalation_alert'
+    | 'success_review_reminder';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 

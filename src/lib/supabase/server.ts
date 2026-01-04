@@ -2,6 +2,66 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+// Custom fetch with better error handling and timeout
+const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    
+    // Validate URL format
+    if (!supabaseUrl) {
+        throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set in environment variables');
+    }
+
+    // Convert url to string for error messages
+    const urlString = typeof url === 'string' ? url : url.toString();
+
+    // Create AbortController for timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    try {
+        const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (error: any) {
+        clearTimeout(timeoutId);
+        
+        // Provide more detailed error messages
+        if (error.name === 'AbortError') {
+            throw new Error(`Supabase request timed out after 30 seconds. URL: ${urlString}`);
+        }
+        
+        if (error.message === 'fetch failed' || error.message?.includes('fetch failed')) {
+            // Check if it's a network error
+            try {
+                const urlObj = new URL(urlString);
+                throw new Error(
+                    `Failed to connect to Supabase at ${urlObj.origin}. ` +
+                    `Please check:\n` +
+                    `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
+                    `2. The Supabase project is running and accessible\n` +
+                    `3. Network connectivity is available\n` +
+                    `Original error: ${error.message}`
+                );
+            } catch {
+                // If URL parsing fails, provide generic error
+                throw new Error(
+                    `Failed to connect to Supabase. ` +
+                    `Please check:\n` +
+                    `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
+                    `2. The Supabase project is running and accessible\n` +
+                    `3. Network connectivity is available\n` +
+                    `Original error: ${error.message}`
+                );
+            }
+        }
+        
+        throw error;
+    }
+};
+
 export function createClient(): SupabaseClient {
     // Use publishable key for authenticated requests (respects RLS)
     // Fallback to legacy anon key for backward compatibility
@@ -16,6 +76,9 @@ export function createClient(): SupabaseClient {
         supabaseUrl,
         publishableKey,
         {
+            global: {
+                fetch: customFetch,
+            },
             cookies: {
                 async getAll() {
                     const cookieStore = await cookies();
@@ -53,6 +116,9 @@ export function createAdminClient(): SupabaseClient {
         supabaseUrl,
         supabaseKey,
         {
+            global: {
+                fetch: customFetch,
+            },
             cookies: {
                 async getAll() {
                     const cookieStore = await cookies();

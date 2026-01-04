@@ -4,6 +4,8 @@
 
 import type { SlackBlock } from '@/types/slack';
 import type { GroupedCriteria } from './notification-groups';
+export { buildRetroReminderMessage } from './templates/retro-reminders';
+export { buildScorecardAlertMessage } from './templates/scorecard-alerts';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
 

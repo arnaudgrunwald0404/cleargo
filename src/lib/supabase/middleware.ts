@@ -29,16 +29,9 @@ export async function updateSession(request: NextRequest) {
                     return request.cookies.getAll()
                 },
                 setAll(cookiesToSet) {
-                    console.log('🔄 Middleware - Cookies being set/updated:', cookiesToSet.map(c => ({ name: c.name, hasValue: !!c.value, action: c.value ? 'set' : 'clear' })))
-                    cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-                    response = NextResponse.next({
-                        request,
-                    })
                     cookiesToSet.forEach(({ name, value, options }) => {
+                        request.cookies.set(name, value)
                         response.cookies.set(name, value, options)
-                        if (!value) {
-                            console.log('⚠️ Middleware - Cookie being cleared:', name)
-                        }
                     })
                 },
             },
@@ -59,11 +52,8 @@ export async function updateSession(request: NextRequest) {
     if (error) {
         // Only log if it's not a "missing session" error (which is normal for unauthenticated requests)
         if (!error.message.includes('Auth session missing') && !error.message.includes('JWTExpired')) {
-            console.log('⚠️ Middleware - getUser() error:', error.message)
+            console.log(`[Middleware] Auth error: ${error.message}`)
         }
-    } else if (user) {
-        console.log('✅ Middleware - User session valid:', user.email)
-        // Session is valid - Supabase SSR has synced it to cookies automatically
     }
 
     return response
@@ -146,17 +136,14 @@ export async function getUserWithRoles(request: NextRequest): Promise<UserWithRo
         userError = result.error;
     }
 
-    console.log('🔍 getUserWithRoles - email:', emailLower, 'appUser:', appUser, 'error:', userError?.message);
-
     if (userError || !appUser) {
         // User exists in auth but not in app_user table - treat as OTHER
-        console.log('⚠️ getUserWithRoles - No app_user found, defaulting to OTHER');
+        console.log(`[Auth] No app_user found for ${emailLower}, defaulting to OTHER`);
         return { email: user.email, roles: ['OTHER'] };
     }
 
     // Handle both 'roles' array and legacy 'role' string field
     const roles = appUser.roles || (appUser.role ? [appUser.role] : ['OTHER']);
     
-    console.log('✅ getUserWithRoles - Resolved roles:', roles);
     return { email: user.email, roles };
 }

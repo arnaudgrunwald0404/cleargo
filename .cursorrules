@@ -1,0 +1,69 @@
+# Cursor Rules for ClearGO
+
+## PRD Update Rule
+
+**IMPORTANT**: Whenever code changes are made that affect features, functionality, integrations, or data models, the PRD must be updated.
+
+### When to Update PRD
+
+Update `docs/PRD-Retroactive.md` when committing changes to:
+
+- ✅ New features or components (`src/components/`, `src/app/`)
+- ✅ Database schema changes (`supabase/migrations/`)
+- ✅ API endpoints (`src/app/api/`)
+- ✅ Integration changes (Aha!, Slack, Google Calendar)
+- ✅ Authentication or permission changes
+- ✅ Major refactoring that changes user flows
+- ✅ New dependencies that affect architecture
+
+### When NOT to Update PRD
+
+- ❌ Bug fixes
+- ❌ Styling/UI tweaks without functional changes
+- ❌ Internal refactoring without feature changes
+- ❌ Documentation updates (other than PRD itself)
+- ❌ Test files
+- ❌ Configuration changes (unless they affect features)
+
+### How to Update PRD
+
+1. **For small changes**: Manually update the relevant section in `docs/PRD-Retroactive.md`
+2. **For major changes**: Ask Cursor AI: "Update the PRD to reflect [describe changes]"
+3. **For complete regeneration**: Ask Cursor AI: "Can you retroactively generate a PRD for everything that we have built?"
+
+### Git Hook
+
+A pre-commit hook automatically checks if PRD needs updating. To bypass:
+```bash
+git commit --no-verify
+```
+
+Use `--no-verify` sparingly and update PRD in a follow-up commit.
+
+### NPM Scripts
+
+- `npm run check-prd` - Check if PRD needs updating
+- `npm run setup-prd-hook` - Set up git hooks (run once)
+
+## Code Style
+
+- Use TypeScript with strict mode
+- Follow Next.js App Router conventions
+- Use Mantine components for UI
+- Use Tailwind CSS for styling
+- Follow existing code patterns
+
+## Commit Messages
+
+When committing PRD updates, use:
+```
+docs: update PRD for [feature name]
+```
+
+Example:
+```
+docs: update PRD for meetings integration
+feat: add Google Calendar sync
+docs: update PRD for Google Calendar integration
+```
+

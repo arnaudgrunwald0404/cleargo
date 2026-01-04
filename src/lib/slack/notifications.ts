@@ -157,6 +157,26 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildCriteriaAssignmentMessage(groupedCriteria as any);
                 break;
 
+            case 'retro_reminder':
+                if (!payload.metadata) throw new Error('Missing metadata for retro_reminder');
+                const { buildRetroReminderMessage } = await import('./templates/retro-reminders');
+                message = buildRetroReminderMessage(
+                    payload.metadata.epic,
+                    payload.metadata.dayMarker,
+                    payload.metadata.daysSinceLaunch
+                );
+                break;
+
+            case 'scorecard_alert':
+                if (!payload.metadata) throw new Error('Missing metadata for scorecard_alert');
+                const { buildScorecardAlertMessage } = await import('./templates/scorecard-alerts');
+                message = buildScorecardAlertMessage(
+                    payload.metadata.epic,
+                    payload.metadata.scorecard,
+                    payload.metadata.alertType
+                );
+                break;
+
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');
