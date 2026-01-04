@@ -575,10 +575,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     }
 
     return (
-        <div className="pt-24 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div style={{
+          maxWidth: 'var(--page-container-max-width)',
+          margin: '0 auto',
+          paddingLeft: 'var(--page-container-padding-x)',
+          paddingRight: 'var(--page-container-padding-x)',
+          paddingTop: 'var(--page-container-padding-top)',
+          fontFamily: 'var(--font-body)'
+        }}
+        className="sm:px-6 lg:px-8"
+        >
             <Group align="flex-start" mb="sm">
                 <Box>
-                    <Title>Releases</Title>
+                    <Title style={{ 
+                        fontFamily: 'var(--font-heading)', 
+                        color: 'var(--color-gray-900)', 
+                        fontSize: 'var(--font-size-page-title)', 
+                        fontWeight: 'var(--font-weight-bold)',
+                        marginBottom: 'var(--spacing-6)'
+                    }}>Releases</Title>
                 </Box>
             </Group>
 
@@ -598,7 +613,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 <div
                                     key={`skeleton-${index}`}
                                     className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-gray-50 animate-pulse"
-                                    style={{ fontFamily: "'Public Sans', sans-serif" }}
+                                    style={{ fontFamily: 'var(--font-body)' }}
                                 >
                                     <div className="space-y-2">
                                         <div className="h-6 bg-gray-300 rounded w-3/4"></div>
@@ -638,21 +653,32 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         className={`
                                             flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all
                                             ${isSelected 
-                                                ? 'border-indigo-500 bg-indigo-50 shadow-md' 
-                                                : 'border-gray-200 bg-white hover:border-indigo-300 hover:shadow-sm'
+                                                ? 'border-[#93C5FD] bg-[#EFF6FF] shadow-md border-[2px]' 
+                                                : 'border-[#E5E7EB] bg-white hover:border-[#BFDBFE] hover:shadow-sm'
                                             }
                                         `}
-                                        style={{ fontFamily: "'Public Sans', sans-serif" }}
+                                        style={{ 
+                                            fontFamily: 'var(--font-body)',
+                                            transition: 'var(--transition-base)'
+                                        }}
                                     >
                                         <div className="space-y-2">
                                             <h3 
-                                                className="font-semibold text-lg text-gray-900"
-                                                style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}
+                                                style={{ 
+                                                    fontFamily: 'var(--font-heading)',
+                                                    color: isSelected ? 'var(--color-blue-800)' : 'var(--color-gray-900)',
+                                                    fontSize: 'var(--font-size-card-title)',
+                                                    fontWeight: 'var(--font-weight-semibold)'
+                                                }}
                                             >
                                                 {stat.releaseName}
                                             </h3>
                                             {stat.releaseDate && (
-                                                <p className="text-sm text-gray-600">
+                                                <p className="text-sm" style={{ 
+                                                    color: 'var(--color-gray-500)', 
+                                                    fontSize: 'var(--font-size-base)',
+                                                    fontFamily: 'var(--font-body)'
+                                                }}>
                                                     {new Date(stat.releaseDate).toLocaleDateString('en-US', { 
                                                         year: 'numeric', 
                                                         month: 'short', 
@@ -660,13 +686,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     })}
                                                 </p>
                                             )}
-                                            <div className="pt-2 space-y-1 border-t border-gray-200">
+                                            <div className="pt-2 space-y-1 border-t" style={{ borderColor: 'var(--color-gray-200)' }}>
                                                 <div className="flex justify-between text-sm">
-                                                    <span className="text-gray-600">Epics loaded:</span>
-                                                    <span className="font-medium text-gray-900">
+                                                    <span style={{ 
+                                                        color: 'var(--color-gray-500)', 
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontFamily: 'var(--font-body)'
+                                                    }}>Epics loaded:</span>
+                                                    <span className="font-medium" style={{ 
+                                                        color: isSelected ? 'var(--color-blue-900)' : 'var(--color-gray-900)', 
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontFamily: 'var(--font-body)'
+                                                    }}>
                                                         {stat.epicsLoaded}
                                                         {stat.releaseName !== "Ungrouped" && (
-                                                            <span className="text-gray-500 ml-1">
+                                                            <span style={{ 
+                                                                color: 'var(--color-gray-500)', 
+                                                                marginLeft: 'var(--spacing-1)',
+                                                                fontFamily: 'var(--font-body)'
+                                                            }}>
                                                                 {stat.ahaEpicCount !== null && stat.ahaEpicCount !== undefined
                                                                     ? ` / ${stat.ahaEpicCount}`
                                                                     : ' / -'
@@ -676,8 +714,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </span>
                                                 </div>
                                                 <div className="flex justify-between text-sm">
-                                                    <span className="text-gray-600">High risk:</span>
-                                                    <span className={`font-medium ${stat.highRiskCount > 0 ? 'text-red-600' : 'text-gray-500'}`}>
+                                                    <span style={{ 
+                                                        color: 'var(--color-gray-500)', 
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontFamily: 'var(--font-body)'
+                                                    }}>High risk:</span>
+                                                    <span className="font-medium" style={{ 
+                                                        color: stat.highRiskCount > 0 ? 'var(--color-error-base)' : 'var(--color-gray-500)',
+                                                        fontSize: 'var(--font-size-sm)',
+                                                        fontFamily: 'var(--font-body)'
+                                                    }}>
                                                         {stat.highRiskCount}
                                                     </span>
                                                 </div>
@@ -701,7 +747,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 e.preventDefault();
                                 setShowFilters(false);
                             }}
-                            className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                            className="text-sm font-medium"
+                        style={{ 
+                            color: 'var(--color-blue-material)',
+                            fontSize: 'var(--font-size-base)',
+                            fontWeight: 'var(--font-weight-medium)',
+                            fontFamily: 'var(--font-body)'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-blue-material-dark)'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-blue-material)'}
                         >
                             Hide search and filters
                         </a>
@@ -806,20 +860,35 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             e.preventDefault();
                             setShowFilters(true);
                         }}
-                        className="text-indigo-600 hover:text-indigo-800 text-sm font-medium"
+                        className="text-sm font-medium"
+                        style={{ 
+                            color: 'var(--color-blue-material)',
+                            fontSize: 'var(--font-size-base)',
+                            fontWeight: 'var(--font-weight-medium)',
+                            fontFamily: 'var(--font-body)'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-blue-material-dark)'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-blue-material)'}
                     >
                         Search and filter epics.
                     </a>
                 </Group>
             )}
 
-            <Text size="sm" c="dimmed" style={{ fontFamily: "'Public Sans', sans-serif" }} mt="md">
+            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="md">
                 Epics appear below if in Aha! : ClearGO Candidate = Yes OR Tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
             </Text>
                 
             {filteredReleaseGroups.length === 0 ? (
-                    <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                        <div className="px-4 py-8 text-center text-gray-500">
+                    <div className="rounded-lg overflow-hidden" style={{
+                        border: `1px solid var(--color-gray-200)`,
+                        backgroundColor: 'var(--color-gray-50)'
+                    }}>
+                        <div className="px-4 py-8 text-center" style={{ 
+                            color: 'var(--color-gray-500)', 
+                            fontSize: 'var(--font-size-base)',
+                            fontFamily: 'var(--font-body)'
+                        }}>
                             No epics found matching filters.
                         </div>
                     </div>
@@ -828,14 +897,35 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         {filteredReleaseGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="space-y-2">
                                 <div className="flex items-center justify-between gap-3">
-                                    <h2 className="text-lg font-semibold text-gray-900">
+                                    <h2 style={{
+                                        fontFamily: 'var(--font-heading)',
+                                        fontSize: 'var(--font-size-section-title)',
+                                        fontWeight: 'var(--font-weight-semibold)',
+                                        color: 'var(--color-gray-900)'
+                                    }}>
                                         {group.releaseName}
                                         {group.releaseDate ? (
-                                            <span className="ml-2 text-base font-normal text-gray-600">
+                                            <span style={{ 
+                                                marginLeft: 'var(--spacing-2)', 
+                                                fontSize: 'var(--font-size-md)', 
+                                                fontWeight: 'var(--font-weight-normal)',
+                                                color: 'var(--color-gray-500)',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>
                                                 - {new Date(group.releaseDate).toLocaleDateString()}
                                             </span>
                                         ) : fetchingReleaseDates.has(group.releaseName) ? (
-                                            <span className="ml-2 text-sm font-normal text-gray-500 italic inline-flex items-center gap-1">
+                                            <span style={{ 
+                                                marginLeft: 'var(--spacing-2)', 
+                                                fontSize: 'var(--font-size-base)', 
+                                                fontWeight: 'var(--font-weight-normal)',
+                                                fontStyle: 'italic',
+                                                color: 'var(--color-gray-500)',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'inline-flex',
+                                                alignItems: 'center',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
                                                 - <PurpleLoader size="sm" />
                                             </span>
                                         ) : null}
@@ -844,8 +934,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         <div className="flex items-center gap-3">
                                             <button
                                                 disabled={syncingReleaseName === group.releaseName}
-                                                className="text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                                style={{ fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                                                className="font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                                style={{ 
+                                                    fontSize: '14px', 
+                                                    fontFamily: "'Public Sans', sans-serif",
+                                                    color: "#2196F3",
+                                                    fontWeight: 500
+                                                }}
+                                                onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = "#1976D2")}
+                                                onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = "#2196F3")}
                                                 onClick={async () => {
                                                 if (!confirm(`Sync epics for release "${group.releaseName}"? This will sync all epics with matching tags for this release.`)) {
                                                     return;
@@ -958,8 +1055,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </div>
                                     )}
                                 </div>
-                                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                                    <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                                <div className="rounded-lg overflow-hidden" style={{ 
+                                    border: "1px solid #E5E7EB",
+                                    backgroundColor: "#FFFFFF",
+                                    boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
+                                }}>
+                                    <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                                         <colgroup>
                                             <col className="w-auto" />
                                             <col className="w-24" />
@@ -970,23 +1071,93 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <col className="w-24" />
                                             <col className="w-24" />
                                         </colgroup>
-                                        <thead className="bg-purple-100">
+                                        <thead style={{ 
+                                            backgroundColor: "#F9FAFB",
+                                            borderBottom: "2px solid #E5E7EB"
+                                        }}>
                                             <tr>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Name</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Tier</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Dev Backlog Pod</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Date</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Readiness</th>
-                                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Risk</th>
-                                                <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-24">Action</th>
+                                                <th className="px-4 py-3 text-left" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Name</th>
+                                                <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Tier</th>
+                                                <th className="px-4 py-3 text-left" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Dev Backlog Pod</th>
+                                                <th className="px-4 py-3 text-left w-32" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Date</th>
+                                                <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Status</th>
+                                                <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Readiness</th>
+                                                <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Risk</th>
+                                                <th className="px-4 py-3 text-right w-24" style={{ 
+                                                    fontSize: "12px",
+                                                    fontWeight: 600,
+                                                    textTransform: "uppercase",
+                                                    letterSpacing: "0.05em",
+                                                    color: "#6B7280"
+                                                }}>Action</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="bg-white divide-y divide-purple-200">
+                                        <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                             {group.epics.map(epic => (
-                                                <tr key={epic.id} className="hover:bg-purple-50 transition-colors">
-                                                    <td className="px-4 py-3">
-                                                        <Link href={`/epics/${epic.id}`} prefetch={false} className="font-medium text-gray-900 hover:text-blue-600">
+                                                <tr 
+                                                    key={epic.id} 
+                                                    style={{ 
+                                                        borderBottom: "1px solid #E5E7EB",
+                                                        transition: "background-color 0.15s ease"
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#F9FAFB"}
+                                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#FFFFFF"}
+                                                >
+                                                    <td className="px-4 py-3" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        <Link 
+                                                            href={`/epics/${epic.id}`} 
+                                                            prefetch={false} 
+                                                            className="font-medium"
+                                                            style={{ 
+                                                                color: "#228BE6",
+                                                                textDecoration: "none",
+                                                                fontWeight: 500
+                                                            }}
+                                                            onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                                                            onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
+                                                        >
                                                             {epic.name}
                                                         </Link>
                                                     </td>
@@ -998,18 +1169,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             {epic.tier.replace('_', ' ')}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-700">
+                                                    <td className="px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {epic.pod || '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
+                                                    <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                    <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                        <span className="px-2 py-1 rounded text-xs font-medium" style={{
+                                                            display: "inline-flex",
+                                                            alignItems: "center",
+                                                            padding: "4px 10px",
+                                                            borderRadius: "12px",
+                                                            fontSize: "12px",
+                                                            fontWeight: 500,
+                                                            backgroundColor: "#FEF3C7",
+                                                            color: "#92400E"
+                                                        }}>
                                                             {epic.status}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 font-mono text-sm text-gray-700 whitespace-nowrap w-24">
+                                                    <td className="px-4 py-3 font-mono whitespace-nowrap w-24" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {epic.readiness_score ? `${Math.round(epic.readiness_score * 100)}%` : '-'}
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap w-24">
@@ -1022,9 +1202,19 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             </span>
                                                         )}
                                                     </td>
-                                                    <td className="px-4 py-3 text-right whitespace-nowrap w-24">
+                                                    <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <Link href={`/epics/${epic.id}`} prefetch={false} className="text-sm text-gray-600 hover:text-gray-900">
+                                                            <Link 
+                                                                href={`/epics/${epic.id}`} 
+                                                                prefetch={false} 
+                                                                className="text-sm"
+                                                                style={{ 
+                                                                    color: "#6B7280",
+                                                                    fontSize: "14px"
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.color = "#111827"}
+                                                                onMouseLeave={(e) => e.currentTarget.style.color = "#6B7280"}
+                                                            >
                                                                 View
                                                             </Link>
                                                             {canDeleteEpic && (
@@ -1064,7 +1254,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 title={
                     <div className="flex items-center gap-2">
                         <IconTrash size={20} className="text-red-600" />
-                        <span className="font-semibold">Delete Epic</span>
+                        <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Delete Epic</span>
                     </div>
                 }
                 centered
@@ -1108,7 +1298,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 title={
                     <div className="flex items-center gap-2">
                         <span className="text-2xl">🎉</span>
-                        <span className="font-semibold">Congratulations!</span>
+                        <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Congratulations!</span>
                     </div>
                 }
                 centered

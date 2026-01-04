@@ -29,8 +29,16 @@ export default async function DashboardPage() {
     // Always return the page, no matter what
     try {
         return (
-            <div className="min-h-screen bg-gray-50 pt-24 pb-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-gray-50 pb-8">
+                <div style={{
+                  maxWidth: 'var(--page-container-max-width)',
+                  margin: '0 auto',
+                  paddingLeft: 'var(--page-container-padding-x)',
+                  paddingRight: 'var(--page-container-padding-x)',
+                  paddingTop: 'var(--page-container-padding-top)'
+                }}
+                className="sm:px-6 lg:px-8"
+                >
                     <EpicDashboard initialEpics={epics || []} />
                 </div>
             </div>
@@ -38,8 +46,16 @@ export default async function DashboardPage() {
     } catch (error: any) {
         // Even if component fails, return basic HTML
         return (
-            <div className="min-h-screen bg-gray-50 pt-24 pb-8">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="min-h-screen bg-gray-50 pb-8">
+                <div style={{
+                  maxWidth: 'var(--page-container-max-width)',
+                  margin: '0 auto',
+                  paddingLeft: 'var(--page-container-padding-x)',
+                  paddingRight: 'var(--page-container-padding-x)',
+                  paddingTop: 'var(--page-container-padding-top)'
+                }}
+                className="sm:px-6 lg:px-8"
+                >
                     <h1>Portfolio Dashboard</h1>
                     <div className="flex items-center justify-center py-8">
                         <PurpleLoader size="md" />

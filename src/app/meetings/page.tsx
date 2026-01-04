@@ -449,10 +449,24 @@ export default function MeetingsPage() {
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+            <div style={{
+              maxWidth: 'var(--page-container-max-width)',
+              margin: '0 auto',
+              paddingLeft: 'var(--page-container-padding-x)',
+              paddingRight: 'var(--page-container-padding-x)',
+              paddingTop: 'var(--page-container-padding-top)',
+              paddingBottom: 'var(--spacing-8)'
+            }}
+            className="sm:px-6 lg:px-8"
+            >
                 <div className="mb-8">
                     <div className="flex justify-between items-center mb-4">
-                        <Title order={1} className="text-3xl font-bold text-gray-900">
+                        <Title order={1} style={{
+                            fontFamily: 'var(--font-heading)',
+                            fontSize: 'var(--font-size-page-title)',
+                            fontWeight: 'var(--font-weight-bold)',
+                            color: 'var(--color-gray-900)'
+                        }}>
                             Meetings
                         </Title>
                         {isConnected && (

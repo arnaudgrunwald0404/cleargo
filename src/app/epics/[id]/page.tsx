@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
@@ -14,13 +14,19 @@ import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from "@/components/PurpleLoader";
+import { SuccessConfigSection } from "@/components/epic/SuccessConfigSection";
+import { EpicMetricsManager } from "@/components/epic/EpicMetricsManager";
+import { ScorecardPageContent } from "@/components/epic/ScorecardPageContent";
+import { RetroPageContent } from "@/components/epic/RetroPageContent";
+import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from "@/lib/services/successMeasurementService";
+import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 
 export default function EpicDetailPage() {
     const params = useParams();
     const id = params?.id as string | undefined;
     
     if (!id) {
-        return <div className="pt-24 p-8">Invalid epic ID</div>;
+        return <div className="p-8">Invalid epic ID</div>;
     }
 
     const [epic, setEpic] = useState<Epic | null>(null);
@@ -46,6 +52,10 @@ export default function EpicDetailPage() {
     const [activeTab, setActiveTab] = useState<string>('readiness');
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
     const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
+    const [successConfig, setSuccessConfig] = useState<EpicSuccessConfigWithDetails | null>(null);
+    const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
+    const [loadingSuccessData, setLoadingSuccessData] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
     
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -899,6 +909,63 @@ export default function EpicDetailPage() {
         }
     }
 
+    const fetchSuccessData = async () => {
+        if (!id) return;
+        setLoadingSuccessData(true);
+        try {
+            // Fetch success config and metrics in parallel
+            const [configRes, metricsRes] = await Promise.all([
+                fetchWithRateLimit(`/api/epics/${id}/success/config`, { maxRetries: 1 }),
+                fetchWithRateLimit(`/api/epics/${id}/success/metrics`, { maxRetries: 1 }),
+            ]);
+
+            if (configRes.ok) {
+                const configData = await configRes.json();
+                setSuccessConfig(configData);
+            } else if (configRes.status !== 404) {
+                console.error('Error fetching success config:', configRes.statusText);
+            } else {
+                setSuccessConfig(null);
+            }
+
+            if (metricsRes.ok) {
+                const metricsData = await metricsRes.json();
+                setSuccessMetrics(Array.isArray(metricsData) ? metricsData : []);
+            } else {
+                console.error('Error fetching success metrics:', metricsRes.statusText);
+                setSuccessMetrics([]);
+            }
+
+            // Check if user is admin
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) {
+                const { data: me } = await supabase
+                    .from('app_user')
+                    .select('roles')
+                    .eq('email', user.email)
+                    .single();
+                const userRoles = (me?.roles as string[]) || [];
+                setIsAdmin(
+                    userRoles.includes('SUPERADMIN') ||
+                    userRoles.includes('PRODUCT_OPS') ||
+                    userRoles.includes('CPO')
+                );
+            }
+        } catch (error) {
+            console.error('Error fetching success data:', error);
+        } finally {
+            setLoadingSuccessData(false);
+        }
+    };
+
+    useEffect(() => {
+        if (id && epic) {
+            fetchSuccessData();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, epic?.id]);
+
     useEffect(() => {
         if (id) {
             // Clear any pending attachment requests when loading new data
@@ -967,16 +1034,16 @@ export default function EpicDetailPage() {
 
     if (loading) {
         return (
-            <div className="pt-24 p-8 flex items-center justify-center">
+            <div className="p-8 flex items-center justify-center">
                 <PurpleLoader size="md" />
             </div>
         );
     }
     if (error) {
-        return <div className="pt-24 p-8 text-red-600">Error: {error}</div>;
+        return <div className="p-8 text-red-600">Error: {error}</div>;
     }
     if (!epic) {
-        return <div className="pt-24 p-8">Epic not found</div>;
+        return <div className="p-8">Epic not found</div>;
     }
 
     async function handleTierUpdate(newTier: string | null) {
@@ -1081,18 +1148,59 @@ export default function EpicDetailPage() {
 
     return (
         <div className="flex">
-            <div className="flex-1 pt-16 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex-1 sm:px-6 lg:px-8" style={{
+              maxWidth: 'var(--page-container-max-width)',
+              margin: '0 auto',
+              paddingLeft: 'var(--page-container-padding-x)',
+              paddingRight: 'var(--page-container-padding-x)',
+              paddingTop: 'var(--page-container-padding-top)',
+              paddingBottom: 'var(--spacing-8)'
+            }}>
                 <div className="mb-1">
-                    <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline text-sm">← Back to Epics</Link>
+                    <Link 
+                        href="/epics" 
+                        style={{
+                            color: 'var(--color-blue-600)',
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-body)',
+                            textDecoration: 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.color = 'var(--color-blue-800)';
+                            e.currentTarget.style.textDecoration = 'underline';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.color = 'var(--color-blue-600)';
+                            e.currentTarget.style.textDecoration = 'none';
+                        }}
+                    >← Back to Epics</Link>
                 </div>
 
             <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">{epic.name}</h1>
+                        <h1 style={{
+                          fontFamily: 'var(--font-heading)',
+                          fontSize: 'var(--font-size-page-title)',
+                          fontWeight: 'var(--font-weight-bold)',
+                          color: 'var(--color-gray-900)',
+                          marginBottom: 'var(--spacing-2)'
+                        }}>{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
                         {pmOwner && pmOwner.email && (
                             <Tooltip label="Product Owner" withArrow>
-                                <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded cursor-help">
+                                <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: 'var(--spacing-1) var(--spacing-2)',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    backgroundColor: 'var(--color-blue-100)',
+                                    color: 'var(--color-blue-800)',
+                                    borderRadius: 'var(--radius-base)',
+                                    cursor: 'help',
+                                    fontFamily: 'var(--font-body)'
+                                }}>
                                     <IconUsers size={14} />
                                     {pmOwner.name || pmOwner.email}
                                 </span>
@@ -1102,7 +1210,15 @@ export default function EpicDetailPage() {
                                 const ahaFields = (epic as any)?.aha_fields || {};
                                 const pod = (epic as any)?.pod || ahaFields?.custom_fields?.dev_backlog_pod || null;
                                 return pod ? (
-                                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                    <span style={{
+                                        padding: 'var(--spacing-1) var(--spacing-2)',
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        backgroundColor: 'var(--color-blue-100)',
+                                        color: 'var(--color-blue-800)',
+                                        borderRadius: 'var(--radius-base)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
                                         {String(pod).trim()}
                                     </span>
                                 ) : null;
@@ -1119,215 +1235,352 @@ export default function EpicDetailPage() {
                                 size="xs"
                                 style={{ width: 150 }}
                             />
-                            <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+                            <span style={{
+                                padding: 'var(--spacing-1) var(--spacing-2)',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-medium)',
+                                backgroundColor: 'var(--color-gray-100)',
+                                color: 'var(--color-gray-700)',
+                                borderRadius: 'var(--radius-base)',
+                                fontFamily: 'var(--font-body)'
+                            }}>
                                 {epic.status}
                             </span>
                            
                         </div>
                     </div>
                     <div className="ml-6 flex-shrink-0">
-                        <div className="flex gap-6 items-center">
-                            {(() => {
-                                const targetDate = releaseDate || epic.target_launch_date;
-                                if (targetDate) {
-                                    // Calculate total duration from all launch stages (excluding NULL durations)
-                                    let totalDurationDays = 0;
-                                    
-                                    if (launchStages.length > 0) {
-                                        totalDurationDays = launchStages
-                                            .filter(stage => stage.duration_days !== null)
-                                            .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: 'var(--spacing-2)'
+                        }}>
+                            <Button 
+                                size="xs" 
+                                variant={showFieldsSidebar ? "filled" : "outline"}
+                                onClick={() => setShowFieldsSidebar(!showFieldsSidebar)}
+                                styles={{
+                                    root: {
+                                        fontFamily: 'var(--font-body)',
+                                        fontSize: 'var(--font-size-sm)'
                                     }
-                                    
-                                    // Fallback to 63 days (14+21+28) if launch stages aren't loaded yet
-                                    if (totalDurationDays === 0) {
-                                        totalDurationDays = 63;
+                                }}
+                            >
+                                {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
+                            </Button>
+                            <Button 
+                                size="xs" 
+                                onClick={() => setSnapshotModalOpen(true)}
+                                styles={{
+                                    root: {
+                                        fontFamily: 'var(--font-body)',
+                                        fontSize: 'var(--font-size-sm)'
                                     }
-                                    
-                                    const goNoGoDate = new Date(targetDate);
-                                    goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
-                                    return (
-                                        <div className="text-right">
-                                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Approx Go/NoGo Date</div>
-                                            <div className="text-lg font-semibold text-gray-900">
-                                                {goNoGoDate.toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
-                            <div className="text-right">
-                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Release Date</div>
-                                {releaseDate ? (
-                                    <div className="text-lg font-semibold text-gray-900">
-                                        {new Date(releaseDate).toLocaleDateString()}
-                                    </div>
-                                ) : epic.target_launch_date ? (
-                                    <div className="text-lg font-semibold text-gray-900">
-                                        {new Date(epic.target_launch_date).toLocaleDateString()}
-                                    </div>
-                                ) : releaseName ? (
-                                    fetchingReleaseDate ? (
-                                        <div className="text-sm text-gray-500 flex items-center gap-2">
-                                            <PurpleLoader size="sm" />
-                                        </div>
-                                    ) : (
-                                        <div className="text-lg font-semibold text-gray-500">Not set</div>
-                                    )
-                                ) : (
-                                    <div className="text-lg font-semibold text-gray-500">Not set</div>
-                                )}
-                            </div>
+                                }}
+                            >
+                                Take Snapshot
+                            </Button>
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-6 mt-6">
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
-                            <div className="text-2xl font-bold text-gray-900">
-                                {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
-                                {epic.readiness_score !== null && epic.readiness_score !== undefined && epic.readiness_status && (
-                                    <span className="ml-2 text-sm font-normal text-gray-600">
-                                        - {epic.readiness_status}
-                                    </span>
-                                )}
-                            </div>
-                            {readinessThreshold !== null && epic.tier && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                    Threshold: <span className="font-medium">{Math.round(readinessThreshold * 100)}%</span> (Tier {epic.tier.replace('TIER_', '')})
+                <div className="mt-6" style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(5, 1fr)',
+                    gap: 'var(--spacing-6)',
+                    alignItems: 'start'
+                }}>
+                    {(() => {
+                        const targetDate = releaseDate || epic.target_launch_date;
+                        let goNoGoDate: Date | null = null;
+                        if (targetDate) {
+                            let totalDurationDays = 0;
+                            
+                            if (launchStages.length > 0) {
+                                totalDurationDays = launchStages
+                                    .filter(stage => stage.duration_days !== null)
+                                    .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                            }
+                            
+                            if (totalDurationDays === 0) {
+                                totalDurationDays = 63;
+                            }
+                            
+                            goNoGoDate = new Date(targetDate);
+                            goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
+                        }
+                        return (
+                            <>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Target Release Date</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {releaseDate ? new Date(releaseDate).toLocaleDateString() : epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set'}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-                                Risk Level
-                                <Tooltip
-                                    label={
-                                        <div className="text-xs">
-                                            <div className="font-semibold mb-2">Risk Level Algorithm:</div>
-                                            <div className="space-y-1">
-                                                <div><strong>Default:</strong> LOW</div>
-                                                <div><strong>&lt; 14 days to launch:</strong></div>
-                                                <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
-                                                <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
-                                                <div><strong>14-30 days to launch:</strong></div>
-                                                <div className="pl-2">• MEDIUM if status is NO_GO</div>
-                                            </div>
-                                        </div>
-                                    }
-                                    multiline
-                                    maw={300}
-                                    withArrow
-                                >
-                                    <IconInfoCircle size={14} className="text-gray-400 cursor-help" />
-                                </Tooltip>
-                            </div>
-                            <Select
-                                value={epic.risk_level || 'LOW'}
-                                onChange={handleRiskLevelUpdate}
-                                data={[
-                                    { value: 'LOW', label: 'Low' },
-                                    { value: 'MEDIUM', label: 'Medium' },
-                                    { value: 'HIGH', label: 'High' },
-                                ]}
-                                disabled={updatingRiskLevel}
-                                size="xs"
-                                style={{ width: 120 }}
-                                styles={{
-                                    input: {
-                                        fontSize: '0.875rem',
-                                        fontWeight: '600',
-                                        padding: '0.25rem 0.5rem',
-                                        height: 'auto',
-                                        minHeight: 'auto',
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Approx Go/NoGo Date</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Readiness Score</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Readiness Status</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        gap: 'var(--spacing-1)'
+                                    }}>
+                                        Risk Level
+                                        <Tooltip
+                                            label={
+                                                <div className="text-xs">
+                                                    <div className="font-semibold mb-2">Risk Level Algorithm:</div>
+                                                    <div className="space-y-1">
+                                                        <div><strong>Default:</strong> LOW</div>
+                                                        <div><strong>&lt; 14 days to launch:</strong></div>
+                                                        <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
+                                                        <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
+                                                        <div><strong>14-30 days to launch:</strong></div>
+                                                        <div className="pl-2">• MEDIUM if status is NO_GO</div>
+                                                    </div>
+                                                </div>
+                                            }
+                                            multiline
+                                            maw={300}
+                                            withArrow
+                                        >
+                                            <IconInfoCircle 
+                                                size={14} 
+                                                style={{
+                                                    color: 'var(--color-gray-400)',
+                                                    cursor: 'help'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
                                         color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
-                                    }
-                                }}
-                            />
-                        </div>
-                    </div>
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {epic.risk_level || 'LOW'}
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    })()}
+                </div>
 
-            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'readiness')} className="mt-8 mb-8" variant="pills">
-                <div style={{ backgroundColor: '#E7F5FF', padding: '4px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Tabs.List style={{ backgroundColor: 'transparent', padding: 0 }}>
+                <div style={{ marginTop: 'var(--spacing-8)', marginBottom: 0 }}>
+                    <EpicDetailTabs 
+                        activeTab={activeTab} 
+                        onTabChange={(value) => setActiveTab(value)} 
+                    />
+                </div>
+
+            <Tabs 
+                value={activeTab} 
+                onChange={(value) => setActiveTab(value || 'readiness')} 
+                className="mb-8" 
+                variant="pills"
+                styles={{
+                    list: {
+                        display: 'none'
+                    },
+                    tab: {
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 'var(--font-size-base)',
+                        fontWeight: 'var(--font-weight-medium)',
+                        color: 'var(--color-gray-900)',
+                        padding: 'var(--spacing-2) var(--spacing-3)',
+                        borderRadius: 'var(--radius-base)',
+                        transition: 'var(--transition-base)',
+                        backgroundColor: 'var(--color-white)',
+                        '&[data-active]': {
+                            backgroundColor: 'var(--color-gray-200)',
+                            color: 'var(--color-gray-900)',
+                            fontWeight: 'var(--font-weight-medium)'
+                        },
+                        '&:hover:not([data-active])': {
+                            backgroundColor: 'var(--color-gray-100)',
+                            color: 'var(--color-gray-900)'
+                        }
+                    }
+                }}
+            >
+                    <Tabs.List style={{ display: 'none' }}>
                         <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
                         <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
                         <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
-                        <Tabs.Tab value="adoption">Adoption</Tabs.Tab>
+                        <Tabs.Tab value="adoption">Success Config</Tabs.Tab>
+                        <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
+                        <Tabs.Tab value="retro">Retro</Tabs.Tab>
                     </Tabs.List>
-                    <div className="flex gap-2" style={{ marginLeft: 'auto', paddingRight: '4px' }}>
-                        <Button 
-                            size="xs" 
-                            variant={showFieldsSidebar ? "filled" : "outline"}
-                            onClick={() => setShowFieldsSidebar(!showFieldsSidebar)}
-                        >
-                            {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
-                        </Button>
-                        <Button 
-                            size="xs" 
-                            onClick={() => setSnapshotModalOpen(true)}
-                        >
-                            Take Snapshot
-                        </Button>
-                    </div>
-                </div>
 
-                <Tabs.Panel value="readiness" pt="md">
-                    <div className="flex justify-between items-center mb-4">
-                        {matrix.length > 0 && (
-                            <>
-                                {showFilters ? (
-                                    <Group gap="xs">
-                                        <Badge
-                                            variant={criterionFilter === 'all' ? 'filled' : 'outline'}
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('all')}
-                                        >
-                                            All
-                                        </Badge>
-                                        <Badge
-                                            variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
-                                            color="red"
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('overdue')}
-                                        >
-                                            Criterion Overdue
-                                        </Badge>
-                                        <Badge
-                                            variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
-                                            color="orange"
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('too_soon')}
-                                        >
-                                            Criterion Due Soon
-                                        </Badge>
+                <Tabs.Panel value="readiness" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                    <div style={{
+                        borderLeft: '1px solid var(--color-gray-900)',
+                        borderRight: '1px solid var(--color-gray-900)',
+                        borderBottom: '1px solid var(--color-gray-900)',
+                        borderTop: 'none',
+                        borderRadius: '0 0 var(--radius-md) var(--radius-md)',
+                        padding: 0,
+                        marginTop: 0,
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        <div className="flex justify-between items-center mb-4" style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)' }}>
+                            {matrix.length > 0 && (
+                                <>
+                                    {showFilters ? (
+                                        <Group gap="xs">
+                                            <Badge
+                                                variant={criterionFilter === 'all' ? 'filled' : 'outline'}
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('all')}
+                                            >
+                                                All
+                                            </Badge>
+                                            <Badge
+                                                variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
+                                                color="red"
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('overdue')}
+                                            >
+                                                Criterion Overdue
+                                            </Badge>
+                                            <Badge
+                                                variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
+                                                color="orange"
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('too_soon')}
+                                            >
+                                                Criterion Due Soon
+                                            </Badge>
+                                            <Button
+                                                size="xs"
+                                                variant="subtle"
+                                                onClick={() => setShowFilters(false)}
+                                            >
+                                                Hide Filters
+                                            </Button>
+                                        </Group>
+                                    ) : (
                                         <Button
                                             size="xs"
                                             variant="subtle"
-                                            onClick={() => setShowFilters(false)}
+                                            onClick={() => setShowFilters(true)}
                                         >
-                                            Hide Filters
+                                            Show Filters
                                         </Button>
-                                    </Group>
-                                ) : (
-                                    <Button
-                                        size="xs"
-                                        variant="subtle"
-                                        onClick={() => setShowFilters(true)}
-                                    >
-                                        Show Filters
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                    {matrix.length === 0 ? (
+                                    )}
+                                </>
+                            )}
+                        </div>
+                        {matrix.length === 0 ? (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
                             <div>
                                 No criteria configured. Add criteria in <Link href="/admin/settings" className="text-yellow-800 underline hover:text-yellow-900">Admin → Settings</Link>.
@@ -1422,6 +1675,7 @@ export default function EpicDetailPage() {
                             })()}
                         </>
                     )}
+                    </div>
                 </Tabs.Panel>
 
                 <Tabs.Panel value="decisions" pt="md">
@@ -1433,9 +1687,30 @@ export default function EpicDetailPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="adoption" pt="md">
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-                        <p className="text-gray-600">Adoption metrics and tracking coming soon.</p>
-                    </div>
+                    <Stack gap="md">
+                        <SuccessConfigSection
+                            epicId={epic.id}
+                            epicTier={epic.tier}
+                            config={successConfig}
+                            isAdmin={isAdmin}
+                            onRefresh={fetchSuccessData}
+                        />
+                        <EpicMetricsManager
+                            epicId={epic.id}
+                            metrics={successMetrics}
+                            isAdmin={isAdmin}
+                            configLocked={successConfig?.locked || false}
+                            onRefresh={fetchSuccessData}
+                        />
+                    </Stack>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="scorecard" pt="md">
+                    <ScorecardPageContent epicId={epic.id} />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="retro" pt="md">
+                    <RetroPageContent epicId={epic.id} />
                 </Tabs.Panel>
             </Tabs>
 

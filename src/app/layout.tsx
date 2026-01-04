@@ -5,7 +5,7 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { Header } from "@/components/Header";
+import { HeaderTest as Header } from "@/components/HeaderTest";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
@@ -76,7 +76,7 @@ export default async function RootLayout({
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[68px]' : ''}`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[64px]' : ''}`}
       >
         <MantineProvider theme={theme}>
           <Notifications />

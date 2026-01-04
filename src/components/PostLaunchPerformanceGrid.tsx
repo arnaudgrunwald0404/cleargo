@@ -275,8 +275,13 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
 
   return (
     <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
-      <Title order={3} className="mb-12" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>
-        {totalEpics} Epic{totalEpics !== 1 ? 's' : ''} tracked for <span className="text-indigo-600">Post-Launch Performance</span> (GA &lt; 180 days), {epicsWithFeedback} with Feedback
+      <Title order={3} className="mb-12" style={{ 
+        fontFamily: 'var(--font-heading)',
+        color: 'var(--color-gray-900)',
+        fontSize: 'var(--font-size-subsection)',
+        fontWeight: 'var(--font-weight-bold)'
+      }}>
+        <span style={{ color: 'var(--color-accent)' }}>Post-Launch Performance</span>: {totalEpics} Epic{totalEpics !== 1 ? 's' : ''} tracked (GA &lt; 180 days) | {epicsWithFeedback} with Feedback
       </Title>
 
       {/* Grid Container */}
@@ -326,14 +331,15 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
                     <Link href={`/epics?release=${encodeURIComponent(release.release_name)}`}>
                       <Text
                         size="xs"
-                        className="text-gray-600"
                         style={{
                           textAlign: 'center',
                           cursor: 'pointer',
-                          lineHeight: '1.2',
-                          fontWeight: 500,
+                          lineHeight: 'var(--line-height-tight)',
+                          fontWeight: 'var(--font-weight-medium)',
                           wordBreak: 'break-word',
                           hyphens: 'auto',
+                          color: 'var(--color-gray-500)',
+                          fontFamily: 'var(--font-body)'
                         }}
                       >
                         {release.release_name}
@@ -403,24 +409,74 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
       </Box>
 
       {/* Legend */}
-      <Box style={{ marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #E5E7EB' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <Text size="xs" className="text-gray-600" fw={500}>Legend:</Text>
+      <Box style={{ 
+        marginTop: 'var(--spacing-4)', 
+        paddingTop: 'var(--spacing-4)', 
+        borderTop: `1px solid var(--color-gray-200)` 
+      }}>
+        <div style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: 'var(--spacing-4)', 
+          flexWrap: 'wrap', 
+          justifyContent: 'center' 
+        }}>
+          <Text size="xs" style={{ 
+            color: 'var(--color-gray-500)', 
+            fontWeight: 'var(--font-weight-medium)',
+            fontFamily: 'var(--font-body)'
+          }}>Engagement:</Text>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#10B981', border: '1px solid rgba(0, 0, 0, 0.1)' }} />
-            <Text size="xs" className="text-gray-600">High Engagement (5+ feedback)</Text>
+            <div style={{ 
+              width: '12px', 
+              height: '12px', 
+              borderRadius: 'var(--radius-sm)', 
+              backgroundColor: 'var(--color-success-base)', 
+              border: '1px solid rgba(0, 0, 0, 0.1)' 
+            }} />
+            <Text size="xs" style={{ 
+              color: 'var(--color-gray-500)',
+              fontFamily: 'var(--font-body)'
+            }}>High (5+ feedback)</Text>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#F59E0B', border: '1px solid rgba(0, 0, 0, 0.1)' }} />
-            <Text size="xs" className="text-gray-600">Moderate Engagement (2-4 feedback)</Text>
+            <div style={{ 
+              width: '12px', 
+              height: '12px', 
+              borderRadius: 'var(--radius-sm)', 
+              backgroundColor: 'var(--color-warning-base)', 
+              border: '1px solid rgba(0, 0, 0, 0.1)' 
+            }} />
+            <Text size="xs" style={{ 
+              color: 'var(--color-gray-500)',
+              fontFamily: 'var(--font-body)'
+            }}>Moderate (2-4 feedback)</Text>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#EF4444', border: '1px solid rgba(0, 0, 0, 0.1)' }} />
-            <Text size="xs" className="text-gray-600">Low Engagement (1 feedback)</Text>
+            <div style={{ 
+              width: '12px', 
+              height: '12px', 
+              borderRadius: 'var(--radius-sm)', 
+              backgroundColor: 'var(--color-error-base)', 
+              border: '1px solid rgba(0, 0, 0, 0.1)' 
+            }} />
+            <Text size="xs" style={{ 
+              color: 'var(--color-gray-500)',
+              fontFamily: 'var(--font-body)'
+            }}>Low (1 feedback)</Text>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <div style={{ width: '12px', height: '12px', borderRadius: '3px', backgroundColor: '#9CA3AF', border: '1px solid rgba(0, 0, 0, 0.1)' }} />
-            <Text size="xs" className="text-gray-600">No Feedback</Text>
+            <div style={{ 
+              width: '12px', 
+              height: '12px', 
+              borderRadius: 'var(--radius-sm)', 
+              backgroundColor: 'var(--color-gray-400)', 
+              border: '1px solid rgba(0, 0, 0, 0.1)' 
+            }} />
+            <Text size="xs" style={{ 
+              color: 'var(--color-gray-500)',
+              fontFamily: 'var(--font-body)'
+            }}>No Feedback</Text>
           </div>
         </div>
       </Box>

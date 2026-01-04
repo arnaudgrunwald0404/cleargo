@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Table, Select, Button, Group, Text, Pagination, Paper, Badge } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { UserDisplay } from '../UserDisplay';
+import { PurpleLoader } from '../PurpleLoader';
 
 interface AuditLog {
     id: string;

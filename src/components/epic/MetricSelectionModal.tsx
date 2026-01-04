@@ -1,0 +1,258 @@
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import {
+  Modal,
+  Button,
+  Stack,
+  TextInput,
+  Select,
+  Group,
+  Text,
+  Badge,
+  ScrollArea,
+  Card,
+} from '@mantine/core';
+import { IconSearch } from '@tabler/icons-react';
+import { PurpleLoader } from '../PurpleLoader';
+import type { SuccessMetric, MetricCategory, MetricSource, LeadingOrLagging } from '@/lib/success/types';
+
+interface MetricSelectionModalProps {
+  opened: boolean;
+  onClose: () => void;
+  onSelect: (metricId: string) => Promise<void>;
+  selectedMetricIds: string[];
+  isSubmitting?: boolean;
+}
+
+export function MetricSelectionModal({
+  opened,
+  onClose,
+  onSelect,
+  selectedMetricIds,
+  isSubmitting = false,
+}: MetricSelectionModalProps) {
+  const [metrics, setMetrics] = useState<SuccessMetric[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<MetricCategory | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<MetricSource | null>(null);
+  const [leadingOrLaggingFilter, setLeadingOrLaggingFilter] = useState<LeadingOrLagging | null>(null);
+
+  useEffect(() => {
+    if (opened) {
+      fetchMetrics();
+    }
+  }, [opened]);
+
+  const fetchMetrics = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams();
+      if (categoryFilter) params.append('category', categoryFilter);
+      if (sourceFilter) params.append('source', sourceFilter);
+      if (leadingOrLaggingFilter) params.append('leading_or_lagging', leadingOrLaggingFilter);
+
+      const res = await fetch(`/api/settings/success-measurement/metrics?${params.toString()}`);
+      if (!res.ok) {
+        let errorMessage = 'Failed to fetch metrics';
+        try {
+          const errorData = await res.json();
+          errorMessage = errorData.error || errorData.details || errorMessage;
+        } catch {
+          // If response is not JSON, use status text
+          errorMessage = res.statusText || errorMessage;
+        }
+        console.error('Error fetching metrics:', {
+          status: res.status,
+          statusText: res.statusText,
+          error: errorMessage,
+        });
+        setError(`${errorMessage} (${res.status})`);
+        setMetrics([]);
+        return;
+      }
+      const data = await res.json();
+      setMetrics(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      console.error('Error fetching metrics:', error);
+      setError(error.message || 'Failed to fetch metrics. Please try again.');
+      setMetrics([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMetrics();
+  }, [categoryFilter, sourceFilter, leadingOrLaggingFilter]);
+
+  const filteredMetrics = metrics.filter((metric) => {
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      if (!metric.name.toLowerCase().includes(query) &&
+          !metric.description?.toLowerCase().includes(query)) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const handleSelect = async (metricId: string) => {
+    try {
+      await onSelect(metricId);
+      onClose();
+      setSearchQuery('');
+    } catch (error: any) {
+      console.error('Error selecting metric:', error);
+    }
+  };
+
+  return (
+    <Modal
+      opened={opened}
+      onClose={onClose}
+      title="Select Metric"
+      size="xl"
+    >
+      <Stack gap="md">
+        <Group>
+          <TextInput
+            placeholder="Search metrics..."
+            leftSection={<IconSearch size={16} />}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{ flex: 1 }}
+          />
+          <Select
+            placeholder="Category"
+            clearable
+            data={[
+              { value: 'ADOPTION', label: 'Adoption' },
+              { value: 'REVENUE', label: 'Revenue' },
+              { value: 'RETENTION', label: 'Retention' },
+              { value: 'ENABLEMENT', label: 'Enablement' },
+              { value: 'FRICTION', label: 'Friction' },
+            ]}
+            value={categoryFilter}
+            onChange={(value) => setCategoryFilter(value as MetricCategory | null)}
+            style={{ flex: 1 }}
+          />
+          <Select
+            placeholder="Source"
+            clearable
+            data={[
+              { value: 'PENDO', label: 'Pendo' },
+              { value: 'SNOWFLAKE', label: 'Snowflake' },
+              { value: 'MANUAL', label: 'Manual' },
+            ]}
+            value={sourceFilter}
+            onChange={(value) => setSourceFilter(value as MetricSource | null)}
+            style={{ flex: 1 }}
+          />
+          <Select
+            placeholder="Leading/Lagging"
+            clearable
+            data={[
+              { value: 'LEADING', label: 'Leading' },
+              { value: 'LAGGING', label: 'Lagging' },
+            ]}
+            value={leadingOrLaggingFilter}
+            onChange={(value) => setLeadingOrLaggingFilter(value as LeadingOrLagging | null)}
+            style={{ flex: 1 }}
+          />
+        </Group>
+
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
+            <PurpleLoader />
+          </div>
+        ) : error ? (
+          <Card padding="md" withBorder>
+            <Stack gap="xs">
+              <Text c="red" fw={500}>Error loading metrics</Text>
+              <Text size="sm" c="dimmed">{error}</Text>
+              <Button
+                size="xs"
+                variant="light"
+                onClick={() => fetchMetrics()}
+              >
+                Retry
+              </Button>
+            </Stack>
+          </Card>
+        ) : (
+          <ScrollArea h={400}>
+            <Stack gap="xs">
+              {filteredMetrics.map((metric) => {
+                const isSelected = selectedMetricIds.includes(metric.id);
+                return (
+                  <Card
+                    key={metric.id}
+                    padding="md"
+                    withBorder
+                    style={{
+                      opacity: isSelected ? 0.5 : 1,
+                      cursor: isSelected ? 'not-allowed' : 'pointer',
+                    }}
+                    onClick={() => !isSelected && handleSelect(metric.id)}
+                  >
+                    <Group justify="space-between">
+                      <div style={{ flex: 1 }}>
+                        <Group gap="xs" mb="xs">
+                          <Text fw={500}>{metric.name}</Text>
+                          {isSelected && <Badge color="blue">Selected</Badge>}
+                        </Group>
+                        {metric.description && (
+                          <Text size="sm" c="dimmed" mb="xs">
+                            {metric.description}
+                          </Text>
+                        )}
+                        <Group gap="xs">
+                          <Badge variant="light">{metric.category}</Badge>
+                          <Badge variant="outline">{metric.measurement_type}</Badge>
+                          <Badge color={metric.source === 'PENDO' ? 'blue' : metric.source === 'SNOWFLAKE' ? 'cyan' : 'gray'}>
+                            {metric.source}
+                          </Badge>
+                          <Badge color={metric.leading_or_lagging === 'LEADING' ? 'green' : 'orange'}>
+                            {metric.leading_or_lagging}
+                          </Badge>
+                        </Group>
+                      </div>
+                      {!isSelected && (
+                        <Button
+                          size="xs"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelect(metric.id);
+                          }}
+                          disabled={isSubmitting}
+                        >
+                          Add
+                        </Button>
+                      )}
+                    </Group>
+                  </Card>
+                );
+              })}
+            </Stack>
+            {filteredMetrics.length === 0 && (
+              <Text ta="center" c="dimmed" py="xl">
+                No metrics found
+              </Text>
+            )}
+          </ScrollArea>
+        )}
+
+        <Group justify="flex-end" mt="md">
+          <Button variant="subtle" onClick={onClose} disabled={isSubmitting}>
+            Cancel
+          </Button>
+        </Group>
+      </Stack>
+    </Modal>
+  );
+}
+

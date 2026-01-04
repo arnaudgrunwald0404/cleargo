@@ -2,6 +2,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams, useRouter } from "next/navigation";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 const ALLOWED_DOMAIN = "clearcompany.com";
 
@@ -151,7 +152,10 @@ function LoginForm() {
 
     setLoading(true);
     try {
+      // Use current origin to ensure localhost links work correctly
+      // This will use whatever host you're accessing (localhost:3000 or 127.0.0.1:3000)
       const redirectUrl = `${window.location.origin}/reset-password`;
+      console.log('Password reset redirect URL:', redirectUrl);
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: redirectUrl,
       });
@@ -430,7 +434,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center bg-white">
-          <div className="animate-spin h-8 w-8 border-4 border-indigo-600 border-t-transparent rounded-full" />
+          <PurpleLoader size="md" />
         </div>
       }
     >
