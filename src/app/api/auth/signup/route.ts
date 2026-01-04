@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { syncUserSlackHandle } from '@/lib/slack/notifications';
 
 const ALLOWED_DOMAIN = 'clearcompany.com';
 
@@ -137,6 +138,13 @@ export async function POST(request: NextRequest) {
         if (settingsError) {
             console.error('Error ensuring app_settings:', settingsError);
             // Don't fail signup for settings error
+        }
+
+        // Auto-sync Slack handle for new user (non-blocking)
+        if (email) {
+            syncUserSlackHandle(email.toLowerCase()).catch((err) => {
+                console.error(`Failed to sync Slack handle for ${email}:`, err);
+            });
         }
 
         return NextResponse.json({

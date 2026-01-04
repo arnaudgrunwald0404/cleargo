@@ -688,7 +688,16 @@ export default function AdminSettingsPage() {
 
     return (
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 pb-8">
+            <div style={{
+              maxWidth: 'var(--page-container-max-width)',
+              margin: '0 auto',
+              paddingLeft: 'var(--page-container-padding-x)',
+              paddingRight: 'var(--page-container-padding-x)',
+              paddingTop: 'var(--page-container-padding-top)',
+              paddingBottom: 'var(--spacing-8)'
+            }}
+            className="sm:px-6 lg:px-8"
+            >
                 {error && (
                     <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
                         {error}

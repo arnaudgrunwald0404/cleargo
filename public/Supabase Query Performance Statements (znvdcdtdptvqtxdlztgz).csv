@@ -1,0 +1,1005 @@
+query,rolname,calls,mean_time,min_time,max_time,total_time,rows_read,cache_hit_rate,prop_total_time,index_advisor_result
+SELECT name FROM pg_timezone_names,authenticator,137,121.108798313869,53.449672,868.20676,16591.905369,163578,0,30.65081960263894,null
+"with f as (
+      
+-- CTE with sane arg_modes, arg_names, and arg_types.
+-- All three are always of the same length.
+-- All three include all args, including OUT and TABLE args.
+with functions as (
+  select
+    *,
+    -- proargmodes is null when all arg modes are IN
+    coalesce(
+      p.proargmodes,
+      array_fill($1::text, array[cardinality(coalesce(p.proallargtypes, p.proargtypes))])
+    ) as arg_modes,
+    -- proargnames is null when all args are unnamed
+    coalesce(
+      p.proargnames,
+      array_fill($2::text, array[cardinality(coalesce(p.proallargtypes, p.proargtypes))])
+    ) as arg_names,
+    -- proallargtypes is null when all arg modes are IN
+    coalesce(p.proallargtypes, p.proargtypes) as arg_types,
+    array_cat(
+      array_fill($3, array[pronargs - pronargdefaults]),
+      array_fill($4, array[pronargdefaults])) as arg_has_defaults
+  from
+    pg_proc as p
+  where
+    p.prokind = $5
+)
+select
+  f.oid as id,
+  n.nspname as schema,
+  f.proname as name,
+  l.lanname as language,
+  case
+    when l.lanname = $6 then $7
+    else f.prosrc
+  end as definition,
+  case
+    when l.lanname = $8 then f.prosrc
+    else pg_get_functiondef(f.oid)
+  end as complete_statement,
+  coalesce(f_args.args, $9) as args,
+  pg_get_function_arguments(f.oid) as argument_types,
+  pg_get_function_identity_arguments(f.oid) as identity_argument_types,
+  f.prorettype as return_type_id,
+  pg_get_function_result(f.oid) as return_type,
+  nullif(rt.typrelid, $10) as return_type_relation_id,
+  f.proretset as is_set_returning_function,
+  case
+    when f.provolatile = $11 then $12
+    when f.provolatile = $13 then $14
+    when f.provolatile = $15 then $16
+  end as behavior,
+  f.prosecdef as security_definer,
+  f_config.config_params as config_params
+from
+  functions f
+  left join pg_namespace n on f.pronamespace = n.oid
+  left join pg_language l on f.prolang = l.oid
+  left join pg_type rt on rt.oid = f.prorettype
+  left join (
+    select
+      oid,
+      jsonb_object_agg(param, value) filter (where param is not null) as config_params
+    from
+      (
+        select
+          oid,
+          (string_to_array(unnest(proconfig), $17))[$18] as param,
+          (string_to_array(unnest(proconfig), $19))[$20] as value
+        from
+          functions
+      ) as t
+    group by
+      oid
+  ) f_config on f_config.oid = f.oid
+  left join (
+    select
+      oid,
+      jsonb_agg(jsonb_build_object(
+        $21, t2.mode,
+        $22, name,
+        $23, type_id,
+        -- Cast null into false boolean
+        $24, COALESCE(has_default, $25)
+      )) as args
+    from
+      (
+        select
+          oid,
+          unnest(arg_modes) as mode,
+          unnest(arg_names) as name,
+          -- Coming from: coalesce(p.proallargtypes, p.proargtypes) postgres won't automatically assume
+          -- integer, we need to cast it to be properly parsed
+          unnest(arg_types)::int8 as type_id,
+          unnest(arg_has_defaults) as has_default
+        from
+          functions
+      ) as t1,
+      lateral (
+        select
+          case
+            when t1.mode = $26 then $27
+            when t1.mode = $28 then $29
+            when t1.mode = $30 then $31
+            when t1.mode = $32 then $33
+            else $34
+          end as mode
+      ) as t2
+    group by
+      t1.oid
+  ) f_args on f_args.oid = f.oid
+
+    )
+    select
+      f.*
+    from f
+   where schema NOT IN ($35,$36,$37)
+
+-- source: dashboard
+-- user: 27f0c474-e58d-4809-8204-40cc22512ebb
+-- date: 2025-11-27T05:00:40.231Z",postgres,72,182.274806708333,131.843327,244.25766,13123.786083,8205,100.0000000000000000,24.244038932696768,null
+"WITH
+-- Recursively get the base types of domains
+base_types AS (
+  WITH RECURSIVE
+  recurse AS (
+    SELECT
+      oid,
+      typbasetype,
+      typnamespace AS base_namespace,
+      COALESCE(NULLIF(typbasetype, $3), oid) AS base_type
+    FROM pg_type
+    UNION
+    SELECT
+      t.oid,
+      b.typbasetype,
+      b.typnamespace AS base_namespace,
+      COALESCE(NULLIF(b.typbasetype, $4), b.oid) AS base_type
+    FROM recurse t
+    JOIN pg_type b ON t.typbasetype = b.oid
+  )
+  SELECT
+    oid,
+    base_namespace,
+    base_type
+  FROM recurse
+  WHERE typbasetype = $5
+),
+arguments AS (
+  SELECT
+    oid,
+    array_agg((
+      COALESCE(name, $6), -- name
+      type::regtype::text, -- type
+      CASE type
+        WHEN $7::regtype THEN $8
+        WHEN $9::regtype THEN $10
+        WHEN $11::regtype THEN $12
+        WHEN $13::regtype THEN $14
+        ELSE type::regtype::text
+      END, -- convert types that ignore the length and accept any value till maximum size
+      idx <= (pronargs - pronargdefaults), -- is_required
+      COALESCE(mode = $15, $16) -- is_variadic
+    ) ORDER BY idx) AS args,
+    CASE COUNT(*) - COUNT(name) -- number of unnamed arguments
+      WHEN $17 THEN $18
+      WHEN $19 THEN (array_agg(type))[$20] IN ($21::regtype, $22::regtype, $23::regtype, $24::regtype, $25::regtype)
+      ELSE $26
+    END AS callable
+  FROM pg_proc,
+       unnest(proargnames, proargtypes, proargmodes)
+         WITH ORDINALITY AS _ (name, type, mode, idx)
+  WHERE type IS NOT NULL -- only input arguments
+  GROUP BY oid
+)
+SELECT
+  pn.nspname AS proc_schema,
+  p.proname AS proc_name,
+  d.description AS proc_description,
+  COALESCE(a.args, $27) AS args,
+  tn.nspname AS schema,
+  COALESCE(comp.relname, t.typname) AS name,
+  p.proretset AS rettype_is_setof,
+  (t.typtype = $28
+   -- if any TABLE, INOUT or OUT arguments present, treat as composite
+   or COALESCE(proargmodes::text[] && $29, $30)
+  ) AS rettype_is_composite,
+  bt.oid <> bt.base_type as rettype_is_composite_alias,
+  p.provolatile,
+  p.provariadic > $31 as hasvariadic,
+  lower((regexp_split_to_array((regexp_split_to_array(iso_config, $32))[$33], $34))[$35]) AS transaction_isolation_level,
+  coalesce(func_settings.kvs, $36) as kvs
+FROM pg_proc p
+LEFT JOIN arguments a ON a.oid = p.oid
+JOIN pg_namespace pn ON pn.oid = p.pronamespace
+JOIN base_types bt ON bt.oid = p.prorettype
+JOIN pg_type t ON t.oid = bt.base_type
+JOIN pg_namespace tn ON tn.oid = t.typnamespace
+LEFT JOIN pg_class comp ON comp.oid = t.typrelid
+LEFT JOIN pg_description as d ON d.objoid = p.oid AND d.classoid = $37::regclass
+LEFT JOIN LATERAL unnest(proconfig) iso_config ON iso_config LIKE $38
+LEFT JOIN LATERAL (
+  SELECT
+    array_agg(row(
+      substr(setting, $39, strpos(setting, $40) - $41),
+      substr(setting, strpos(setting, $42) + $43)
+    )) as kvs
+  FROM unnest(proconfig) setting
+  WHERE setting ~ ANY($2)
+) func_settings ON $44
+WHERE t.oid <> $45::regtype AND COALESCE(a.callable, $46)
+AND prokind = $47
+AND p.pronamespace = ANY($1::regnamespace[])",authenticator,137,22.5188235182482,18.353377,65.609763,3085.078822,197,99.9560207901719187,5.699176335089176,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1715.438593,1715.438593,1715.438593,1715.438593,1,100.0000000000000000,3.1689910039920117,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1687.567557,1687.567557,1687.567557,1687.567557,1,100.0000000000000000,3.117503843381106,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1676.436384,1676.436384,1676.436384,1676.436384,1,100.0000000000000000,3.096940829790984,null
+"SELECT users.aud, users.banned_until, users.confirmation_sent_at, users.confirmation_token, users.confirmed_at, users.created_at, users.deleted_at, users.email, users.email_change, users.email_change_confirm_status, users.email_change_sent_at, users.email_change_token_current, users.email_change_token_new, users.email_confirmed_at, users.encrypted_password, users.id, users.instance_id, users.invited_at, users.is_anonymous, users.is_sso_user, users.last_sign_in_at, users.phone, users.phone_change, users.phone_change_sent_at, users.phone_change_token, users.phone_confirmed_at, users.raw_app_meta_data, users.raw_user_meta_data, users.reauthentication_sent_at, users.reauthentication_token, users.recovery_sent_at, users.recovery_token, users.role, users.updated_at FROM users AS users WHERE instance_id = $1 and id = $2 LIMIT $3",supabase_auth_admin,39514,0.0410795835653182,0.02052,3.239906,1623.21866500001,39514,100.0000000000000000,2.9986298360590484,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1375.980292,1375.980292,1375.980292,1375.980292,1,100.0000000000000000,2.5418975560020534,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1373.13147,1373.13147,1373.13147,1373.13147,1,100.0000000000000000,2.5366348253354976,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1365.976021,1365.976021,1365.976021,1365.976021,1,100.0000000000000000,2.523416308739769,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1325.835991,1325.835991,1325.835991,1325.835991,1,100.0000000000000000,2.4492641971520768,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1324.822202,1324.822202,1324.822202,1324.822202,1,100.0000000000000000,2.4473913885105696,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1251.347167,1251.347167,1251.347167,1251.347167,1,100.0000000000000000,2.3116583311553662,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1125.00866,1125.00866,1125.00866,1125.00866,1,100.0000000000000000,2.0782686932082495,null
+"with records as (
+  select
+    c.oid::int8 as ""id"",
+    case c.relkind
+      when $1 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $2,
+        $3,
+        $4
+      )
+      when $5 then concat(
+        $6, concat(nc.nspname, $7, c.relname), $8,
+        pg_get_viewdef(concat(nc.nspname, $9, c.relname), $10)
+      )
+      when $11 then concat(
+        $12, concat(nc.nspname, $13, c.relname), $14,
+        pg_get_viewdef(concat(nc.nspname, $15, c.relname), $16)
+      )
+      when $17 then concat($18, nc.nspname, $19, c.relname, $20)
+      when $21 then pg_temp.pg_get_tabledef(
+        concat(nc.nspname),
+        concat(c.relname),
+        $22,
+        $23,
+        $24
+      )
+    end as ""sql""
+  from
+    pg_namespace nc
+    join pg_class c on nc.oid = c.relnamespace
+  where
+    c.relkind in ($25, $26, $27, $28, $29)
+    and not pg_is_other_temp_schema(nc.oid)
+    and (
+      pg_has_role(c.relowner, $30)
+      or has_table_privilege(
+        c.oid,
+        $31
+      )
+      or has_any_column_privilege(c.oid, $32)
+    )
+    and nc.nspname IN ($33)
+  order by c.relname asc
+  limit $34
+  offset $35
+)
+select
+  jsonb_build_object(
+    $36, coalesce(jsonb_agg(
+      jsonb_build_object(
+        $37, r.id,
+        $38, r.sql
+      )
+    ), $39::jsonb)
+  ) ""data""
+from records r",postgres,1,1122.745576,1122.745576,1122.745576,1122.745576,1,100.0000000000000000,2.0740880172770075,null
+"SELECT identities.created_at, identities.email, identities.id, identities.identity_data, identities.last_sign_in_at, identities.provider, identities.provider_id, identities.updated_at, identities.user_id FROM identities AS identities WHERE user_id = $1",supabase_auth_admin,39568,0.0274099576172666,0.015351,1.894995,1084.557203,39568,100.0000000000000000,2.003541271396439,null
+"WITH
+-- Recursively get the base types of domains
+base_types AS (
+  WITH RECURSIVE
+  recurse AS (
+    SELECT
+      oid,
+      typbasetype,
+      typnamespace AS base_namespace,
+      COALESCE(NULLIF(typbasetype, $2), oid) AS base_type
+    FROM pg_type
+    UNION
+    SELECT
+      t.oid,
+      b.typbasetype,
+      b.typnamespace AS base_namespace,
+      COALESCE(NULLIF(b.typbasetype, $3), b.oid) AS base_type
+    FROM recurse t
+    JOIN pg_type b ON t.typbasetype = b.oid
+  )
+  SELECT
+    oid,
+    base_namespace,
+    base_type
+  FROM recurse
+  WHERE typbasetype = $4
+),
+columns AS (
+    SELECT
+        c.oid AS relid,
+        a.attname::name AS column_name,
+        d.description AS description,
+        -- typbasetype and typdefaultbin handles `CREATE DOMAIN .. DEFAULT val`,  attidentity/attgenerated handles generated columns, pg_get_expr gets the default of a column
+        CASE
+          WHEN (t.typbasetype != $5) AND (ad.adbin IS NULL) THEN pg_get_expr(t.typdefaultbin, $6)
+          WHEN a.attidentity  = $7 THEN format($8, seq.objid::regclass)
+          WHEN a.attgenerated = $9 THEN $10
+          ELSE pg_get_expr(ad.adbin, ad.adrelid)::text
+        END AS column_default,
+        not (a.attnotnull OR t.typtype = $11 AND t.typnotnull) AS is_nullable,
+        CASE
+            WHEN t.typtype = $12 THEN
+            CASE
+                WHEN bt.base_namespace = $13::regnamespace THEN format_type(bt.base_type, $14::integer)
+                ELSE format_type(a.atttypid, a.atttypmod)
+            END
+            ELSE
+            CASE
+                WHEN t.typnamespace = $15::regnamespace THEN format_type(a.atttypid, $16::integer)
+                ELSE format_type(a.atttypid, a.atttypmod)
+            END
+        END::text AS data_type,
+        format_type(a.atttypid, a.atttypmod)::text AS nominal_data_type,
+        information_schema._pg_char_max_length(
+            information_schema._pg_truetypid(a.*, t.*),
+            information_schema._pg_truetypmod(a.*, t.*)
+        )::integer AS character_maximum_length,
+        bt.base_type,
+        a.attnum::integer AS position
+    FROM pg_attribute a
+        LEFT JOIN pg_description AS d
+            ON d.objoid = a.attrelid and d.objsubid = a.attnum and d.classoid = $17::regclass
+        LEFT JOIN pg_attrdef ad
+            ON a.attrelid = ad.adrelid AND a.attnum = ad.adnum
+        JOIN pg_class c
+            ON a.attrelid = c.oid
+        JOIN pg_type t
+            ON a.atttypid = t.oid
+        LEFT JOIN base_types bt
+            ON t.oid = bt.oid
+        LEFT JOIN pg_depend seq
+            ON seq.refobjid = a.attrelid and seq.refobjsubid = a.attnum and seq.deptype = $18
+    WHERE
+        NOT pg_is_other_temp_schema(c.relnamespace)
+        AND a.attnum > $19
+        AND NOT a.attisdropped
+        AND c.relkind in ($20, $21, $22, $23, $24)
+        AND c.relnamespace = ANY($1::regnamespace[])
+),
+columns_agg AS (
+  SELECT
+    relid,
+    array_agg(row(
+      column_name,
+      description,
+      is_nullable::boolean,
+      data_type,
+      nominal_data_type,
+      character_maximum_length,
+      column_default,
+      coalesce(
+        (SELECT array_agg(enumlabel ORDER BY enumsortorder) FROM pg_enum WHERE enumtypid = base_type),
+        $25
+      )
+    ) order by position) as columns
+  FROM columns
+  GROUP BY relid
+),
+tbl_pk_cols AS (
+  SELECT
+    r.oid AS relid,
+    array_agg(a.attname ORDER BY a.attname) AS pk_cols
+  FROM pg_class r
+  JOIN pg_constraint c
+    ON r.oid = c.conrelid
+  JOIN pg_attribute a
+    ON a.attrelid = r.oid AND a.attnum = ANY (c.conkey)
+  WHERE
+    c.contype in ($26)
+    AND r.relkind IN ($27, $28)
+    AND r.relnamespace NOT IN ($29::regnamespace, $30::regnamespace)
+    AND NOT pg_is_other_temp_schema(r.relnamespace)
+    AND NOT a.attisdropped
+  GROUP BY r.oid
+)
+SELECT
+  n.nspname AS table_schema,
+  c.relname AS table_name,
+  d.description AS table_description,
+  c.relkind IN ($31,$32) as is_view,
+  (
+    c.relkind IN ($33,$34)
+    OR (
+      c.relkind in ($35,$36)
+      -- The function `pg_relation_is_updateable` returns a bitmask where 8
+      -- corresponds to `1 << CMD_INSERT` in the PostgreSQL source code, i.e.
+      -- it's possible to insert into the relation.
+      AND (pg_relation_is_updatable(c.oid::regclass, $37) & $38) = $39
+    )
+  ) AS insertable,
+  (
+    c.relkind IN ($40,$41)
+    OR (
+      c.relkind in ($42,$43)
+      -- CMD_UPDATE
+      AND (pg_relation_is_updatable(c.oid::regclass, $44) & $45) = $46
+    )
+  ) AS updatable,
+  (
+    c.relkind IN ($47,$48)
+    OR (
+      c.relkind in ($49,$50)
+      -- CMD_DELETE
+      AND (pg_relation_is_updatable(c.oid::regclass, $51) & $52) = $53
+    )
+  ) AS deletable,
+  coalesce(tpks.pk_cols, $54) as pk_cols,
+  coalesce(cols_agg.columns, $55) as columns
+FROM pg_class c
+JOIN pg_namespace n ON n.oid = c.relnamespace
+LEFT JOIN pg_description d on d.objoid = c.oid and d.objsubid = $56 and d.classoid = $57::regclass
+LEFT JOIN tbl_pk_cols tpks ON c.oid = tpks.relid
+LEFT JOIN columns_agg cols_agg ON c.oid = cols_agg.relid
+WHERE c.relkind IN ($58,$59,$60,$61,$62)
+AND c.relnamespace NOT IN ($63::regnamespace, $64::regnamespace)
+AND not c.relispartition
+ORDER BY table_schema, table_name",authenticator,137,7.38178061313869,1.274554,58.692459,1011.303944,5991,99.9645988019489291,1.8682179087699007,null
+"SELECT sessions.aal, sessions.created_at, sessions.factor_id, sessions.id, sessions.ip, sessions.not_after, sessions.oauth_client_id, sessions.refresh_token_counter, sessions.refresh_token_hmac_key, sessions.refreshed_at, sessions.scopes, sessions.tag, sessions.updated_at, sessions.user_agent, sessions.user_id FROM sessions AS sessions WHERE id = $1 LIMIT $2",supabase_auth_admin,39403,0.0227548590462658,0.007869,4.768432,896.609710999997,39378,100.0000000000000000,1.6563391542228572,null
+"SELECT mfa_amr_claims.authentication_method, mfa_amr_claims.created_at, mfa_amr_claims.id, mfa_amr_claims.session_id, mfa_amr_claims.updated_at FROM mfa_amr_claims AS mfa_amr_claims WHERE session_id = $1",supabase_auth_admin,39546,0.0174035816517472,0.009107,1.408661,688.242040000007,39546,100.0000000000000000,1.2714141107871955,null
+"SELECT refresh_tokens.created_at, refresh_tokens.id, refresh_tokens.instance_id, refresh_tokens.parent, refresh_tokens.revoked, refresh_tokens.session_id, refresh_tokens.token, refresh_tokens.updated_at, refresh_tokens.user_id FROM refresh_tokens AS refresh_tokens WHERE token = $1 LIMIT $2",supabase_auth_admin,25269,0.027029970596383,0.009715,1.17104,683.020327000009,4932,100.0000000000000000,1.2617678537949921,null

@@ -127,7 +127,6 @@ export async function GET(req: NextRequest) {
                     // For criterion status changes, we need to fetch epic_id
                     if (log.entity_type === 'epic_criterion_status' || log.entity_type === 'launch_criterion_status') {
                         criterionStatusIds.push(log.entity_id);
-                        criterionStatusLogs.set(log.entity_id, log);
                     }
                     
                     activity = {

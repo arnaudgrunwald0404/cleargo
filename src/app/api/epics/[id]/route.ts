@@ -76,6 +76,23 @@ export async function PATCH(
 
         const epic = await updateEpic(id, body);
 
+        // Auto-lock success config if status changed to GO
+        if (typeof body.status !== 'undefined' && body.status === 'GO' && current.status !== 'GO') {
+            try {
+                const { lockEpicSuccessConfig, getEpicSuccessConfig } = await import('@/lib/services/successMeasurementService');
+                const config = await getEpicSuccessConfig(id);
+                
+                // Only lock if config exists and is not already locked
+                if (config && !config.locked) {
+                    await lockEpicSuccessConfig(id);
+                    console.log(`Auto-locked success config for epic ${id} (status changed to GO)`);
+                }
+            } catch (error) {
+                console.error('Auto-lock failed:', error);
+                // Don't fail the update if auto-lock fails
+            }
+        }
+
         // Trigger write-back to Aha! if epic has aha_id
         if (epic.aha_id) {
             try {
