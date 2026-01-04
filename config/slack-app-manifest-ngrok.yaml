@@ -41,6 +41,9 @@ oauth_config:
       - users:read
       - users:read.email
       - channels:read
+      - channels:create
+      - channels:manage
+      - channels:write
       - groups:read
       - im:read
       - mpim:read

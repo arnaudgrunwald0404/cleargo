@@ -2,6 +2,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter, useSearchParams } from "next/navigation";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 function ResetPasswordForm() {
   const supabase = createClient();
@@ -22,6 +23,21 @@ function ResetPasswordForm() {
     // 3. Then user can update password
     
     async function setupSession() {
+      // Check if we have a raw token parameter (from incorrect email template)
+      // If so, redirect to Supabase's verify endpoint which will handle it properly
+      const token = searchParams.get('token');
+      const type = searchParams.get('type');
+      
+      if (token && type === 'recovery' && !searchParams.get('access_token')) {
+        // Redirect to Supabase's verify endpoint, which will then redirect back with proper tokens
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        if (supabaseUrl) {
+          const verifyUrl = `${supabaseUrl}/auth/v1/verify?token=${token}&type=${type}&redirect_to=${window.location.origin}/reset-password`;
+          window.location.href = verifyUrl;
+          return;
+        }
+      }
+      
       // Check if we have tokens in the URL (from Supabase redirect)
       const accessToken = searchParams.get('access_token');
       const refreshToken = searchParams.get('refresh_token');
@@ -101,7 +117,7 @@ function ResetPasswordForm() {
 
   if (!isReady) {
     return (
-      <main className="pt-24 max-w-md mx-auto px-4">
+      <main className="max-w-md mx-auto px-4">
         <h1 className="text-2xl font-bold mb-4">Reset Password</h1>
         <div className="bg-red-100 text-red-700 p-4 rounded">
           <p className="text-sm">{error || "Invalid or expired reset link. Please request a new password reset."}</p>
@@ -179,7 +195,11 @@ function ResetPasswordForm() {
 
 export default function ResetPasswordPage() {
   return (
-    <Suspense fallback={<div className="pt-24 p-8">Loading...</div>}>
+    <Suspense fallback={
+        <div className="p-8 flex items-center justify-center min-h-screen">
+            <PurpleLoader size="md" />
+        </div>
+    }>
       <ResetPasswordForm />
     </Suspense>
   );

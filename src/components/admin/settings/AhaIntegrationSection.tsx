@@ -459,7 +459,7 @@ export default function AhaIntegrationSection({
             </p>
           )}
           <p className="text-xs text-gray-500 mt-2">
-            Epics with any of these tags (or "Launch Candidate" = true) will be synced.
+            Epics with any of these tags (or "ClearGO Candidate" = Yes) will be synced.
           </p>
         </div>
       </section>

@@ -40,25 +40,8 @@ export async function PATCH(
         }
 
         const body = await req.json();
-        const { status, notes, condition, condition_due_date, condition_owner_id } = body;
+        const { status, notes, condition, condition_due_date } = body;
 
-        // Fetch existing to detect assignee change
-        const { data: existing, error: fetchErr } = await supabase
-            .from('epic_criterion_status')
-            .select('id, condition_owner_id')
-            .eq('id', lcsId)
-            .eq('epic_id', id)
-            .single();
-            
-        // #region agent log
-        const logEntry3 = {location:'route.ts:40',message:'Fetched existing criterion status',data:{lcsId,epicId:id,existing,fetchErr},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'D,E',runId:'status-update'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
-        // #endregion
-        
-        if (fetchErr || !existing) {
-            console.error('Failed to fetch existing criterion status', fetchErr);
-            return NextResponse.json({ error: 'Criterion status not found' }, { status: 404 });
-        }
         // Load current user's roles
         const { data: me } = await supabase
             .from('app_user')
@@ -72,15 +55,6 @@ export async function PATCH(
             const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'criteria.status.update');
             if (!canUpdate) {
                 return NextResponse.json({ error: 'Forbidden: cannot update criterion status' }, { status: 403 });
-            }
-        }
-
-        // If changing assigned owner, require stronger permission
-        if (typeof condition_owner_id !== 'undefined' && condition_owner_id !== existing.condition_owner_id) {
-            const { canRolesPerform } = await import('@/lib/permissions');
-            const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.assignee.override');
-            if (!ok) {
-                return NextResponse.json({ error: 'Forbidden: cannot override criterion assignee' }, { status: 403 });
             }
         }
 
@@ -102,7 +76,6 @@ export async function PATCH(
         if (typeof notes !== 'undefined') updateData.current_status_notes = notes;
         if (typeof condition !== 'undefined') updateData.condition = condition;
         if (typeof condition_due_date !== 'undefined') updateData.condition_due_date = condition_due_date;
-        if (typeof condition_owner_id !== 'undefined') updateData.condition_owner_id = condition_owner_id;
 
         // Update the status
         const { data, error } = await supabase

@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { getEpic } from '@/lib/epics';
 import { canRolesPerform } from '@/lib/permissions';
+import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
 
 export const dynamic = 'force-dynamic';
 
@@ -86,7 +87,10 @@ export async function POST(
       .single();
 
     const oldApproverId = oldTask?.decision_owner_id || null;
-    const resolvedTaskLabel = oldTask?.criterion?.label || taskLabel || 'Approval task';
+    const criterionLabel = Array.isArray(oldTask?.criterion) && oldTask.criterion.length > 0 
+        ? oldTask.criterion[0].label 
+        : (oldTask?.criterion as any)?.label;
+    const resolvedTaskLabel = criterionLabel || taskLabel || 'Approval task';
 
     // Permission check: Use permission matrix + allow current approver to delegate their own tasks
     const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
@@ -98,6 +102,9 @@ export async function POST(
       }, { status: 403 });
     }
 
+    // Track all delegated task IDs for grouped notifications
+    let delegatedTaskIds: string[] = [];
+
     // Handle different delegation types
     switch (delegationType) {
       case 'SINGLE_TASK': {
@@ -108,6 +115,8 @@ export async function POST(
           .eq('id', taskId);
 
         if (error) throw error;
+
+        delegatedTaskIds = [taskId];
 
         // Log delegation to audit_log
         await supabase.from('audit_log').insert({
@@ -156,6 +165,8 @@ export async function POST(
             .in('id', taskIds);
 
           if (error) throw error;
+
+          delegatedTaskIds = taskIds;
 
           // Log delegation to audit_log for each task
           const auditLogs = taskIds.map((tid: string) => ({
@@ -221,6 +232,8 @@ export async function POST(
               .update({ decision_owner_id: newApproverId })
               .in('id', currentTaskIds);
 
+            delegatedTaskIds = currentTaskIds;
+
             // Log delegation to audit_log for each task
             const auditLogs = currentTaskIds.map((tid: string) => ({
               actor_id: delegatorId,
@@ -249,36 +262,13 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid delegation type' }, { status: 400 });
     }
 
-    // Send Slack notification to new approver if they have a Slack handle
-    if (newApprover.slack_handle) {
+    // Send grouped assignment notifications for delegated criteria
+    if (delegatedTaskIds.length > 0) {
       try {
-        const epicUrl = process.env.NEXT_PUBLIC_APP_URL 
-          ? `${process.env.NEXT_PUBLIC_APP_URL}/epics/${epicId}`
-          : undefined;
-
-        await sendSlackNotification({
-          type: 'delegation',
-          priority: 'medium',
-          recipient: {
-            id: newApproverId,
-            email: newApproverEmail,
-            slack_handle: newApprover.slack_handle,
-            name: `${newApprover.first_name || ''} ${newApprover.last_name || ''}`.trim() || newApproverEmail,
-          },
-          launch_id: epicId,
-          metadata: {
-            epic_name: epic.name,
-            epic_id: epicId,
-            task_label: taskLabel || 'Approval task',
-            category: category,
-            delegation_type: delegationType,
-            delegated_by: delegatorName,
-            epic_url: epicUrl,
-          },
-        });
-      } catch (slackError) {
+        await sendCriteriaAssignmentNotifications(epicId, delegatedTaskIds, supabase);
+      } catch (notificationError) {
         // Log error but don't fail the delegation
-        console.error('Failed to send Slack notification for delegation:', slackError);
+        console.error('Failed to send assignment notifications for delegation:', notificationError);
       }
     }
 

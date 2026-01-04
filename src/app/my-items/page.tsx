@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Tooltip } from "@mantine/core";
+import { PurpleLoader } from "@/components/PurpleLoader";
 
 type MyItem = {
     id: string;
@@ -171,21 +172,62 @@ export default function MyItemsPage() {
         }
     }
 
-    if (loading) return <div className="pt-24 p-8">Loading...</div>;
+    if (loading) {
+        return (
+            <div className="p-8 flex items-center justify-center">
+                <PurpleLoader size="md" />
+            </div>
+        );
+    }
 
     return (
-        <div className="pt-24 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h1 className="text-2xl font-bold mb-6">My Items</h1>
+        <div className="pb-8 sm:px-6 lg:px-8" style={{
+          maxWidth: 'var(--page-container-max-width)',
+          margin: '0 auto',
+          paddingLeft: 'var(--page-container-padding-x)',
+          paddingRight: 'var(--page-container-padding-x)',
+          paddingTop: 'var(--page-container-padding-top)',
+          fontFamily: 'var(--font-body)'
+        }}>
+            <h1 style={{
+                fontFamily: 'var(--font-heading)',
+                fontSize: 'var(--font-size-page-title)',
+                fontWeight: 'var(--font-weight-bold)',
+                color: 'var(--color-gray-900)',
+                marginBottom: 'var(--spacing-6)'
+            }}>My Items</h1>
 
-            {error && <div className="bg-red-100 text-red-700 p-4 rounded mb-4">{error}</div>}
+            {error && <div style={{
+                backgroundColor: 'var(--color-error-light)',
+                color: 'var(--color-error-dark)',
+                padding: 'var(--spacing-4)',
+                borderRadius: 'var(--radius-base)',
+                marginBottom: 'var(--spacing-4)',
+                fontFamily: 'var(--font-body)'
+            }}>{error}</div>}
 
             {items.length === 0 ? (
-                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                    <div className="px-4 py-8 text-center text-gray-500">You have no assigned items.</div>
+                <div style={{
+                    border: `2px solid var(--color-blue-200)`,
+                    borderRadius: 'var(--radius-lg)',
+                    backgroundColor: 'var(--color-blue-50)',
+                    overflow: 'hidden'
+                }}>
+                    <div style={{
+                        padding: 'var(--spacing-8) var(--spacing-4)',
+                        textAlign: 'center',
+                        color: 'var(--color-gray-500)',
+                        fontFamily: 'var(--font-body)'
+                    }}>You have no assigned items.</div>
                 </div>
             ) : (
-                <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                    <table className="min-w-full divide-y divide-purple-200 table-fixed">
+                <div style={{
+                    border: `2px solid var(--color-blue-200)`,
+                    borderRadius: 'var(--radius-lg)',
+                    backgroundColor: 'var(--color-blue-50)',
+                    overflow: 'hidden'
+                }}>
+                    <table className="min-w-full table-fixed" style={{ borderCollapse: 'collapse' }}>
                         <colgroup>
                             <col className="w-auto" />
                             <col className="w-auto" />
@@ -193,29 +235,105 @@ export default function MyItemsPage() {
                             <col className="w-32" />
                             <col className="w-24" />
                         </colgroup>
-                        <thead className="bg-purple-100">
+                        <thead style={{ backgroundColor: 'var(--color-blue-100)' }}>
                             <tr>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Launch</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Criterion</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-24">Status</th>
-                                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Condition Due</th>
-                                <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-24">Action</th>
+                                <th style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    textAlign: 'left',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    color: 'var(--color-blue-900)',
+                                    fontFamily: 'var(--font-body)',
+                                    borderBottom: `1px solid var(--color-blue-200)`
+                                }}>Launch</th>
+                                <th style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    textAlign: 'left',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    color: 'var(--color-blue-900)',
+                                    fontFamily: 'var(--font-body)',
+                                    borderBottom: `1px solid var(--color-blue-200)`
+                                }}>Criterion</th>
+                                <th style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    textAlign: 'left',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    color: 'var(--color-blue-900)',
+                                    fontFamily: 'var(--font-body)',
+                                    width: '96px',
+                                    borderBottom: `1px solid var(--color-blue-200)`
+                                }}>Status</th>
+                                <th style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    textAlign: 'left',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    color: 'var(--color-blue-900)',
+                                    fontFamily: 'var(--font-body)',
+                                    width: '128px',
+                                    borderBottom: `1px solid var(--color-blue-200)`
+                                }}>Condition Due</th>
+                                <th style={{
+                                    padding: 'var(--spacing-2) var(--spacing-4)',
+                                    textAlign: 'right',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    color: 'var(--color-blue-900)',
+                                    fontFamily: 'var(--font-body)',
+                                    width: '96px',
+                                    borderBottom: `1px solid var(--color-blue-200)`
+                                }}>Action</th>
                             </tr>
                         </thead>
-                        <tbody className="bg-white divide-y divide-purple-200">
+                        <tbody style={{ backgroundColor: 'var(--color-white)' }}>
                             {items.map(item => (
-                                <tr key={item.id} className="hover:bg-purple-50 transition-colors">
-                                    <td className="px-4 py-3">
-                                        <div className="font-medium text-gray-900">{item.launch.name}</div>
-                                        <div className="text-xs text-gray-500">
+                                <tr 
+                                    key={item.id} 
+                                    style={{
+                                        borderBottom: `1px solid var(--color-blue-200)`,
+                                        transition: 'var(--transition-fast)'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-blue-50)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--color-white)'}
+                                >
+                                    <td style={{ padding: 'var(--spacing-3) var(--spacing-4)' }}>
+                                        <div style={{
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            color: 'var(--color-gray-900)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>{item.launch.name}</div>
+                                        <div style={{
+                                            fontSize: 'var(--font-size-xs)',
+                                            color: 'var(--color-gray-500)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>
                                             {item.launch.target_launch_date ? new Date(item.launch.target_launch_date).toLocaleDateString() : 'No date'}
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-gray-700">
-                                        <div className="font-medium text-gray-900">{item.criterion.label}</div>
-                                        <div className="text-xs text-gray-500">{item.criterion.category}</div>
+                                    <td style={{
+                                        padding: 'var(--spacing-3) var(--spacing-4)',
+                                        fontSize: 'var(--font-size-sm)',
+                                        color: 'var(--color-gray-700)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        <div style={{
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            color: 'var(--color-gray-900)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>{item.criterion.label}</div>
+                                        <div style={{
+                                            fontSize: 'var(--font-size-xs)',
+                                            color: 'var(--color-gray-500)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>{item.criterion.category}</div>
                                     </td>
-                                    <td className="px-4 py-3 whitespace-nowrap w-24">
+                                    <td style={{
+                                        padding: 'var(--spacing-3) var(--spacing-4)',
+                                        whiteSpace: 'nowrap',
+                                        width: '96px'
+                                    }}>
                                         <StatusTrafficLight 
                                             status={item.status}
                                             itemId={item.id}
@@ -224,15 +342,38 @@ export default function MyItemsPage() {
                                             isSaving={savingItems.has(item.id)}
                                         />
                                     </td>
-                                    <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">
+                                    <td style={{
+                                        padding: 'var(--spacing-3) var(--spacing-4)',
+                                        fontSize: 'var(--font-size-sm)',
+                                        color: 'var(--color-gray-700)',
+                                        whiteSpace: 'nowrap',
+                                        width: '128px',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
                                         {item.condition_due_date ? (
-                                            <span className={new Date(item.condition_due_date) < new Date() ? 'text-red-600 font-medium' : ''}>
+                                            <span style={{
+                                                color: new Date(item.condition_due_date) < new Date() ? 'var(--color-error-base)' : 'inherit',
+                                                fontWeight: new Date(item.condition_due_date) < new Date() ? 'var(--font-weight-medium)' : 'normal'
+                                            }}>
                                                 {new Date(item.condition_due_date).toLocaleDateString()}
                                             </span>
                                         ) : '-'}
                                     </td>
-                                    <td className="px-4 py-3 text-right whitespace-nowrap w-24">
-                                        <Link href={`/launches/${item.launch.id}`} className="text-sm text-gray-600 hover:text-gray-900">
+                                    <td style={{
+                                        padding: 'var(--spacing-3) var(--spacing-4)',
+                                        textAlign: 'right',
+                                        whiteSpace: 'nowrap',
+                                        width: '96px'
+                                    }}>
+                                        <Link href={`/launches/${item.launch.id}`} style={{
+                                            fontSize: 'var(--font-size-sm)',
+                                            color: 'var(--color-gray-600)',
+                                            textDecoration: 'none',
+                                            fontFamily: 'var(--font-body)'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-gray-900)'}
+                                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-gray-600)'}
+                                        >
                                             View
                                         </Link>
                                     </td>

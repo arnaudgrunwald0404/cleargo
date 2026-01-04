@@ -1,4 +1,4 @@
-Free lunch. Carrots are expanded by default, and the carrots also in front of the readiness matrix. The whole thing should be collapsed in one go, so you can see it. So, do soimport { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -31,8 +31,8 @@ export async function DELETE(
 
     // Check if feedback belongs to user
     const { data: feedback, error: fetchError } = await supabase
-      .from('epic_feedback')
-      .select('created_by')
+      .from('feedback')
+      .select('created_by_id')
       .eq('id', feedbackId)
       .single();
 
@@ -40,13 +40,13 @@ export async function DELETE(
       return NextResponse.json({ error: 'Feedback not found' }, { status: 404 });
     }
 
-    if (feedback.created_by !== appUser.id) {
+    if (feedback.created_by_id !== appUser.id) {
       return NextResponse.json({ error: 'You can only delete your own feedback' }, { status: 403 });
     }
 
     // Delete feedback
     const { error: deleteError } = await supabase
-      .from('epic_feedback')
+      .from('feedback')
       .delete()
       .eq('id', feedbackId);
 

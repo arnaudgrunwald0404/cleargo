@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MappedEpicData } from '../aha/mapping';
+import { getReleases } from '../aha/client';
+import { syncUserSlackHandle } from '../slack/notifications';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -212,6 +214,107 @@ export async function getFallbackProductOpsUser(): Promise<string> {
     return user.id;
 }
 
+/**
+ * Resolve decision owner IDs for criteria based on criterion templates and pod mapping
+ */
+async function resolveDecisionOwnersForCriteria(
+    epicId: string,
+    criteria: Array<{ id: string; decision_owner_email: string | null }>,
+    pod: string | null,
+    client: SupabaseClient
+): Promise<Map<string, string>> {
+    const ownerMap = new Map<string, string>();
+    const { getSettings } = await import('../settings-db');
+    const { resolveDecisionOwnerEmail } = await import('../pod-resolver');
+
+    const settings = await getSettings();
+    const podMapping = settings.pod_product_manager_mapping || {};
+
+    for (const criterion of criteria) {
+        if (!criterion.decision_owner_email) {
+            continue;
+        }
+
+        // Resolve email (handles pod placeholder)
+        const resolvedEmail = await resolveDecisionOwnerEmail(criterion.decision_owner_email, pod);
+        if (!resolvedEmail) {
+            continue;
+        }
+
+        // Look up user by email
+        const { data: user } = await client
+            .from('app_user')
+            .select('id')
+            .eq('email', resolvedEmail)
+            .single();
+
+        if (user?.id) {
+            ownerMap.set(criterion.id, user.id);
+        }
+    }
+
+    return ownerMap;
+}
+
+/**
+ * Calculate due date based on target launch date and rating timing (launch stage)
+ */
+async function calculateDueDateForCriterion(
+    targetLaunchDate: string | null,
+    ratingTimingId: number | null,
+    client: SupabaseClient
+): Promise<string | null> {
+    if (!targetLaunchDate || !ratingTimingId) {
+        return null;
+    }
+
+    // Fetch all launch stages
+    const { data: launchStages, error: stagesError } = await client
+        .from('launch_stages')
+        .select('id, sort_order, duration_days')
+        .order('sort_order', { ascending: true });
+
+    if (stagesError || !launchStages || launchStages.length === 0) {
+        console.warn('Failed to fetch launch stages for due date calculation:', stagesError);
+        return null;
+    }
+
+    // Find the target stage
+    const targetStage = launchStages.find((s) => s.id === ratingTimingId);
+    if (!targetStage) {
+        return null;
+    }
+
+    // Find the last pre-launch stage (Internal Readiness, sort_order 3)
+    // This is the stage before launch, so we sum durations up to this stage
+    const lastPreLaunchStage = launchStages.find((s) => s.sort_order === 3);
+    if (!lastPreLaunchStage) {
+        return null;
+    }
+
+    // Sum durations of all stages before the target stage
+    // Only include pre-launch stages (up to Internal Readiness)
+    const stagesBeforeTarget = launchStages.filter(
+        (s) =>
+            s.sort_order < targetStage.sort_order &&
+            s.sort_order <= lastPreLaunchStage.sort_order &&
+            s.duration_days !== null
+    );
+
+    const totalDaysBefore = stagesBeforeTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
+
+    if (totalDaysBefore === 0) {
+        return null;
+    }
+
+    // Calculate due date: subtract days before launch from target date
+    const targetDate = new Date(targetLaunchDate);
+    const dueDate = new Date(targetDate);
+    dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+
+    return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
+}
+
 export async function instantiateCriteriaForEpic(
     epicId: string,
     tier: string,
@@ -228,10 +331,22 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Epic tier is required (epicId: ${epicId})`);
     }
 
-    // Get all active criteria applicable to this tier
+    // Get epic info (for target_launch_date and pod)
+    const { data: epic, error: epicError } = await sb
+        .from('epic')
+        .select('id, target_launch_date, pod')
+        .eq('id', epicId)
+        .single();
+
+    if (epicError) {
+        console.error('Error fetching epic:', epicError);
+        throw new Error(`Failed to fetch epic: ${epicError.message}`);
+    }
+
+    // Get all active criteria applicable to this tier (with decision_owner_email and rating_timing)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
-        .select('id, tier_applicability')
+        .select('id, tier_applicability, decision_owner_email, rating_timing')
         .eq('is_active', true);
 
     if (criteriaError) {
@@ -270,29 +385,300 @@ export async function instantiateCriteriaForEpic(
 
     const existingCriterionIds = new Set(existing?.map((e) => e.criterion_id) ?? []);
 
+    // Filter to only new criteria
+    const newCriteria = applicableCriteria.filter((c) => !existingCriterionIds.has(c.id));
+
+    if (newCriteria.length === 0) {
+        console.log(`No new criteria to insert for epic ${epicId} (all applicable criteria already exist)`);
+        return;
+    }
+
+    // Resolve decision owners for new criteria
+    const decisionOwnerMap = await resolveDecisionOwnersForCriteria(
+        epicId,
+        newCriteria,
+        epic.pod,
+        sb
+    );
+
+    // Calculate due dates for new criteria
+    const dueDatePromises = newCriteria.map(async (c) => {
+        const dueDate = await calculateDueDateForCriterion(
+            epic.target_launch_date,
+            c.rating_timing,
+            sb
+        );
+        return { criterionId: c.id, dueDate };
+    });
+    const dueDateResults = await Promise.all(dueDatePromises);
+    const dueDateMap = new Map(dueDateResults.map((r) => [r.criterionId, r.dueDate]));
+
     // Create epic_criterion_status records for new criteria only
-    const newRecords = applicableCriteria
-        .filter((c) => !existingCriterionIds.has(c.id))
-        .map((c) => ({
+    const newRecords = newCriteria.map((c) => {
+        const record: any = {
             epic_id: epicId,
             criterion_id: c.id,
             status: 'NOT_SET',
             last_updated_at: new Date().toISOString(),
-        }));
+        };
 
-    if (newRecords.length > 0) {
-        console.log(`Inserting ${newRecords.length} new criteria records for epic ${epicId}`);
-        const { error: insertError } = await sb
-            .from('epic_criterion_status')
-            .insert(newRecords);
-
-        if (insertError) {
-            console.error('Error inserting criteria:', insertError);
-            throw new Error(`Failed to insert criteria: ${insertError.message}`);
+        // Set decision_owner_id if resolved
+        const decisionOwnerId = decisionOwnerMap.get(c.id);
+        if (decisionOwnerId) {
+            record.decision_owner_id = decisionOwnerId;
         }
-        console.log(`Successfully instantiated ${newRecords.length} criteria for epic ${epicId}`);
+
+        // Set condition_due_date if calculated
+        const dueDate = dueDateMap.get(c.id);
+        if (dueDate) {
+            record.condition_due_date = dueDate;
+        }
+
+        return record;
+    });
+
+    console.log(`Inserting ${newRecords.length} new criteria records for epic ${epicId}`);
+    const { error: insertError, data: insertedRecords } = await sb
+        .from('epic_criterion_status')
+        .insert(newRecords)
+        .select('id');
+
+    if (insertError) {
+        console.error('Error inserting criteria:', insertError);
+        throw new Error(`Failed to insert criteria: ${insertError.message}`);
+    }
+    console.log(`Successfully instantiated ${newRecords.length} criteria for epic ${epicId}`);
+
+    // Send assignment notifications for newly created criteria
+    if (insertedRecords && insertedRecords.length > 0) {
+        const newCriterionIds = insertedRecords.map((r) => r.id);
+        try {
+            await sendCriteriaAssignmentNotifications(epicId, newCriterionIds, sb);
+        } catch (notificationError) {
+            // Log error but don't fail the instantiation
+            console.error('Failed to send assignment notifications:', notificationError);
+        }
+    }
+}
+
+/**
+ * Send grouped Slack notifications for newly assigned criteria
+ */
+export async function sendCriteriaAssignmentNotifications(
+    epicId: string,
+    criterionStatusIds: string[],
+    client?: SupabaseClient
+): Promise<void> {
+    if (criterionStatusIds.length === 0) {
+        return;
+    }
+
+    const sb = client ?? supabase;
+    const { getSettings } = await import('../settings-db');
+    const { groupCriteriaByEpicAndAssignee } = await import('../slack/notification-groups');
+    const { buildCriteriaAssignmentMessage } = await import('../slack/templates');
+    const { sendSlackNotification } = await import('../slack/notifications');
+
+    // Get test filters from settings
+    // We filter by email address for both email and Slack notifications
+    // All notifications are logged, but only matching emails receive actual notifications
+    const settings = await getSettings();
+    const testEmail = settings.slack_notification_test_email?.trim() || 'agrunwald@clearcompany.com';
+    const testSlackHandle = settings.slack_notification_test_slack_handle?.trim() || null;
+    const useTestEmailFilter = testEmail && testEmail.length > 0;
+    const useTestSlackFilter = testSlackHandle && testSlackHandle.length > 0;
+
+    // Query newly created criteria with decision owner and epic info
+    const { data: criteriaStatuses, error: queryError } = await sb
+        .from('epic_criterion_status')
+        .select(
+            `
+            id,
+            epic_id,
+            criterion_id,
+            decision_owner_id,
+            condition_due_date,
+            status,
+            criterion:criterion_id (
+                label,
+                category
+            ),
+            epic:epic_id (
+                name
+            ),
+            decision_owner:decision_owner_id (
+                id,
+                email,
+                first_name,
+                last_name,
+                slack_handle
+            )
+        `
+        )
+        .in('id', criterionStatusIds)
+        .not('decision_owner_id', 'is', null);
+
+    if (queryError) {
+        console.error('Error querying criteria for notifications:', queryError);
+        throw new Error(`Failed to query criteria: ${queryError.message}`);
+    }
+
+    if (!criteriaStatuses || criteriaStatuses.length === 0) {
+        console.log('No criteria with decision owners found for notifications');
+        return;
+    }
+
+    // Log all notifications before filtering
+    const notificationsByEmail = new Map<string, any[]>();
+    for (const cs of criteriaStatuses) {
+        const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
+            ? cs.decision_owner[0]
+            : (cs.decision_owner as any);
+        const ownerEmail = decisionOwner?.email?.toLowerCase() || 'unknown';
+        if (!notificationsByEmail.has(ownerEmail)) {
+            notificationsByEmail.set(ownerEmail, []);
+        }
+        const criterion = Array.isArray(cs.criterion) && cs.criterion.length > 0
+            ? cs.criterion[0]
+            : (cs.criterion as any);
+        const epic = Array.isArray(cs.epic) && cs.epic.length > 0
+            ? cs.epic[0]
+            : (cs.epic as any);
+        notificationsByEmail.get(ownerEmail)!.push({
+            criterion_id: cs.criterion_id,
+            criterion_label: criterion?.label,
+            epic_name: epic?.name,
+            assignee_email: ownerEmail,
+            assignee_name: `${decisionOwner?.first_name || ''} ${decisionOwner?.last_name || ''}`.trim() || ownerEmail,
+            has_slack_handle: !!decisionOwner?.slack_handle,
+        });
+    }
+
+    console.log('📋 Slack Assignment Notifications - ALL NOTIFICATIONS (before filtering):');
+    console.log(`   Total criteria with assignees: ${criteriaStatuses.length}`);
+    if (useTestSlackFilter) {
+        console.log(`   Test Slack handle filter: ${testSlackHandle} (only matching Slack handles will receive notifications)`);
     } else {
-        console.log(`No new criteria to insert for epic ${epicId} (all applicable criteria already exist)`);
+        console.log(`   Test email filter: ${useTestEmailFilter ? testEmail : 'DISABLED (sending to all)'}`);
+    }
+    console.log('   Breakdown by assignee (all will be logged, only filtered users will receive notifications):');
+    for (const [email, criteria] of notificationsByEmail.entries()) {
+        // Find Slack handle for this email
+        const firstCriterion = criteriaStatuses.find((cs: any) => {
+            const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
+                ? cs.decision_owner[0]
+                : (cs.decision_owner as any);
+            return decisionOwner?.email?.toLowerCase() === email;
+        });
+        const decisionOwner = firstCriterion ? (Array.isArray(firstCriterion.decision_owner) && firstCriterion.decision_owner.length > 0
+            ? firstCriterion.decision_owner[0]
+            : (firstCriterion.decision_owner as any)) : null;
+        const slackHandle = decisionOwner?.slack_handle;
+        let willSend = false;
+        if (useTestSlackFilter) {
+            willSend = slackHandle && slackHandle === testSlackHandle;
+        } else if (useTestEmailFilter) {
+            willSend = email.toLowerCase() === testEmail.toLowerCase();
+        } else {
+            willSend = true; // No filter, send to all
+        }
+        const status = willSend ? '✅ WILL SEND' : '📝 LOGGED ONLY';
+        console.log(`   ${status} - ${email} (Slack: ${slackHandle || 'none'}): ${criteria.length} criteria`);
+        if (criteria.length <= 5) {
+            criteria.forEach((c) => {
+                console.log(`      - ${c.criterion_label} (${c.epic_name})`);
+            });
+        } else {
+            console.log(`      ... ${criteria.length} criteria (showing first 3)`);
+            criteria.slice(0, 3).forEach((c) => {
+                console.log(`      - ${c.criterion_label} (${c.epic_name})`);
+            });
+        }
+    }
+
+    // Filter by test email or Slack handle - only send to matching users, but all are logged above
+    const filteredCriteria = (useTestEmailFilter || useTestSlackFilter)
+        ? criteriaStatuses.filter((cs: any) => {
+              const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
+                  ? cs.decision_owner[0]
+                  : (cs.decision_owner as any);
+              const ownerEmail = decisionOwner?.email?.toLowerCase();
+              const slackHandle = decisionOwner?.slack_handle;
+              
+              // If Slack handle filter is set, use it; otherwise use email filter
+              if (useTestSlackFilter) {
+                  return slackHandle && slackHandle === testSlackHandle;
+              } else if (useTestEmailFilter) {
+                  return ownerEmail === testEmail.toLowerCase();
+              }
+              return false;
+          })
+        : criteriaStatuses;
+
+    if (filteredCriteria.length === 0) {
+        console.log(`⏭️  No criteria match test email filter: ${testEmail} (but all notifications were logged above)`);
+        return;
+    }
+
+    console.log(`✅ Sending notifications to ${filteredCriteria.length} criteria (${criteriaStatuses.length} total were logged)`);
+
+    // Group by epic and assignee
+    const grouped = groupCriteriaByEpicAndAssignee(filteredCriteria as any);
+
+    // Send notifications for each group
+    for (const [key, group] of grouped.entries()) {
+        if (!group.assignee_slack_handle) {
+            // Try to sync Slack handle before skipping
+            console.log(`Attempting to sync Slack handle for ${group.assignee_email}...`);
+            const syncedHandle = await syncUserSlackHandle(group.assignee_email);
+            
+            if (syncedHandle) {
+                // Update the group with the synced handle
+                group.assignee_slack_handle = syncedHandle;
+                console.log(`Successfully synced Slack handle for ${group.assignee_email}: ${syncedHandle}`);
+            } else {
+                console.log(`Skipping notification for ${group.assignee_email} - no Slack handle found`);
+                continue;
+            }
+        }
+
+        try {
+            const message = buildCriteriaAssignmentMessage(group);
+            const epicUrl = process.env.NEXT_PUBLIC_APP_URL
+                ? `${process.env.NEXT_PUBLIC_APP_URL}/epics/${group.epic_id}`
+                : undefined;
+
+            await sendSlackNotification({
+                type: 'criteria_assignment',
+                priority: 'medium',
+                recipient: {
+                    id: group.assignee_id,
+                    email: group.assignee_email,
+                    slack_handle: group.assignee_slack_handle,
+                    name: group.assignee_name,
+                },
+                launch_id: group.epic_id,
+                metadata: {
+                    epic_name: group.epic_name,
+                    epic_id: group.epic_id,
+                    criteria_count: group.criteria.length,
+                    criteria: group.criteria.map((c) => ({
+                        id: c.id,
+                        label: c.label,
+                        category: c.category,
+                        due_date: c.due_date,
+                    })),
+                    epic_url: epicUrl,
+                },
+            });
+
+            console.log(
+                `Sent assignment notification to ${group.assignee_email} for ${group.criteria.length} criteria in ${group.epic_name}`
+            );
+        } catch (error: any) {
+            console.error(`Failed to send notification to ${group.assignee_email}:`, error);
+            // Continue with other groups
+        }
     }
 }
 
@@ -317,5 +703,77 @@ export async function updateEpicReadiness(
         .eq('id', epicId);
 
     if (error) throw error;
+}
+
+/**
+ * Fetches a release from Aha API by name and upserts it into release_schedule table
+ * @param releaseName The name of the release to fetch
+ * @returns The launch_date (end_date or start_date) or null if not found or has no date
+ */
+export async function fetchAndUpsertReleaseFromAha(releaseName: string): Promise<string | null> {
+    try {
+        console.log(`🔄 Auto-fetching release "${releaseName}" from Aha API...`);
+        
+        // Fetch all releases from Aha (paginated) to find the one matching by name
+        let page = 1;
+        const perPage = 50;
+        let hasMore = true;
+        
+        while (hasMore) {
+            const response = await getReleases({ per_page: perPage, page });
+            const releases = response.releases || [];
+            
+            // Look for exact match first, then case-insensitive match
+            let matchedRelease = releases.find((r: any) => r.name === releaseName);
+            if (!matchedRelease) {
+                matchedRelease = releases.find((r: any) => 
+                    r.name?.toLowerCase() === releaseName.toLowerCase()
+                );
+            }
+            
+            if (matchedRelease) {
+                // Extract launch_date from end_date or start_date
+                const launchDate = matchedRelease.end_date || matchedRelease.start_date || null;
+                
+                // Upsert into release_schedule table
+                const { error } = await supabase
+                    .from('release_schedule')
+                    .upsert(
+                        {
+                            release_name: matchedRelease.name,
+                            launch_date: launchDate,
+                            updated_at: new Date().toISOString(),
+                        },
+                        {
+                            onConflict: 'release_name',
+                        }
+                    );
+                
+                if (error) {
+                    console.error(`Error upserting release ${matchedRelease.name}:`, error);
+                    throw error;
+                }
+                
+                if (launchDate) {
+                    console.log(`✅ Fetched release "${releaseName}" with date: ${launchDate}`);
+                } else {
+                    console.warn(`⚠️ Release "${releaseName}" found in Aha but has no date`);
+                }
+                
+                return launchDate;
+            }
+            
+            hasMore = releases.length === perPage;
+            page++;
+        }
+        
+        // Release not found in Aha
+        console.warn(`⚠️ Release "${releaseName}" not found in Aha API`);
+        return null;
+        
+    } catch (error) {
+        console.error(`Error fetching release "${releaseName}" from Aha:`, error);
+        throw error;
+    }
 }
 

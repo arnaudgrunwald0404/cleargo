@@ -3,6 +3,7 @@
  */
 
 import type { SlackBlock } from '@/types/slack';
+import type { GroupedCriteria } from './notification-groups';
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
 
@@ -586,4 +587,170 @@ export function buildLaunchUnfurl(data: {
             ],
         },
     ];
+}
+
+/**
+ * Criteria Assignment Notification (grouped by epic and assignee)
+ */
+export function buildCriteriaAssignmentMessage(groupedCriteria: GroupedCriteria): { text: string; blocks: SlackBlock[] } {
+    const criteriaList = groupedCriteria.criteria
+        .map((c) => {
+            const dueDateText = c.due_date ? ` (Due: ${c.due_date})` : '';
+            return `• ${c.label}${dueDateText}`;
+        })
+        .join('\n');
+
+    return {
+        text: `You've been assigned ${groupedCriteria.criteria.length} criteria for ${groupedCriteria.epic_name}`,
+        blocks: [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: '📋 New Criteria Assigned',
+                    emoji: true,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${groupedCriteria.epic_name}*\nYou've been assigned ${groupedCriteria.criteria.length} criteria to review:`,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: criteriaList,
+                },
+            },
+            {
+                type: 'actions',
+                elements: [
+                    {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'View Epic',
+                            emoji: true,
+                        },
+                        style: 'primary',
+                        url: `${APP_URL}/epics/${groupedCriteria.epic_id}`,
+                        action_id: 'view_epic',
+                    },
+                ],
+            },
+            {
+                type: 'divider',
+            },
+        ],
+    };
+}
+
+/**
+ * Criteria Nudge Notification (grouped by epic, due date, and assignee)
+ */
+export function buildCriteriaNudgeMessage(
+    groupedCriteria: GroupedCriteria,
+    nudgeType: '1_week_before' | 'on_due_date' | 'daily_after'
+): { text: string; blocks: SlackBlock[] } {
+    const dueDate = groupedCriteria.criteria[0]?.due_date;
+    if (!dueDate) {
+        throw new Error('Cannot build nudge message without due date');
+    }
+
+    const dueDateObj = new Date(dueDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const dueDateNormalized = new Date(dueDateObj);
+    dueDateNormalized.setHours(0, 0, 0, 0);
+
+    const daysDiff = Math.ceil((dueDateNormalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+    let headerText: string;
+    let urgencyEmoji: string;
+    let urgencyColor: 'danger' | 'warning' | undefined;
+    let contextText: string;
+
+    if (nudgeType === '1_week_before') {
+        headerText = '⏰ Criteria Due in 1 Week';
+        urgencyEmoji = '⏰';
+        urgencyColor = 'warning';
+        contextText = `These criteria are due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''}. Please review and update their status.`;
+    } else if (nudgeType === 'on_due_date') {
+        headerText = '📅 Criteria Due Today';
+        urgencyEmoji = '📅';
+        urgencyColor = 'warning';
+        contextText = 'These criteria are due today. Please review and update their status.';
+    } else {
+        // daily_after
+        const daysOverdue = Math.abs(daysDiff);
+        headerText = `⚠️ Overdue Criteria (${daysOverdue} day${daysOverdue !== 1 ? 's' : ''})`;
+        urgencyEmoji = '⚠️';
+        urgencyColor = 'danger';
+        contextText = `These criteria are ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue. Please update their status as soon as possible.`;
+    }
+
+    const criteriaList = groupedCriteria.criteria
+        .map((c) => `• ${c.label}`)
+        .join('\n');
+
+    const blocks: SlackBlock[] = [
+        {
+            type: 'header',
+            text: {
+                type: 'plain_text',
+                text: headerText,
+                emoji: true,
+            },
+        },
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*${groupedCriteria.epic_name}*\nDue Date: ${dueDate}`,
+            },
+        },
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: criteriaList,
+            },
+        },
+        {
+            type: 'context',
+            elements: [
+                {
+                    type: 'mrkdwn',
+                    text: `💡 ${contextText}`,
+                },
+            ],
+        },
+        {
+            type: 'actions',
+            elements: [
+                {
+                    type: 'button',
+                    text: {
+                        type: 'plain_text',
+                        text: 'Update Status',
+                        emoji: true,
+                    },
+                    style: urgencyColor === 'danger' ? 'danger' : 'primary',
+                    url: `${APP_URL}/epics/${groupedCriteria.epic_id}`,
+                    action_id: 'update_criteria',
+                },
+            ],
+        },
+        {
+            type: 'divider',
+        },
+    ];
+
+    return {
+        text: `${urgencyEmoji} ${groupedCriteria.criteria.length} criteria ${nudgeType === 'daily_after' ? 'overdue' : 'due'} for ${groupedCriteria.epic_name}`,
+        blocks,
+    };
 }

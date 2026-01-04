@@ -31,6 +31,11 @@ export interface AppSettings {
     permissions?: Record<string, string[]>;
     aha_tags?: string[]; // Tags that trigger inclusion in Launch Console
     enable_activity_feed?: boolean; // Whether to show activity feed on home page
+    slack_nudge_1_week_before?: boolean;
+    slack_nudge_on_due_date?: boolean;
+    slack_nudge_daily_after_due?: boolean;
+    slack_notification_test_email?: string; // For email notifications
+    slack_notification_test_slack_handle?: string; // For Slack notifications (Slack user ID, e.g., U12345678)
 }
 
 export async function getSettings(): Promise<AppSettings> {

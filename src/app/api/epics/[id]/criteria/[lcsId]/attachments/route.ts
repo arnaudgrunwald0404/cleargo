@@ -11,9 +11,22 @@ export async function GET(
   try {
     const { id: epicId, lcsId } = await params;
     
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/attachments/route.ts:12',message:'GET attachments endpoint called',data:{epicId,lcsId,isVirtual:lcsId?.startsWith('virtual-')},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     // Validate lcsId
     if (!lcsId || typeof lcsId !== 'string') {
       return NextResponse.json({ error: 'Invalid criterion status ID' }, { status: 400 });
+    }
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/attachments/route.ts:20',message:'Before database query',data:{lcsId,isVirtual:lcsId.startsWith('virtual-')},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    
+    // Handle virtual IDs - they don't have status rows and can't have attachments
+    if (lcsId.startsWith('virtual-')) {
+      return NextResponse.json([]);
     }
     
     const supabase = createClient();
@@ -39,8 +52,15 @@ export async function GET(
       .is('comment_id', null) // Only get attachments for criterion status, not comments
       .order('uploaded_at', { ascending: false });
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/attachments/route.ts:42',message:'After database query',data:{lcsId,isVirtual:lcsId.startsWith('virtual-'),hasError:!!error,errorCode:error?.code,errorMessage:error?.message,attachmentCount:attachments?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+
     if (error) {
       console.error('Database error fetching attachments:', error);
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/attachments/route.ts:45',message:'Database error caught',data:{lcsId,isVirtual:lcsId.startsWith('virtual-'),errorCode:error.code,errorMessage:error.message,errorDetails:error},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
       // Check for specific error types
       if (error.code === 'PGRST116') {
         // Table not found or RLS issue

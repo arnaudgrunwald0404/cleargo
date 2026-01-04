@@ -13,72 +13,212 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
     // Since initialEpics comes from the server page, router.refresh() will update it.
 
     return (
-        <div className="space-y-6">
+        <div className="space-y-6" style={{ fontFamily: 'var(--font-body)' }}>
             <div className="flex justify-between items-center">
-                <h1 className="text-2xl font-bold text-gray-900">Portfolio Dashboard</h1>
+                <h1 style={{ 
+                    fontFamily: 'var(--font-heading)',
+                    fontSize: 'var(--font-size-page-title)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'var(--color-gray-900)',
+                    marginBottom: 'var(--spacing-6)'
+                }}>Portfolio Dashboard</h1>
             </div>
 
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
-                <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
+            <div style={{
+                backgroundColor: 'var(--table-bg)',
+                boxShadow: 'var(--shadow-base)',
+                overflow: 'hidden',
+                borderRadius: 'var(--radius-md)',
+                border: `1px solid var(--table-border)`
+            }}>
+                <table className="min-w-full" style={{ borderCollapse: 'collapse' }}>
+                    <thead style={{ backgroundColor: 'var(--table-header-bg)' }}>
                         <tr>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                textAlign: 'left',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                color: 'var(--table-header-text)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontFamily: 'var(--font-body)',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 Epic Name
                             </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                textAlign: 'left',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                color: 'var(--table-header-text)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontFamily: 'var(--font-body)',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 Tier
                             </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                textAlign: 'left',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                color: 'var(--table-header-text)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontFamily: 'var(--font-body)',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 Date
                             </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                textAlign: 'left',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                color: 'var(--table-header-text)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontFamily: 'var(--font-body)',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 Status
                             </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                textAlign: 'left',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-semibold)',
+                                color: 'var(--table-header-text)',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                fontFamily: 'var(--font-body)',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 Readiness
                             </th>
-                            <th scope="col" className="relative px-6 py-3">
+                            <th scope="col" style={{
+                                padding: 'var(--table-cell-padding)',
+                                position: 'relative',
+                                borderBottom: `2px solid var(--table-border)`
+                            }}>
                                 <span className="sr-only">View</span>
                             </th>
                         </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody style={{ backgroundColor: 'var(--table-bg)' }}>
                         {initialEpics.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                                <td colSpan={6} style={{
+                                    padding: 'var(--spacing-12) var(--spacing-6)',
+                                    textAlign: 'center',
+                                    color: 'var(--color-gray-500)',
+                                    fontSize: 'var(--font-size-base)',
+                                    fontFamily: 'var(--font-body)'
+                                }}>
                                     No epics found. Create one to get started.
                                 </td>
                             </tr>
                         ) : (
                             initialEpics.map((epic) => (
-                                <tr key={epic.id} className="hover:bg-gray-50">
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">{epic.name}</div>
+                                <tr 
+                                    key={epic.id} 
+                                    style={{
+                                        borderBottom: `1px solid var(--table-border)`,
+                                        transition: 'var(--transition-fast)'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--table-row-hover)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--table-bg)'}
+                                >
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        <div style={{
+                                            fontSize: 'var(--font-size-sm)',
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            color: 'var(--color-gray-900)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>{epic.name}</div>
                                         {epic.product_id && (
-                                            <div className="text-xs text-gray-500">Product ID: {epic.product_id}</div>
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                color: 'var(--color-gray-500)',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>Product ID: {epic.product_id}</div>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                      ${epic.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
-                                                epic.tier === 'TIER_2' ? 'bg-indigo-100 text-indigo-800' :
-                                                    'bg-blue-100 text-blue-800'}`}>
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        <span style={{
+                                            padding: 'var(--spacing-1) var(--spacing-2)',
+                                            display: 'inline-flex',
+                                            fontSize: 'var(--font-size-xs)',
+                                            lineHeight: '1.25',
+                                            fontWeight: 'var(--font-weight-semibold)',
+                                            borderRadius: 'var(--radius-full)',
+                                            backgroundColor: epic.tier === 'TIER_1' ? '#F3E8FF' : epic.tier === 'TIER_2' ? '#E0E7FF' : 'var(--color-blue-100)',
+                                            color: epic.tier === 'TIER_1' ? '#6B21A8' : epic.tier === 'TIER_2' ? '#4338CA' : 'var(--color-blue-800)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>
                                             {epic.tier.replace('_', ' ')}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap',
+                                        fontSize: 'var(--font-size-sm)',
+                                        color: 'var(--color-gray-500)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap'
+                                    }}>
+                                        <span style={{
+                                            padding: 'var(--spacing-1) var(--spacing-2)',
+                                            display: 'inline-flex',
+                                            fontSize: 'var(--font-size-xs)',
+                                            lineHeight: '1.25',
+                                            fontWeight: 'var(--font-weight-semibold)',
+                                            borderRadius: 'var(--radius-full)',
+                                            backgroundColor: 'var(--color-success-light)',
+                                            color: 'var(--color-success-dark)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}>
                                             {epic.status}
                                         </span>
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap',
+                                        fontSize: 'var(--font-size-sm)',
+                                        color: 'var(--color-gray-500)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
                                         {epic.readiness_score !== undefined ? `${epic.readiness_score}%` : 'N/A'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <Link href={`/dashboard/epics/${epic.id}`} className="text-blue-600 hover:text-blue-900">
+                                    <td style={{
+                                        padding: 'var(--table-cell-padding)',
+                                        whiteSpace: 'nowrap',
+                                        textAlign: 'right',
+                                        fontSize: 'var(--font-size-sm)',
+                                        fontWeight: 'var(--font-weight-medium)'
+                                    }}>
+                                        <Link href={`/dashboard/epics/${epic.id}`} style={{
+                                            color: 'var(--color-blue-600)',
+                                            textDecoration: 'none',
+                                            fontFamily: 'var(--font-body)'
+                                        }}
+                                        onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                                        onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                                        >
                                             View
                                         </Link>
                                     </td>

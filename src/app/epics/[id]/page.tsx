@@ -6,20 +6,27 @@ import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
 import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Modal, TextInput } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUsers, IconCalendar } from "@tabler/icons-react";
+import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { PurpleLoader } from "@/components/PurpleLoader";
+import { SuccessConfigSection } from "@/components/epic/SuccessConfigSection";
+import { EpicMetricsManager } from "@/components/epic/EpicMetricsManager";
+import { ScorecardPageContent } from "@/components/epic/ScorecardPageContent";
+import { RetroPageContent } from "@/components/epic/RetroPageContent";
+import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from "@/lib/services/successMeasurementService";
+import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 
 export default function EpicDetailPage() {
     const params = useParams();
     const id = params?.id as string | undefined;
     
     if (!id) {
-        return <div className="pt-24 p-8">Invalid epic ID</div>;
+        return <div className="p-8">Invalid epic ID</div>;
     }
 
     const [epic, setEpic] = useState<Epic | null>(null);
@@ -33,8 +40,7 @@ export default function EpicDetailPage() {
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
-    const [releaseMappingModalOpen, setReleaseMappingModalOpen] = useState(false);
-    const [releaseDateInput, setReleaseDateInput] = useState("");
+    const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
     const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
     const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
     const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
@@ -46,6 +52,10 @@ export default function EpicDetailPage() {
     const [activeTab, setActiveTab] = useState<string>('readiness');
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
     const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
+    const [successConfig, setSuccessConfig] = useState<EpicSuccessConfigWithDetails | null>(null);
+    const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
+    const [loadingSuccessData, setLoadingSuccessData] = useState(false);
+    const [isAdmin, setIsAdmin] = useState(false);
     
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -69,6 +79,9 @@ export default function EpicDetailPage() {
     };
 
     async function loadData() {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:70',message:'loadData called',data:{inProgress:loadDataInProgressRef.current,timeSinceLastCall:Date.now()-lastLoadDataRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,D'})}).catch(()=>{});
+        // #endregion
         // Prevent multiple simultaneous calls
         if (loadDataInProgressRef.current) {
             console.warn('loadData already in progress, skipping duplicate call');
@@ -249,6 +262,7 @@ export default function EpicDetailPage() {
                 console.log('[DEBUG] Launch stages loaded', stagesData);
                 console.log('[DEBUG] Pre-calculated days-before-launch', Object.fromEntries(calculatedDaysBeforeLaunch));
                 console.log('[DEBUG] Pre-calculated days-after-launch', Object.fromEntries(calculatedDaysAfterLaunch));
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:251',message:'Debug log call - Launch stages loaded',data:{callCount:'tracking',stagesCount:stagesData.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
                 fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:202',message:'Launch stages loaded',data:{stages:stagesData,count:stagesData.length,daysBeforeLaunch:Object.fromEntries(calculatedDaysBeforeLaunch),daysAfterLaunch:Object.fromEntries(calculatedDaysAfterLaunch)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(()=>{});
                 // #endregion
             } else {
@@ -293,11 +307,61 @@ export default function EpicDetailPage() {
                     .eq('release_name', extractedReleaseName)
                     .maybeSingle();
                 
-                if (!releaseError && releaseSchedule?.launch_date) {
+                // Check if we have a date in the schedule
+                if (releaseSchedule?.launch_date) {
                     fetchedReleaseDate = releaseSchedule.launch_date;
                     setReleaseDate(releaseSchedule.launch_date);
                 } else {
-                    setReleaseDate(null);
+                    // Automatically fetch release date from API if not in schedule
+                    setFetchingReleaseDate(true);
+                    try {
+                        console.log(`[Epic Detail] Fetching release date for: ${extractedReleaseName}`);
+                        const releaseDatesRes = await fetch("/api/epics/release-dates", { credentials: 'include' });
+                        if (releaseDatesRes.ok) {
+                            const releaseDatesData = await releaseDatesRes.json();
+                            console.log(`[Epic Detail] Release dates API response:`, releaseDatesData);
+                            const releaseDates = releaseDatesData.releases || [];
+                            const found = releaseDates.find((r: any) => r.releaseName === extractedReleaseName);
+                            console.log(`[Epic Detail] Found release date:`, found);
+                            
+                            if (found && found.launchDate) {
+                                // Save to release_schedule
+                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate });
+                                const saveRes = await fetch("/api/releases", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    credentials: 'include',
+                                    body: JSON.stringify({
+                                        release_name: extractedReleaseName,
+                                        launch_date: found.launchDate,
+                                    }),
+                                });
+                                
+                                if (saveRes.ok) {
+                                    const savedData = await saveRes.json();
+                                    console.log(`[Epic Detail] Successfully saved release date:`, savedData);
+                                    fetchedReleaseDate = found.launchDate;
+                                    setReleaseDate(found.launchDate);
+                                } else {
+                                    const errorData = await saveRes.json().catch(() => ({}));
+                                    console.error("[Epic Detail] Failed to save release date:", errorData);
+                                    setReleaseDate(null);
+                                }
+                            } else {
+                                console.log(`[Epic Detail] No release date found for: ${extractedReleaseName}`);
+                                setReleaseDate(null);
+                            }
+                        } else {
+                            const errorData = await releaseDatesRes.json().catch(() => ({}));
+                            console.error("[Epic Detail] Failed to fetch release dates:", errorData);
+                            setReleaseDate(null);
+                        }
+                    } catch (error) {
+                        console.error("[Epic Detail] Exception while fetching release date:", error);
+                        setReleaseDate(null);
+                    } finally {
+                        setFetchingReleaseDate(false);
+                    }
                 }
             } else {
                 setReleaseDate(null);
@@ -371,19 +435,6 @@ export default function EpicDetailPage() {
                 }
             });
 
-            // #region agent log
-            const businessJustificationItem = merged.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
-            if (businessJustificationItem) {
-                console.log('[DEBUG] Business Justification raw data', {
-                    criterionId: businessJustificationItem.criterion_id,
-                    criterionLabel: businessJustificationItem.criterion?.label,
-                    ratingTiming: businessJustificationItem.criterion?.rating_timing,
-                    storedDueDate: businessJustificationItem.condition_due_date,
-                    hasCriterion: !!businessJustificationItem.criterion
-                });
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:319',message:'Business Justification raw data',data:{criterionId:businessJustificationItem.criterion_id,criterionLabel:businessJustificationItem.criterion?.label,ratingTiming:businessJustificationItem.criterion?.rating_timing,storedDueDate:businessJustificationItem.condition_due_date,hasCriterion:!!businessJustificationItem.criterion},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            }
-            // #endregion
             
             // Annotate applicability for existing statuses
             const withApplicability = merged.map((item: any) => ({
@@ -455,9 +506,15 @@ export default function EpicDetailPage() {
             // This works even without authentication, allowing email-to-name translation
             const userInfoMap: Record<string, { first_name?: string; last_name?: string; avatar_url?: string }> = {};
             if (approverEmails.size > 0) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:493',message:'Before /api/users/by-email call for approvers',data:{approverCount:approverEmails.size,emails:Array.from(approverEmails)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 try {
                     const emailsParam = Array.from(approverEmails).join(',');
                     const userInfoRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(emailsParam)}`);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:496',message:'After /api/users/by-email call for approvers',data:{status:userInfoRes.status,ok:userInfoRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
                     if (userInfoRes.ok) {
                         const fetchedUserMap = await userInfoRes.json();
                         // Merge fetched user info into userInfoMap
@@ -473,13 +530,18 @@ export default function EpicDetailPage() {
             // Calculate due dates for criteria based on rating_timing and launch stages
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
-            // #region agent log
-            fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:414',message:'calculateDueDate setup',data:{targetDate,fetchedReleaseDate,dataTargetLaunchDate:data.target_launch_date,launchStagesCount:fetchedLaunchStages.length,launchStages:fetchedLaunchStages.map(s=>({id:s.id,name:s.name,sort_order:s.sort_order,duration_days:s.duration_days}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C,E'})}).catch(()=>{});
-            console.log('[DEBUG] calculateDueDate setup', {targetDate, fetchedReleaseDate, dataTargetLaunchDate: data.target_launch_date, launchStagesCount: fetchedLaunchStages.length, launchStages: fetchedLaunchStages});
-            // #endregion
+            
+            // Memoization cache for calculateDueDate to avoid redundant calculations
+            const dueDateCache = new Map<number, string | null>();
+            
             const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
                 if (!targetDate || !ratingTimingId || fetchedLaunchStages.length === 0) {
                     return null;
+                }
+                
+                // Check cache first
+                if (dueDateCache.has(ratingTimingId)) {
+                    return dueDateCache.get(ratingTimingId)!;
                 }
                 
                 // Use pre-calculated values from local variables (state updates are async)
@@ -488,6 +550,7 @@ export default function EpicDetailPage() {
                 
                 if (daysBefore === undefined && daysAfter === undefined) {
                     // Stage not found in pre-calculated maps
+                    dueDateCache.set(ratingTimingId, null);
                     return null;
                 }
                 
@@ -502,10 +565,8 @@ export default function EpicDetailPage() {
                 }
                 
                 const result = dueDate.toISOString().split('T')[0];
-                // #region agent log
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:463',message:'calculateDueDate result',data:{ratingTimingId,result,targetDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-                console.log('[DEBUG] calculateDueDate result', {ratingTimingId, result, targetDate});
-                // #endregion
+                // Cache the result
+                dueDateCache.set(ratingTimingId, result);
                 return result; // Return as YYYY-MM-DD
             };
             
@@ -523,6 +584,12 @@ export default function EpicDetailPage() {
             // Fetch comments/attachments AFTER initial render (non-blocking)
             // This allows the page to show immediately while counts load in background
             const itemIds = sorted.map((item: any) => item.id);
+            
+            // #region agent log
+            const virtualIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:575',message:'Before fetching comments/attachments',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualIds.length,virtualIds:virtualIds.slice(0,5),allItemIds:itemIds.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            
             if (itemIds.length > 0) {
                 // Clear any existing timeout to prevent duplicate requests
                 if (attachmentFetchTimeoutRef.current) {
@@ -531,8 +598,16 @@ export default function EpicDetailPage() {
                 
                 // Use setTimeout to defer until after initial render
                 attachmentFetchTimeoutRef.current = setTimeout(() => {
+                    // Filter out virtual IDs - they don't have status rows and can't have comments/attachments
+                    const realItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
+                    
+                    // #region agent log
+                    const virtualCommentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:582',message:'Fetching comments for itemIds',data:{totalIds:itemIds.length,virtualIdsCount:virtualCommentIds.length,virtualIds:virtualCommentIds.slice(0,5),realIdsCount:realItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
+                    // #endregion
+                    
                     // Fetch comments counts and last comment for each item using batch fetching
-                    const commentUrls = itemIds.map(
+                    const commentUrls = realItemIds.map(
                         (itemId: string) => `/api/epics/${id}/criteria/${itemId}/comments`
                     );
 
@@ -542,7 +617,7 @@ export default function EpicDetailPage() {
                         maxRetries: 1,
                     }).then((results) => {
                         results.forEach(({ url, response, error }, index) => {
-                            const itemId = itemIds[index];
+                            const itemId = realItemIds[index];
                             
                             if (error || !response) {
                                 console.warn(`Failed to fetch comments for ${itemId}:`, error);
@@ -594,7 +669,15 @@ export default function EpicDetailPage() {
                     
                     // Fetch attachments counts for each item with deduplication and error handling
                     // Use batch fetching with rate limit handling to avoid overwhelming the server
-                    const attachmentItemIds = itemIds.filter((itemId: string) => {
+                    // Filter out virtual IDs - they don't have status rows and can't have attachments
+                    const realAttachmentItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
+                    
+                    // #region agent log
+                    const virtualAttachmentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:644',message:'Before filtering attachment itemIds',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualAttachmentIds.length,virtualIds:virtualAttachmentIds.slice(0,5),realIdsCount:realAttachmentItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'G'})}).catch(()=>{});
+                    // #endregion
+                    
+                    const attachmentItemIds = realAttachmentItemIds.filter((itemId: string) => {
                         // Skip if already pending or previously failed with 500
                         const requestKey = `${id}-${itemId}`;
                         if (pendingAttachmentRequestsRef.current.has(requestKey)) {
@@ -717,12 +800,6 @@ export default function EpicDetailPage() {
                 // Otherwise, use stored date if available
                 const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing);
                 const finalDueDate = calculatedDueDate || item.condition_due_date || null;
-                // #region agent log
-                if (item.criterion?.label?.toLowerCase().includes('business justification')) {
-                    fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:673',message:'Business Justification due date calculation',data:{criterionLabel:item.criterion?.label,ratingTiming:item.criterion?.rating_timing,storedDueDate:item.condition_due_date,calculatedDueDate,finalDueDate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D,F'})}).catch(()=>{});
-                    console.log('[DEBUG] Business Justification due date calculation', {criterionLabel: item.criterion?.label, ratingTiming: item.criterion?.rating_timing, storedDueDate: item.condition_due_date, calculatedDueDate, finalDueDate});
-                }
-                // #endregion
                 
                 // Get comments and attachments data for this item
                 const commentsInfo = commentsData[item.id] || { count: 0 };
@@ -740,13 +817,6 @@ export default function EpicDetailPage() {
                 };
             });
 
-            // #region agent log
-            const businessJustificationInMatrix = resolvedMatrix.find((item: any) => item.criterion?.label?.toLowerCase().includes('business justification'));
-            if (businessJustificationInMatrix) {
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:751',message:'Matrix data set - Business Justification',data:{conditionDueDate:businessJustificationInMatrix.condition_due_date,criterionLabel:businessJustificationInMatrix.criterion?.label},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-                console.log('[DEBUG] Matrix data set - Business Justification', {conditionDueDate: businessJustificationInMatrix.condition_due_date, criterionLabel: businessJustificationInMatrix.criterion?.label});
-            }
-            // #endregion
             setMatrix(resolvedMatrix);
             
             // Resolve PM owner: prioritize pod mapping (source of truth), then fallback to assigned_to_user or PM criteria approver
@@ -789,10 +859,16 @@ export default function EpicDetailPage() {
             
             // Fetch PM owner info if email is available using API endpoint
             if (pmEmail) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:818',message:'Before /api/users/by-email call for PM owner',data:{pmEmail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
                 // Normalize email to lowercase for consistent lookup
                 const normalizedEmail = pmEmail.toLowerCase().trim();
                 try {
                     const pmUserRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(normalizedEmail)}`);
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:822',message:'After /api/users/by-email call for PM owner',data:{status:pmUserRes.status,ok:pmUserRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
                     if (pmUserRes.ok) {
                         const pmUserMap = await pmUserRes.json();
                         const pmUser = pmUserMap[normalizedEmail];
@@ -832,6 +908,63 @@ export default function EpicDetailPage() {
             loadDataInProgressRef.current = false;
         }
     }
+
+    const fetchSuccessData = async () => {
+        if (!id) return;
+        setLoadingSuccessData(true);
+        try {
+            // Fetch success config and metrics in parallel
+            const [configRes, metricsRes] = await Promise.all([
+                fetchWithRateLimit(`/api/epics/${id}/success/config`, { maxRetries: 1 }),
+                fetchWithRateLimit(`/api/epics/${id}/success/metrics`, { maxRetries: 1 }),
+            ]);
+
+            if (configRes.ok) {
+                const configData = await configRes.json();
+                setSuccessConfig(configData);
+            } else if (configRes.status !== 404) {
+                console.error('Error fetching success config:', configRes.statusText);
+            } else {
+                setSuccessConfig(null);
+            }
+
+            if (metricsRes.ok) {
+                const metricsData = await metricsRes.json();
+                setSuccessMetrics(Array.isArray(metricsData) ? metricsData : []);
+            } else {
+                console.error('Error fetching success metrics:', metricsRes.statusText);
+                setSuccessMetrics([]);
+            }
+
+            // Check if user is admin
+            const supabase = createClient();
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user?.email) {
+                const { data: me } = await supabase
+                    .from('app_user')
+                    .select('roles')
+                    .eq('email', user.email)
+                    .single();
+                const userRoles = (me?.roles as string[]) || [];
+                setIsAdmin(
+                    userRoles.includes('SUPERADMIN') ||
+                    userRoles.includes('PRODUCT_OPS') ||
+                    userRoles.includes('CPO')
+                );
+            }
+        } catch (error) {
+            console.error('Error fetching success data:', error);
+        } finally {
+            setLoadingSuccessData(false);
+        }
+    };
+
+    useEffect(() => {
+        if (id && epic) {
+            fetchSuccessData();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id, epic?.id]);
 
     useEffect(() => {
         if (id) {
@@ -900,13 +1033,17 @@ export default function EpicDetailPage() {
     }, [epic?.tier]);
 
     if (loading) {
-        return <div className="pt-24 p-8">Loading...</div>;
+        return (
+            <div className="p-8 flex items-center justify-center">
+                <PurpleLoader size="md" />
+            </div>
+        );
     }
     if (error) {
-        return <div className="pt-24 p-8 text-red-600">Error: {error}</div>;
+        return <div className="p-8 text-red-600">Error: {error}</div>;
     }
     if (!epic) {
-        return <div className="pt-24 p-8">Epic not found</div>;
+        return <div className="p-8">Epic not found</div>;
     }
 
     async function handleTierUpdate(newTier: string | null) {
@@ -1011,18 +1148,59 @@ export default function EpicDetailPage() {
 
     return (
         <div className="flex">
-            <div className="flex-1 pt-16 pb-8 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex-1 sm:px-6 lg:px-8" style={{
+              maxWidth: 'var(--page-container-max-width)',
+              margin: '0 auto',
+              paddingLeft: 'var(--page-container-padding-x)',
+              paddingRight: 'var(--page-container-padding-x)',
+              paddingTop: 'var(--page-container-padding-top)',
+              paddingBottom: 'var(--spacing-8)'
+            }}>
                 <div className="mb-1">
-                    <Link href="/epics" className="text-blue-600 hover:text-blue-800 hover:underline text-sm">← Back to Epics</Link>
+                    <Link 
+                        href="/epics" 
+                        style={{
+                            color: 'var(--color-blue-600)',
+                            fontSize: 'var(--font-size-sm)',
+                            fontFamily: 'var(--font-body)',
+                            textDecoration: 'none'
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.color = 'var(--color-blue-800)';
+                            e.currentTarget.style.textDecoration = 'underline';
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.color = 'var(--color-blue-600)';
+                            e.currentTarget.style.textDecoration = 'none';
+                        }}
+                    >← Back to Epics</Link>
                 </div>
 
             <div className="flex justify-between items-start mb-4">
                     <div className="flex-1">
-                        <h1 className="text-3xl font-bold text-gray-900 mb-2">{epic.name}</h1>
+                        <h1 style={{
+                          fontFamily: 'var(--font-heading)',
+                          fontSize: 'var(--font-size-page-title)',
+                          fontWeight: 'var(--font-weight-bold)',
+                          color: 'var(--color-gray-900)',
+                          marginBottom: 'var(--spacing-2)'
+                        }}>{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
                         {pmOwner && pmOwner.email && (
                             <Tooltip label="Product Owner" withArrow>
-                                <span className="inline-flex items-center gap-1.5 px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded cursor-help">
+                                <span style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '6px',
+                                    padding: 'var(--spacing-1) var(--spacing-2)',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    backgroundColor: 'var(--color-blue-100)',
+                                    color: 'var(--color-blue-800)',
+                                    borderRadius: 'var(--radius-base)',
+                                    cursor: 'help',
+                                    fontFamily: 'var(--font-body)'
+                                }}>
                                     <IconUsers size={14} />
                                     {pmOwner.name || pmOwner.email}
                                 </span>
@@ -1032,7 +1210,15 @@ export default function EpicDetailPage() {
                                 const ahaFields = (epic as any)?.aha_fields || {};
                                 const pod = (epic as any)?.pod || ahaFields?.custom_fields?.dev_backlog_pod || null;
                                 return pod ? (
-                                    <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                                    <span style={{
+                                        padding: 'var(--spacing-1) var(--spacing-2)',
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        backgroundColor: 'var(--color-blue-100)',
+                                        color: 'var(--color-blue-800)',
+                                        borderRadius: 'var(--radius-base)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
                                         {String(pod).trim()}
                                     </span>
                                 ) : null;
@@ -1049,217 +1235,352 @@ export default function EpicDetailPage() {
                                 size="xs"
                                 style={{ width: 150 }}
                             />
-                            <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded">
+                            <span style={{
+                                padding: 'var(--spacing-1) var(--spacing-2)',
+                                fontSize: 'var(--font-size-xs)',
+                                fontWeight: 'var(--font-weight-medium)',
+                                backgroundColor: 'var(--color-gray-100)',
+                                color: 'var(--color-gray-700)',
+                                borderRadius: 'var(--radius-base)',
+                                fontFamily: 'var(--font-body)'
+                            }}>
                                 {epic.status}
                             </span>
                            
                         </div>
                     </div>
                     <div className="ml-6 flex-shrink-0">
-                        <div className="flex gap-6 items-center">
-                            {(() => {
-                                const targetDate = releaseDate || epic.target_launch_date;
-                                if (targetDate) {
-                                    // Calculate total duration from all launch stages (excluding NULL durations)
-                                    let totalDurationDays = 0;
-                                    
-                                    if (launchStages.length > 0) {
-                                        totalDurationDays = launchStages
-                                            .filter(stage => stage.duration_days !== null)
-                                            .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: 'var(--spacing-2)'
+                        }}>
+                            <Button 
+                                size="xs" 
+                                variant={showFieldsSidebar ? "filled" : "outline"}
+                                onClick={() => setShowFieldsSidebar(!showFieldsSidebar)}
+                                styles={{
+                                    root: {
+                                        fontFamily: 'var(--font-body)',
+                                        fontSize: 'var(--font-size-sm)'
                                     }
-                                    
-                                    // Fallback to 63 days (14+21+28) if launch stages aren't loaded yet
-                                    if (totalDurationDays === 0) {
-                                        totalDurationDays = 63;
+                                }}
+                            >
+                                {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
+                            </Button>
+                            <Button 
+                                size="xs" 
+                                onClick={() => setSnapshotModalOpen(true)}
+                                styles={{
+                                    root: {
+                                        fontFamily: 'var(--font-body)',
+                                        fontSize: 'var(--font-size-sm)'
                                     }
-                                    
-                                    const goNoGoDate = new Date(targetDate);
-                                    goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
-                                    return (
-                                        <div className="text-right">
-                                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Approx Go/NoGo Date</div>
-                                            <div className="text-lg font-semibold text-gray-900">
-                                                {goNoGoDate.toLocaleDateString()}
-                                            </div>
-                                        </div>
-                                    );
-                                }
-                                return null;
-                            })()}
-                            <div className="text-right">
-                                <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Target Release Date</div>
-                                {releaseDate ? (
-                                    <div className="text-lg font-semibold text-gray-900">
-                                        {new Date(releaseDate).toLocaleDateString()}
-                                    </div>
-                                ) : epic.target_launch_date ? (
-                                    <div className="text-lg font-semibold text-gray-900">
-                                        {new Date(epic.target_launch_date).toLocaleDateString()}
-                                    </div>
-                                ) : releaseName ? (
-                                    <Button
-                                        leftSection={<IconCalendar size={18} />}
-                                        color="orange"
-                                        size="md"
-                                        onClick={() => setReleaseMappingModalOpen(true)}
-                                        className="mt-1"
-                                    >
-                                        Map Release Date
-                                    </Button>
-                                ) : (
-                                    <div className="text-lg font-semibold text-gray-500">Not set</div>
-                                )}
-                            </div>
+                                }}
+                            >
+                                Take Snapshot
+                            </Button>
                         </div>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-4 gap-6 mt-6">
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Score</div>
-                            <div className="text-2xl font-bold text-gray-900">
-                                {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
-                                {epic.readiness_score !== null && epic.readiness_score !== undefined && epic.readiness_status && (
-                                    <span className="ml-2 text-sm font-normal text-gray-600">
-                                        - {epic.readiness_status}
-                                    </span>
-                                )}
-                            </div>
-                            {readinessThreshold !== null && epic.tier && (
-                                <div className="text-xs text-gray-500 mt-1">
-                                    Threshold: <span className="font-medium">{Math.round(readinessThreshold * 100)}%</span> (Tier {epic.tier.replace('TIER_', '')})
+                <div className="mt-6" style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(5, 1fr)',
+                    gap: 'var(--spacing-6)',
+                    alignItems: 'start'
+                }}>
+                    {(() => {
+                        const targetDate = releaseDate || epic.target_launch_date;
+                        let goNoGoDate: Date | null = null;
+                        if (targetDate) {
+                            let totalDurationDays = 0;
+                            
+                            if (launchStages.length > 0) {
+                                totalDurationDays = launchStages
+                                    .filter(stage => stage.duration_days !== null)
+                                    .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                            }
+                            
+                            if (totalDurationDays === 0) {
+                                totalDurationDays = 63;
+                            }
+                            
+                            goNoGoDate = new Date(targetDate);
+                            goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
+                        }
+                        return (
+                            <>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Target Release Date</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {releaseDate ? new Date(releaseDate).toLocaleDateString() : epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set'}
+                                    </div>
                                 </div>
-                            )}
-                        </div>
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2">Readiness Status</div>
-                            <div className="text-sm font-semibold text-gray-900">{matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}</div>
-                        </div>
-                        <div>
-                            <div className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-2 flex items-center gap-1">
-                                Risk Level
-                                <Tooltip
-                                    label={
-                                        <div className="text-xs">
-                                            <div className="font-semibold mb-2">Risk Level Algorithm:</div>
-                                            <div className="space-y-1">
-                                                <div><strong>Default:</strong> LOW</div>
-                                                <div><strong>&lt; 14 days to launch:</strong></div>
-                                                <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
-                                                <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
-                                                <div><strong>14-30 days to launch:</strong></div>
-                                                <div className="pl-2">• MEDIUM if status is NO_GO</div>
-                                            </div>
-                                        </div>
-                                    }
-                                    multiline
-                                    maw={300}
-                                    withArrow
-                                >
-                                    <IconInfoCircle size={14} className="text-gray-400 cursor-help" />
-                                </Tooltip>
-                            </div>
-                            <Select
-                                value={epic.risk_level || 'LOW'}
-                                onChange={handleRiskLevelUpdate}
-                                data={[
-                                    { value: 'LOW', label: 'Low' },
-                                    { value: 'MEDIUM', label: 'Medium' },
-                                    { value: 'HIGH', label: 'High' },
-                                ]}
-                                disabled={updatingRiskLevel}
-                                size="xs"
-                                style={{ width: 120 }}
-                                styles={{
-                                    input: {
-                                        fontSize: '0.875rem',
-                                        fontWeight: '600',
-                                        padding: '0.25rem 0.5rem',
-                                        height: 'auto',
-                                        minHeight: 'auto',
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Approx Go/NoGo Date</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Readiness Score</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>Readiness Status</div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
+                                        color: 'var(--color-gray-900)',
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}
+                                    </div>
+                                </div>
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    gap: 'var(--spacing-1)',
+                                    textAlign: 'right'
+                                }}>
+                                    <div style={{
+                                        fontSize: 'var(--font-size-xs)',
+                                        fontWeight: 'var(--font-weight-medium)',
+                                        color: 'var(--color-gray-500)',
+                                        textTransform: 'uppercase',
+                                        letterSpacing: '0.05em',
+                                        fontFamily: 'var(--font-body)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        gap: 'var(--spacing-1)'
+                                    }}>
+                                        Risk Level
+                                        <Tooltip
+                                            label={
+                                                <div className="text-xs">
+                                                    <div className="font-semibold mb-2">Risk Level Algorithm:</div>
+                                                    <div className="space-y-1">
+                                                        <div><strong>Default:</strong> LOW</div>
+                                                        <div><strong>&lt; 14 days to launch:</strong></div>
+                                                        <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
+                                                        <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
+                                                        <div><strong>14-30 days to launch:</strong></div>
+                                                        <div className="pl-2">• MEDIUM if status is NO_GO</div>
+                                                    </div>
+                                                </div>
+                                            }
+                                            multiline
+                                            maw={300}
+                                            withArrow
+                                        >
+                                            <IconInfoCircle 
+                                                size={14} 
+                                                style={{
+                                                    color: 'var(--color-gray-400)',
+                                                    cursor: 'help'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </div>
+                                    <div style={{
+                                        fontSize: '17px',
+                                        fontWeight: 'var(--font-weight-bold)',
                                         color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
-                                    }
-                                }}
-                            />
-                        </div>
-                    </div>
+                                        fontFamily: 'var(--font-body)'
+                                    }}>
+                                        {epic.risk_level || 'LOW'}
+                                    </div>
+                                </div>
+                            </>
+                        );
+                    })()}
+                </div>
 
-            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'readiness')} className="mt-8 mb-8" variant="pills">
-                <div style={{ backgroundColor: '#E7F5FF', padding: '4px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Tabs.List style={{ backgroundColor: 'transparent', padding: 0 }}>
+                <div style={{ marginTop: 'var(--spacing-8)', marginBottom: 0 }}>
+                    <EpicDetailTabs 
+                        activeTab={activeTab} 
+                        onTabChange={(value) => setActiveTab(value)} 
+                    />
+                </div>
+
+            <Tabs 
+                value={activeTab} 
+                onChange={(value) => setActiveTab(value || 'readiness')} 
+                className="mb-8" 
+                variant="pills"
+                styles={{
+                    list: {
+                        display: 'none'
+                    },
+                    tab: {
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 'var(--font-size-base)',
+                        fontWeight: 'var(--font-weight-medium)',
+                        color: 'var(--color-gray-900)',
+                        padding: 'var(--spacing-2) var(--spacing-3)',
+                        borderRadius: 'var(--radius-base)',
+                        transition: 'var(--transition-base)',
+                        backgroundColor: 'var(--color-white)',
+                        '&[data-active]': {
+                            backgroundColor: 'var(--color-gray-200)',
+                            color: 'var(--color-gray-900)',
+                            fontWeight: 'var(--font-weight-medium)'
+                        },
+                        '&:hover:not([data-active])': {
+                            backgroundColor: 'var(--color-gray-100)',
+                            color: 'var(--color-gray-900)'
+                        }
+                    }
+                }}
+            >
+                    <Tabs.List style={{ display: 'none' }}>
                         <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
                         <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
                         <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
-                        <Tabs.Tab value="adoption">Adoption</Tabs.Tab>
+                        <Tabs.Tab value="adoption">Success Config</Tabs.Tab>
+                        <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
+                        <Tabs.Tab value="retro">Retro</Tabs.Tab>
                     </Tabs.List>
-                    <div className="flex gap-2" style={{ marginLeft: 'auto', paddingRight: '4px' }}>
-                        <Button 
-                            size="xs" 
-                            variant={showFieldsSidebar ? "filled" : "outline"}
-                            onClick={() => setShowFieldsSidebar(!showFieldsSidebar)}
-                        >
-                            {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
-                        </Button>
-                        <Button 
-                            size="xs" 
-                            onClick={() => setSnapshotModalOpen(true)}
-                        >
-                            Take Snapshot
-                        </Button>
-                    </div>
-                </div>
 
-                <Tabs.Panel value="readiness" pt="md">
-                    <div className="flex justify-between items-center mb-4">
-                        {matrix.length > 0 && (
-                            <>
-                                {showFilters ? (
-                                    <Group gap="xs">
-                                        <Badge
-                                            variant={criterionFilter === 'all' ? 'filled' : 'outline'}
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('all')}
-                                        >
-                                            All
-                                        </Badge>
-                                        <Badge
-                                            variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
-                                            color="red"
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('overdue')}
-                                        >
-                                            Criterion Overdue
-                                        </Badge>
-                                        <Badge
-                                            variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
-                                            color="orange"
-                                            style={{ cursor: 'pointer' }}
-                                            onClick={() => setCriterionFilter('too_soon')}
-                                        >
-                                            Criterion Due Soon
-                                        </Badge>
+                <Tabs.Panel value="readiness" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                    <div style={{
+                        borderLeft: '1px solid var(--color-gray-900)',
+                        borderRight: '1px solid var(--color-gray-900)',
+                        borderBottom: '1px solid var(--color-gray-900)',
+                        borderTop: 'none',
+                        borderRadius: '0 0 var(--radius-md) var(--radius-md)',
+                        padding: 0,
+                        marginTop: 0,
+                        position: 'relative',
+                        zIndex: 1
+                    }}>
+                        <div className="flex justify-between items-center mb-4" style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)' }}>
+                            {matrix.length > 0 && (
+                                <>
+                                    {showFilters ? (
+                                        <Group gap="xs">
+                                            <Badge
+                                                variant={criterionFilter === 'all' ? 'filled' : 'outline'}
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('all')}
+                                            >
+                                                All
+                                            </Badge>
+                                            <Badge
+                                                variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
+                                                color="red"
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('overdue')}
+                                            >
+                                                Criterion Overdue
+                                            </Badge>
+                                            <Badge
+                                                variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
+                                                color="orange"
+                                                style={{ 
+                                                    cursor: 'pointer',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontSize: 'var(--font-size-sm)'
+                                                }}
+                                                onClick={() => setCriterionFilter('too_soon')}
+                                            >
+                                                Criterion Due Soon
+                                            </Badge>
+                                            <Button
+                                                size="xs"
+                                                variant="subtle"
+                                                onClick={() => setShowFilters(false)}
+                                            >
+                                                Hide Filters
+                                            </Button>
+                                        </Group>
+                                    ) : (
                                         <Button
                                             size="xs"
                                             variant="subtle"
-                                            onClick={() => setShowFilters(false)}
+                                            onClick={() => setShowFilters(true)}
                                         >
-                                            Hide Filters
+                                            Show Filters
                                         </Button>
-                                    </Group>
-                                ) : (
-                                    <Button
-                                        size="xs"
-                                        variant="subtle"
-                                        onClick={() => setShowFilters(true)}
-                                    >
-                                        Show Filters
-                                    </Button>
-                                )}
-                            </>
-                        )}
-                    </div>
-                    {matrix.length === 0 ? (
+                                    )}
+                                </>
+                            )}
+                        </div>
+                        {matrix.length === 0 ? (
                         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
                             <div>
                                 No criteria configured. Add criteria in <Link href="/admin/settings" className="text-yellow-800 underline hover:text-yellow-900">Admin → Settings</Link>.
@@ -1278,6 +1599,9 @@ export default function EpicDetailPage() {
                                 const fourteenDaysFromNow = new Date(today);
                                 fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
                                 
+                                // Memoization cache for filter calculations
+                                const filterDueDateCache = new Map<number, string | null>();
+                                
                                 // Use pre-calculated values for filtering (optimization: reuse pre-calculated maps)
                                 const calculateDueDateForFilter = (item: any): string | null => {
                                     if (!item.criterion?.rating_timing || launchStages.length === 0) {
@@ -1291,11 +1615,17 @@ export default function EpicDetailPage() {
                                     
                                     const ratingTimingId = item.criterion.rating_timing;
                                     
+                                    // Check cache first
+                                    if (filterDueDateCache.has(ratingTimingId)) {
+                                        return filterDueDateCache.get(ratingTimingId)!;
+                                    }
+                                    
                                     // Use pre-calculated values instead of recalculating
                                     const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
                                     const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
                                     
                                     if (daysBefore === undefined && daysAfter === undefined) {
+                                        filterDueDateCache.set(ratingTimingId, null);
                                         return item.condition_due_date || null;
                                     }
                                     
@@ -1307,7 +1637,9 @@ export default function EpicDetailPage() {
                                         dueDate.setDate(dueDate.getDate() + daysAfter);
                                     }
                                     
-                                    return dueDate.toISOString().split('T')[0];
+                                    const result = dueDate.toISOString().split('T')[0];
+                                    filterDueDateCache.set(ratingTimingId, result);
+                                    return result;
                                 };
                                 
                                 const filteredMatrix = matrix.filter((item: any) => {
@@ -1343,6 +1675,7 @@ export default function EpicDetailPage() {
                             })()}
                         </>
                     )}
+                    </div>
                 </Tabs.Panel>
 
                 <Tabs.Panel value="decisions" pt="md">
@@ -1354,9 +1687,30 @@ export default function EpicDetailPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="adoption" pt="md">
-                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
-                        <p className="text-gray-600">Adoption metrics and tracking coming soon.</p>
-                    </div>
+                    <Stack gap="md">
+                        <SuccessConfigSection
+                            epicId={epic.id}
+                            epicTier={epic.tier}
+                            config={successConfig}
+                            isAdmin={isAdmin}
+                            onRefresh={fetchSuccessData}
+                        />
+                        <EpicMetricsManager
+                            epicId={epic.id}
+                            metrics={successMetrics}
+                            isAdmin={isAdmin}
+                            configLocked={successConfig?.locked || false}
+                            onRefresh={fetchSuccessData}
+                        />
+                    </Stack>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="scorecard" pt="md">
+                    <ScorecardPageContent epicId={epic.id} />
+                </Tabs.Panel>
+
+                <Tabs.Panel value="retro" pt="md">
+                    <RetroPageContent epicId={epic.id} />
                 </Tabs.Panel>
             </Tabs>
 
@@ -1367,119 +1721,6 @@ export default function EpicDetailPage() {
                 onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
             />
 
-            {/* Release Date Mapping Modal */}
-            <Modal
-                opened={releaseMappingModalOpen}
-                onClose={() => {
-                    setReleaseMappingModalOpen(false);
-                    setReleaseDateInput("");
-                }}
-                title="Map Release Date"
-                centered
-            >
-                <div className="space-y-4">
-                    <div>
-                        <div className="text-sm font-medium text-gray-700 mb-1">Release Name</div>
-                        <div className="text-lg font-semibold text-gray-900">{releaseName}</div>
-                    </div>
-                    <TextInput
-                        label="Launch Date"
-                        placeholder="MM/DD/YYYY"
-                        value={releaseDateInput}
-                        onChange={(e) => setReleaseDateInput(e.currentTarget.value)}
-                        description="Enter the launch date for this release"
-                    />
-                    <Group justify="flex-end" mt="md">
-                        <Button
-                            variant="subtle"
-                            onClick={() => {
-                                setReleaseMappingModalOpen(false);
-                                setReleaseDateInput("");
-                            }}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={async () => {
-                                if (!releaseDateInput.trim()) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Please enter a launch date',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
-                                
-                                if (!releaseName) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: 'Release name is missing',
-                                        color: 'red',
-                                    });
-                                    return;
-                                }
-
-                                try {
-                                    // Parse date - support MM/DD/YYYY format
-                                    let parsedDate: string;
-                                    if (releaseDateInput.includes("/")) {
-                                        const parts = releaseDateInput.split("/");
-                                        if (parts.length !== 3) {
-                                            throw new Error("Invalid date format. Use MM/DD/YYYY");
-                                        }
-                                        const [month, day, year] = parts;
-                                        parsedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                                        
-                                        // Validate the date
-                                        const dateObj = new Date(parsedDate);
-                                        if (isNaN(dateObj.getTime())) {
-                                            throw new Error("Invalid date. Please check the date format.");
-                                        }
-                                    } else {
-                                        parsedDate = releaseDateInput; // Assume YYYY-MM-DD format
-                                    }
-
-                                    const res = await fetch("/api/releases", {
-                                        method: "POST",
-                                        headers: { "Content-Type": "application/json" },
-                                        credentials: 'include',
-                                        body: JSON.stringify({
-                                            release_name: releaseName.trim(),
-                                            launch_date: parsedDate,
-                                        }),
-                                    });
-
-                                    if (!res.ok) {
-                                        const errorData = await res.json();
-                                        throw new Error(errorData.error || "Failed to create release mapping");
-                                    }
-
-                                    notifications.show({
-                                        title: 'Success',
-                                        message: 'Release date mapped successfully',
-                                        color: 'green',
-                                    });
-
-                                    setReleaseMappingModalOpen(false);
-                                    setReleaseDateInput("");
-                                    
-                                    // Reload data to get the updated release date
-                                    await loadData();
-                                } catch (error: any) {
-                                    notifications.show({
-                                        title: 'Error',
-                                        message: error.message || 'Failed to map release date',
-                                        color: 'red',
-                                    });
-                                }
-                            }}
-                            disabled={!releaseDateInput.trim()}
-                        >
-                            Map Date
-                        </Button>
-                    </Group>
-                </div>
-            </Modal>
             </div>
             {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} />}
         </div>

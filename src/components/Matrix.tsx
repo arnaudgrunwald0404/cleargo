@@ -204,6 +204,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
+    const [hoveredAvatarId, setHoveredAvatarId] = useState<string | null>(null);
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
         () => {
             // All categories expanded by default
@@ -707,7 +708,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const hasOverall = (cat: string) => categoryOverallItems[cat] !== null;
 
     return (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <>
             {categories.map((cat, index) => {
                 const overallItem = categoryOverallItems[cat];
                 const regularItems = categoryRegularItems[cat];
@@ -842,49 +843,75 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                 <div 
                                                     className="flex items-center gap-2 min-w-0"
                                                 >
-                                                    <Avatar
-                                                        src={item.approverInfo?.avatar_url || undefined}
-                                                        alt={item.approverEmail}
-                                                        radius="xl"
-                                                        size={24}
-                                                        color={getAvatarColor(item.approverEmail)}
-                                                        className="flex-shrink-0"
+                                                    <div 
+                                                        style={{ position: 'relative', display: 'inline-flex' }}
+                                                        onMouseEnter={() => setHoveredAvatarId(item.id)}
+                                                        onMouseLeave={() => setHoveredAvatarId(null)}
                                                     >
-                                                        {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
-                                                    </Avatar>
+                                                        <Avatar
+                                                            src={item.approverInfo?.avatar_url || undefined}
+                                                            alt={item.approverEmail}
+                                                            radius="xl"
+                                                            size={24}
+                                                            color={getAvatarColor(item.approverEmail)}
+                                                            className="flex-shrink-0"
+                                                            style={{
+                                                                opacity: hoveredAvatarId === item.id ? 0 : 1,
+                                                                transition: 'opacity 0.2s',
+                                                            }}
+                                                        >
+                                                            {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
+                                                        </Avatar>
+                                                        {(() => {
+                                                            const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                            const isApprover = currentUserEmail === item.approverEmail;
+                                                            const shouldShow = hasPermission || isApprover;
+                                                            if (index === 0 && cat === categories[0]) {
+                                                                console.log('Matrix Render Debug:', {
+                                                                    currentUserRoles,
+                                                                    currentUserEmail,
+                                                                    itemApproverEmail: item.approverEmail,
+                                                                    hasPermission,
+                                                                    isApprover,
+                                                                    shouldShow,
+                                                                    criterionLabel: item.criterion.label
+                                                                });
+                                                            }
+                                                            return shouldShow && (
+                                                                <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                    <button
+                                                                        className="flex-shrink-0"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleOpenDelegation(item);
+                                                                        }}
+                                                                        style={{ 
+                                                                            position: 'absolute',
+                                                                            top: 0,
+                                                                            left: 0,
+                                                                            width: '24px',
+                                                                            height: '24px',
+                                                                            borderRadius: '50%',
+                                                                            background: '#f3f4f6',
+                                                                            border: 'none',
+                                                                            cursor: 'pointer',
+                                                                            display: 'flex',
+                                                                            alignItems: 'center',
+                                                                            justifyContent: 'center',
+                                                                            opacity: hoveredAvatarId === item.id ? 1 : 0,
+                                                                            transition: 'opacity 0.2s',
+                                                                            pointerEvents: hoveredAvatarId === item.id ? 'auto' : 'none',
+                                                                        }}
+                                                                    >
+                                                                        <IconArrowsRightLeft size={14} className="text-gray-600" />
+                                                                    </button>
+                                                                </Tooltip>
+                                                            );
+                                                        })()}
+                                                    </div>
                                                     <span className="text-sm truncate min-w-0 flex-1">
                                                         {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
                                                     </span>
-                                                    {(() => {
-                                                        const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
-                                                        const isApprover = currentUserEmail === item.approverEmail;
-                                                        const shouldShow = hasPermission || isApprover;
-                                                        if (index === 0 && cat === categories[0]) {
-                                                            console.log('Matrix Render Debug:', {
-                                                                currentUserRoles,
-                                                                currentUserEmail,
-                                                                itemApproverEmail: item.approverEmail,
-                                                                hasPermission,
-                                                                isApprover,
-                                                                shouldShow,
-                                                                criterionLabel: item.criterion.label
-                                                            });
-                                                        }
-                                                        return shouldShow && (
-                                                            <Tooltip label="Delegate this task" position="top" withArrow>
-                                                                <button
-                                                                    className="delegation-btn ml-auto opacity-100 transition-opacity flex-shrink-0 hover:opacity-80"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleOpenDelegation(item);
-                                                                    }}
-                                                                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}
-                                                                >
-                                                                    <IconArrowsRightLeft size={16} className="text-gray-600" />
-                                                                </button>
-                                                            </Tooltip>
-                                                        );
-                                                    })()}
                                                 </div>
                                             ) : (
                                                 <div className="flex items-center gap-2">
@@ -938,7 +965,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                     const isOverdue = dueDate < today;
                                                     
                                                     return (
-                                                        <div className={`${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
+                                                        <div className={`${isOverdue ? 'text-red-600' : 'text-gray-700'}`}>
                                                             <span>{dueDate.toLocaleDateString()}</span>
                                                         </div>
                                                     );
@@ -1176,36 +1203,64 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Approver</div>
                                                 {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                     <div className="flex items-center gap-2">
-                                                        <Avatar
-                                                            src={item.approverInfo?.avatar_url || undefined}
-                                                            alt={item.approverEmail}
-                                                            radius="xl"
-                                                            size={32}
-                                                            color={getAvatarColor(item.approverEmail)}
-                                                            className="flex-shrink-0"
+                                                        <div 
+                                                            style={{ position: 'relative', display: 'inline-flex' }}
+                                                            onMouseEnter={() => setHoveredAvatarId(item.id)}
+                                                            onMouseLeave={() => setHoveredAvatarId(null)}
                                                         >
-                                                            {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
-                                                        </Avatar>
+                                                            <Avatar
+                                                                src={item.approverInfo?.avatar_url || undefined}
+                                                                alt={item.approverEmail}
+                                                                radius="xl"
+                                                                size={32}
+                                                                color={getAvatarColor(item.approverEmail)}
+                                                                className="flex-shrink-0"
+                                                                style={{
+                                                                    opacity: hoveredAvatarId === item.id ? 0 : 1,
+                                                                    transition: 'opacity 0.2s',
+                                                                }}
+                                                            >
+                                                                {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
+                                                            </Avatar>
+                                                            {(() => {
+                                                                const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                                const isApprover = currentUserEmail === item.approverEmail;
+                                                                const shouldShow = hasPermission || isApprover;
+                                                                return shouldShow && (
+                                                                    <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleOpenDelegation(item);
+                                                                            }}
+                                                                            style={{ 
+                                                                                position: 'absolute',
+                                                                                top: 0,
+                                                                                left: 0,
+                                                                                width: '32px',
+                                                                                height: '32px',
+                                                                                borderRadius: '50%',
+                                                                                background: '#f3f4f6',
+                                                                                border: 'none',
+                                                                                cursor: 'pointer',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                justifyContent: 'center',
+                                                                                opacity: hoveredAvatarId === item.id ? 1 : 0,
+                                                                                transition: 'opacity 0.2s',
+                                                                                pointerEvents: hoveredAvatarId === item.id ? 'auto' : 'none',
+                                                                            }}
+                                                                            title="Delegate this task"
+                                                                        >
+                                                                            <IconArrowsRightLeft size={19} className="text-gray-600" />
+                                                                        </button>
+                                                                    </Tooltip>
+                                                                );
+                                                            })()}
+                                                        </div>
                                                         <span className="text-sm flex-1 min-w-0 truncate">
                                                             {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
                                                         </span>
-                                                        {(() => {
-                                                            const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
-                                                            const isApprover = currentUserEmail === item.approverEmail;
-                                                            const shouldShow = hasPermission || isApprover;
-                                                            return shouldShow && (
-                                                                <button
-                                                                    className="p-2.5 rounded hover:bg-gray-100 transition-colors flex-shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleOpenDelegation(item);
-                                                                    }}
-                                                                    title="Delegate this task"
-                                                                >
-                                                                    <IconArrowsRightLeft size={20} className="text-gray-600" />
-                                                                </button>
-                                                            );
-                                                        })()}
                                                     </div>
                                                 ) : (
                                                     <div className="flex items-center gap-2">
@@ -1352,7 +1407,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     onDelegate={handleDelegate}
                 />
             )}
-        </div>
+        </>
     );
 }
 

@@ -11,6 +11,12 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
   // Note: Slack settings may need to be added to AppSettings interface if they don't exist yet
   const slackDefaultChannel = (settings as any).slack_default_channel || '';
   const slackChannels = (settings as any).slack_channels || {};
+  const slackNudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
+  const slackNudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
+  const slackNudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
+  // Default to agrunwald@clearcompany.com if not set (for testing)
+  const slackNotificationTestEmail = settings.slack_notification_test_email || 'agrunwald@clearcompany.com';
+  const slackNotificationTestSlackHandle = settings.slack_notification_test_slack_handle || '';
 
   return (
     <div>
@@ -65,6 +71,72 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
               <code className="bg-gray-100 px-1 rounded">
                 {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/slack/interactions` : '/api/integrations/slack/interactions'}
               </code>
+            </div>
+          </div>
+        </div>
+
+        <div className="border-t border-gray-200 pt-4 mt-4">
+          <h3 className="text-sm font-semibold text-gray-900 mb-3">Criteria Notification Settings</h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nudge Frequency</label>
+              <div className="space-y-2">
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={slackNudge1WeekBefore}
+                    onChange={(e) => setSettings({ ...settings, slack_nudge_1_week_before: e.target.checked } as any)}
+                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Nudge 1 week before due date</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={slackNudgeOnDueDate}
+                    onChange={(e) => setSettings({ ...settings, slack_nudge_on_due_date: e.target.checked } as any)}
+                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Nudge on due date</span>
+                </label>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={slackNudgeDailyAfter}
+                    onChange={(e) => setSettings({ ...settings, slack_nudge_daily_after_due: e.target.checked } as any)}
+                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm text-gray-700">Nudge daily after due date</span>
+                </label>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Email Filter (for Email & Slack Notifications)</label>
+                <input
+                  type="email"
+                  value={slackNotificationTestEmail}
+                  onChange={(e) => setSettings({ ...settings, slack_notification_test_email: e.target.value } as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="agrunwald@clearcompany.com"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  All notifications are logged, but only this email address receives actual email and Slack notifications. Default: agrunwald@clearcompany.com
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Test Slack Handle Filter (Optional - Overrides Email Filter for Slack)</label>
+                <input
+                  type="text"
+                  value={slackNotificationTestSlackHandle}
+                  onChange={(e) => setSettings({ ...settings, slack_notification_test_slack_handle: e.target.value } as any)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  placeholder="U12345678"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Optional: If set, only send Slack notifications to this Slack user ID (e.g., U12345678). If empty, uses the email filter above. Leave empty to use email filter for Slack too.
+                </p>
+              </div>
             </div>
           </div>
         </div>

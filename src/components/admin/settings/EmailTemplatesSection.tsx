@@ -2,6 +2,7 @@
 import React from "react";
 import { Modal } from "@mantine/core";
 import { IconMail } from "@tabler/icons-react";
+import { PurpleLoader } from '../../PurpleLoader';
 
 export type TemplateType = "invite" | "remind" | "update_criteria";
 
@@ -53,7 +54,10 @@ export default function EmailTemplatesSection({
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading templates...</div>
+          <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+            <PurpleLoader size="sm" />
+            <span>Loading templates...</span>
+          </div>
         ) : (
           <div className="space-y-6">
             <div className="border-b border-gray-200">

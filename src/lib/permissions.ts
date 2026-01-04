@@ -1,7 +1,6 @@
 import type { Role } from "./roles-constants";
 
 export type CapabilityId =
-  | "criteria.assignee.override"
   | "criteria.status.update"
   | "criteria.delegate"
   | "launch.tier.update"
@@ -35,11 +34,6 @@ export type Capability = {
 };
 
 export const CAPABILITIES: Capability[] = [
-  {
-    id: "criteria.assignee.override",
-    label: "Override Criteria Assignee",
-    description: "Allow overriding who is assigned/owner for a criterion in a specific Epic.",
-  },
   {
     id: "criteria.status.update",
     label: "Update Criteria Status",
@@ -168,7 +162,6 @@ export const CAPABILITIES: Capability[] = [
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
-  "criteria.assignee.override": ["PRODUCT_OPS", "CPO"],
   "criteria.status.update": ["PM", "PMM", "ENG_LEAD", "PRODUCT_OPS", "CPO", "PRODUCT_LEAD"],
   "criteria.delegate": ["CPO", "PRODUCT_OPS"],
   "launch.tier.update": ["PRODUCT_OPS", "CPO"],

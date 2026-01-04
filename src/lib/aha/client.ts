@@ -190,7 +190,8 @@ export async function getReleases(params?: { per_page?: number; page?: number; p
     if (params?.per_page) queryParams.set('per_page', params.per_page.toString());
     if (params?.page) queryParams.set('page', params.page.toString());
     
-    const fields = ['id', 'reference_num', 'name', 'start_date', 'end_date'].join(',');
+    // Request fields including custom_fields to get external release dates
+    const fields = ['id', 'reference_num', 'name', 'start_date', 'end_date', 'custom_fields'].join(',');
     queryParams.set('fields', fields);
     
     let url = `${BASE_URL}/releases`;

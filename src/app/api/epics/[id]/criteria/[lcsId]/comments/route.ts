@@ -10,12 +10,26 @@ export async function GET(
 ) {
   try {
     const { id: epicId, lcsId } = await params;
+    
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/comments/route.ts:12',message:'GET comments endpoint called',data:{epicId,lcsId,isVirtual:lcsId?.startsWith('virtual-')},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    
     const supabase = createClient();
     
     // Authenticate user
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/comments/route.ts:24',message:'Before database query',data:{lcsId,isVirtual:lcsId.startsWith('virtual-')},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+
+    // Handle virtual IDs - they don't have status rows and can't have comments
+    if (lcsId.startsWith('virtual-')) {
+      return NextResponse.json([]);
     }
 
     // Fetch comments with user info
@@ -30,7 +44,16 @@ export async function GET(
       .eq('launch_criterion_status_id', lcsId)
       .order('created_at', { ascending: true });
 
-    if (error) throw error;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/comments/route.ts:35',message:'After database query',data:{lcsId,isVirtual:lcsId.startsWith('virtual-'),hasError:!!error,errorCode:error?.code,errorMessage:error?.message,commentCount:comments?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'C'})}).catch(()=>{});
+    // #endregion
+
+    if (error) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'api/epics/[id]/criteria/[lcsId]/comments/route.ts:38',message:'Database error caught',data:{lcsId,isVirtual:lcsId.startsWith('virtual-'),errorCode:error.code,errorMessage:error.message,errorDetails:error},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
+      throw error;
+    }
 
     return NextResponse.json(comments || []);
   } catch (error: any) {

@@ -250,24 +250,40 @@ export async function mapEpicToEpic(
 
 
 export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
-    // Filter: (Launch Candidate == true) OR (tags contains any of the allowed tags from settings)
+    // Filter: (ClearGO Candidate == Yes) OR (tags contains any of the allowed tags from settings)
     const settings = await getSettings();
     const ALLOWED_TAGS = settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
 
-    // Check for launch_candidate custom field if it exists in config, otherwise default to false
-    let isLaunchCandidate = false;
+    // Check for cleargo_candidate custom field if it exists in config, otherwise default to false
+    let isClearGOCandidate = false;
     try {
-        const launchCandidateValue = await getCustomFieldValue(epic, 'launch_candidate');
-        isLaunchCandidate = launchCandidateValue === true;
+        // Try to get the field value using the key directly (cleargo_candidate)
+        const fieldKey = 'cleargo_candidate';
+        let fieldValue: any = null;
+        
+        // AHA API returns custom_fields as an array
+        if (Array.isArray(epic.custom_fields)) {
+            const field = epic.custom_fields.find((f: any) => f?.key === fieldKey);
+            if (field) {
+                fieldValue = field.value;
+                // For select fields, value might be an object with name property
+                if (fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && fieldValue.name) {
+                    fieldValue = fieldValue.name;
+                }
+            }
+        }
+        
+        // Check if the value is "Yes"
+        isClearGOCandidate = fieldValue === 'Yes' || fieldValue === true;
     } catch (error) {
-        // launch_candidate might not be configured as a custom field, that's okay
+        // cleargo_candidate might not be configured as a custom field, that's okay
         // We'll rely on tags instead
-        console.debug('launch_candidate field not configured, using tags only');
+        console.debug('cleargo_candidate field not configured, using tags only');
     }
     
     const hasLaunchTag = epic.tags?.some(tag => ALLOWED_TAGS.includes(tag)) ?? false;
 
-    return isLaunchCandidate || hasLaunchTag;
+    return isClearGOCandidate || hasLaunchTag;
 }
 
 export function buildWriteBackPayload(data: {

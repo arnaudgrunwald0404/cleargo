@@ -1,5 +1,6 @@
 "use client";
 import React from "react";
+import { PurpleLoader } from '../../PurpleLoader';
 
 type Capability = { id: string; label: string; description: string };
 
@@ -60,7 +61,10 @@ export default function PermissionsSection({
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-500">Loading...</div>
+          <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+            <PurpleLoader size="sm" />
+            <span>Loading...</span>
+          </div>
         ) : (
           <div className="space-y-6">
             <div className="overflow-x-auto -mx-4 sm:mx-0">

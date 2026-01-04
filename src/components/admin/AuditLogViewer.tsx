@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Table, Select, Button, Group, Text, Pagination, Paper, Badge } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { UserDisplay } from '../UserDisplay';
+import { PurpleLoader } from '../PurpleLoader';
 
 interface AuditLog {
     id: string;
@@ -116,7 +117,10 @@ export default function AuditLogViewer() {
 
             <Paper withBorder>
                 {loading ? (
-                    <Text p="md" c="dimmed">Loading...</Text>
+                    <div className="flex items-center justify-center gap-2 p-4">
+                        <PurpleLoader size="sm" />
+                        <Text c="dimmed">Loading...</Text>
+                    </div>
                 ) : logs.length === 0 ? (
                     <Text p="md" c="dimmed">No audit logs found</Text>
                 ) : (

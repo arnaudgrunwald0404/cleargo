@@ -9,6 +9,7 @@ import {
     getFallbackProductOpsUser,
     instantiateCriteriaForEpic,
     getEpicByAhaId,
+    fetchAndUpsertReleaseFromAha,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
@@ -27,11 +28,38 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
     try {
+        // #region agent log
+        const requestCookies = req.cookies.getAll();
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
+        const authCookieName = projectRef ? `sb-${projectRef}-auth-token` : null;
+        const authCookies = requestCookies.filter(c => 
+            c.name === authCookieName || 
+            c.name === `${authCookieName}.0` ||
+            c.name.includes('auth-token')
+        );
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:29',message:'POST request received',data:{totalCookies:requestCookies.length,authCookieName,authCookiesCount:authCookies.length,authCookieNames:authCookies.map(c=>c.name),hasAuthCookie:authCookies.length>0,projectRef},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A,B,C'})}).catch(()=>{});
+        // #endregion
+        
         // Auth check - require admin role
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:32',message:'Creating Supabase client',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:35',message:'Calling getUser()',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
+        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
+        
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:38',message:'getUser() result',data:{hasUser:!!user,userEmail:user?.email,getUserError:getUserError?.message,getUserErrorCode:getUserError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         
         if (!user?.email) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:40',message:'Returning 401 - no user email',data:{getUserError:getUserError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A,B,C'})}).catch(()=>{});
+            // #endregion
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
@@ -180,11 +208,24 @@ export async function POST(req: NextRequest) {
                     continue;
                 }
                 
+                // Auto-fetch release from Aha API if it doesn't exist in system
                 if (!syncedReleaseNames.has(epicReleaseName)) {
-                    console.log(`⏭️  Skipping epic ${epicData.aha_id}: Release "${epicReleaseName}" not synced in system`);
-                    results.skipped_release_not_synced++;
-                    results.skipped++;
-                    continue;
+                    try {
+                        const fetchedDate = await fetchAndUpsertReleaseFromAha(epicReleaseName);
+                        // Add to syncedReleaseNames set so we don't fetch it again in this sync
+                        syncedReleaseNames.add(epicReleaseName);
+                        
+                        if (fetchedDate === null) {
+                            // Release not found in Aha or has no date - still continue processing epic
+                            console.log(`⚠️ Release "${epicReleaseName}" not found in Aha or has no date, continuing with epic sync`);
+                        }
+                    } catch (fetchError) {
+                        // If fetch fails, log error but continue processing epic
+                        console.error(`Failed to auto-fetch release "${epicReleaseName}" from Aha:`, fetchError);
+                        const errorMsg = `Failed to auto-fetch release "${epicReleaseName}": ${(fetchError as Error).message}`;
+                        results.errors.push(errorMsg);
+                        // Continue processing epic anyway - release might be created manually later
+                    }
                 }
 
                 // Check if epic already exists

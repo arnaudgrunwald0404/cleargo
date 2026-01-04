@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from 'react';
-import { Modal, Button, Group, Text, Stack, FileButton, List, ActionIcon, Loader } from '@mantine/core';
+import { Modal, Button, Group, Text, Stack, FileButton, List, ActionIcon } from '@mantine/core';
+import { PurpleLoader } from './PurpleLoader';
 import { IconPaperclip, IconTrash, IconDownload, IconFile } from '@tabler/icons-react';
 
 interface FileAttachment {
@@ -187,7 +188,7 @@ export function FileAttachmentModal({
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '20px' }}>
-            <Loader size="sm" />
+            <PurpleLoader size="sm" />
           </div>
         ) : attachments.length === 0 ? (
           <Text size="sm" c="dimmed" ta="center" p="md">

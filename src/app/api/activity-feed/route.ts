@@ -18,6 +18,7 @@ export interface ActivityFeedItem {
     };
     entity_type?: string;
     entity_id?: string;
+    epic_id?: string; // For feedback and criterion activities linked to epics
 }
 
 function firstItem<T>(value: T | T[] | null | undefined): T | undefined {
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
                 feedback_text,
                 source,
                 created_at,
-                launch:launch_id (
+                epic:epic_id (
                     id,
                     name
                 ),
@@ -104,9 +105,17 @@ export async function GET(req: NextRequest) {
 
         // Transform audit logs into activity feed items
         const activities: ActivityFeedItem[] = [];
+        // Track entities we've already added to prevent duplicates
+        const seenEntities = new Set<string>();
+
+        // Collect criterion status IDs to fetch epic_ids in batch
+        const criterionStatusIds: string[] = [];
 
         for (const log of auditLogs || []) {
             let activity: ActivityFeedItem | null = null;
+
+            // Create a unique key for this entity
+            const entityKey = `${log.entity_type}:${log.entity_id}`;
 
             // Parse different types of activities
             if (log.entity_type === 'criterion' || log.entity_type === 'launch_criterion_status' || log.entity_type === 'epic_criterion_status') {
@@ -115,6 +124,12 @@ export async function GET(req: NextRequest) {
                 const statusChange = diff?.status || diff?.readiness_status;
                 
                 if (statusChange) {
+                    // For criterion status changes, we need to fetch epic_id
+                    if (log.entity_type === 'epic_criterion_status' || log.entity_type === 'launch_criterion_status') {
+                        criterionStatusIds.push(log.entity_id);
+                        criterionStatusLogs.set(log.entity_id, log);
+                    }
+                    
                     activity = {
                         id: log.id,
                         type: 'criterion_change',
@@ -130,29 +145,49 @@ export async function GET(req: NextRequest) {
                 const diff = log.json_diff;
                 
                 // Check if it's a new epic/launch (created event)
-                if (diff && Object.keys(diff).length > 5) {
-                    activity = {
-                        id: log.id,
-                        type: 'epic_added',
-                        title: log.entity_type === 'epic' ? 'New Epic Created' : 'New Launch Created',
-                        description: diff.name?.new || diff.title?.new || 'A new item has been added',
-                        timestamp: log.taken_at,
-                        actor: normalizeActor(log.actor),
-                        entity_type: log.entity_type,
-                        entity_id: log.entity_id,
-                    };
+                // Look for creation indicators:
+                // 1. source field indicates 'aha_sync' (epic created via Aha sync)
+                // 2. All object-type diff fields have only "new" values (no "old" values), indicating creation
+                const isCreation = diff?.source === 'aha_sync' || 
+                    (diff && Object.keys(diff).length > 5 && 
+                     Object.values(diff).every((v: any) => {
+                         // Skip non-object values (like 'source' string)
+                         if (!v || typeof v !== 'object' || Array.isArray(v)) return true;
+                         // For objects, check if they have 'new' but no 'old' (creation indicator)
+                         return v.new !== undefined && v.old === undefined;
+                     }));
+                
+                if (isCreation) {
+                    // Only add if we haven't seen this entity before
+                    if (!seenEntities.has(entityKey)) {
+                        activity = {
+                            id: log.id,
+                            type: 'epic_added',
+                            title: log.entity_type === 'epic' ? 'New Epic Created' : 'New Launch Created',
+                            description: diff.name?.new || diff.title?.new || 'A new item has been added',
+                            timestamp: log.taken_at,
+                            actor: normalizeActor(log.actor),
+                            entity_type: log.entity_type,
+                            entity_id: log.entity_id,
+                        };
+                        seenEntities.add(entityKey);
+                    }
                 } else if (diff?.release_id || diff?.release) {
-                    // Release assignment change
-                    activity = {
-                        id: log.id,
-                        type: 'release_updated',
-                        title: 'Release Updated',
-                        description: `${log.entity_type === 'epic' ? 'Epic' : 'Launch'} assigned to release`,
-                        timestamp: log.taken_at,
-                        actor: normalizeActor(log.actor),
-                        entity_type: log.entity_type,
-                        entity_id: log.entity_id,
-                    };
+                    // Release assignment change - only add if we haven't seen this entity for release updates
+                    const releaseKey = `${entityKey}:release`;
+                    if (!seenEntities.has(releaseKey)) {
+                        activity = {
+                            id: log.id,
+                            type: 'release_updated',
+                            title: 'Release Updated',
+                            description: `${log.entity_type === 'epic' ? 'Epic' : 'Launch'} assigned to release`,
+                            timestamp: log.taken_at,
+                            actor: normalizeActor(log.actor),
+                            entity_type: log.entity_type,
+                            entity_id: log.entity_id,
+                        };
+                        seenEntities.add(releaseKey);
+                    }
                 }
             } else if (log.entity_type === 'delegation') {
                 // Delegation event
@@ -191,10 +226,31 @@ export async function GET(req: NextRequest) {
             }
         }
 
+        // Fetch epic_ids for criterion status activities in batch
+        if (criterionStatusIds.length > 0) {
+            const { data: criterionStatuses } = await supabase
+                .from('epic_criterion_status')
+                .select('id, epic_id')
+                .in('id', criterionStatusIds);
+
+            if (criterionStatuses) {
+                const epicIdMap = new Map(criterionStatuses.map(cs => [cs.id, cs.epic_id]));
+                // Update activities with epic_id
+                for (const activity of activities) {
+                    if (activity.type === 'criterion_change' && 
+                        (activity.entity_type === 'epic_criterion_status' || activity.entity_type === 'launch_criterion_status') &&
+                        activity.entity_id) {
+                        activity.epic_id = epicIdMap.get(activity.entity_id);
+                    }
+                }
+            }
+        }
+
         // Add feedback activities
         for (const feedback of feedbackItems || []) {
-            const launch = firstItem(feedback.launch);
-            const launchName = launch?.name || 'Unknown Launch';
+            const epic = firstItem(feedback.epic);
+            const epicName = epic?.name || 'Unknown Epic';
+            const epicId = epic?.id;
             const truncatedFeedback = feedback.feedback_text.length > 100 
                 ? feedback.feedback_text.substring(0, 100) + '...'
                 : feedback.feedback_text;
@@ -203,11 +259,12 @@ export async function GET(req: NextRequest) {
                 id: feedback.id,
                 type: 'feedback_added',
                 title: 'Feedback Added',
-                description: `${launchName}: "${truncatedFeedback}"`,
+                description: `${epicName}: "${truncatedFeedback}"`,
                 timestamp: feedback.created_at,
                 actor: normalizeActor(feedback.attributed_to),
                 entity_type: 'feedback',
                 entity_id: feedback.id,
+                epic_id: epicId,
             });
 
             if (activities.length >= limit) {

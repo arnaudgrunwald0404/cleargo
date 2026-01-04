@@ -86,8 +86,9 @@ export async function getPods() {
   return res.json();
 }
 
-export async function getReleases() {
-  const res = await fetchWithRateLimit("/api/releases", {
+export async function getReleases(includeArchived: boolean = false) {
+  const url = includeArchived ? "/api/releases?include_archived=true" : "/api/releases";
+  const res = await fetchWithRateLimit(url, {
     maxRetries: 1,
   });
   if (!res.ok) throw new Error("Failed to fetch releases");

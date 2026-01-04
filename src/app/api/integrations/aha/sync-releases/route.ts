@@ -70,35 +70,24 @@ export async function POST(req: NextRequest) {
 
         console.log(`✅ Found ${releasesWithEpics.length} releases with epics`);
 
-        // Filter to only include releases within the next 6 months
-        const today = new Date();
-        today.setHours(0, 0, 0, 0); // Set to start of day for accurate comparison
-        
-        const sixMonthsFromNow = new Date();
-        sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
-        sixMonthsFromNow.setHours(23, 59, 59, 999); // End of day
-        
-        const releasesWithinSixMonths = releasesWithEpics.filter((release) => {
-            const launchDate = release.end_date || release.start_date;
-            if (!launchDate) {
-                // Exclude releases without dates since we can't verify they're within 6 months
-                return false;
-            }
-            const releaseDate = new Date(launchDate);
-            releaseDate.setHours(0, 0, 0, 0);
-            return releaseDate >= today && releaseDate <= sixMonthsFromNow;
-        });
-
-        console.log(`📅 Filtered to ${releasesWithinSixMonths.length} releases within next 6 months (excluded ${releasesWithEpics.length - releasesWithinSixMonths.length} releases)`);
-
-        // Upsert releases into release_schedule table
+        // Upsert ALL releases with epics into release_schedule table (including those without dates)
         let synced = 0;
         let errors = 0;
+        const releasesWithoutDates: Array<{ name: string; id: string }> = [];
 
-        for (const release of releasesWithinSixMonths) {
+        for (const release of releasesWithEpics) {
             try {
                 // Use end_date if available, otherwise start_date, otherwise null
                 const launchDate = release.end_date || release.start_date || null;
+
+                // Track releases without dates
+                if (!launchDate) {
+                    releasesWithoutDates.push({
+                        name: release.name,
+                        id: release.id,
+                    });
+                    console.warn(`⚠️ Release "${release.name}" has no date in Aha`);
+                }
 
                 const { error } = await supabase
                     .from('release_schedule')
@@ -125,13 +114,18 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        const withoutDatesCount = releasesWithoutDates.length;
+        const message = withoutDatesCount > 0
+            ? `Synced ${synced} releases (${withoutDatesCount} without dates, ${errors} errors)`
+            : `Synced ${synced} releases (${errors} errors)`;
+
         return NextResponse.json({
             success: true,
-            message: `Synced ${synced} releases (${errors} errors)`,
+            message,
             total_releases: allReleases.length,
             releases_with_epics: releasesWithEpics.length,
-            releases_within_six_months: releasesWithinSixMonths.length,
             synced,
+            releases_without_dates: releasesWithoutDates,
             errors,
         });
     } catch (error: any) {

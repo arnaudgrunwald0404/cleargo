@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from 'react';
-import { Modal, Button, Group, Text, Stack, ActionIcon, Loader, ScrollArea, FileButton, Badge } from '@mantine/core';
+import { Modal, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge } from '@mantine/core';
+import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
 import { RichText } from './admin/RichText';
 
@@ -266,7 +267,7 @@ export function CommentsModal({
         <ScrollArea style={{ height: 400 }} type="auto">
           {loading ? (
             <div style={{ textAlign: 'center', padding: '40px' }}>
-              <Loader size="sm" />
+              <PurpleLoader size="sm" />
             </div>
           ) : comments.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '40px' }}>
