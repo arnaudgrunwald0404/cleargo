@@ -28,8 +28,13 @@ export async function GET(
     return NextResponse.json(metrics);
   } catch (error: any) {
     console.error('Error fetching epic success metrics:', error);
+    console.error('Error stack:', error.stack);
     return NextResponse.json(
-      { error: 'Failed to fetch success metrics', details: error.message },
+      { 
+        error: 'Failed to fetch success metrics', 
+        details: error.message || 'Unknown error',
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     );
   }

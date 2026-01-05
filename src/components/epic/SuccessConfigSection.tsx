@@ -10,31 +10,61 @@ import {
   Badge,
   Avatar,
   Alert,
+  ActionIcon,
+  Tooltip,
 } from '@mantine/core';
-import { IconLock, IconEdit, IconAlertCircle } from '@tabler/icons-react';
+import { IconLock, IconEdit, IconAlertCircle, IconArrowsRightLeft } from '@tabler/icons-react';
 import { SuccessConfigForm } from './SuccessConfigForm';
+import { DelegationModal, DelegationType } from '../DelegationModal';
 import type { EpicSuccessConfigWithDetails } from '@/lib/services/successMeasurementService';
 import type { EpicTier } from '@/types/epics';
+import type { CreateEpicSuccessConfigDTO } from '@/lib/success/types';
+import { notifications } from '@mantine/notifications';
 
 interface SuccessConfigSectionProps {
   epicId: string;
+  epicName?: string;
   epicTier: EpicTier;
   config: EpicSuccessConfigWithDetails | null;
   isAdmin: boolean;
   onRefresh: () => Promise<void>;
+  epicOwnerId?: string | null;
+  pmOwner?: { name?: string; email?: string; avatar_url?: string } | null;
 }
 
 export function SuccessConfigSection({
   epicId,
+  epicName = '',
   epicTier,
   config,
   isAdmin,
   onRefresh,
+  epicOwnerId,
+  pmOwner,
 }: SuccessConfigSectionProps) {
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(!config);
   const [submitting, setSubmitting] = useState(false);
+  const [delegationModalOpen, setDelegationModalOpen] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
 
-  const handleSubmit = async (data: { benchmark_id: string; post_launch_owner: string }) => {
+  // Get current user email
+  React.useEffect(() => {
+    const fetchCurrentUser = async () => {
+      try {
+        const { createClient } = await import('@/lib/supabase/client');
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.email) {
+          setCurrentUserEmail(user.email);
+        }
+      } catch (error) {
+        console.error('Error fetching current user:', error);
+      }
+    };
+    fetchCurrentUser();
+  }, []);
+
+  const handleSubmit = async (data: Omit<CreateEpicSuccessConfigDTO, 'epic_id'>) => {
     setSubmitting(true);
     try {
       const method = config ? 'PATCH' : 'POST';
@@ -57,6 +87,10 @@ export function SuccessConfigSection({
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleCancel = () => {
+    setShowForm(false);
   };
 
   const handleLock = async () => {
@@ -93,26 +127,21 @@ export function SuccessConfigSection({
     return colors[Math.abs(hash) % colors.length];
   };
 
-  if (!config) {
+  if (!config || showForm) {
     return (
-      <>
-        <Alert icon={<IconAlertCircle size={16} />} title="Not Configured" color="yellow">
-          Success measurement is not configured for this epic. Configure it to start tracking post-launch success.
-        </Alert>
-        <Group justify="flex-end" mt="md">
-          <Button onClick={() => setShowForm(true)}>
-            Configure Success Measurement
-          </Button>
-        </Group>
-        <SuccessConfigForm
-          opened={showForm}
-          onClose={() => setShowForm(false)}
-          epicId={epicId}
-          epicTier={epicTier}
-          onSubmit={handleSubmit}
-          isSubmitting={submitting}
-        />
-      </>
+      <SuccessConfigForm
+        epicId={epicId}
+        epicTier={epicTier}
+        initialData={config ? {
+          benchmark_id: config.benchmark_id,
+          post_launch_owner: config.post_launch_owner,
+        } : undefined}
+        onSubmit={handleSubmit}
+        isSubmitting={submitting}
+        epicOwnerId={epicOwnerId}
+        onCancel={config ? handleCancel : undefined}
+        pmOwner={pmOwner}
+      />
     );
   }
 
@@ -149,32 +178,64 @@ export function SuccessConfigSection({
             <Text size="sm" fw={500} mb="xs">
               Post-Launch Owner
             </Text>
-            {config.post_launch_owner_details ? (
-              <Group gap="xs">
-                <Avatar
-                  src={config.post_launch_owner_details.avatar_url}
-                  color={getAvatarColor(config.post_launch_owner_details.email)}
-                  radius="xl"
-                  size="sm"
-                >
-                  {getInitials(config.post_launch_owner_details.email)}
-                </Avatar>
-                <div>
-                  <Text size="sm">
-                    {config.post_launch_owner_details.first_name && config.post_launch_owner_details.last_name
-                      ? `${config.post_launch_owner_details.first_name} ${config.post_launch_owner_details.last_name}`
-                      : config.post_launch_owner_details.email}
-                  </Text>
-                  <Text size="xs" c="dimmed">
-                    {config.post_launch_owner_details.email}
-                  </Text>
-                </div>
-              </Group>
-            ) : (
-              <Text size="sm" c="dimmed">
-                Not assigned
-              </Text>
-            )}
+            {(() => {
+              // Show delegated owner if present, otherwise show original owner
+              const ownerDetails = config.delegated_post_launch_owner_details || config.post_launch_owner_details;
+              const isDelegated = !!config.delegated_post_launch_owner_details;
+              const canDelegate = isAdmin || 
+                currentUserEmail === config.post_launch_owner_details?.email ||
+                currentUserEmail === config.delegated_post_launch_owner_details?.email;
+
+              if (!ownerDetails) {
+                return <Text size="sm" c="dimmed">Not assigned</Text>;
+              }
+
+              return (
+                <Group gap="xs" style={{ position: 'relative' }}>
+                  <Avatar
+                    src={ownerDetails.avatar_url}
+                    color={getAvatarColor(ownerDetails.email)}
+                    radius="xl"
+                    size="sm"
+                  >
+                    {getInitials(ownerDetails.email)}
+                  </Avatar>
+                  <div style={{ flex: 1 }}>
+                    <Group gap="xs">
+                      <Text size="sm">
+                        {ownerDetails.first_name && ownerDetails.last_name
+                          ? `${ownerDetails.first_name} ${ownerDetails.last_name}`
+                          : ownerDetails.email}
+                      </Text>
+                      {isDelegated && (
+                        <Badge size="xs" color="blue" variant="light">
+                          Delegated
+                        </Badge>
+                      )}
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      {ownerDetails.email}
+                    </Text>
+                    {isDelegated && config.post_launch_owner_details && (
+                      <Text size="xs" c="dimmed" mt={4}>
+                        Originally: {config.post_launch_owner_details.email}
+                      </Text>
+                    )}
+                  </div>
+                  {canDelegate && !config.locked && (
+                    <Tooltip label="Delegate post-launch owner" position="top" withArrow>
+                      <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        onClick={() => setDelegationModalOpen(true)}
+                      >
+                        <IconArrowsRightLeft size={16} />
+                      </ActionIcon>
+                    </Tooltip>
+                  )}
+                </Group>
+              );
+            })()}
           </div>
 
           {config.locked_at && (
@@ -208,18 +269,53 @@ export function SuccessConfigSection({
         </Stack>
       </Card>
 
-      <SuccessConfigForm
-        opened={showForm}
-        onClose={() => setShowForm(false)}
-        epicId={epicId}
-        epicTier={epicTier}
-        initialData={{
-          benchmark_id: config.benchmark_id,
-          post_launch_owner: config.post_launch_owner,
-        }}
-        onSubmit={handleSubmit}
-        isSubmitting={submitting}
-      />
+      {config && (
+        <DelegationModal
+          opened={delegationModalOpen}
+          onClose={() => setDelegationModalOpen(false)}
+          epicId={epicId}
+          epicName={epicName}
+          taskId={epicId} // Use epicId as taskId for POST_LAUNCH_OWNER
+          taskLabel="Post-Launch Owner"
+          category="Post-Launch"
+          isGate={false}
+          currentApproverEmail={config.delegated_post_launch_owner_details?.email || config.post_launch_owner_details?.email || ''}
+          onDelegate={async (delegationType: DelegationType, newApproverEmail: string) => {
+            try {
+              const res = await fetch(`/api/epics/${epicId}/delegate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  delegationType: 'POST_LAUNCH_OWNER',
+                  newApproverEmail,
+                }),
+              });
+
+              if (!res.ok) {
+                const error = await res.json();
+                throw new Error(error.error || 'Failed to delegate');
+              }
+
+              setDelegationModalOpen(false);
+              await onRefresh();
+              
+              notifications.show({
+                title: 'Delegation successful',
+                message: `Post-launch owner has been delegated to ${newApproverEmail}`,
+                color: 'green',
+              });
+            } catch (error: any) {
+              console.error('Delegation error:', error);
+              notifications.show({
+                title: 'Delegation failed',
+                message: error.message || 'Failed to delegate post-launch owner',
+                color: 'red',
+              });
+              throw error;
+            }
+          }}
+        />
+      )}
     </>
   );
 }

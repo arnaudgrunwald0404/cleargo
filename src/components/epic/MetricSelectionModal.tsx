@@ -40,13 +40,7 @@ export function MetricSelectionModal({
   const [sourceFilter, setSourceFilter] = useState<MetricSource | null>(null);
   const [leadingOrLaggingFilter, setLeadingOrLaggingFilter] = useState<LeadingOrLagging | null>(null);
 
-  useEffect(() => {
-    if (opened) {
-      fetchMetrics();
-    }
-  }, [opened]);
-
-  const fetchMetrics = async () => {
+  const fetchMetrics = React.useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -61,7 +55,7 @@ export function MetricSelectionModal({
         try {
           const errorData = await res.json();
           errorMessage = errorData.error || errorData.details || errorMessage;
-        } catch {
+        } catch (parseError) {
           // If response is not JSON, use status text
           errorMessage = res.statusText || errorMessage;
         }
@@ -77,17 +71,40 @@ export function MetricSelectionModal({
       const data = await res.json();
       setMetrics(Array.isArray(data) ? data : []);
     } catch (error: any) {
-      console.error('Error fetching metrics:', error);
-      setError(error.message || 'Failed to fetch metrics. Please try again.');
+      // Better error message handling
+      let errorMessage = 'Failed to fetch metrics. Please try again.';
+      
+      if (error) {
+        if (typeof error === 'string') {
+          errorMessage = error;
+        } else if (error?.message) {
+          errorMessage = error.message;
+        } else if (error?.toString && error.toString() !== '[object Object]') {
+          errorMessage = error.toString();
+        } else {
+          // Log the full error for debugging
+          console.error('Error fetching metrics (full error):', {
+            error,
+            type: typeof error,
+            keys: Object.keys(error || {}),
+            stringified: JSON.stringify(error, Object.getOwnPropertyNames(error)),
+          });
+        }
+      }
+      
+      console.error('Error fetching metrics:', errorMessage, error);
+      setError(errorMessage);
       setMetrics([]);
     } finally {
       setLoading(false);
     }
-  };
+  }, [categoryFilter, sourceFilter, leadingOrLaggingFilter]);
 
   useEffect(() => {
-    fetchMetrics();
-  }, [categoryFilter, sourceFilter, leadingOrLaggingFilter]);
+    if (opened) {
+      fetchMetrics();
+    }
+  }, [opened, fetchMetrics]);
 
   const filteredMetrics = metrics.filter((metric) => {
     if (searchQuery) {

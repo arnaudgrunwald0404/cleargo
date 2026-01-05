@@ -10,7 +10,8 @@ export type DelegationType =
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
   | 'TEMPLATE_EXCLUDING_GATES'
-  | 'TEMPLATE_INCLUDING_GATES';
+  | 'TEMPLATE_INCLUDING_GATES'
+  | 'POST_LAUNCH_OWNER';
 
 interface DelegationModalProps {
   opened: boolean;
@@ -44,7 +45,11 @@ export function DelegationModal({
   currentApproverEmail,
   onDelegate,
 }: DelegationModalProps) {
-  const [delegationType, setDelegationType] = useState<DelegationType>('SINGLE_TASK');
+  // For POST_LAUNCH_OWNER, set delegation type automatically
+  const isPostLaunchOwner = category === 'Post-Launch' && taskLabel === 'Post-Launch Owner';
+  const [delegationType, setDelegationType] = useState<DelegationType>(
+    isPostLaunchOwner ? 'POST_LAUNCH_OWNER' : 'SINGLE_TASK'
+  );
   const [newApproverEmail, setNewApproverEmail] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState<User[]>([]);
@@ -167,61 +172,69 @@ export function DelegationModal({
           <Text fw={500}>{currentApproverEmail}</Text>
         </div>
 
-        <div>
-          <Text size="sm" fw={600} mb="xs">Delegation Scope</Text>
-          <Radio.Group
-            value={delegationType}
-            onChange={(value) => setDelegationType(value as DelegationType)}
-          >
-            <Stack gap="xs">
-              <Radio
-                value="SINGLE_TASK"
-                label={
-                  <div>
-                    <Text size="sm" fw={500}>This task only</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
-                  </div>
-                }
-              />
-              <Radio
-                value="CATEGORY_EXCLUDING_GATES"
-                label={
-                  <div>
-                    <Text size="sm" fw={500}>All {category} tasks in this epic (excluding GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_EXCLUDING_GATES')}</Text>
-                  </div>
-                }
-              />
-              <Radio
-                value="CATEGORY_INCLUDING_GATES"
-                label={
-                  <div>
-                    <Text size="sm" fw={500}>All {category} tasks in this epic (including GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_INCLUDING_GATES')}</Text>
-                  </div>
-                }
-              />
-              <Radio
-                value="TEMPLATE_EXCLUDING_GATES"
-                label={
-                  <div>
-                    <Text size="sm" fw={500}>All future epics - {category} (excluding GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}</Text>
-                  </div>
-                }
-              />
-              <Radio
-                value="TEMPLATE_INCLUDING_GATES"
-                label={
-                  <div>
-                    <Text size="sm" fw={500}>All future epics - {category} (including GATE)</Text>
-                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_INCLUDING_GATES')}</Text>
-                  </div>
-                }
-              />
-            </Stack>
-          </Radio.Group>
-        </div>
+        {delegationType !== 'POST_LAUNCH_OWNER' && (
+          <div>
+            <Text size="sm" fw={600} mb="xs">Delegation Scope</Text>
+            <Radio.Group
+              value={delegationType}
+              onChange={(value) => setDelegationType(value as DelegationType)}
+            >
+              <Stack gap="xs">
+                <Radio
+                  value="SINGLE_TASK"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>This task only</Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
+                    </div>
+                  }
+                />
+                <Radio
+                  value="CATEGORY_EXCLUDING_GATES"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>All {category} tasks in this epic (excluding GATE)</Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_EXCLUDING_GATES')}</Text>
+                    </div>
+                  }
+                />
+                <Radio
+                  value="CATEGORY_INCLUDING_GATES"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>All {category} tasks in this epic (including GATE)</Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_INCLUDING_GATES')}</Text>
+                    </div>
+                  }
+                />
+                <Radio
+                  value="TEMPLATE_EXCLUDING_GATES"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>All future epics - {category} (excluding GATE)</Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}</Text>
+                    </div>
+                  }
+                />
+                <Radio
+                  value="TEMPLATE_INCLUDING_GATES"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>All future epics - {category} (including GATE)</Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_INCLUDING_GATES')}</Text>
+                    </div>
+                  }
+                />
+              </Stack>
+            </Radio.Group>
+          </div>
+        )}
+        
+        {delegationType === 'POST_LAUNCH_OWNER' && (
+          <div>
+            <Text size="sm" c="dimmed">{getDelegationDescription('POST_LAUNCH_OWNER')}</Text>
+          </div>
+        )}
 
         <div>
           <Text size="sm" fw={600} mb="xs">Delegate To</Text>

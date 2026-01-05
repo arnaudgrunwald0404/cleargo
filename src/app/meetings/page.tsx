@@ -55,13 +55,52 @@ export default function MeetingsPage() {
     const [isConnected, setIsConnected] = useState(false);
     const [checkingConnection, setCheckingConnection] = useState(true);
     const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
+    const [userRole, setUserRole] = useState<string | null>(null);
+    const [checkingRole, setCheckingRole] = useState(true);
 
     useEffect(() => {
-        checkGoogleCalendarConnection();
-        fetchMeetings();
-        fetchEpics();
-        fetchReleaseSchedule();
+        checkUserRole();
     }, []);
+
+    useEffect(() => {
+        const normalizedRole = userRole ? userRole.toUpperCase() : null;
+        if (normalizedRole === 'CPO' || normalizedRole === 'SUPERADMIN') {
+            checkGoogleCalendarConnection();
+            fetchMeetings();
+            fetchEpics();
+            fetchReleaseSchedule();
+        }
+    }, [userRole]);
+
+    const checkUserRole = async () => {
+        try {
+            const res = await fetch("/api/me");
+            if (res.ok) {
+                const data = await res.json();
+                const userData = data.user || data;
+                // Handle both 'roles' array and legacy 'role' string field
+                const roles = Array.isArray(userData.roles) 
+                    ? userData.roles 
+                    : (userData.role ? [userData.role] : []);
+                // Check if user has CPO or SUPERADMIN role (case-insensitive)
+                const normalizedRoles = roles.map((r: string) => String(r).toUpperCase());
+                const hasAccess = normalizedRoles.includes('CPO') || normalizedRoles.includes('SUPERADMIN');
+                if (hasAccess) {
+                    const foundRole = normalizedRoles.find((r: string) => r === 'CPO' || r === 'SUPERADMIN');
+                    setUserRole(foundRole || null);
+                } else {
+                    setUserRole(null);
+                }
+            } else {
+                setUserRole(null);
+            }
+        } catch (error) {
+            console.error("Error checking user role:", error);
+            setUserRole(null);
+        } finally {
+            setCheckingRole(false);
+        }
+    };
 
     const checkGoogleCalendarConnection = async () => {
         try {
@@ -435,6 +474,35 @@ export default function MeetingsPage() {
             setDeletingMeetingId(null);
         }
     };
+
+    // Check if user has access (CPO or SUPERADMIN)
+    if (checkingRole) {
+        return (
+            <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
+                <PurpleLoader size="md" />
+            </div>
+        );
+    }
+
+    const normalizedUserRole = userRole ? userRole.toUpperCase() : null;
+    if (!normalizedUserRole || (normalizedUserRole !== 'CPO' && normalizedUserRole !== 'SUPERADMIN')) {
+        return (
+            <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
+                <Card withBorder padding="xl" style={{ maxWidth: 600 }}>
+                    <Stack gap="md" align="center">
+                        <IconAlertCircle size={48} color="var(--color-error-base)" />
+                        <Title order={2}>Access Denied</Title>
+                        <Text c="dimmed" ta="center">
+                            The Meetings section is only available to CPO and Super Admins.
+                        </Text>
+                        <Button component={Link} href="/" variant="light">
+                            Go to Home
+                        </Button>
+                    </Stack>
+                </Card>
+            </div>
+        );
+    }
 
     if (loading || checkingConnection) {
         return (
