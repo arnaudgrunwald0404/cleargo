@@ -667,7 +667,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 style={{ 
                                                     fontFamily: 'var(--font-heading)',
                                                     color: isSelected ? 'var(--color-blue-800)' : 'var(--color-gray-900)',
-                                                    fontSize: 'var(--font-size-card-title)',
+                                                    fontSize: '20px',
                                                     fontWeight: 'var(--font-weight-semibold)'
                                                 }}
                                             >
@@ -899,7 +899,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 <div className="flex items-center justify-between gap-3">
                                     <h2 style={{
                                         fontFamily: 'var(--font-heading)',
-                                        fontSize: 'var(--font-size-section-title)',
+                                        fontSize: '20px',
                                         fontWeight: 'var(--font-weight-semibold)',
                                         color: 'var(--color-gray-900)'
                                     }}>

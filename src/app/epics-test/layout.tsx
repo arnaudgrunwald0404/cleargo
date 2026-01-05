@@ -5,7 +5,7 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { HeaderTest } from "@/components/HeaderTest";
+import { Header } from "@/components/Header";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
@@ -73,7 +73,7 @@ export default async function EpicsTestLayout({
   return (
     <MantineProvider theme={theme}>
       <Notifications />
-      {email && <HeaderTest email={email} role={role} imageUrl={avatarUrl} />}
+      {email && <Header email={email} role={role} imageUrl={avatarUrl} />}
       <div style={{ paddingTop: '64px' }}> {/* 64px top nav */}
         {children}
       </div>

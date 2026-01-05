@@ -42,10 +42,14 @@ export default async function RootLayout({
   let email: string | null = null;
   let avatarUrl: string | null = null;
   let role: Role | null = null;
+  let shouldShowHeader = false;
 
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error } = await supabase.auth.getUser();
+    
+    // If we have a user (even without email), we should show the header
+    shouldShowHeader = !error && !!user;
     email = user?.email || null;
 
     if (email) {
@@ -66,8 +70,10 @@ export default async function RootLayout({
         // Continue without role
       }
     }
-  } catch {
-    // Continue rendering without user data
+  } catch (error) {
+    // If auth check fails completely, don't show header
+    // This could happen if Supabase client creation fails
+    shouldShowHeader = false;
   }
 
   return (
@@ -76,11 +82,11 @@ export default async function RootLayout({
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased ${email ? 'pt-[64px]' : ''}`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased ${shouldShowHeader ? 'pt-[64px]' : ''}`}
       >
         <MantineProvider theme={theme}>
           <Notifications />
-          {email && <Header email={email} role={role} imageUrl={avatarUrl} />}
+          {shouldShowHeader && <Header email={email} role={role} imageUrl={avatarUrl} />}
           {children}
         </MantineProvider>
       </body>

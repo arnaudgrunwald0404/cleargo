@@ -707,7 +707,7 @@ export default function AdminSettingsPage() {
                 <div className="flex gap-6">
                     {/* Sidebar Navigation */}
                     <div className="w-64 flex-shrink-0">
-                        <nav className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sticky top-24">
+                        <nav>
                             <ul className="space-y-1">
                                 <li>
                                     <button

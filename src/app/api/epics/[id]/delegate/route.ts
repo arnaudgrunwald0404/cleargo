@@ -12,14 +12,15 @@ export type DelegationType =
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
   | 'TEMPLATE_EXCLUDING_GATES'
-  | 'TEMPLATE_INCLUDING_GATES';
+  | 'TEMPLATE_INCLUDING_GATES'
+  | 'POST_LAUNCH_OWNER';
 
 interface DelegationRequest {
   delegationType: DelegationType;
   newApproverEmail: string;
-  taskId: string; // epic_criterion_status id
-  category: string;
-  isGate: boolean;
+  taskId?: string; // epic_criterion_status id (not required for POST_LAUNCH_OWNER)
+  category?: string; // Not required for POST_LAUNCH_OWNER
+  isGate?: boolean; // Not required for POST_LAUNCH_OWNER
   taskLabel?: string; // Optional task label for notifications
 }
 
@@ -41,8 +42,13 @@ export async function POST(
     const { delegationType, newApproverEmail, taskId, category, isGate, taskLabel } = body;
 
     // Validate inputs
-    if (!delegationType || !newApproverEmail || !taskId || !category) {
+    if (!delegationType || !newApproverEmail) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    }
+    
+    // For criteria delegations, require taskId and category
+    if (delegationType !== 'POST_LAUNCH_OWNER' && (!taskId || !category)) {
+      return NextResponse.json({ error: 'Missing required fields for criteria delegation' }, { status: 400 });
     }
 
     // Get the new approver's user info (including Slack handle)
@@ -79,7 +85,61 @@ export async function POST(
       return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
     }
 
-    // Get old approver info for logging and permission check
+    // Handle POST_LAUNCH_OWNER delegation separately
+    if (delegationType === 'POST_LAUNCH_OWNER') {
+      // Get success config
+      const { data: successConfig, error: configError } = await supabase
+        .from('epic_success_configs')
+        .select('post_launch_owner, delegated_post_launch_owner_id')
+        .eq('epic_id', epicId)
+        .single();
+
+      if (configError || !successConfig) {
+        return NextResponse.json({ error: 'Success configuration not found' }, { status: 404 });
+      }
+
+      // Permission check: PM or admin can delegate
+      const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
+      const isCurrentOwner = successConfig.post_launch_owner === delegatorId || 
+                            successConfig.delegated_post_launch_owner_id === delegatorId;
+
+      if (!hasDelegationPermission && !isCurrentOwner) {
+        return NextResponse.json({ 
+          error: 'Forbidden: You do not have permission to delegate post-launch owner. Only PM, CPO, Super Admin, or the current post-launch owner can delegate.' 
+        }, { status: 403 });
+      }
+
+      // Update delegated post-launch owner
+      const { updateDelegatedPostLaunchOwner } = await import('@/lib/services/successMeasurementService');
+      await updateDelegatedPostLaunchOwner(epicId, newApproverId);
+
+      // Log delegation to audit_log
+      await supabase.from('audit_log').insert({
+        actor_id: delegatorId,
+        entity_type: 'delegation',
+        entity_id: epicId,
+        json_diff: {
+          action: 'delegation',
+          delegation_type: delegationType,
+          old_approver_id: successConfig.delegated_post_launch_owner_id || successConfig.post_launch_owner,
+          new_approver_id: newApproverId,
+          new_approver_email: newApproverEmail,
+          epic_id: epicId,
+          epic_name: epic.name,
+        },
+      });
+
+      return NextResponse.json({ 
+        success: true,
+        message: 'Post-launch owner delegation completed successfully',
+      });
+    }
+
+    // For criteria delegations, get old approver info for logging and permission check
+    if (!taskId) {
+      return NextResponse.json({ error: 'taskId is required for criteria delegations' }, { status: 400 });
+    }
+
     const { data: oldTask } = await supabase
       .from('epic_criterion_status')
       .select('decision_owner_id, criterion:criterion_id(label)')

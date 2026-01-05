@@ -214,7 +214,7 @@ export interface CreateSuccessMetricDTO {
 export interface CreateEpicSuccessConfigDTO {
   epic_id: string;
   benchmark_id: string;
-  post_launch_owner: string;
+  post_launch_owner?: string; // Optional - will be auto-resolved to PM if not provided
 }
 
 export interface CreateEpicSuccessMetricDTO {

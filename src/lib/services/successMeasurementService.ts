@@ -304,6 +304,7 @@ export interface EpicSuccessConfigWithDetails {
   epic_id: string;
   benchmark_id: string;
   post_launch_owner: string; // Keep the ID for compatibility
+  delegated_post_launch_owner_id?: string | null;
   locked: boolean;
   locked_at: string | null;
   created_at: string;
@@ -316,6 +317,118 @@ export interface EpicSuccessConfigWithDetails {
     last_name?: string;
     avatar_url?: string;
   };
+  delegated_post_launch_owner_details?: {
+    id: string;
+    email: string;
+    first_name?: string;
+    last_name?: string;
+    avatar_url?: string;
+  };
+}
+
+/**
+ * Resolve product manager user ID from epic
+ * Priority: pod mapping > AHA assigned_to_user > PM Foundation criteria approver
+ */
+export async function resolveProductManagerUserId(epicId: string): Promise<string | null> {
+  const supabase = createClient();
+  
+  // Get epic with AHA fields
+  const { data: epic, error: epicError } = await supabase
+    .from('epic')
+    .select('pod, aha_fields')
+    .eq('id', epicId)
+    .single();
+
+  if (epicError || !epic) {
+    return null;
+  }
+
+  const { getSettings } = await import('../settings-db');
+  const settings = await getSettings();
+  const podMapping = settings.pod_product_manager_mapping || {};
+  
+  let pmEmail: string | null = null;
+  const pod = epic.pod || (epic.aha_fields as any)?.custom_fields?.dev_backlog_pod || null;
+
+  // First priority: pod mapping
+  if (pod) {
+    if (podMapping[pod]) {
+      pmEmail = podMapping[pod];
+    } else {
+      // Try case-insensitive match
+      const podLower = pod.toLowerCase();
+      const matchingKey = Object.keys(podMapping).find(key => key.toLowerCase() === podLower);
+      if (matchingKey && podMapping[matchingKey]) {
+        pmEmail = podMapping[matchingKey];
+      }
+    }
+  }
+
+  // Second priority: assigned_to_user from AHA fields
+  if (!pmEmail && epic.aha_fields) {
+    const ahaFields = epic.aha_fields as any;
+    if (ahaFields?.standard_fields?.assigned_to_user?.email) {
+      pmEmail = ahaFields.standard_fields.assigned_to_user.email;
+    }
+  }
+
+  // Third priority: Product Management & Documentation Foundation criteria
+  if (!pmEmail) {
+    const { data: pmCriteria } = await supabase
+      .from('epic_criterion_status')
+      .select(`
+        decision_owner_id,
+        criterion:criterion_id(category, decision_owner_email)
+      `)
+      .eq('epic_id', epicId);
+
+    if (pmCriteria && pmCriteria.length > 0) {
+      const pmFoundationItem = pmCriteria.find((item: any) => {
+        const category = item.criterion?.category;
+        return category && 
+               category.toLowerCase().includes('product management') && 
+               category.toLowerCase().includes('documentation');
+      });
+
+      if (pmFoundationItem) {
+        // If delegated, get from decision_owner_id
+        if (pmFoundationItem.decision_owner_id) {
+          const { data: delegatedUser } = await supabase
+            .from('app_user')
+            .select('email')
+            .eq('id', pmFoundationItem.decision_owner_id)
+            .single();
+          if (delegatedUser?.email) {
+            pmEmail = delegatedUser.email;
+          }
+        } else if (pmFoundationItem.criterion?.decision_owner_email) {
+          // Use criterion template email
+          const criterionEmail = pmFoundationItem.criterion.decision_owner_email;
+          if (criterionEmail !== "[name of pod's product manager]" && !criterionEmail.toLowerCase().includes("pod")) {
+            pmEmail = criterionEmail;
+          } else if (pod) {
+            // Resolve pod placeholder
+            const { resolveDecisionOwnerEmail } = await import('../pod-resolver');
+            pmEmail = await resolveDecisionOwnerEmail(criterionEmail, pod);
+          }
+        }
+      }
+    }
+  }
+
+  // Convert email to user ID
+  if (pmEmail) {
+    const { data: user } = await supabase
+      .from('app_user')
+      .select('id')
+      .eq('email', pmEmail.toLowerCase().trim())
+      .single();
+
+    return user?.id || null;
+  }
+
+  return null;
 }
 
 export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessConfigWithDetails | null> {
@@ -325,7 +438,8 @@ export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessC
     .select(`
       *,
       benchmark:adoption_benchmarks(*),
-      post_launch_owner_details:app_user!post_launch_owner(id, email, first_name, last_name, avatar_url)
+      post_launch_owner_details:app_user!post_launch_owner(id, email, first_name, last_name, avatar_url),
+      delegated_post_launch_owner_details:app_user!delegated_post_launch_owner_id(id, email, first_name, last_name, avatar_url)
     `)
     .eq('epic_id', epicId)
     .single();
@@ -346,11 +460,22 @@ export async function createEpicSuccessConfig(
   data: Omit<CreateEpicSuccessConfigDTO, 'epic_id'>
 ): Promise<EpicSuccessConfig> {
   const supabase = createClient();
+  
+  // Default to product manager if post_launch_owner is not provided
+  let postLaunchOwner = data.post_launch_owner;
+  if (!postLaunchOwner) {
+    postLaunchOwner = await resolveProductManagerUserId(epicId);
+    if (!postLaunchOwner) {
+      throw new Error('Post-launch owner is required and could not be resolved from product manager');
+    }
+  }
+  
   const { data: config, error } = await supabase
     .from('epic_success_configs')
     .insert({
       epic_id: epicId,
       ...data,
+      post_launch_owner: postLaunchOwner,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
@@ -391,6 +516,32 @@ export async function updateEpicSuccessConfig(
   return config as EpicSuccessConfig;
 }
 
+export async function updateDelegatedPostLaunchOwner(
+  epicId: string,
+  delegatedOwnerId: string | null
+): Promise<EpicSuccessConfig> {
+  const supabase = createClient();
+  const { data: config, error } = await supabase
+    .from('epic_success_configs')
+    .update({
+      delegated_post_launch_owner_id: delegatedOwnerId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('epic_id', epicId)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      throw new Error('Epic success config not found');
+    }
+    console.error('Error updating delegated post-launch owner:', error);
+    throw new Error(`Failed to update delegated post-launch owner: ${error.message}`);
+  }
+
+  return config as EpicSuccessConfig;
+}
+
 export async function lockEpicSuccessConfig(epicId: string): Promise<EpicSuccessConfig> {
   const supabase = createClient();
   const { data: config, error } = await supabase
@@ -425,21 +576,36 @@ export interface EpicSuccessMetricWithDetails extends EpicSuccessMetric {
 
 export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccessMetricWithDetails[]> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('epic_success_metrics')
-    .select(`
-      *,
-      metric:success_metrics(*)
-    `)
-    .eq('epic_id', epicId)
-    .order('created_at', { ascending: true });
+  
+  try {
+    const { data, error } = await supabase
+      .from('epic_success_metrics')
+      .select(`
+        *,
+        metric:success_metrics!metric_id(*)
+      `)
+      .eq('epic_id', epicId)
+      .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error('Error fetching epic success metrics:', error);
-    throw new Error(`Failed to fetch epic success metrics: ${error.message}`);
+    if (error) {
+      console.error('Error fetching epic success metrics:', error);
+      console.error('Error code:', error.code);
+      console.error('Error details:', error.details);
+      console.error('Error hint:', error.hint);
+      throw new Error(`Failed to fetch epic success metrics: ${error.message}`);
+    }
+
+    // Transform the data to match the expected interface
+    // Supabase returns the relationship under the alias name
+    return (data || []).map((item: any) => ({
+      ...item,
+      metric: item.metric || null,
+    })) as EpicSuccessMetricWithDetails[];
+  } catch (err: any) {
+    console.error('Exception in getEpicSuccessMetrics:', err);
+    console.error('Exception stack:', err.stack);
+    throw err;
   }
-
-  return (data || []) as EpicSuccessMetricWithDetails[];
 }
 
 export async function addEpicSuccessMetric(

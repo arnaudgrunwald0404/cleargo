@@ -108,15 +108,17 @@ export async function POST(
       );
     }
 
-    // Validate post-launch owner exists
-    const { data: owner, error: ownerError } = await supabase
-      .from('app_user')
-      .select('id')
-      .eq('id', parsed.data.post_launch_owner)
-      .single();
+    // Validate post-launch owner exists if provided (otherwise will be auto-resolved to PM)
+    if (parsed.data.post_launch_owner) {
+      const { data: owner, error: ownerError } = await supabase
+        .from('app_user')
+        .select('id')
+        .eq('id', parsed.data.post_launch_owner)
+        .single();
 
-    if (ownerError || !owner) {
-      return NextResponse.json({ error: 'Post-launch owner not found' }, { status: 404 });
+      if (ownerError || !owner) {
+        return NextResponse.json({ error: 'Post-launch owner not found' }, { status: 404 });
+      }
     }
 
     // Check if config already exists
@@ -127,7 +129,7 @@ export async function POST(
 
     const config = await createEpicSuccessConfig(epicId, {
       benchmark_id: parsed.data.benchmark_id,
-      post_launch_owner: parsed.data.post_launch_owner,
+      ...(parsed.data.post_launch_owner ? { post_launch_owner: parsed.data.post_launch_owner } : {}),
     });
     return NextResponse.json(config, { status: 201 });
   } catch (error: any) {

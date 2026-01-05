@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -78,27 +78,27 @@ export default function EpicDetailPage() {
         return colors[Math.abs(hash) % colors.length];
     };
 
-    async function loadData() {
+    const loadData = useCallback(async () => {
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:70',message:'loadData called',data:{inProgress:loadDataInProgressRef.current,timeSinceLastCall:Date.now()-lastLoadDataRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,D'})}).catch(()=>{});
         // #endregion
         // Prevent multiple simultaneous calls
         if (loadDataInProgressRef.current) {
-            console.warn('loadData already in progress, skipping duplicate call');
+            console.warn('loadData already in progress, skipping duplicate call', { inProgress: loadDataInProgressRef.current });
             return;
         }
         
-        // Debounce rapid successive calls (min 500ms between calls)
+        // Debounce rapid successive calls (min 1000ms between calls to prevent loops)
         const now = Date.now();
         const timeSinceLastCall = now - lastLoadDataRef.current;
-        if (timeSinceLastCall < 500) {
+        if (timeSinceLastCall < 1000) {
             console.warn(`loadData called too soon (${timeSinceLastCall}ms ago), debouncing`);
             if (loadDataTimeoutRef.current) {
                 clearTimeout(loadDataTimeoutRef.current);
             }
             loadDataTimeoutRef.current = setTimeout(() => {
                 loadData();
-            }, 500 - timeSinceLastCall);
+            }, 1000 - timeSinceLastCall);
             return;
         }
         
@@ -907,7 +907,7 @@ export default function EpicDetailPage() {
             setLoading(false);
             loadDataInProgressRef.current = false;
         }
-    }
+    }, [id]);
 
     const fetchSuccessData = async () => {
         if (!id) return;
@@ -1690,10 +1690,13 @@ export default function EpicDetailPage() {
                     <Stack gap="md">
                         <SuccessConfigSection
                             epicId={epic.id}
+                            epicName={epic.name}
                             epicTier={epic.tier}
                             config={successConfig}
                             isAdmin={isAdmin}
                             onRefresh={fetchSuccessData}
+                            epicOwnerId={epic.owner_id}
+                            pmOwner={pmOwner}
                         />
                         <EpicMetricsManager
                             epicId={epic.id}
