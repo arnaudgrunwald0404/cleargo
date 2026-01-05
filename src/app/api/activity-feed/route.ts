@@ -45,11 +45,27 @@ function normalizeActor(actor: any): ActivityFeedItem['actor'] | undefined {
 }
 
 export async function GET(req: NextRequest) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'activity-feed/route.ts:47',message:'GET activity-feed called',data:{url:req.url,hasCookies:req.cookies.getAll().length>0,cookieNames:req.cookies.getAll().map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
+        // #region agent log
+        const envCheck = {hasSupabaseUrl:!!process.env.NEXT_PUBLIC_SUPABASE_URL,hasPublishableKey:!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY};
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'activity-feed/route.ts:50',message:'Before createClient - env check',data:envCheck,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'activity-feed/route.ts:52',message:'After createClient - before getUser',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'activity-feed/route.ts:54',message:'After getUser',data:{hasUser:!!user,userEmail:user?.email,authError:authError?.message,authErrorCode:authError?.code,authErrorStatus:authError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
 
         if (!user) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'activity-feed/route.ts:58',message:'Returning 401 - no user',data:{authError:authError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
