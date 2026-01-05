@@ -69,25 +69,22 @@ export function createClient(): SupabaseClient {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase/server.ts:65',message:'createClient called',data:{hasPublishableKey:!!publishableKey,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,hasSupabaseUrl:!!supabaseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+    const fs = require('fs');
+    const logEntry1 = {location:'supabase/server.ts:65',message:'createClient called',data:{hasPublishableKey:!!publishableKey,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,hasSupabaseUrl:!!supabaseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry1) + '\n'); } catch(e) {}
     // #endregion
 
     if (!publishableKey || !supabaseUrl) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase/server.ts:71',message:'Missing env vars error',data:{hasPublishableKey:!!publishableKey,hasSupabaseUrl:!!supabaseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        const logEntry2 = {location:'supabase/server.ts:71',message:'Missing env vars error',data:{hasPublishableKey:!!publishableKey,hasSupabaseUrl:!!supabaseUrl},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
+        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry2) + '\n'); } catch(e) {}
         // #endregion
         throw new Error('Missing Supabase environment variables');
     }
 
     // #region agent log
-    let cookieCount = 0;
-    try {
-        const cookieStore = await cookies();
-        cookieCount = cookieStore.getAll().length;
-    } catch (e) {
-        // Ignore
-    }
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase/server.ts:82',message:'Before createServerClient - cookie check',data:{cookieCount},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+    const logEntry3 = {location:'supabase/server.ts:82',message:'Before createServerClient',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
     // #endregion
 
     return createServerClient(
@@ -100,12 +97,15 @@ export function createClient(): SupabaseClient {
             cookies: {
                 async getAll() {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase/server.ts:91',message:'cookies.getAll called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    const fs2 = require('fs');
+                    const logEntry4 = {location:'supabase/server.ts:91',message:'cookies.getAll called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+                    try { fs2.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry4) + '\n'); } catch(e) {}
                     // #endregion
                     const cookieStore = await cookies();
                     const allCookies = cookieStore.getAll();
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'supabase/server.ts:95',message:'cookies.getAll result',data:{cookieCount:allCookies.length,cookieNames:allCookies.map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                    const logEntry5 = {location:'supabase/server.ts:95',message:'cookies.getAll result',data:{cookieCount:allCookies.length,cookieNames:allCookies.map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
+                    try { fs2.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry5) + '\n'); } catch(e) {}
                     // #endregion
                     return allCookies;
                 },
