@@ -128,6 +128,10 @@ export function DelegationModal({
         return `Delegate all ${category} tasks (except GATE criteria) for ALL future epics`;
       case 'TEMPLATE_INCLUDING_GATES':
         return `Delegate all ${category} tasks (including GATE criteria) for ALL future epics`;
+      case 'POST_LAUNCH_OWNER':
+        return `Delegate Post-Launch Owner for this epic`;
+      default:
+        return `Delegate ${taskLabel} for this epic`;
     }
   };
 
