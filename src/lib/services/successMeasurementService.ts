@@ -385,13 +385,20 @@ export async function resolveProductManagerUserId(epicId: string): Promise<strin
 
     if (pmCriteria && pmCriteria.length > 0) {
       const pmFoundationItem = pmCriteria.find((item: any) => {
-        const category = item.criterion?.category;
+        // Handle both array and object cases for criterion
+        const criterion = Array.isArray(item.criterion) ? item.criterion[0] : item.criterion;
+        const category = criterion?.category;
         return category && 
                category.toLowerCase().includes('product management') && 
                category.toLowerCase().includes('documentation');
       });
 
       if (pmFoundationItem) {
+        // Handle both array and object cases for criterion
+        const criterion = Array.isArray(pmFoundationItem.criterion) 
+          ? pmFoundationItem.criterion[0] 
+          : pmFoundationItem.criterion;
+        
         // If delegated, get from decision_owner_id
         if (pmFoundationItem.decision_owner_id) {
           const { data: delegatedUser } = await supabase
@@ -402,9 +409,9 @@ export async function resolveProductManagerUserId(epicId: string): Promise<strin
           if (delegatedUser?.email) {
             pmEmail = delegatedUser.email;
           }
-        } else if (pmFoundationItem.criterion?.decision_owner_email) {
+        } else if (criterion?.decision_owner_email) {
           // Use criterion template email
-          const criterionEmail = pmFoundationItem.criterion.decision_owner_email;
+          const criterionEmail = criterion.decision_owner_email;
           if (criterionEmail !== "[name of pod's product manager]" && !criterionEmail.toLowerCase().includes("pod")) {
             pmEmail = criterionEmail;
           } else if (pod) {
@@ -462,12 +469,13 @@ export async function createEpicSuccessConfig(
   const supabase = createClient();
   
   // Default to product manager if post_launch_owner is not provided
-  let postLaunchOwner = data.post_launch_owner;
+  let postLaunchOwner: string | undefined = data.post_launch_owner;
   if (!postLaunchOwner) {
-    postLaunchOwner = await resolveProductManagerUserId(epicId);
-    if (!postLaunchOwner) {
+    const resolvedPmId = await resolveProductManagerUserId(epicId);
+    if (!resolvedPmId) {
       throw new Error('Post-launch owner is required and could not be resolved from product manager');
     }
+    postLaunchOwner = resolvedPmId;
   }
   
   const { data: config, error } = await supabase
