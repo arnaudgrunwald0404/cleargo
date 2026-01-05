@@ -163,7 +163,7 @@ export default function MeetingsPage() {
 
     const fetchReleaseSchedule = async () => {
         try {
-            const res = await fetch("/api/releases");
+            const res = await fetch("/api/releases", { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json();
                 setReleaseSchedule(data || []);

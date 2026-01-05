@@ -2,12 +2,28 @@ import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'releases/route.ts:4',message:'GET releases called',data:{url:request.url,hasCookies:request.cookies.getAll().length>0,cookieNames:request.cookies.getAll().map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
+        // #region agent log
+        const envCheck = {hasSupabaseUrl:!!process.env.NEXT_PUBLIC_SUPABASE_URL,hasPublishableKey:!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY};
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'releases/route.ts:7',message:'Before createClient - env check',data:envCheck,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const supabase = createClient();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'releases/route.ts:9',message:'After createClient - before getUser',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         
         // Check authentication
         const { data: { user }, error: authError } = await supabase.auth.getUser();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'releases/route.ts:12',message:'After getUser',data:{hasUser:!!user,userEmail:user?.email,authError:authError?.message,authErrorCode:authError?.code,authErrorStatus:authError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         if (authError || !user) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'releases/route.ts:14',message:'Returning 401',data:{authError:authError?.message,authErrorCode:authError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
