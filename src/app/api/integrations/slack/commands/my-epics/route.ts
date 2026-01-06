@@ -1,6 +1,6 @@
 /**
- * Slack slash command: /my-launches
- * View launches you own or are involved with
+ * Slack slash command: /my-epics
+ * View epics you own or are involved with
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -8,7 +8,7 @@ import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackCommandPayload } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.clearcompany.com';
 
 export async function POST(request: NextRequest) {
   try {
@@ -54,12 +54,12 @@ export async function POST(request: NextRequest) {
     if (userError || !appUser) {
       return NextResponse.json({
         response_type: 'ephemeral',
-        text: `👋 Hi! I couldn't find your account linked to this Slack user. Please make sure your Slack handle is synced in the Launch Console.`,
+        text: `👋 Hi! I couldn't find your account linked to this Slack user. Please make sure your Slack handle is synced in ClearGO.`,
       });
     }
 
-    // Query launches where user is owner
-    const { data: ownedLaunches, error: launchesError } = await supabase
+    // Query epics where user is owner
+    const { data: ownedEpics, error: epicsError } = await supabase
       .from('epic')
       .select('id, name, tier, readiness_status, readiness_score, risk_level, target_launch_date')
       .eq('owner_id', appUser.id)
@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       .in('status', ['NOT_SET', 'CONDITIONAL'])
       .limit(5);
 
-    const launches = ownedLaunches || [];
+    const epics = ownedEpics || [];
     const criteria = criteriaStatuses || [];
 
     // Build response blocks
@@ -97,38 +97,38 @@ export async function POST(request: NextRequest) {
         type: 'header',
         text: {
           type: 'plain_text',
-          text: `🚀 My Launches`,
+          text: `🚀 My Epics`,
           emoji: true,
         },
       },
     ];
 
-    // Add owned launches section
-    if (launches.length > 0) {
+    // Add owned epics section
+    if (epics.length > 0) {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '*Launches you own:*',
+          text: '*Epics you own:*',
         },
       });
 
-      for (const launch of launches) {
+      for (const epic of epics) {
         const statusEmoji =
-          launch.readiness_status === 'GO'
+          epic.readiness_status === 'GO'
             ? '✅'
-            : launch.readiness_status === 'CONDITIONAL_GO'
+            : epic.readiness_status === 'CONDITIONAL_GO'
               ? '⚠️'
               : '❌';
         const riskEmoji =
-          launch.risk_level === 'HIGH' ? '🔴' : launch.risk_level === 'MEDIUM' ? '🟡' : '🟢';
-        const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
+          epic.risk_level === 'HIGH' ? '🔴' : epic.risk_level === 'MEDIUM' ? '🟡' : '🟢';
+        const score = epic.readiness_score ? Math.round(epic.readiness_score * 100) : 0;
 
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `${statusEmoji} *${launch.name}* (${launch.tier})\n${riskEmoji} Risk: ${launch.risk_level} | Score: ${score}%`,
+            text: `${statusEmoji} *${epic.name}* (${epic.tier})\n${riskEmoji} Risk: ${epic.risk_level} | Score: ${score}%`,
           },
           accessory: {
             type: 'button',
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
               text: 'View Details',
               emoji: true,
             },
-            url: `${APP_URL}/launch/${launch.id}`,
+            url: `${APP_URL}/epics/${epic.id}`,
           },
         });
       }
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: "_You don't own any launches yet._",
+          text: "_You don't own any epics yet._",
         },
       });
     }
@@ -179,7 +179,7 @@ export async function POST(request: NextRequest) {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `${staleIndicator}*${criterionData.label}*\nLaunch: ${epic.name} | Status: ${criterion.status}`,
+              text: `${staleIndicator}*${criterionData.label}*\nEpic: ${epic.name} | Status: ${criterion.status}`,
             },
           });
         }
@@ -196,10 +196,10 @@ export async function POST(request: NextRequest) {
           type: 'button',
           text: {
             type: 'plain_text',
-            text: 'View Portfolio Dashboard',
+            text: 'View Epics',
             emoji: true,
           },
-          url: `${APP_URL}/portfolio`,
+          url: `${APP_URL}/epics`,
         },
         {
           type: 'button',
@@ -225,3 +225,4 @@ export async function POST(request: NextRequest) {
     });
   }
 }
+

@@ -19,7 +19,7 @@ import {
  */
 async function logNotification(data: {
   user_id?: string;
-  launch_id?: string;
+  epic_id?: string;
   type: string;
   payload: any;
   delivery_channel: string;
@@ -32,7 +32,7 @@ async function logNotification(data: {
     const supabase = createClient();
     const { error } = await supabase.from('notification_log').insert({
       user_id: data.user_id || null,
-      launch_id: data.launch_id || null,
+      epic_id: data.epic_id || null,
       type: data.type,
       payload: data.payload,
       delivery_channel: data.delivery_channel,
@@ -67,7 +67,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
       channel = payload.recipient.slack_handle;
     } else if (!channel) {
       // Use default channel from settings
-      channel = process.env.SLACK_DEFAULT_CHANNEL || '#launch-readiness-test';
+      channel = process.env.SLACK_DEFAULT_CHANNEL || '#cleargo-test';
     }
 
     // Build message based on notification type
@@ -77,8 +77,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         message = buildStaleCriterionMessage(payload.metadata as any);
         break;
 
-      case 'launch_risk_alert':
-        if (!payload.metadata) throw new Error('Missing metadata for launch_risk_alert');
+      case 'epic_risk_alert':
+        if (!payload.metadata) throw new Error('Missing metadata for epic_risk_alert');
         message = buildLaunchRiskAlertMessage(payload.metadata as any);
         break;
 
@@ -92,8 +92,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         message = buildLeadershipDigestMessage(payload.metadata as any);
         break;
 
-      case 'launch_status_change':
-        if (!payload.metadata) throw new Error('Missing metadata for launch_status_change');
+      case 'epic_status_change':
+        if (!payload.metadata) throw new Error('Missing metadata for epic_status_change');
         message = buildLaunchStatusChangeMessage(payload.metadata as any);
         break;
 
@@ -116,7 +116,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
     // Log successful notification to database
     await logNotification({
       user_id: payload.recipient?.id,
-      launch_id: payload.launch_id,
+      epic_id: payload.epic_id,
       type: payload.type,
       payload: payload.metadata,
       delivery_channel: 'slack',
@@ -130,7 +130,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
     // Log failed notification to database
     await logNotification({
       user_id: payload.recipient?.id,
-      launch_id: payload.launch_id,
+      epic_id: payload.epic_id,
       type: payload.type,
       payload: payload.metadata,
       delivery_channel: 'slack',

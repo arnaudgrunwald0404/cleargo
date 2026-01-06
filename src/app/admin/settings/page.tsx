@@ -26,7 +26,7 @@ import {
   IconMailOpened,
 } from '@tabler/icons-react';
 import { CriteriaManager } from '@/components/admin/CriteriaManager';
-import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
+import { EpicStagesChart } from '@/components/admin/EpicStagesChart';
 import { RichText } from '@/components/admin/RichText';
 import { DEFAULT_EMAIL_TEMPLATES } from '@/lib/constants/settings';
 import {
@@ -54,7 +54,7 @@ import PermissionsSection from '@/components/admin/settings/PermissionsSection';
 import GeneralSection from '@/components/admin/settings/GeneralSection';
 import IntegrationsSection from '@/components/admin/settings/IntegrationsSection';
 import AhaFieldsSection from '@/components/admin/settings/AhaFieldsSection';
-import LaunchStagesSection from '@/components/admin/settings/LaunchStagesSection';
+import EpicStagesSection from '@/components/admin/settings/EpicStagesSection';
 import ReleaseScheduleSection from '@/components/admin/settings/ReleaseScheduleSection';
 import UserManagementSection from '@/components/admin/settings/UserManagementSection';
 
@@ -823,9 +823,9 @@ export default function AdminSettingsPage() {
                 </li>
                 <li>
                   <button
-                    onClick={() => setActiveSection('launch-stages')}
+                    onClick={() => setActiveSection('epic-stages')}
                     className={`w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                      activeSection === 'launch-stages'
+                      activeSection === 'epic-stages'
                         ? 'bg-indigo-50 text-indigo-700 font-medium'
                         : 'text-gray-700 hover:bg-gray-50'
                     }`}
@@ -1103,8 +1103,8 @@ export default function AdminSettingsPage() {
               />
             )}
 
-            {activeSection === 'launch-stages' && (
-              <LaunchStagesSection
+            {activeSection === 'epic-stages' && (
+              <EpicStagesSection
                 stages={launchStages}
                 loading={launchStagesLoading}
                 draggedStageId={draggedStageId}

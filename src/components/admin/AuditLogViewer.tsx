@@ -100,7 +100,7 @@ export default function AuditLogViewer() {
           <Select
             placeholder="Filter by entity type"
             data={[
-              { value: 'launch', label: 'Launch' },
+              { value: 'epic', label: 'Epic' },
               { value: 'criterion', label: 'Criterion' },
               { value: 'epic_criterion_status', label: 'Criterion Status' },
               { value: 'product', label: 'Product' },

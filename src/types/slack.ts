@@ -1,15 +1,15 @@
 /**
- * Slack integration type definitions for Launch Readiness Console
+ * Slack integration type definitions for ClearGO
  */
 
 export type SlackNotificationType =
   | 'stale_criterion'
-  | 'launch_risk_alert'
+  | 'epic_risk_alert'
   | 'go_no_go_decision'
   | 'leadership_digest'
-  | 'launch_status_change'
+  | 'epic_status_change'
   | 'criterion_update'
-  | 'launch_created';
+  | 'epic_created';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -30,7 +30,7 @@ export interface SlackNotificationPayload {
   priority: SlackMessagePriority;
   recipient?: SlackUser;
   channel?: string;
-  launch_id?: string;
+  epic_id?: string;
   criterion_id?: string;
   metadata?: Record<string, any>;
 }

@@ -4,14 +4,14 @@
 
 import type { SlackBlock } from '@/types/slack';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.clearcompany.com';
 
 /**
  * Stale Criterion Reminder
  */
 export function buildStaleCriterionMessage(data: {
-  launch_name: string;
-  launch_id: string;
+  epic_name: string;
+  epic_id: string;
   criterion_label: string;
   criterion_id: string;
   days_stale: number;
@@ -19,7 +19,7 @@ export function buildStaleCriterionMessage(data: {
   decision_owner_name: string;
 }): { text: string; blocks: SlackBlock[] } {
   return {
-    text: `Reminder: "${data.criterion_label}" for ${data.launch_name} needs an update`,
+    text: `Reminder: "${data.criterion_label}" for ${data.epic_name} needs an update`,
     blocks: [
       {
         type: 'header',
@@ -33,7 +33,7 @@ export function buildStaleCriterionMessage(data: {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${data.launch_name}*\n_${data.criterion_label}_`,
+          text: `*${data.epic_name}*\n_${data.criterion_label}_`,
         },
       },
       {
@@ -73,7 +73,7 @@ export function buildStaleCriterionMessage(data: {
               emoji: true,
             },
             style: 'primary',
-            url: `${APP_URL}/launch/${data.launch_id}`,
+            url: `${APP_URL}/epics/${data.epic_id}`,
             action_id: 'update_criterion',
           },
           {
@@ -85,7 +85,7 @@ export function buildStaleCriterionMessage(data: {
             },
             action_id: 'snooze_reminder',
             value: JSON.stringify({
-              launch_id: data.launch_id,
+              epic_id: data.epic_id,
               criterion_id: data.criterion_id,
               days: 7,
             }),
@@ -103,8 +103,8 @@ export function buildStaleCriterionMessage(data: {
  * Launch Risk Alert
  */
 export function buildLaunchRiskAlertMessage(data: {
-  launch_name: string;
-  launch_id: string;
+  epic_name: string;
+  epic_id: string;
   tier: string;
   risk_level: 'Low' | 'Medium' | 'High';
   readiness_score: number;
@@ -117,7 +117,7 @@ export function buildLaunchRiskAlertMessage(data: {
     data.risk_level === 'High' ? 'danger' : data.risk_level === 'Medium' ? 'warning' : 'good';
 
   return {
-    text: `${riskEmoji} High Risk Alert: ${data.launch_name}`,
+    text: `${riskEmoji} High Risk Alert: ${data.epic_name}`,
     blocks: [
       {
         type: 'header',
@@ -131,7 +131,7 @@ export function buildLaunchRiskAlertMessage(data: {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${data.launch_name}*\n${data.tier} • ${data.days_to_launch} days to launch`,
+          text: `*${data.epic_name}*\n${data.tier} • ${data.days_to_launch} days to launch`,
         },
       },
       {
@@ -171,11 +171,11 @@ export function buildLaunchRiskAlertMessage(data: {
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'View Launch Details',
+              text: 'View Epic Details',
               emoji: true,
             },
             style: 'primary',
-            url: `${APP_URL}/launch/${data.launch_id}`,
+            url: `${APP_URL}/epics/${data.epic_id}`,
           },
         ],
       },
@@ -190,8 +190,8 @@ export function buildLaunchRiskAlertMessage(data: {
  * Go/No-Go Decision Notification
  */
 export function buildGoNoGoDecisionMessage(data: {
-  launch_name: string;
-  launch_id: string;
+  epic_name: string;
+  epic_id: string;
   verdict: 'Go' | 'Conditional Go' | 'No Go';
   decision_date: string;
   notes: string;
@@ -201,7 +201,7 @@ export function buildGoNoGoDecisionMessage(data: {
   const verdictEmoji = data.verdict === 'Go' ? '✅' : data.verdict === 'No Go' ? '❌' : '⚠️';
 
   return {
-    text: `${verdictEmoji} Go/No-Go Decision: ${data.launch_name} - ${data.verdict}`,
+    text: `${verdictEmoji} Go/No-Go Decision: ${data.epic_name} - ${data.verdict}`,
     blocks: [
       {
         type: 'header',
@@ -215,7 +215,7 @@ export function buildGoNoGoDecisionMessage(data: {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${data.launch_name}*`,
+          text: `*${data.epic_name}*`,
         },
       },
       {
@@ -264,7 +264,7 @@ export function buildGoNoGoDecisionMessage(data: {
               text: 'View Full Details',
               emoji: true,
             },
-            url: `${APP_URL}/launch/${data.launch_id}`,
+            url: `${APP_URL}/epics/${data.epic_id}`,
           },
         ],
       },
@@ -280,7 +280,7 @@ export function buildGoNoGoDecisionMessage(data: {
  */
 export function buildLeadershipDigestMessage(data: {
   week_of: string;
-  high_risk_launches: Array<{
+  high_risk_epics: Array<{
     name: string;
     id: string;
     tier: string;
@@ -288,11 +288,11 @@ export function buildLeadershipDigestMessage(data: {
     days_to_launch: number;
     readiness: number;
   }>;
-  upcoming_launches: Array<{
+  upcoming_epics: Array<{
     name: string;
     id: string;
     tier: string;
-    target_release_date: string;
+    target_launch_date: string;
   }>;
   total_active: number;
 }): { text: string; blocks: SlackBlock[] } {
@@ -320,7 +320,7 @@ export function buildLeadershipDigestMessage(data: {
   ];
 
   // High Risk Launches
-  if (data.high_risk_launches.length > 0) {
+  if (data.high_risk_epics.length > 0) {
     blocks.push({
       type: 'section',
       text: {
@@ -329,12 +329,12 @@ export function buildLeadershipDigestMessage(data: {
       },
     });
 
-    data.high_risk_launches.forEach((launch) => {
+    data.high_risk_epics.forEach((epic) => {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • ${launch.days_to_launch} days • ${Math.round(launch.readiness * 100)}% ready`,
+          text: `*<${APP_URL}/epics/${epic.id}|${epic.name}>*\n${epic.tier} • ${epic.days_to_launch} days • ${Math.round(epic.readiness * 100)}% ready`,
         },
         accessory: {
           type: 'button',
@@ -343,7 +343,7 @@ export function buildLeadershipDigestMessage(data: {
             text: 'View',
             emoji: true,
           },
-          url: `${APP_URL}/launch/${launch.id}`,
+          url: `${APP_URL}/epics/${epic.id}`,
         },
       });
     });
@@ -352,7 +352,7 @@ export function buildLeadershipDigestMessage(data: {
   }
 
   // Upcoming Launches
-  if (data.upcoming_launches.length > 0) {
+  if (data.upcoming_epics.length > 0) {
     blocks.push({
       type: 'section',
       text: {
@@ -361,12 +361,12 @@ export function buildLeadershipDigestMessage(data: {
       },
     });
 
-    data.upcoming_launches.forEach((launch) => {
+    data.upcoming_epics.forEach((epic) => {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_release_date}`,
+          text: `*<${APP_URL}/epics/${epic.id}|${epic.name}>*\n${epic.tier} • Target: ${epic.target_launch_date}`,
         },
       });
     });
@@ -382,11 +382,11 @@ export function buildLeadershipDigestMessage(data: {
         type: 'button',
         text: {
           type: 'plain_text',
-          text: 'View Portfolio Dashboard',
+          text: 'View Epics',
           emoji: true,
         },
         style: 'primary',
-        url: `${APP_URL}/portfolio`,
+        url: `${APP_URL}/epics`,
       },
     ],
   });
@@ -398,24 +398,24 @@ export function buildLeadershipDigestMessage(data: {
 }
 
 /**
- * Launch Status Change
+ * Epic Status Change
  */
 export function buildLaunchStatusChangeMessage(data: {
-  launch_name: string;
-  launch_id: string;
+  epic_name: string;
+  epic_id: string;
   old_status: string;
   new_status: string;
   changed_by: string;
   reason?: string;
 }): { text: string; blocks: SlackBlock[] } {
   return {
-    text: `Launch status changed: ${data.launch_name} is now ${data.new_status}`,
+    text: `Epic status changed: ${data.epic_name} is now ${data.new_status}`,
     blocks: [
       {
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*${data.launch_name}* status changed`,
+          text: `*${data.epic_name}* status changed`,
         },
       },
       {
@@ -453,10 +453,10 @@ export function buildLaunchStatusChangeMessage(data: {
             type: 'button',
             text: {
               type: 'plain_text',
-              text: 'View Launch',
+              text: 'View Epic',
               emoji: true,
             },
-            url: `${APP_URL}/launch/${data.launch_id}`,
+            url: `${APP_URL}/epics/${data.epic_id}`,
           },
         ],
       },
@@ -465,16 +465,16 @@ export function buildLaunchStatusChangeMessage(data: {
 }
 
 /**
- * URL Unfurl for launch links
+ * URL Unfurl for epic links
  */
 export function buildLaunchUnfurl(data: {
-  launch_name: string;
-  launch_id: string;
+  epic_name: string;
+  epic_id: string;
   tier: string;
   readiness_status: string;
   readiness_score: number;
   risk_level: string;
-  target_release_date: string;
+  target_launch_date: string;
   gate_summary: string;
 }): SlackBlock[] {
   const riskEmoji = data.risk_level === 'High' ? '🔴' : data.risk_level === 'Medium' ? '🟡' : '🟢';
@@ -484,7 +484,7 @@ export function buildLaunchUnfurl(data: {
       type: 'section',
       text: {
         type: 'mrkdwn',
-        text: `*${data.launch_name}*\n${data.tier} • Target: ${data.target_release_date}`,
+        text: `*${data.epic_name}*\n${data.tier} • Target: ${data.target_launch_date}`,
       },
     },
     {

@@ -106,13 +106,13 @@ export default function ReleaseScheduleSection(props: Props) {
         </div>
         <div>
           <h2 className="text-lg font-semibold text-gray-900">Release Schedule</h2>
-          <p className="text-sm text-gray-500">Map release names to launch dates</p>
+          <p className="text-sm text-gray-500">Map release names to release dates</p>
         </div>
       </div>
 
       <div className="mb-6">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-md font-semibold text-gray-900">Releases Without Launch Dates</h3>
+          <h3 className="text-md font-semibold text-gray-900">Releases Without Dates</h3>
           <button
             onClick={onRefresh}
             disabled={launchReleasesLoading}
@@ -123,10 +123,10 @@ export default function ReleaseScheduleSection(props: Props) {
         </div>
         {launchReleasesLoading ? (
           <div className="text-center py-4 text-gray-500 text-sm">
-            Loading release names from launches...
+            Loading release names from epics...
           </div>
         ) : releasesWithoutDates.length === 0 ? (
-          <p className="text-sm text-gray-500 italic">All releases have launch dates mapped</p>
+          <p className="text-sm text-gray-500 italic">All releases have dates mapped</p>
         ) : (
           <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
             <table className="min-w-full divide-y divide-purple-200 table-fixed">

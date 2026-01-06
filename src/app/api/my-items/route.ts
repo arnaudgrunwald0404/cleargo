@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
 
     if (error) throw error;
 
-    // data already contains launch and criterion JSON fragments per row
+    // data already contains epic and criterion JSON fragments per row
     return NextResponse.json(data || []);
   } catch (error) {
     console.error('Error fetching my items:', error);

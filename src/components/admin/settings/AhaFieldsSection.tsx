@@ -63,7 +63,7 @@ export default function AhaFieldsSection({
             <div>
               <h2 className="text-lg font-semibold text-gray-900">AHA Epic Fields</h2>
               <p className="text-sm text-gray-500">
-                Configure which AHA fields (standard and custom) should be loaded with each launch
+                Configure which AHA fields (standard and custom) should be loaded with each epic
               </p>
             </div>
           </div>
@@ -146,7 +146,7 @@ export default function AhaFieldsSection({
                 <p className="font-medium">{syncResult.message}</p>
                 <p className="text-sm mt-1">
                   {syncResult.synced} succeeded, {syncResult.failed} failed out of{' '}
-                  {syncResult.total} total launches.
+                  {syncResult.total} total epics.
                 </p>
                 {syncResult.errors && syncResult.errors.length > 0 && (
                   <details className="mt-2">
@@ -172,7 +172,7 @@ export default function AhaFieldsSection({
         ) : (
           <div className="space-y-6">
             <p className="text-sm text-gray-600">
-              Select the fields that should be loaded from AHA and stored with each launch. Standard
+              Select the fields that should be loaded from AHA and stored with each epic. Standard
               fields (like ID, Name, Release) are always available from AHA. Custom fields can be
               added or removed without schema changes.
             </p>

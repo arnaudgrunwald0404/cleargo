@@ -231,7 +231,7 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Aha! Integration Tags</h2>
             <p className="text-sm text-gray-500">
-              Tags that trigger inclusion in the Launch Console
+              Tags that trigger inclusion in ClearGO
             </p>
           </div>
         </div>

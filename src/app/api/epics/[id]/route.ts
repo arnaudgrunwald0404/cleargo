@@ -62,12 +62,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // Enforce capability-based rules
     const { canRolesPerform } = await import('@/lib/permissions');
     if (typeof body.tier !== 'undefined' && body.tier !== current.tier) {
-      const ok = await canRolesPerform(roles, 'launch.tier.update');
+      const ok = await canRolesPerform(roles, 'epic.tier.update');
       if (!ok)
         return NextResponse.json({ error: 'Forbidden: cannot update epic tier' }, { status: 403 });
     }
     if (typeof body.risk_level !== 'undefined' && body.risk_level !== current.risk_level) {
-      const ok = await canRolesPerform(roles, 'launch.risk.update');
+      const ok = await canRolesPerform(roles, 'epic.risk.update');
       if (!ok)
         return NextResponse.json(
           { error: 'Forbidden: cannot update epic risk level' },
@@ -125,7 +125,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     const roles = (me?.roles as string[]) || [];
     const { canRolesPerform } = await import('@/lib/permissions');
-    const ok = await canRolesPerform(roles, 'launch.delete');
+    const ok = await canRolesPerform(roles, 'epic.delete');
     if (!ok) return NextResponse.json({ error: 'Forbidden: cannot delete epic' }, { status: 403 });
 
     await deleteEpic(id);

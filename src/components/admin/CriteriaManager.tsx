@@ -34,7 +34,7 @@ type Item = {
   updated_at: string;
 };
 
-interface LaunchStage {
+interface EpicStage {
   id: number;
   name: string;
   sort_order: number;
@@ -80,7 +80,7 @@ export function CriteriaManager() {
     null
   );
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [launchStages, setLaunchStages] = useState<LaunchStage[]>([]);
+  const [epicStages, setEpicStages] = useState<EpicStage[]>([]);
   const [userInfoMap, setUserInfoMap] = useState<
     Record<
       string,
@@ -124,10 +124,10 @@ export function CriteriaManager() {
     );
   }, [importPreview]);
 
-  // Helper function to get launch stage name by ID
-  const getLaunchStageName = (stageId: number | null | undefined): string => {
+  // Helper function to get epic stage name by ID
+  const getEpicStageName = (stageId: number | null | undefined): string => {
     if (!stageId) return '—';
-    const stage = launchStages.find((s) => s.id === stageId);
+    const stage = epicStages.find((s) => s.id === stageId);
     return stage?.name || `Unknown (${stageId})`;
   };
 
@@ -194,7 +194,7 @@ export function CriteriaManager() {
       try {
         const [criteriaRes, stagesRes] = await Promise.all([
           fetch('/api/criteria'),
-          fetch('/api/launch-stages'),
+          fetch('/api/epic-stages'),
         ]);
 
         const criteriaData = await criteriaRes.json();
@@ -203,7 +203,7 @@ export function CriteriaManager() {
 
         if (stagesRes.ok) {
           const stagesData = await stagesRes.json();
-          setLaunchStages(stagesData.stages || []);
+          setEpicStages(stagesData.stages || []);
         }
 
         // Fetch user info for all decision_owner_email values
@@ -403,7 +403,7 @@ export function CriteriaManager() {
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">ClearGO Criteria</h2>
-            <p className="text-sm text-gray-500">Manage launch readiness criteria</p>
+            <p className="text-sm text-gray-500">Manage readiness criteria</p>
           </div>
         </div>
 
@@ -535,7 +535,7 @@ export function CriteriaManager() {
                                         {item.label}
                                       </td>
                                       <td className="px-3 py-2 text-sm text-gray-600">
-                                        {getLaunchStageName(item.rating_timing)}
+                                        {getEpicStageName(item.rating_timing)}
                                       </td>
                                       <td className="px-3 py-2 text-sm text-gray-600">
                                         {item.decision_owner_email ? (
@@ -593,7 +593,7 @@ export function CriteriaManager() {
                                             {detailItem.label}
                                           </td>
                                           <td className="px-3 py-2 text-sm text-gray-600 pl-8">
-                                            {getLaunchStageName(detailItem.rating_timing)}
+                                            {getEpicStageName(detailItem.rating_timing)}
                                           </td>
                                           <td className="px-3 py-2 text-sm text-gray-600 pl-8">
                                             {detailItem.decision_owner_email || (
@@ -639,7 +639,7 @@ export function CriteriaManager() {
                                       {detailItem.label}
                                     </td>
                                     <td className="px-3 py-2 text-sm text-gray-600">
-                                      {getLaunchStageName(detailItem.rating_timing)}
+                                      {getEpicStageName(detailItem.rating_timing)}
                                     </td>
                                     <td className="px-3 py-2 text-sm text-gray-600">
                                       {detailItem.decision_owner_email || (
@@ -942,13 +942,13 @@ export function CriteriaManager() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Select
-                        value={c.rating_timing?.toString() || launchStages[0]?.id.toString() || ''}
+                        value={c.rating_timing?.toString() || epicStages[0]?.id.toString() || ''}
                         onChange={(value) => {
                           if (value) {
                             submitEdit(c.id, { rating_timing: Number(value) });
                           }
                         }}
-                        data={launchStages.map((stage) => ({
+                        data={epicStages.map((stage) => ({
                           value: stage.id.toString(),
                           label: stage.name,
                         }))}
@@ -994,7 +994,7 @@ export function CriteriaManager() {
                 setEditingId(null);
               }}
               onDelete={() => handleDelete(editingId)}
-              launchStages={launchStages}
+              epicStages={epicStages}
             />
           ) : null;
         })()}
@@ -1008,14 +1008,14 @@ function EditDrawer({
   onClose,
   onSave,
   onDelete,
-  launchStages,
+  epicStages,
 }: {
   item: Item;
   opened: boolean;
   onClose: () => void;
   onSave: (patch: Partial<Item>) => void;
   onDelete: () => void;
-  launchStages: LaunchStage[];
+  epicStages: EpicStage[];
 }) {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
   const [users, setUsers] = useState<
@@ -1135,7 +1135,7 @@ function EditDrawer({
           }
           data={[
             { value: '', label: 'None' },
-            ...launchStages.map((stage) => ({ value: stage.id.toString(), label: stage.name })),
+            ...epicStages.map((stage) => ({ value: stage.id.toString(), label: stage.name })),
           ]}
           placeholder="Select launch stage"
           description="Launch stage by which the criteria needs to be rated"

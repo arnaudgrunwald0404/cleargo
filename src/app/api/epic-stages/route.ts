@@ -46,7 +46,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ stages: data || [] });
   } catch (error: any) {
-    console.error('Error in GET /api/launch-stages:', error);
+    console.error('Error in GET /api/epic-stages:', error);
     return NextResponse.json(
       { error: 'Failed to fetch launch stages', details: error.message },
       { status: 500 }
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Capability: launchStages.manage
+    // Capability: epicStages.manage
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     }
 
     const { canRolesPerform } = await import('@/lib/permissions');
-    const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+    const ok = await canRolesPerform((me?.roles as string[]) || [], 'epicStages.manage');
     if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json();
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ stage: data });
   } catch (error: any) {
-    console.error('Error in POST /api/launch-stages:', error);
+    console.error('Error in POST /api/epic-stages:', error);
     return NextResponse.json(
       { error: 'Failed to create launch stage', details: error.message },
       { status: 500 }
@@ -135,7 +135,7 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Capability: launchStages.manage
+    // Capability: epicStages.manage
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -151,7 +151,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     const { canRolesPerform } = await import('@/lib/permissions');
-    const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+    const ok = await canRolesPerform((me?.roles as string[]) || [], 'epicStages.manage');
     if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     body = await req.json();
@@ -195,7 +195,7 @@ export async function PATCH(req: NextRequest) {
 
     return NextResponse.json({ stage: data });
   } catch (error: any) {
-    console.error('Error in PATCH /api/launch-stages:', error);
+    console.error('Error in PATCH /api/epic-stages:', error);
     console.error('Request body:', JSON.stringify(body, null, 2));
     return NextResponse.json(
       { error: 'Failed to update launch stage', details: error.message },
@@ -216,7 +216,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Capability: launchStages.manage
+    // Capability: epicStages.manage
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -228,7 +228,7 @@ export async function PUT(req: NextRequest) {
     }
 
     const { canRolesPerform } = await import('@/lib/permissions');
-    const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+    const ok = await canRolesPerform((me?.roles as string[]) || [], 'epicStages.manage');
     if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const body = await req.json();
@@ -260,10 +260,11 @@ export async function PUT(req: NextRequest) {
 
     return NextResponse.json({ stages: data });
   } catch (error: any) {
-    console.error('Error in PUT /api/launch-stages:', error);
+    console.error('Error in PUT /api/epic-stages:', error);
     return NextResponse.json(
       { error: 'Failed to update stages', details: error.message },
       { status: 500 }
     );
   }
 }
+

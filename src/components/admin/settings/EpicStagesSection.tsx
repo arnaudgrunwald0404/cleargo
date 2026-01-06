@@ -3,9 +3,9 @@ import React from 'react';
 import { Drawer, Button, Group, Stack, TextInput, NumberInput } from '@mantine/core';
 import { IconGripVertical, IconPencil } from '@tabler/icons-react';
 import { RichText } from '@/components/admin/RichText';
-import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
+import { EpicStagesChart } from '@/components/admin/EpicStagesChart';
 
-export type LaunchStage = {
+export type EpicStage = {
   id: number;
   name: string;
   sort_order: number;
@@ -14,7 +14,7 @@ export type LaunchStage = {
 };
 
 type Props = {
-  stages: LaunchStage[];
+  stages: EpicStage[];
   loading: boolean;
   draggedStageId: number | null;
   setDraggedStageId: (id: number | null) => void;
@@ -40,7 +40,7 @@ type Props = {
   onDeleteExisting: (id: number) => void;
 };
 
-export default function LaunchStagesSection({
+export default function EpicStagesSection({
   stages,
   loading,
   draggedStageId,
@@ -226,7 +226,7 @@ export default function LaunchStagesSection({
         )}
       </div>
 
-      <LaunchStagesChart stages={stages} />
+      <EpicStagesChart stages={stages} />
 
       <StageDrawer
         opened={editingOpen}
@@ -343,3 +343,4 @@ function StageDrawer({
     </Drawer>
   );
 }
+

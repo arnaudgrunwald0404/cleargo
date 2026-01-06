@@ -3,9 +3,9 @@ import type { Role } from './roles-constants';
 export type CapabilityId =
   | 'criteria.assignee.override'
   | 'criteria.status.update'
-  | 'launch.tier.update'
-  | 'launch.risk.update'
-  | 'launch.delete'
+  | 'epic.tier.update'
+  | 'epic.risk.update'
+  | 'epic.delete'
   | 'users.invite.send'
   | 'users.create'
   | 'users.update'
@@ -14,7 +14,7 @@ export type CapabilityId =
   | 'criteria.update'
   | 'criteria.delete'
   | 'criteria.import'
-  | 'launchStages.manage'
+  | 'epicStages.manage'
   | 'releases.manage'
   | 'settings.update'
   | 'settings.emailTemplates.read'
@@ -33,7 +33,7 @@ export const CAPABILITIES: Capability[] = [
   {
     id: 'criteria.assignee.override',
     label: 'Override Criteria Assignee',
-    description: 'Allow overriding who is assigned/owner for a criterion in a specific launch.',
+    description: 'Allow overriding who is assigned/owner for a criterion in a specific epic.',
   },
   {
     id: 'criteria.status.update',
@@ -41,17 +41,17 @@ export const CAPABILITIES: Capability[] = [
     description: 'Allow updating status/notes/conditions for a criterion.',
   },
   {
-    id: 'launch.tier.update',
+    id: 'epic.tier.update',
     label: 'Update Launch Tier',
     description: "Allow changing a launch's tier.",
   },
   {
-    id: 'launch.risk.update',
+    id: 'epic.risk.update',
     label: 'Update Launch Risk Level',
     description: "Allow changing a launch's risk level.",
   },
   {
-    id: 'launch.delete',
+    id: 'epic.delete',
     label: 'Delete Launch',
     description: 'Allow deleting a launch.',
   },
@@ -96,7 +96,7 @@ export const CAPABILITIES: Capability[] = [
     description: 'Allow importing criteria in bulk.',
   },
   {
-    id: 'launchStages.manage',
+    id: 'epicStages.manage',
     label: 'Manage Launch Stages',
     description: 'Allow creating, updating, and deleting launch stages.',
   },
@@ -128,21 +128,21 @@ export const CAPABILITIES: Capability[] = [
   {
     id: 'settings.ahaFields.sync',
     label: 'Synchronize AHA Fields',
-    description: 'Allow triggering synchronization from AHA to launches.',
+    description: 'Allow triggering synchronization from AHA to epics.',
   },
   {
     id: 'settings.ahaTags.update',
     label: 'Update AHA Tags',
-    description: 'Allow updating the list of AHA tags that trigger inclusion in Launch Console.',
+    description: 'Allow updating the list of AHA tags that trigger inclusion in ClearGO.',
   },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   'criteria.assignee.override': ['PRODUCT_OPS', 'CPO'],
   'criteria.status.update': ['PM', 'PMM', 'ENG_LEAD', 'PRODUCT_OPS', 'CPO', 'PRODUCT_LEAD'],
-  'launch.tier.update': ['PRODUCT_OPS', 'CPO'],
-  'launch.risk.update': ['PRODUCT_OPS', 'CPO', 'PRODUCT_LEAD'],
-  'launch.delete': ['PRODUCT_OPS', 'CPO'],
+  'epic.tier.update': ['PRODUCT_OPS', 'CPO'],
+  'epic.risk.update': ['PRODUCT_OPS', 'CPO', 'PRODUCT_LEAD'],
+  'epic.delete': ['PRODUCT_OPS', 'CPO'],
   'users.invite.send': ['PRODUCT_OPS', 'CPO'],
   'users.create': ['PRODUCT_OPS', 'CPO'],
   'users.update': ['PRODUCT_OPS', 'CPO'],
@@ -151,7 +151,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   'criteria.update': ['PRODUCT_OPS', 'CPO'],
   'criteria.delete': ['PRODUCT_OPS', 'CPO'],
   'criteria.import': ['PRODUCT_OPS', 'CPO'],
-  'launchStages.manage': ['PRODUCT_OPS', 'CPO'],
+  'epicStages.manage': ['PRODUCT_OPS', 'CPO'],
   'releases.manage': ['PRODUCT_OPS', 'CPO'],
   'settings.update': ['PRODUCT_OPS', 'CPO'],
   'settings.emailTemplates.read': ['PRODUCT_OPS', 'CPO'],

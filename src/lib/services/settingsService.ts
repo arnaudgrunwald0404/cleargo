@@ -126,7 +126,7 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
 }
 
 export async function getLaunchStages() {
-  const res = await fetch('/api/launch-stages');
+  const res = await fetch('/api/epic-stages');
   if (!res.ok) throw new Error('Failed to fetch launch stages');
   return res.json();
 }
@@ -137,7 +137,7 @@ export async function addLaunchStage(payload: {
   duration_days: number | null;
   details: string | null;
 }) {
-  const res = await fetch('/api/launch-stages', {
+  const res = await fetch('/api/epic-stages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -153,7 +153,7 @@ export async function updateLaunchStage(payload: {
   duration_days?: number | null;
   details?: string | null;
 }) {
-  const res = await fetch('/api/launch-stages', {
+  const res = await fetch('/api/epic-stages', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -163,13 +163,13 @@ export async function updateLaunchStage(payload: {
 }
 
 export async function deleteLaunchStage(id: number) {
-  const res = await fetch(`/api/launch-stages/${id}`, { method: 'DELETE' });
+  const res = await fetch(`/api/epic-stages/${id}`, { method: 'DELETE' });
   if (!res.ok) throw new Error('Failed to delete stage');
   return res.json().catch(() => ({}));
 }
 
 export async function reorderLaunchStages(stages: any[]) {
-  const res = await fetch('/api/launch-stages', {
+  const res = await fetch('/api/epic-stages', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ stages }),

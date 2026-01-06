@@ -7,7 +7,7 @@ type MyItem = {
   status: string;
   condition?: string;
   condition_due_date?: string;
-  launch: {
+  epic: {
     id: string;
     name: string;
     target_launch_date?: string;
@@ -66,7 +66,7 @@ export default function MyItemsPage() {
             </colgroup>
             <thead className="bg-purple-100">
               <tr>
-                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Launch</th>
+                <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Epic</th>
                 <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">
                   Criterion
                 </th>
@@ -85,10 +85,10 @@ export default function MyItemsPage() {
               {items.map((item) => (
                 <tr key={item.id} className="hover:bg-purple-50 transition-colors">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{item.launch.name}</div>
+                    <div className="font-medium text-gray-900">{item.epic.name}</div>
                     <div className="text-xs text-gray-500">
-                      {item.launch.target_launch_date
-                        ? new Date(item.launch.target_launch_date).toLocaleDateString()
+                      {item.epic.target_launch_date
+                        ? new Date(item.epic.target_launch_date).toLocaleDateString()
                         : 'No date'}
                     </div>
                   </td>
@@ -128,7 +128,7 @@ export default function MyItemsPage() {
                   </td>
                   <td className="px-4 py-3 text-right whitespace-nowrap w-24">
                     <Link
-                      href={`/launches/${item.launch.id}`}
+                      href={`/epics/${item.epic.id}`}
                       className="text-sm text-gray-600 hover:text-gray-900"
                     >
                       View

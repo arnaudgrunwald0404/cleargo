@@ -1,5 +1,5 @@
 /**
- * Slack API client for Launch Readiness Console
+ * Slack API client for ClearGO
  */
 
 import type {

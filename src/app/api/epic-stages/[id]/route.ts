@@ -16,7 +16,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Capability: launchStages.manage
+    // Capability: epicStages.manage
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -32,7 +32,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     }
 
     const { canRolesPerform } = await import('@/lib/permissions');
-    const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+    const ok = await canRolesPerform((me?.roles as string[]) || [], 'epicStages.manage');
     if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
     const id = parseInt(idParam);
@@ -52,10 +52,11 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
 
     return NextResponse.json({ success: true });
   } catch (error: any) {
-    console.error('Error in DELETE /api/launch-stages/[id]:', error);
+    console.error('Error in DELETE /api/epic-stages/[id]:', error);
     return NextResponse.json(
       { error: 'Failed to delete launch stage', details: error.message },
       { status: 500 }
     );
   }
 }
+

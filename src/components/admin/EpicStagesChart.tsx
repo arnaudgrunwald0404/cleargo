@@ -3,7 +3,7 @@
 import { Box } from '@mantine/core';
 import { useState } from 'react';
 
-interface LaunchStage {
+interface EpicStage {
   id: number;
   name: string;
   sort_order: number;
@@ -11,20 +11,20 @@ interface LaunchStage {
   details?: string | null;
 }
 
-interface LaunchStagesChartProps {
-  stages: LaunchStage[];
+interface EpicStagesChartProps {
+  stages: EpicStage[];
 }
 
 interface TimelineMilestone {
-  stage: LaunchStage;
+  stage: EpicStage;
   position: number; // Position on timeline (0-100%)
-  dateOffset: number; // Days from launch date
-  isReleaseDate?: boolean; // Is this the release launch date (Cohort 1 Live start)
+  dateOffset: number; // Days from release date
+  isReleaseDate?: boolean; // Is this the release date (Cohort 1 Live start)
 }
 
-export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
-  const [launchDate] = useState<Date>(new Date()); // Default to today, could be made configurable
-  const [releaseLaunchDate] = useState<Date | null>(null); // Could be fetched from release_schedule
+export function EpicStagesChart({ stages }: EpicStagesChartProps) {
+  const [releaseDate] = useState<Date>(new Date()); // Default to today, could be made configurable
+  const [actualReleaseDate] = useState<Date | null>(null); // Could be fetched from release_schedule
 
   // Helper function to estimate text width
   const estimateTextWidth = (text: string, fontSize: number): number => {
@@ -112,16 +112,16 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
 
   // Calculate dates for milestones
   const getMilestoneDate = (offset: number) => {
-    const date = new Date(launchDate);
+    const date = new Date(releaseDate);
     date.setDate(date.getDate() + offset);
     return date;
   };
 
-  // Calculate release launch date (start of Cohort 1 Live)
-  const calculateReleaseLaunchDate = () => {
+  // Calculate release date (start of Cohort 1 Live)
+  const calculateReleaseDate = () => {
     if (cohort1Stage && cohort1Stage.duration_days !== null) {
-      // Release launch date is when Cohort 1 Live starts
-      // It's after GTM Access (14 days) + Internal Readiness (21 days) = 35 days from launch
+      // Release date is when Cohort 1 Live starts
+      // It's after GTM Access (14 days) + Internal Readiness (21 days) = 35 days from start
       const releaseOffset = milestones
         .filter(
           (m) => m.stage.sort_order < cohort1Stage.sort_order && m.stage.duration_days !== null
@@ -132,7 +132,7 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
     return null;
   };
 
-  const actualReleaseDate = releaseLaunchDate || calculateReleaseLaunchDate();
+  const computedReleaseDate = actualReleaseDate || calculateReleaseDate();
 
   if (sortedStages.length === 0) {
     return (
@@ -180,8 +180,8 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
             strokeWidth="5"
           />
 
-          {/* Release Launch Date marker (Cohort 1 Live start) */}
-          {actualReleaseDate && cohort1Stage && (
+          {/* Release Date marker (Cohort 1 Live start) */}
+          {computedReleaseDate && cohort1Stage && (
             <g>
               {(() => {
                 const releaseOffset = milestones
@@ -206,7 +206,7 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                       strokeDasharray="5 4"
                       opacity="1"
                     />
-                    {/* Release Launch Date label with background */}
+                    {/* Release Date label with background */}
                     <rect
                       x={releaseX - 75}
                       y={timelineY + 58}
@@ -224,7 +224,7 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                       fontWeight="600"
                       fill="#D97706"
                     >
-                      Release Launch Date
+                      Release Date
                     </text>
                   </>
                 );
@@ -465,3 +465,4 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
     </Box>
   );
 }
+

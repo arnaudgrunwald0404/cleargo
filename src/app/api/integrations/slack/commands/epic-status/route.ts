@@ -1,6 +1,6 @@
 /**
- * Slack slash command: /launch-status
- * Get the current status of a specific launch
+ * Slack slash command: /epic-status
+ * Get the current status of a specific epic
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -8,7 +8,7 @@ import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackCommandPayload, SlackBlock } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.clearcompany.com';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,14 +47,14 @@ export async function POST(request: NextRequest) {
     if (!searchTerm) {
       return NextResponse.json({
         response_type: 'ephemeral',
-        text: 'Please provide a launch name or Aha ID. Example: `/launch-status HIRE-123`',
+        text: 'Please provide an epic name or Aha ID. Example: `/epic-status HIRE-123`',
       });
     }
 
-    // Query launch by name or Aha ID
+    // Query epic by name or Aha ID
     const supabase = (await import('@/lib/supabase/server')).createClient();
 
-    const { data: launches, error: launchError } = await supabase
+    const { data: epics, error: epicError } = await supabase
       .from('epic')
       .select(
         'id, name, aha_reference_num, tier, readiness_status, readiness_score, risk_level, target_launch_date'
@@ -62,39 +62,39 @@ export async function POST(request: NextRequest) {
       .or(`name.ilike.%${searchTerm}%,aha_reference_num.ilike.%${searchTerm}%`)
       .limit(5);
 
-    if (launchError) {
-      console.error('Error fetching launch:', launchError);
+    if (epicError) {
+      console.error('Error fetching epic:', epicError);
       return NextResponse.json({
         response_type: 'ephemeral',
-        text: `❌ Error searching for launch: ${launchError.message}`,
+        text: `❌ Error searching for epic: ${epicError.message}`,
       });
     }
 
-    if (!launches || launches.length === 0) {
+    if (!epics || epics.length === 0) {
       return NextResponse.json({
         response_type: 'ephemeral',
-        text: `🔍 No launches found matching "${searchTerm}"`,
+        text: `🔍 No epics found matching "${searchTerm}"`,
       });
     }
 
     // If multiple matches, show list
-    if (launches.length > 1) {
+    if (epics.length > 1) {
       const blocks: SlackBlock[] = [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `Found ${launches.length} launches matching "${searchTerm}":`,
+            text: `Found ${epics.length} epics matching "${searchTerm}":`,
           },
         },
         { type: 'divider' },
       ];
 
-      for (const launch of launches) {
+      for (const epic of epics) {
         const statusEmoji =
-          launch.readiness_status === 'GO'
+          epic.readiness_status === 'GO'
             ? '✅'
-            : launch.readiness_status === 'CONDITIONAL_GO'
+            : epic.readiness_status === 'CONDITIONAL_GO'
               ? '⚠️'
               : '❌';
 
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `${statusEmoji} *${launch.name}*\nAha ID: ${launch.aha_reference_num || 'N/A'} | Tier: ${launch.tier}`,
+            text: `${statusEmoji} *${epic.name}*\nAha ID: ${epic.aha_reference_num || 'N/A'} | Tier: ${epic.tier}`,
           },
           accessory: {
             type: 'button',
@@ -111,7 +111,7 @@ export async function POST(request: NextRequest) {
               text: 'View',
               emoji: true,
             },
-            url: `${APP_URL}/launch/${launch.id}`,
+            url: `${APP_URL}/epics/${epic.id}`,
           },
         });
       }
@@ -123,7 +123,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Single match - show detailed status
-    const launch = launches[0];
+    const epic = epics[0];
 
     // Get gate criteria summary
     const { data: gateStatuses } = await supabase
@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
                 )
             `
       )
-      .eq('epic_id', launch.id);
+      .eq('epic_id', epic.id);
 
     const gates = (gateStatuses || []).filter((s: any) => {
       const criterion = Array.isArray(s.criterion) ? s.criterion[0] : s.criterion;
@@ -147,26 +147,26 @@ export async function POST(request: NextRequest) {
     const gateTotal = gates.length;
 
     const statusEmoji =
-      launch.readiness_status === 'GO'
+      epic.readiness_status === 'GO'
         ? '✅'
-        : launch.readiness_status === 'CONDITIONAL_GO'
+        : epic.readiness_status === 'CONDITIONAL_GO'
           ? '⚠️'
           : '❌';
     const riskEmoji =
-      launch.risk_level === 'HIGH' ? '🔴' : launch.risk_level === 'MEDIUM' ? '🟡' : '🟢';
-    const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
+      epic.risk_level === 'HIGH' ? '🔴' : epic.risk_level === 'MEDIUM' ? '🟡' : '🟢';
+    const score = epic.readiness_score ? Math.round(epic.readiness_score * 100) : 0;
 
-    const targetDate = launch.target_launch_date
-      ? new Date(launch.target_launch_date).toLocaleDateString('en-US', {
+    const targetDate = epic.target_launch_date
+      ? new Date(epic.target_launch_date).toLocaleDateString('en-US', {
           month: 'short',
           day: 'numeric',
           year: 'numeric',
         })
       : 'Not set';
 
-    const daysToLaunch = launch.target_launch_date
+    const daysToLaunch = epic.target_launch_date
       ? Math.ceil(
-          (new Date(launch.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+          (new Date(epic.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
         )
       : null;
 
@@ -184,7 +184,7 @@ export async function POST(request: NextRequest) {
           type: 'header',
           text: {
             type: 'plain_text',
-            text: launch.name,
+            text: epic.name,
             emoji: true,
           },
         },
@@ -193,19 +193,19 @@ export async function POST(request: NextRequest) {
           fields: [
             {
               type: 'mrkdwn',
-              text: `*Aha ID:*\n${launch.aha_reference_num || 'N/A'}`,
+              text: `*Aha ID:*\n${epic.aha_reference_num || 'N/A'}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Tier:*\n${launch.tier}`,
+              text: `*Tier:*\n${epic.tier}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Status:*\n${statusEmoji} ${launch.readiness_status}`,
+              text: `*Status:*\n${statusEmoji} ${epic.readiness_status}`,
             },
             {
               type: 'mrkdwn',
-              text: `*Risk:*\n${riskEmoji} ${launch.risk_level}`,
+              text: `*Risk:*\n${riskEmoji} ${epic.risk_level}`,
             },
             {
               type: 'mrkdwn',
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
                 text: 'View Full Details',
                 emoji: true,
               },
-              url: `${APP_URL}/launch/${launch.id}`,
+              url: `${APP_URL}/epics/${epic.id}`,
               style: 'primary',
             },
           ],
@@ -249,3 +249,4 @@ export async function POST(request: NextRequest) {
     });
   }
 }
+

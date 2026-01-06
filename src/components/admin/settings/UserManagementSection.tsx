@@ -298,7 +298,7 @@ export default function UserManagementSection(props: Props) {
             <div className="text-center py-8 text-gray-500">Loading pods...</div>
           ) : pods.length === 0 ? (
             <p className="text-sm text-gray-500 italic">
-              No pods found. Pods will appear here once launches are synced from AHA.
+              No pods found. Pods will appear here once epics are synced from AHA.
             </p>
           ) : (
             <div className="overflow-x-auto">
