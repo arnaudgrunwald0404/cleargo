@@ -3,7 +3,6 @@
  */
 
 import { sendEmailNotification } from '../notifications';
-import { Resend } from 'resend';
 
 // Mock Resend
 jest.mock('resend', () => ({

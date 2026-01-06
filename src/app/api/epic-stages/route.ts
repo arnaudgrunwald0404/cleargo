@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const supabase = createClient();
     const {
@@ -267,4 +267,3 @@ export async function PUT(req: NextRequest) {
     );
   }
 }
-

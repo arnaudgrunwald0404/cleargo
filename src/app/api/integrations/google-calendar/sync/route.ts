@@ -32,7 +32,7 @@ async function refreshAccessToken(
   return await response.json();
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const supabase = createClient();
     const {

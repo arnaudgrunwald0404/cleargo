@@ -5,7 +5,7 @@
 
 import { POST } from '../webhook/route';
 
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 
 // Mock NextResponse
 jest.mock('next/server', () => {

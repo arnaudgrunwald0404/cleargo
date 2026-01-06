@@ -3,8 +3,6 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserAvatar } from './UserAvatar';
-import { Container, Group, Burger } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 
 interface HeaderProps {
   email?: string | null;
@@ -14,7 +12,6 @@ interface HeaderProps {
 
 export function Header({ email, role, imageUrl }: HeaderProps) {
   const pathname = usePathname();
-  const [opened, { toggle }] = useDisclosure(false);
 
   // Check if user has only the OTHER role (pending access)
   const hasOnlyOtherRole = !role || role === 'OTHER';

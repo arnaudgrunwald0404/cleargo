@@ -113,8 +113,6 @@ export function buildLaunchRiskAlertMessage(data: {
   owner_name: string;
 }): { text: string; blocks: SlackBlock[] } {
   const riskEmoji = data.risk_level === 'High' ? '🔴' : data.risk_level === 'Medium' ? '🟡' : '🟢';
-  const riskColor =
-    data.risk_level === 'High' ? 'danger' : data.risk_level === 'Medium' ? 'warning' : 'good';
 
   return {
     text: `${riskEmoji} High Risk Alert: ${data.epic_name}`,

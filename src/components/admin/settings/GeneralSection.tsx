@@ -230,9 +230,7 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
           </div>
           <div>
             <h2 className="text-lg font-semibold text-gray-900">Aha! Integration Tags</h2>
-            <p className="text-sm text-gray-500">
-              Tags that trigger inclusion in ClearGO
-            </p>
+            <p className="text-sm text-gray-500">Tags that trigger inclusion in ClearGO</p>
           </div>
         </div>
         <div>

@@ -1,33 +1,9 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { AppSettings } from '@/lib/settings-db';
-import {
-  Drawer,
-  TextInput,
-  Select,
-  Checkbox,
-  Button,
-  Group,
-  Stack,
-  MultiSelect,
-  Menu,
-  NumberInput,
-  Modal,
-} from '@mantine/core';
-import {
-  IconPencil,
-  IconCheck,
-  IconTrash,
-  IconX,
-  IconGripVertical,
-  IconMail,
-  IconMailOpened,
-} from '@tabler/icons-react';
+import { Modal } from '@mantine/core';
 import { CriteriaManager } from '@/components/admin/CriteriaManager';
-import { EpicStagesChart } from '@/components/admin/EpicStagesChart';
-import { RichText } from '@/components/admin/RichText';
 import { DEFAULT_EMAIL_TEMPLATES } from '@/lib/constants/settings';
 import {
   getPermissions,
@@ -1039,8 +1015,8 @@ export default function AdminSettingsPage() {
                 </div>
                 <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
                   <strong>Note:</strong> This preview uses sample data (firstName: &quot;John&quot;,
-                  inviteLink: &quot;https://example.com/invite-link&quot;). Actual emails will use real
-                  recipient data.
+                  inviteLink: &quot;https://example.com/invite-link&quot;). Actual emails will use
+                  real recipient data.
                 </div>
               </div>
             </Modal>

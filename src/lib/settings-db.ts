@@ -139,7 +139,7 @@ export async function updateSettings(
   };
 
   // Remove id and updated_at from the object before update (id is used in .eq(), updated_at is set explicitly)
-  const { id, updated_at, ...updateData } = mergedData;
+  const { id: _id, updated_at: _updated_at, ...updateData } = mergedData;
   debugLog({
     location: 'settings-db.ts:updateSettings-MERGED',
     message: 'After merge with currentSettings',

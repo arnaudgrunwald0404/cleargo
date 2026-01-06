@@ -37,7 +37,7 @@ export function UserDisplayWithDelegation({
   taskLabel,
   category,
   isGate,
-  currentUserEmail,
+  currentUserEmail: _currentUserEmail,
   showDelegationButton = false,
   onDelegationComplete,
 }: UserDisplayWithDelegationProps) {

@@ -112,7 +112,7 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ user: updatedUser });
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = createClient();
   const {
     data: { user },

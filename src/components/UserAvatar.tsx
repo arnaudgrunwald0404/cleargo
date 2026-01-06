@@ -1,7 +1,7 @@
 'use client';
 
 import { Avatar, Menu, Text, Group, UnstyledButton, rem } from '@mantine/core';
-import { IconLogout, IconSettings, IconUser } from '@tabler/icons-react';
+import { IconLogout, IconUser } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -16,7 +16,6 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
   const router = useRouter();
   const supabase = createClient();
   const [userEmail, setUserEmail] = useState<string | null>(email || null);
-  const [userRole, setUserRole] = useState<string | null>(role || null);
 
   useEffect(() => {
     if (!email) {
@@ -93,9 +92,9 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
           <Text size="sm" fw={500} className="truncate">
             {userEmail}
           </Text>
-          {userRole && (
+          {role && (
             <Text size="xs" c="dimmed" tt="uppercase" fw={700} mt={2}>
-              {userRole}
+              {role}
             </Text>
           )}
         </div>

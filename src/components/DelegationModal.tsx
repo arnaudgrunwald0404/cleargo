@@ -34,17 +34,16 @@ interface User {
 export function DelegationModal({
   opened,
   onClose,
-  epicId,
+  epicId: _epicId,
   epicName,
-  taskId,
+  taskId: _taskId,
   taskLabel,
   category,
-  isGate,
+  isGate: _isGate,
   currentApproverEmail,
   onDelegate,
 }: DelegationModalProps) {
   const [delegationType, setDelegationType] = useState<DelegationType>('SINGLE_TASK');
-  const [newApproverEmail, setNewApproverEmail] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [users, setUsers] = useState<User[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);

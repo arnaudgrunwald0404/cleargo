@@ -86,7 +86,7 @@ async function handleViewSubmission(payload: SlackInteractionPayload) {
   return NextResponse.json({ ok: true });
 }
 
-async function handleViewClosed(payload: SlackInteractionPayload) {
+async function handleViewClosed(_payload: SlackInteractionPayload) {
   // TODO: Handle modal closures
   console.log('View closed');
   return NextResponse.json({ ok: true });

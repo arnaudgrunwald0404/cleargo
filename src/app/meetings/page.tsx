@@ -6,7 +6,6 @@ import {
   Card,
   Textarea,
   Modal,
-  MultiSelect,
   Badge,
   Text,
   Group,
@@ -18,7 +17,6 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
-  IconCalendar,
   IconUpload,
   IconBrain,
   IconLink,

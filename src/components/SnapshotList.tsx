@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Table, Badge, Text, Group, Paper } from '@mantine/core';
+import { useEffect, useState, useCallback } from 'react';
+import { Table, Badge, Text, Paper } from '@mantine/core';
 import { UserDisplay } from './UserDisplay';
 
 interface Snapshot {
@@ -27,11 +27,7 @@ export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListPro
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    fetchSnapshots();
-  }, [epicId, refreshTrigger]);
-
-  const fetchSnapshots = async () => {
+  const fetchSnapshots = useCallback(async () => {
     try {
       const res = await fetch(`/api/epics/${epicId}/snapshots`);
       if (res.ok) {
@@ -43,7 +39,11 @@ export default function SnapshotList({ epicId, refreshTrigger }: SnapshotListPro
     } finally {
       setLoading(false);
     }
-  };
+  }, [epicId]);
+
+  useEffect(() => {
+    fetchSnapshots();
+  }, [fetchSnapshots, refreshTrigger]);
 
   if (loading)
     return (

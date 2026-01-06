@@ -1,7 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { updateEpicCustomFields } from './client';
 import { buildWriteBackPayload } from './mapping';
-import type { EpicReadinessData } from './types';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 // Use new secret key, fallback to legacy service_role key for backward compatibility

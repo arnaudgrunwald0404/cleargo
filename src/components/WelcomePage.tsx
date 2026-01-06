@@ -331,8 +331,8 @@ export function WelcomePage() {
                 The Portfolio View
               </Title>
               <Text style={{ color: '#475569', lineHeight: 1.6 }}>
-                A consistent, real-time view across all ~15 pods and active epics. Filter by tier
-                or product instantly.
+                A consistent, real-time view across all ~15 pods and active epics. Filter by tier or
+                product instantly.
               </Text>
             </Stack>
           </Card>
@@ -452,8 +452,8 @@ export function WelcomePage() {
                       See the Big Picture.
                     </Title>
                     <Text size="lg" style={{ color: '#475569', lineHeight: 1.6 }}>
-                      Needs a single view of major epics and risks. Use ClearGO in GTM councils
-                      to make data-driven Go/No-Go decisions based on real-time readiness scores.
+                      Needs a single view of major epics and risks. Use ClearGO in GTM councils to
+                      make data-driven Go/No-Go decisions based on real-time readiness scores.
                     </Text>
                   </Stack>
                   <Box

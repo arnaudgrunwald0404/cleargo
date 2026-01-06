@@ -2,8 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { resolveRole } from '@/lib/roles';
-import { createCriteria, getCriteria, listCriteria } from '@/lib/db/criteria';
-import type { CriterionCategory, DecisionOwnerRole, TierApplicability } from '@/types/criteria';
+import { createCriteria, listCriteria } from '@/lib/db/criteria';
+import type { CriterionCategory, TierApplicability } from '@/types/criteria';
 
 const createSchema = z.object({
   label: z.string().min(1),

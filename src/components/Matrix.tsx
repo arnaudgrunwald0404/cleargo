@@ -1,8 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { Select, Avatar, Modal, Button, Group } from '@mantine/core';
+import { Select, Modal, Button, Group } from '@mantine/core';
 import { IconChevronDown, IconChevronRight, IconPencil } from '@tabler/icons-react';
-import { UserDisplay } from './UserDisplay';
 import { UserDisplayWithDelegation } from './UserDisplayWithDelegation';
 import { RichText } from './admin/RichText';
 import { createClient } from '@/lib/supabase/client';
@@ -44,32 +43,6 @@ const getStatusColor = (status: string) => {
   return statusOption?.color || STATUS_OPTIONS[0].color;
 };
 
-const getInitials = (email: string) => {
-  return email.substring(0, 2).toUpperCase();
-};
-
-const getAvatarColor = (email: string) => {
-  const colors = [
-    'blue',
-    'cyan',
-    'teal',
-    'green',
-    'lime',
-    'yellow',
-    'orange',
-    'red',
-    'pink',
-    'grape',
-    'violet',
-    'indigo',
-  ];
-  let hash = 0;
-  for (let i = 0; i < email.length; i++) {
-    hash = email.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return colors[Math.abs(hash) % colors.length];
-};
-
 type Props = {
   epicId: string;
   epicName: string;
@@ -78,7 +51,6 @@ type Props = {
 };
 
 export default function Matrix({ epicId, epicName, items, onUpdate }: Props) {
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
   const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());

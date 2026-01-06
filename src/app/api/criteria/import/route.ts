@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@/lib/supabase/server';
-import { cookies } from 'next/headers';
 import { resolveRole } from '@/lib/roles';
 import { upsertCriteriaBatch, CreateCriterionInput } from '@/lib/db/criteria';
 import * as XLSX from 'xlsx';
-import { CriterionCategory, TierApplicability } from '@/types/criteria';
+import { CriterionCategory } from '@/types/criteria';
 
 const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 

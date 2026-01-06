@@ -1,6 +1,5 @@
 'use client';
 import React, { useEffect, useState, useMemo } from 'react';
-import Link from 'next/link';
 import {
   Drawer,
   TextInput,
@@ -43,18 +42,6 @@ interface EpicStage {
 }
 
 const TIERS = ['ALL', 'TIER_1_ONLY', 'TIER_1_AND_2'];
-const ROLES = [
-  'CPO',
-  'PRODUCT_LEAD',
-  'PM',
-  'PMM',
-  'ENG_LEAD',
-  'SUPPORT_LEAD',
-  'SECURITY',
-  'LEARNING',
-  'PRODUCT_OPS',
-  'OTHER',
-];
 
 export function CriteriaManager() {
   const [items, setItems] = useState<Item[]>([]);
@@ -799,7 +786,9 @@ export function CriteriaManager() {
                   <Textarea
                     label="CONDITIONAL GO Definition"
                     value={form.status_definition_conditional || ''}
-                    onChange={(e) => setForm({ ...form, status_definition_conditional: e.target.value })}
+                    onChange={(e) =>
+                      setForm({ ...form, status_definition_conditional: e.target.value })
+                    }
                     placeholder="Definition for CONDITIONAL GO status"
                     minRows={3}
                   />

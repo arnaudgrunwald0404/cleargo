@@ -95,7 +95,7 @@ export function EpicStagesChart({ stages }: EpicStagesChartProps) {
   const timelineY = timelineHeight / 2;
 
   // Calculate positions for milestones
-  milestones.forEach((milestone, index) => {
+  milestones.forEach((milestone) => {
     if (milestone.stage.duration_days !== null && milestone.stage.duration_days > 0) {
       milestone.position =
         ((milestone.dateOffset + milestone.stage.duration_days) / totalDays) * 100;
@@ -104,11 +104,6 @@ export function EpicStagesChart({ stages }: EpicStagesChartProps) {
       milestone.position = 100;
     }
   });
-
-  // Format date helper
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  };
 
   // Calculate dates for milestones
   const getMilestoneDate = (offset: number) => {
@@ -233,17 +228,13 @@ export function EpicStagesChart({ stages }: EpicStagesChartProps) {
           )}
 
           {/* Stage phases and milestones */}
-          {milestones.map((milestone, index) => {
+          {milestones.map((milestone) => {
             if (milestone.stage.duration_days === null || milestone.stage.duration_days === 0) {
               return null; // Skip stages without duration
             }
 
             const stageStartX =
               padding + (milestone.dateOffset / totalDays) * (timelineWidth - padding * 2);
-            const stageEndX =
-              padding +
-              ((milestone.dateOffset + milestone.stage.duration_days) / totalDays) *
-                (timelineWidth - padding * 2);
             const stageWidth =
               (milestone.stage.duration_days / totalDays) * (timelineWidth - padding * 2);
             const stageCenterX = stageStartX + stageWidth / 2;
@@ -465,4 +456,3 @@ export function EpicStagesChart({ stages }: EpicStagesChartProps) {
     </Box>
   );
 }
-

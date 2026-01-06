@@ -1,20 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { resolveRole } from '@/lib/roles';
 import * as XLSX from 'xlsx';
-
-const bulkCreateSchema = z.object({
-  users: z.array(
-    z.object({
-      email: z.string().email(),
-      first_name: z.string().optional(),
-      last_name: z.string().optional(),
-      roles: z.array(z.string()).default(['OTHER']),
-      is_active: z.boolean().default(true),
-    })
-  ),
-});
 
 function forbid() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });

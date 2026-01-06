@@ -6,7 +6,7 @@ import { resolveRole } from '@/lib/roles';
 import { randomUUID } from 'crypto';
 import { createToken } from '@/lib/jwt';
 import { canSendEmail } from '@/lib/tokenStore';
-import { resend, EMAIL_SENDER } from '@/lib/email/client';
+import { resend } from '@/lib/email/client';
 import { getInviteEmail, getRemindEmail } from '@/lib/email/templates';
 import { getSettings } from '@/lib/settings-db';
 

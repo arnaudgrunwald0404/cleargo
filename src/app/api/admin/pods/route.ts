@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = createClient();
   // Fetch distinct pod values from epic table
   const { data, error } = await supabase

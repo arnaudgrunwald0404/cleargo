@@ -18,7 +18,7 @@ function forbid() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     const supabase = createClient();
     const {

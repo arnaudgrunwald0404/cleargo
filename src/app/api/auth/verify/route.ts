@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
 import { verifyToken, createToken } from '@/lib/jwt';
 import { isTokenUsed, markTokenUsed } from '@/lib/tokenStore';
 

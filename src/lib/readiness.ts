@@ -1,7 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
-import { SlackNotificationPayload } from '@/types/slack';
 import { sendEmailNotification } from '@/lib/email/notifications';
 
 export async function recomputeEpicReadiness(epicId: string) {

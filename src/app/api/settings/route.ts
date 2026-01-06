@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 // For now, we'll assume any authenticated user can read, but only specific roles can write.
 // TODO: refine RBAC.
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   console.log('GET /api/settings called');
   try {
     const settings = await getSettings();

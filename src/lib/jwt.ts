@@ -1,4 +1,4 @@
-import { SignJWT, jwtVerify, JWTPayload, generateKeyPair, importPKCS8, importJWK } from 'jose';
+import { SignJWT, jwtVerify, JWTPayload } from 'jose';
 
 const getSecret = () => {
   const secret = process.env.MAGIC_LINK_SECRET;

@@ -12,19 +12,11 @@ const createUserSchema = z.object({
   is_active: z.boolean().default(true),
 });
 
-const updateUserSchema = z.object({
-  email: z.string().email().optional(),
-  first_name: z.string().optional(),
-  last_name: z.string().optional(),
-  roles: z.array(z.string()).optional(),
-  is_active: z.boolean().optional(),
-});
-
 function forbid() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 }
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   const supabase = createClient();
   const {
     data: { user },

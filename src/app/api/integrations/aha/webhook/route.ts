@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEpic } from '@/lib/aha/client';
 import { verifyWebhookSignature } from '@/lib/aha/webhook-validator';
 import { mapEpicToEpic } from '@/lib/aha/mapping';
-import {
-  upsertEpicFromAha,
-  getUserByEmail,
-  getFallbackProductOpsUser,
-  getEpicByAhaId,
-} from '@/lib/db/epics';
+import { upsertEpicFromAha, getUserByEmail, getEpicByAhaId } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
 export async function POST(req: NextRequest) {
