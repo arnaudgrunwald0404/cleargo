@@ -23,52 +23,123 @@ export async function GET(
             return NextResponse.json({ error: "Release name is required" }, { status: 400 });
         }
 
+        // Count epics in ClearGO for this release (always calculate this)
+        const { data: allEpics, error: countError } = await supabase
+            .from('epic')
+            .select('aha_fields');
+
+        let cleargoEpicCount = 0;
+        if (!countError && allEpics) {
+            cleargoEpicCount = allEpics.filter((epic) => {
+                if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return false;
+                const fields = epic.aha_fields as any;
+                
+                if (fields.standard_fields && typeof fields.standard_fields === 'object') {
+                    const standardFields = fields.standard_fields;
+                    const epicReleaseName = standardFields?.aha_release_name ||
+                        standardFields?.release?.name || null;
+                    if (epicReleaseName && typeof epicReleaseName === 'string' && 
+                        epicReleaseName.trim() === releaseName.trim()) {
+                        return true;
+                    }
+                }
+                
+                if (fields.custom_fields && typeof fields.custom_fields === 'object') {
+                    const customFields = fields.custom_fields;
+                    const epicReleaseName = customFields?.release_target_after_pod_planning;
+                    if (epicReleaseName && typeof epicReleaseName === 'string' && 
+                        epicReleaseName.trim() === releaseName.trim()) {
+                        return true;
+                    }
+                }
+                
+                return false;
+            }).length;
+        }
+
+        // Check for cached count in database first
+        const { data: cachedRelease, error: cacheError } = await supabase
+            .from('release_schedule')
+            .select('aha_epic_count, aha_epic_count_updated_at')
+            .eq('release_name', releaseName)
+            .single();
+
+        // If we have a cached count, return it (caching is preferred, can add refresh param later if needed)
+        if (!cacheError && cachedRelease && cachedRelease.aha_epic_count !== null) {
+            return NextResponse.json({ 
+                ahaCount: cachedRelease.aha_epic_count,
+                cleargoCount: cleargoEpicCount,
+                releaseName,
+                cached: true,
+                cachedAt: cachedRelease.aha_epic_count_updated_at
+            });
+        }
+
         try {
             const client = getAhaClient();
             
-            // Fetch all releases to find the one matching the name
-            const releasesResponse = await client.getReleases({ per_page: 200 });
-            const releases = Array.isArray(releasesResponse) 
-                ? releasesResponse 
-                : releasesResponse?.releases || [];
+            // Fetch all releases to find the one matching the name (paginated)
+            let allReleases: any[] = [];
+            let releasesPage = 1;
+            let hasMoreReleases = true;
+            const perPage = 200;
             
-            const matchingRelease = releases.find((r: any) => r.name === releaseName);
+            while (hasMoreReleases) {
+                try {
+                    const releasesResponse = await client.getReleases({ per_page: perPage, page: releasesPage });
+                    const releases = Array.isArray(releasesResponse) 
+                        ? releasesResponse 
+                        : releasesResponse?.releases || [];
+                    
+                    allReleases = allReleases.concat(releases);
+                    hasMoreReleases = releases.length === perPage;
+                    releasesPage++;
+                } catch (error) {
+                    console.error(`Error fetching releases page ${releasesPage}:`, error);
+                    hasMoreReleases = false;
+                }
+            }
             
-            // Count epics in ClearGO for this release (even if not found in Aha)
-            const { data: allEpics, error: countError } = await supabase
-                .from('epic')
-                .select('aha_fields');
-
-            let cleargoEpicCount = 0;
-            if (!countError && allEpics) {
-                cleargoEpicCount = allEpics.filter((epic) => {
-                    if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return false;
-                    const fields = epic.aha_fields as any;
-                    
-                    if (fields.standard_fields && typeof fields.standard_fields === 'object') {
-                        const standardFields = fields.standard_fields;
-                        const epicReleaseName = standardFields?.aha_release_name ||
-                            standardFields?.release?.name || null;
-                        if (epicReleaseName && typeof epicReleaseName === 'string' && 
-                            epicReleaseName.trim() === releaseName.trim()) {
-                            return true;
-                        }
-                    }
-                    
-                    if (fields.custom_fields && typeof fields.custom_fields === 'object') {
-                        const customFields = fields.custom_fields;
-                        const epicReleaseName = customFields?.release_target_after_pod_planning;
-                        if (epicReleaseName && typeof epicReleaseName === 'string' && 
-                            epicReleaseName.trim() === releaseName.trim()) {
-                            return true;
-                        }
-                    }
-                    
-                    return false;
-                }).length;
+            const releases = allReleases;
+            
+            // Normalize release name for matching (trim and lowercase)
+            const normalizedReleaseName = releaseName.trim().toLowerCase();
+            
+            // Try to find matching release with multiple strategies
+            let matchingRelease = releases.find((r: any) => {
+                if (!r.name) return false;
+                // Exact match
+                if (r.name === releaseName) return true;
+                // Case-insensitive match
+                if (r.name.trim().toLowerCase() === normalizedReleaseName) return true;
+                return false;
+            });
+            
+            // Log available releases for debugging if not found
+            if (!matchingRelease) {
+                console.log(`[AHA Epic Count] Release "${releaseName}" not found. Available releases:`, 
+                    releases.slice(0, 10).map((r: any) => r.name).join(', '),
+                    releases.length > 10 ? `... (${releases.length} total)` : ''
+                );
             }
             
             if (!matchingRelease) {
+                // Cache null count to avoid repeated lookups for non-existent releases
+                const now = new Date().toISOString();
+                await supabase
+                    .from('release_schedule')
+                    .upsert(
+                        {
+                            release_name: releaseName,
+                            aha_epic_count: null,
+                            aha_epic_count_updated_at: now,
+                            updated_at: now,
+                        },
+                        {
+                            onConflict: 'release_name',
+                        }
+                    );
+                
                 return NextResponse.json({ 
                     ahaCount: null,
                     cleargoCount: cleargoEpicCount,
@@ -78,15 +149,15 @@ export async function GET(
 
             // Fetch epics for this release (paginated to get total count)
             let totalCount = 0;
-            let page = 1;
-            let hasMore = true;
-            const perPage = 200;
+            let epicsPage = 1;
+            let hasMoreEpics = true;
+            const epicsPerPage = 200;
 
-            while (hasMore) {
+            while (hasMoreEpics) {
                 try {
                     const epicsResponse = await client.getReleaseEpics(matchingRelease.id, { 
-                        per_page: perPage, 
-                        page 
+                        per_page: epicsPerPage, 
+                        page: epicsPage 
                     });
                     
                     const epics = Array.isArray(epicsResponse)
@@ -94,59 +165,44 @@ export async function GET(
                         : epicsResponse?.epics || [];
                     
                     totalCount += epics.length;
-                    hasMore = epics.length === perPage;
-                    page++;
+                    hasMoreEpics = epics.length === epicsPerPage;
+                    epicsPage++;
                 } catch (error) {
-                    console.error(`Error fetching epics page ${page} for release ${releaseName}:`, error);
-                    hasMore = false;
+                    console.error(`Error fetching epics page ${epicsPage} for release ${releaseName}:`, error);
+                    hasMoreEpics = false;
                 }
             }
 
+            // Cache the count in the database
+            const now = new Date().toISOString();
+            const { error: updateError } = await supabase
+                .from('release_schedule')
+                .upsert(
+                    {
+                        release_name: releaseName,
+                        aha_epic_count: totalCount,
+                        aha_epic_count_updated_at: now,
+                        updated_at: now,
+                    },
+                    {
+                        onConflict: 'release_name',
+                    }
+                );
+
+            if (updateError) {
+                console.error(`Error caching AHA epic count for release ${releaseName}:`, updateError);
+                // Continue anyway - we still return the count
+            }
 
             return NextResponse.json({ 
                 ahaCount: totalCount,
                 cleargoCount: cleargoEpicCount,
-                releaseName 
+                releaseName,
+                cached: false
             });
         } catch (ahaError: any) {
             console.error(`Error fetching Aha epic count for release ${releaseName}:`, ahaError);
-            // Still try to get ClearGO count even if Aha fails
-            let cleargoEpicCount = 0;
-            try {
-                const { data: allEpics } = await supabase
-                    .from('epic')
-                    .select('aha_fields');
-                
-                if (allEpics) {
-                    cleargoEpicCount = allEpics.filter((epic) => {
-                        if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return false;
-                        const fields = epic.aha_fields as any;
-                        
-                        if (fields.standard_fields && typeof fields.standard_fields === 'object') {
-                            const standardFields = fields.standard_fields;
-                            const epicReleaseName = standardFields?.aha_release_name ||
-                                standardFields?.release?.name || null;
-                            if (epicReleaseName && typeof epicReleaseName === 'string' && 
-                                epicReleaseName.trim() === releaseName.trim()) {
-                                return true;
-                            }
-                        }
-                        
-                        if (fields.custom_fields && typeof fields.custom_fields === 'object') {
-                            const customFields = fields.custom_fields;
-                            const epicReleaseName = customFields?.release_target_after_pod_planning;
-                            if (epicReleaseName && typeof epicReleaseName === 'string' && 
-                                epicReleaseName.trim() === releaseName.trim()) {
-                                return true;
-                            }
-                        }
-                        
-                        return false;
-                    }).length;
-                }
-            } catch (dbError) {
-                console.error('Error counting ClearGO epics:', dbError);
-            }
+            // cleargoEpicCount is already calculated above
             
             return NextResponse.json({ 
                 ahaCount: null,

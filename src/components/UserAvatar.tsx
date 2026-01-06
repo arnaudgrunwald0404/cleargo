@@ -36,7 +36,7 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
         try {
             await fetch('/auth/signout', { method: 'POST', credentials: 'include' });
         } finally {
-            router.push('/');
+            router.push('/login');
         }
     };
 

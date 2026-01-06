@@ -1,13 +1,16 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconTrash } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconTrash, IconEye } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
+import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
+import { ScopeFilterBanner } from '@/components/ScopeFilterBanner';
+import { createClient } from '@/lib/supabase/client';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -16,9 +19,13 @@ interface EpicsClientProps {
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { scope, isMyScope } = useEpicScope();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
+    const [watchStatuses, setWatchStatuses] = useState<Map<string, boolean>>(new Map());
+    const [watchLoading, setWatchLoading] = useState<Set<string>>(new Set());
+    const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
-    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean }>>([]);
+    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [configuredTags, setConfiguredTags] = useState<string[]>(['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']);
@@ -34,8 +41,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
-    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean }>>([]);
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
     const [isDeterminingOrder, setIsDeterminingOrder] = useState(true);
+    const [podOrder, setPodOrder] = useState<string[]>([]);
+    const [settingsLoaded, setSettingsLoaded] = useState(false);
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -48,7 +57,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
 
     useEffect(() => {
-        // Load current user roles
+        // Load current user email and roles
+        const supabase = createClient();
+        supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user?.email) {
+                setCurrentUserEmail(user.email);
+            }
+        });
+
         fetch("/api/me", { credentials: 'include' })
             .then(res => res.json())
             .then(data => {
@@ -92,9 +108,44 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }, [initialEpics.length]);
 
+    // Reload epics when scope changes
+    useEffect(() => {
+        if (initialEpics.length > 0) {
+            // Only reload if we have initial epics (component already mounted)
+            loadData();
+        }
+    }, [scope]);
+
+    // Fetch watch statuses when epics or user email changes
+    useEffect(() => {
+        if (currentUserEmail && epics.length > 0) {
+            const watchPromises = epics.map(async (epic: Epic) => {
+                try {
+                    const watchRes = await fetch(`/api/epics/${epic.id}/watch`, { credentials: 'include' });
+                    if (watchRes.ok) {
+                        const watchData = await watchRes.json();
+                        return { epicId: epic.id, isWatching: watchData.isWatching || false };
+                    }
+                } catch (err) {
+                    console.warn(`Failed to fetch watch status for epic ${epic.id}:`, err);
+                }
+                return { epicId: epic.id, isWatching: false };
+            });
+            Promise.all(watchPromises).then(watchResults => {
+                const watchMap = new Map<string, boolean>();
+                watchResults.forEach(({ epicId, isWatching }) => {
+                    watchMap.set(epicId, isWatching);
+                });
+                setWatchStatuses(watchMap);
+            });
+        }
+    }, [epics, currentUserEmail]);
+
     async function loadData() {
         try {
             setLoading(true);
+            // Use my-scope endpoint if scope is "my"
+            const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
 
             // Fast auth check: if not signed in, send to home/Welcome
             const me = await fetch('/api/me', { credentials: 'include' });
@@ -103,10 +154,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 return;
             }
 
-            const [epicsRes, productsRes, releasesRes] = await Promise.all([
-                fetch("/api/epics", { credentials: 'include' }),
+            const [epicsRes, productsRes, releasesRes, settingsRes] = await Promise.all([
+                fetch(endpoint, { credentials: 'include' }),
                 fetch("/api/products", { credentials: 'include' }),
-                fetch("/api/releases", { credentials: 'include' })
+                fetch("/api/releases", { credentials: 'include' }),
+                fetch("/api/settings", { credentials: 'include' })
             ]);
 
             if (epicsRes.status === 401) {
@@ -125,8 +177,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
             if (releasesRes.ok) {
                 const releasesData = await releasesRes.json();
+                if (process.env.NODE_ENV === 'development' && releasesData && releasesData.length > 0) {
+                    console.log('[Releases] Sample release data:', {
+                        release_name: releasesData[0].release_name,
+                        has_aha_epic_count: 'aha_epic_count' in releasesData[0],
+                        aha_epic_count: releasesData[0].aha_epic_count
+                    });
+                }
                 setReleaseSchedule(releasesData || []);
                 setReleaseScheduleWithIds(releasesData || []);
+            }
+            
+            // Load pod order from settings
+            if (settingsRes.ok) {
+                const settingsData = await settingsRes.json();
+                setPodOrder(settingsData.pod_order || []);
+                setSettingsLoaded(true);
+            } else {
+                // If settings failed to load, still mark as loaded to avoid infinite skeleton
+                setSettingsLoaded(true);
             }
         } catch (e: any) {
             setError(e.message);
@@ -190,6 +259,29 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         return true;
     });
 
+    // Extract pod from epic
+    const getPodFromEpic = (epic: Epic): string | null => {
+        // First check direct pod field
+        if (epic.pod) {
+            return epic.pod;
+        }
+        
+        // Then check aha_fields
+        if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return null;
+        const fields = epic.aha_fields as any;
+        
+        // Check custom fields
+        if (fields.custom_fields && typeof fields.custom_fields === 'object') {
+            const customFields = fields.custom_fields;
+            const pod = customFields?.dev_backlog_pod;
+            if (pod && typeof pod === 'string' && pod.trim()) {
+                return pod.trim();
+            }
+        }
+        
+        return null;
+    };
+
     // Extract release name from epic's aha_fields
     const getReleaseName = (epic: Epic): string | null => {
         if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return null;
@@ -218,42 +310,145 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     };
 
     // Create a map of release names to dates from release schedule
-    const releaseDateMap = new Map<string, string | null>();
-    releaseSchedule.forEach(release => {
-        if (release.release_name) {
-            releaseDateMap.set(release.release_name, release.launch_date);
-        }
-    });
-
-    // Group epics by release
-    const releaseGroupsMap = new Map<string, Epic[]>();
-    const ungroupedEpics: Epic[] = [];
-
-    filteredEpics.forEach(epic => {
-        const releaseName = getReleaseName(epic);
-        if (releaseName) {
-            if (!releaseGroupsMap.has(releaseName)) {
-                releaseGroupsMap.set(releaseName, []);
+    const releaseDateMap = useMemo(() => {
+        const map = new Map<string, string | null>();
+        releaseSchedule.forEach(release => {
+            if (release.release_name) {
+                map.set(release.release_name, release.launch_date);
             }
-            releaseGroupsMap.get(releaseName)!.push(epic);
-        } else {
-            ungroupedEpics.push(epic);
-        }
-    });
+        });
+        return map;
+    }, [releaseSchedule]);
 
-    // Convert to array and sort by release date
-    const releaseGroups: Array<{ releaseName: string; releaseDate: string | null; epics: Epic[] }> = Array.from(releaseGroupsMap.entries()).map(([releaseName, epics]) => ({
-        releaseName,
-        releaseDate: releaseDateMap.get(releaseName) || null,
-        epics
-    }));
+    // Group epics by release and sort by pod order
+    const releaseGroups: Array<{ releaseName: string; releaseDate: string | null; epics: Epic[] }> = useMemo(() => {
+        // Group epics by release
+        const releaseGroupsMap = new Map<string, Epic[]>();
+        const ungroupedEpics: Epic[] = [];
+
+        filteredEpics.forEach(epic => {
+            const releaseName = getReleaseName(epic);
+            if (releaseName) {
+                if (!releaseGroupsMap.has(releaseName)) {
+                    releaseGroupsMap.set(releaseName, []);
+                }
+                releaseGroupsMap.get(releaseName)!.push(epic);
+            } else {
+                ungroupedEpics.push(epic);
+            }
+        });
+
+        // Convert to array and sort epics within each release by pod order
+        const groups = Array.from(releaseGroupsMap.entries()).map(([releaseName, epics]) => {
+            // Sort epics within each release group by pod order
+            const sortedEpics = [...epics].sort((a, b) => {
+                const podA = getPodFromEpic(a);
+                const podB = getPodFromEpic(b);
+                
+                // Epics without pods go to the end
+                if (!podA && !podB) return 0;
+                if (!podA) return 1;
+                if (!podB) return -1;
+                
+                // If pod order is set, use it for sorting
+                if (podOrder.length > 0) {
+                    // Normalize pod order for case-insensitive comparison
+                    const normalizedPodOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
+                    const normalizedPodA = podA.toLowerCase();
+                    const normalizedPodB = podB.toLowerCase();
+                    
+                    // Get index in pod order (case-insensitive)
+                    const indexA = normalizedPodOrder.indexOf(normalizedPodA);
+                    const indexB = normalizedPodOrder.indexOf(normalizedPodB);
+                    
+                    // If both pods are in the order, sort by their position
+                    if (indexA !== -1 && indexB !== -1) {
+                        return indexA - indexB;
+                    }
+                    
+                    // If only one is in the order, it comes first
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                }
+                
+                // If no pod order is set, or neither pod is in the order, sort alphabetically
+                return podA.localeCompare(podB);
+            });
+            
+            return {
+                releaseName,
+                releaseDate: releaseDateMap.get(releaseName) || null,
+                epics: sortedEpics
+            };
+        });
+
+        // Sort release groups by date (ascending), with null dates at the end
+        groups.sort((a, b) => {
+            if (!a.releaseDate && !b.releaseDate) return 0;
+            if (!a.releaseDate) return 1;
+            if (!b.releaseDate) return -1;
+            return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
+        });
+
+        // Add ungrouped epics as a separate group at the end (also sorted by pod order)
+        if (ungroupedEpics.length > 0) {
+            const sortedUngrouped = [...ungroupedEpics].sort((a, b) => {
+                const podA = getPodFromEpic(a);
+                const podB = getPodFromEpic(b);
+                
+                // Epics without pods go to the end
+                if (!podA && !podB) return 0;
+                if (!podA) return 1;
+                if (!podB) return -1;
+                
+                // If pod order is set, use it for sorting
+                if (podOrder.length > 0) {
+                    // Normalize pod order for case-insensitive comparison
+                    const normalizedPodOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
+                    const normalizedPodA = podA.toLowerCase();
+                    const normalizedPodB = podB.toLowerCase();
+                    
+                    // Get index in pod order (case-insensitive)
+                    const indexA = normalizedPodOrder.indexOf(normalizedPodA);
+                    const indexB = normalizedPodOrder.indexOf(normalizedPodB);
+                    
+                    // If both pods are in the order, sort by their position
+                    if (indexA !== -1 && indexB !== -1) {
+                        return indexA - indexB;
+                    }
+                    
+                    // If only one is in the order, it comes first
+                    if (indexA !== -1) return -1;
+                    if (indexB !== -1) return 1;
+                }
+                
+                // If no pod order is set, or neither pod is in the order, sort alphabetically
+                return podA.localeCompare(podB);
+            });
+            
+            groups.push({
+                releaseName: "Ungrouped",
+                releaseDate: null,
+                epics: sortedUngrouped
+            });
+        }
+
+        return groups;
+    }, [filteredEpics, releaseDateMap, podOrder]);
 
     // Automatically fetch release dates from API when needed (only if not in database)
     useEffect(() => {
         const fetchMissingReleaseDates = async () => {
-            // If we don't have epics or release schedule yet, keep determining order
-            if (epics.length === 0 || releaseSchedule.length === 0) {
+            // If we don't have epics yet, keep determining order
+            if (epics.length === 0) {
                 setIsDeterminingOrder(true);
+                return;
+            }
+            
+            // If we have epics but no release schedule, we can still show epics
+            // Order determination is just for sorting, not for display
+            if (releaseSchedule.length === 0) {
+                setIsDeterminingOrder(false);
                 return;
             }
             
@@ -432,36 +627,112 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [releaseSchedule, epics.length, releaseGroups.length]);
 
-    // Fetch Aha epic counts for releases
+    // Load AHA epic counts from release_schedule (cached) and fetch missing ones
     useEffect(() => {
-        const fetchAhaEpicCounts = async () => {
+        // Don't run if we don't have release groups yet
+        if (releaseGroups.length === 0) {
+            if (process.env.NODE_ENV === 'development') {
+                console.log('[AHA Counts] Skipping - no release groups yet');
+            }
+            return;
+        }
+
+        const loadAhaEpicCounts = async () => {
+            console.log('[AHA Counts] Starting loadAhaEpicCounts, releaseGroups:', releaseGroups.length);
+            
+            // First, load cached counts from releaseSchedule
+            const cachedCounts = new Map<string, number | null>();
+            releaseSchedule.forEach(release => {
+                if (release.release_name) {
+                    const count = (release as any).aha_epic_count;
+                    if (count !== undefined && count !== null) {
+                        cachedCounts.set(release.release_name, count);
+                        console.log(`[AHA Counts] Found cached count for ${release.release_name}: ${count}`);
+                    }
+                }
+            });
+            
+            // Also check releaseScheduleWithIds
+            releaseScheduleWithIds.forEach(release => {
+                if (release.release_name) {
+                    const count = (release as any).aha_epic_count;
+                    if (count !== undefined && count !== null && !cachedCounts.has(release.release_name)) {
+                        cachedCounts.set(release.release_name, count);
+                        console.log(`[AHA Counts] Found cached count in WithIds for ${release.release_name}: ${count}`);
+                    }
+                }
+            });
+            
+            // Update state with cached counts
+            if (cachedCounts.size > 0) {
+                setAhaEpicCounts(prev => {
+                    const merged = new Map(prev);
+                    cachedCounts.forEach((count, name) => {
+                        merged.set(name, count);
+                    });
+                    return merged;
+                });
+                console.log(`[AHA Counts] Loaded ${cachedCounts.size} cached counts into state`);
+            } else {
+                console.log('[AHA Counts] No cached counts found in releaseSchedule data');
+            }
+
+            // Find releases that need fetching (not in cache and not already fetching)
             const releasesToFetch = releaseGroups
-                .filter(group => 
-                    group.releaseName !== "Ungrouped" && 
-                    !ahaEpicCounts.has(group.releaseName) &&
-                    !fetchingAhaCountsRef.current.has(group.releaseName)
-                )
+                .filter(group => {
+                    const shouldFetch = group.releaseName !== "Ungrouped" && 
+                        !cachedCounts.has(group.releaseName) &&
+                        !ahaEpicCounts.has(group.releaseName) &&
+                        !fetchingAhaCountsRef.current.has(group.releaseName);
+                    if (process.env.NODE_ENV === 'development' && shouldFetch) {
+                        console.log(`[AHA Counts] Will fetch count for: ${group.releaseName}`);
+                    }
+                    return shouldFetch;
+                })
                 .map(group => group.releaseName);
 
-            if (releasesToFetch.length === 0) return;
+            console.log(`[AHA Counts] Releases to fetch: ${releasesToFetch.length}`, releasesToFetch);
+
+            if (releasesToFetch.length === 0) {
+                // If we have cached counts, make sure they're in state
+                if (cachedCounts.size > 0) {
+                    setAhaEpicCounts(prev => {
+                        const merged = new Map(prev);
+                        cachedCounts.forEach((count, name) => {
+                            if (!merged.has(name)) {
+                                merged.set(name, count);
+                            }
+                        });
+                        return merged;
+                    });
+                }
+                console.log('[AHA Counts] No releases to fetch');
+                return;
+            }
 
             // Mark as fetching
             releasesToFetch.forEach(name => fetchingAhaCountsRef.current.add(name));
 
+            console.log(`[AHA Counts] Fetching counts for ${releasesToFetch.length} releases...`);
+
             // Fetch counts for all releases in parallel
             const countPromises = releasesToFetch.map(async (releaseName) => {
                 try {
+                    console.log(`[AHA Counts] Fetching for ${releaseName}...`);
                     const res = await fetch(`/api/releases/epic-count/${encodeURIComponent(releaseName)}`, {
                         credentials: 'include'
                     });
                     if (res.ok) {
                         const data = await res.json();
-                        return { releaseName, count: data.count };
+                        console.log(`[AHA Counts] Fetched for ${releaseName}:`, data);
+                        return { releaseName, count: data.ahaCount };
+                    } else {
+                        const errorText = await res.text();
+                        console.warn(`[AHA Counts] Failed to fetch for ${releaseName}:`, res.status, errorText);
                     }
-                    // Silently fail - API route may not exist
                     return { releaseName, count: null };
                 } catch (error) {
-                    // Silently fail - API route may not exist
+                    console.error(`[AHA Counts] Error fetching for ${releaseName}:`, error);
                     return { releaseName, count: null };
                 }
             });
@@ -472,31 +743,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 newCounts.set(releaseName, count);
             });
             setAhaEpicCounts(newCounts);
+            console.log(`[AHA Counts] Updated state with ${results.length} results`);
 
             // Clear fetching state
             releasesToFetch.forEach(name => fetchingAhaCountsRef.current.delete(name));
         };
 
-        fetchAhaEpicCounts();
+        loadAhaEpicCounts();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [releaseGroups.length]);
+    }, [releaseGroups.length, releaseSchedule.length, releaseScheduleWithIds.length, epics.length]);
 
-    // Sort release groups by date (ascending), with null dates at the end
-    releaseGroups.sort((a, b) => {
-        if (!a.releaseDate && !b.releaseDate) return 0;
-        if (!a.releaseDate) return 1;
-        if (!b.releaseDate) return -1;
-        return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
-    });
-
-    // Add ungrouped epics as a separate group at the end
-    if (ungroupedEpics.length > 0) {
-        releaseGroups.push({
-            releaseName: "Ungrouped",
-            releaseDate: null,
-            epics: ungroupedEpics
-        });
-    }
 
     // Check for celebration condition: all epics LAUNCHED for 90+ days
     const checkedReleasesRef = useRef<Set<string>>(new Set());
@@ -549,10 +805,35 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [releaseGroups.length, releaseScheduleWithIds.length]);
 
+    // Create a map of release names to cached AHA epic counts from releaseSchedule
+    const cachedAhaCounts = new Map<string, number | null>();
+    releaseSchedule.forEach(release => {
+        if (release.release_name) {
+            // Check both releaseSchedule and releaseScheduleWithIds for cached count
+            const count = (release as any).aha_epic_count ?? 
+                         releaseScheduleWithIds.find(r => r.release_name === release.release_name)?.aha_epic_count;
+            if (count !== undefined && count !== null) {
+                cachedAhaCounts.set(release.release_name, count);
+            }
+        }
+    });
+    
+    // Also check releaseScheduleWithIds
+    releaseScheduleWithIds.forEach(release => {
+        if (release.release_name && (release as any).aha_epic_count !== undefined && (release as any).aha_epic_count !== null && !cachedAhaCounts.has(release.release_name)) {
+            cachedAhaCounts.set(release.release_name, (release as any).aha_epic_count);
+        }
+    });
+
     // Calculate stats for each release group
     const releaseStats = releaseGroups.map(group => {
         const highRiskCount = group.epics.filter(epic => epic.risk_level === 'HIGH').length;
-        const ahaCount = group.releaseName !== "Ungrouped" ? ahaEpicCounts.get(group.releaseName) : null;
+        // Prefer cached count from releaseSchedule, fallback to ahaEpicCounts state
+        const cachedCount = cachedAhaCounts.get(group.releaseName);
+        const stateCount = ahaEpicCounts.get(group.releaseName);
+        const ahaCount = group.releaseName !== "Ungrouped" 
+            ? (cachedCount !== undefined ? cachedCount : stateCount)
+            : null;
         return {
             ...group,
             highRiskCount,
@@ -575,16 +856,18 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     }
 
     return (
-        <div style={{
-          maxWidth: 'var(--page-container-max-width)',
-          margin: '0 auto',
-          paddingLeft: 'var(--page-container-padding-x)',
-          paddingRight: 'var(--page-container-padding-x)',
-          paddingTop: 'var(--page-container-padding-top)',
-          fontFamily: 'var(--font-body)'
-        }}
-        className="sm:px-6 lg:px-8"
-        >
+        <>
+            <ScopeFilterBanner />
+            <div style={{
+              maxWidth: 'var(--page-container-max-width)',
+              margin: '0 auto',
+              paddingLeft: 'var(--page-container-padding-x)',
+              paddingRight: 'var(--page-container-padding-x)',
+              paddingTop: 'var(--page-container-padding-top)',
+              fontFamily: 'var(--font-body)'
+            }}
+            className="sm:px-6 lg:px-8"
+            >
             <Group align="flex-start" mb="sm">
                 <Box>
                     <Title style={{ 
@@ -692,7 +975,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         color: 'var(--color-gray-500)', 
                                                         fontSize: 'var(--font-size-sm)',
                                                         fontFamily: 'var(--font-body)'
-                                                    }}>Epics loaded:</span>
+                                                    }}>Epics loaded / in Aha!:</span>
                                                     <span className="font-medium" style={{ 
                                                         color: isSelected ? 'var(--color-blue-900)' : 'var(--color-gray-900)', 
                                                         fontSize: 'var(--font-size-sm)',
@@ -1060,82 +1343,189 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     backgroundColor: "#FFFFFF",
                                     boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                                 }}>
-                                    <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
-                                        <colgroup>
-                                            <col className="w-auto" />
-                                            <col className="w-24" />
-                                            <col className="w-auto" />
-                                            <col className="w-32" />
-                                            <col className="w-24" />
-                                            <col className="w-24" />
-                                            <col className="w-24" />
-                                            <col className="w-24" />
-                                        </colgroup>
-                                        <thead style={{ 
-                                            backgroundColor: "#F9FAFB",
-                                            borderBottom: "2px solid #E5E7EB"
-                                        }}>
-                                            <tr>
-                                                <th className="px-4 py-3 text-left" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Name</th>
-                                                <th className="px-4 py-3 text-left w-24" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Tier</th>
-                                                <th className="px-4 py-3 text-left" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Dev Backlog Pod</th>
-                                                <th className="px-4 py-3 text-left w-32" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Date</th>
-                                                <th className="px-4 py-3 text-left w-24" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Status</th>
-                                                <th className="px-4 py-3 text-left w-24" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Readiness</th>
-                                                <th className="px-4 py-3 text-left w-24" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Risk</th>
-                                                <th className="px-4 py-3 text-right w-24" style={{ 
-                                                    fontSize: "12px",
-                                                    fontWeight: 600,
-                                                    textTransform: "uppercase",
-                                                    letterSpacing: "0.05em",
-                                                    color: "#6B7280"
-                                                }}>Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                            {group.epics.map(epic => (
+                                    {(loading || (isDeterminingOrder && group.epics.length === 0)) ? (
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
+                                            <colgroup>
+                                                <col className="w-100" />
+                                                <col className="w-24" />
+                                                <col className="w-auto" />
+                                                <col className="w-32" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                            </colgroup>
+                                            <thead style={{ 
+                                                backgroundColor: "#F9FAFB",
+                                                borderBottom: "2px solid #E5E7EB"
+                                            }}>
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Tier</th>
+                                                    <th className="px-4 py-3 text-left" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Dev Backlog Pod</th>
+                                                    <th className="px-4 py-3 text-left w-32" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Date</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Status</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Readiness</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Risk</th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
+                                                {Array.from({ length: 5 }).map((_, index) => (
+                                                    <tr key={`skeleton-row-${index}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 w-24">
+                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 w-24">
+                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
+                                            <colgroup>
+                                                <col className="w-100" />
+                                                <col className="w-24" />
+                                                <col className="w-auto" />
+                                                <col className="w-32" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                                <col className="w-24" />
+                                            </colgroup>
+                                            <thead style={{ 
+                                                backgroundColor: "#F9FAFB",
+                                                borderBottom: "2px solid #E5E7EB"
+                                            }}>
+                                                <tr>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Tier</th>
+                                                    <th className="px-4 py-3 text-left" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Dev Backlog Pod</th>
+                                                    <th className="px-4 py-3 text-left w-32" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Date</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Status</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Readiness</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>Risk</th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}></th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
+                                                {group.epics.map(epic => (
                                                 <tr 
                                                     key={epic.id} 
                                                     style={{ 
@@ -1145,7 +1535,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#F9FAFB"}
                                                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#FFFFFF"}
                                                 >
-                                                    <td className="px-4 py-3" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="px-4 py-3 w-100" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         <Link 
                                                             href={`/epics/${epic.id}`} 
                                                             prefetch={false} 
@@ -1204,19 +1594,90 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </td>
                                                     <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">
-                                                            <Link 
-                                                                href={`/epics/${epic.id}`} 
-                                                                prefetch={false} 
-                                                                className="text-sm"
-                                                                style={{ 
-                                                                    color: "#6B7280",
-                                                                    fontSize: "14px"
-                                                                }}
-                                                                onMouseEnter={(e) => e.currentTarget.style.color = "#111827"}
-                                                                onMouseLeave={(e) => e.currentTarget.style.color = "#6B7280"}
-                                                            >
-                                                                View
-                                                            </Link>
+                                                            {currentUserEmail && (
+                                                                <button
+                                                                    onClick={async () => {
+                                                                        if (watchLoading.has(epic.id)) return;
+                                                                        setWatchLoading(prev => {
+                                                                            const newSet = new Set(prev);
+                                                                            newSet.add(epic.id);
+                                                                            return newSet;
+                                                                        });
+                                                                        const isWatching = watchStatuses.get(epic.id) || false;
+                                                                        try {
+                                                                            const method = isWatching ? 'DELETE' : 'POST';
+                                                                            const res = await fetch(`/api/epics/${epic.id}/watch`, {
+                                                                                method,
+                                                                                credentials: 'include',
+                                                                            });
+                                                                            if (res.ok) {
+                                                                                const data = await res.json();
+                                                                                const newWatchStatus = data.isWatching !== undefined ? data.isWatching : !isWatching;
+                                                                                setWatchStatuses(prev => {
+                                                                                    const newMap = new Map(prev);
+                                                                                    newMap.set(epic.id, newWatchStatus);
+                                                                                    return newMap;
+                                                                                });
+                                                                                notifications.show({
+                                                                                    title: newWatchStatus ? 'Watching' : 'Unwatched',
+                                                                                    message: newWatchStatus 
+                                                                                        ? 'Epic added to your watch list' 
+                                                                                        : 'Epic removed from your watch list',
+                                                                                    color: 'blue',
+                                                                                });
+                                                                            } else {
+                                                                                const errorData = await res.json().catch(() => ({}));
+                                                                                throw new Error(errorData.error || 'Failed to update watch status');
+                                                                            }
+                                                                        } catch (err: any) {
+                                                                            notifications.show({
+                                                                                title: 'Error',
+                                                                                message: err?.message || 'Failed to update watch status',
+                                                                                color: 'red',
+                                                                            });
+                                                                        } finally {
+                                                                            setWatchLoading(prev => {
+                                                                                const newSet = new Set(prev);
+                                                                                newSet.delete(epic.id);
+                                                                                return newSet;
+                                                                            });
+                                                                        }
+                                                                    }}
+                                                                    disabled={watchLoading.has(epic.id)}
+                                                                    className="text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                                    style={{ 
+                                                                        color: watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280",
+                                                                        fontSize: "14px",
+                                                                        background: "none",
+                                                                        border: "none",
+                                                                        cursor: "pointer",
+                                                                        padding: "4px 8px",
+                                                                        borderRadius: "4px"
+                                                                    }}
+                                                                    onMouseEnter={(e) => {
+                                                                        if (!watchLoading.has(epic.id)) {
+                                                                            e.currentTarget.style.color = "#111827";
+                                                                            e.currentTarget.style.backgroundColor = "#F3F4F6";
+                                                                        }
+                                                                    }}
+                                                                    onMouseLeave={(e) => {
+                                                                        if (!watchLoading.has(epic.id)) {
+                                                                            e.currentTarget.style.color = watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280";
+                                                                            e.currentTarget.style.backgroundColor = "transparent";
+                                                                        }
+                                                                    }}
+                                                                    title={watchStatuses.get(epic.id) ? "Unwatch epic" : "Watch epic"}
+                                                                >
+                                                                    {watchLoading.has(epic.id) ? (
+                                                                        <span className="text-xs">...</span>
+                                                                    ) : (
+                                                                        <IconEye size={16} style={{ 
+                                                                            fill: watchStatuses.get(epic.id) ? "#3B82F6" : "none",
+                                                                            stroke: watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280"
+                                                                        }} />
+                                                                    )}
+                                                                </button>
+                                                            )}
                                                             {canDeleteEpic && (
                                                                 <button
                                                                     onClick={() => handleDeleteClick(epic.id, epic.name)}
@@ -1237,6 +1698,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             ))}
                                         </tbody>
                                     </table>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -1366,7 +1828,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             </Modal>
 
 
-        </div >
+        </div>
+        </>
     );
 }
 

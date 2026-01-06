@@ -130,9 +130,11 @@ CREATE INDEX IF NOT EXISTS idx_epic_retros_epic
 -- Adoption Benchmarks
 ALTER TABLE public.adoption_benchmarks ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.adoption_benchmarks;
 CREATE POLICY "Allow read access to authenticated users" ON public.adoption_benchmarks
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to admins" ON public.adoption_benchmarks;
 CREATE POLICY "Allow write access to admins" ON public.adoption_benchmarks
   FOR ALL TO authenticated 
   USING (
@@ -146,9 +148,11 @@ CREATE POLICY "Allow write access to admins" ON public.adoption_benchmarks
 -- Success Metrics
 ALTER TABLE public.success_metrics ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.success_metrics;
 CREATE POLICY "Allow read access to authenticated users" ON public.success_metrics
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to admins" ON public.success_metrics;
 CREATE POLICY "Allow write access to admins" ON public.success_metrics
   FOR ALL TO authenticated 
   USING (
@@ -162,9 +166,11 @@ CREATE POLICY "Allow write access to admins" ON public.success_metrics
 -- Epic Success Configs
 ALTER TABLE public.epic_success_configs ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_success_configs;
 CREATE POLICY "Allow read access to authenticated users" ON public.epic_success_configs
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_configs;
 CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_configs
   FOR ALL TO authenticated 
   USING (
@@ -183,9 +189,11 @@ CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_conf
 -- Epic Success Metrics
 ALTER TABLE public.epic_success_metrics ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_success_metrics;
 CREATE POLICY "Allow read access to authenticated users" ON public.epic_success_metrics
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_metrics;
 CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metrics
   FOR ALL TO authenticated 
   USING (
@@ -204,6 +212,7 @@ CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metr
 -- Pendo Integrations
 ALTER TABLE public.pendo_integrations ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to admins" ON public.pendo_integrations;
 CREATE POLICY "Allow read access to admins" ON public.pendo_integrations
   FOR SELECT TO authenticated 
   USING (
@@ -214,6 +223,7 @@ CREATE POLICY "Allow read access to admins" ON public.pendo_integrations
     )
   );
 
+DROP POLICY IF EXISTS "Allow write access to admins" ON public.pendo_integrations;
 CREATE POLICY "Allow write access to admins" ON public.pendo_integrations
   FOR ALL TO authenticated 
   USING (
@@ -227,21 +237,26 @@ CREATE POLICY "Allow write access to admins" ON public.pendo_integrations
 -- Epic Scorecards
 ALTER TABLE public.epic_scorecards ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_scorecards;
 CREATE POLICY "Allow read access to authenticated users" ON public.epic_scorecards
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to system" ON public.epic_scorecards;
 CREATE POLICY "Allow write access to system" ON public.epic_scorecards
   FOR INSERT TO authenticated WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow update access to system" ON public.epic_scorecards;
 CREATE POLICY "Allow update access to system" ON public.epic_scorecards
   FOR UPDATE TO authenticated USING (true);
 
 -- Epic Retros
 ALTER TABLE public.epic_retros ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_retros;
 CREATE POLICY "Allow read access to authenticated users" ON public.epic_retros
   FOR SELECT TO authenticated USING (true);
 
+DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_retros;
 CREATE POLICY "Allow write access to PMs and admins" ON public.epic_retros
   FOR ALL TO authenticated 
   USING (

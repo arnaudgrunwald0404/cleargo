@@ -21,7 +21,9 @@
 10. [Integrations](#integrations)
 11. [Security & Permissions](#security--permissions)
 12. [Non-Functional Requirements](#non-functional-requirements)
-13. [Future Enhancements](#future-enhancements)
+13. [Delegation](#delegation)
+14. [Epic Watching / My Scope](#epic-watching--my-scope)
+15. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -166,10 +168,12 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 #### 1.1 Epic Portfolio View
 - **Grid/List View**: Display all epics with key metrics
 - **Filtering**: By tier (TIER_1, TIER_2, TIER_3), status, risk level, release, product, pod
+- **My Scope Filter**: Filter to epics the user is watching (epic watches)
 - **Sorting**: By date, risk, readiness score, name
 - **Search**: Full-text search across epic names
 - **Release Grouping**: Group epics by release schedule
 - **Visual Indicators**: Color-coded risk levels, readiness scores, gate status
+- **Epic Watching**: Users can watch/unwatch epics to personalize their view
 
 #### 1.2 Epic Detail Page
 - **Header Information**: Name, product, tier, dates, status, readiness score, risk level
@@ -189,6 +193,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Field Mapping**: Comprehensive mapping from Aha! custom fields
 - **Release Assignment**: Link epics to release schedule
 - **Owner Assignment**: Assign epic owners and decision owners
+- **Product Manager Resolution**: Automatic resolution of product manager based on epic ownership and pod mapping
 
 ### 2. Readiness Matrix
 
@@ -253,6 +258,8 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Archive Releases**: Archive completed releases
 - **Release Dates**: Track planned vs. actual launch dates
 - **Epic Counts**: Show number of epics per release
+- **Aha! Epic Count Caching**: Cache total epic count from Aha! per release to avoid repeated API calls
+- **Count Refresh Tracking**: Track when Aha! epic count was last fetched and cached
 
 #### 3.2 Release Grid View
 - **Visual Grid**: Releases as columns, epics as rows
@@ -271,6 +278,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Benchmark Selection**: PMs select adoption benchmarks matching epic tier (TIER_1, TIER_2, TIER_3)
 - **Metric Mapping**: PMs select 3-7 success metrics to track (adoption, revenue, retention, enablement, friction)
 - **Post-Launch Owner Assignment**: Assign post-launch owner responsible for monitoring
+- **Delegated Post-Launch Owner**: Delegate post-launch owner responsibility to another user (similar to criterion delegation)
 - **Config Locking**: Auto-locks when epic status becomes "GO" (prevents changes except by admins)
 - **Admin Override**: Admins can modify locked configs with audit logging
 
@@ -308,6 +316,91 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
   - Gray: 0 feedback items (no feedback)
 - **Time Window**: Track epics launched within last 180 days
 - **Release Grouping**: Group by release schedule
+
+#### 5.6 Standard Metrics and Benchmarks
+
+The system includes 10 pre-configured success metrics based on industry-standard SaaS metrics for software launches:
+
+**ADOPTION Metrics:**
+1. **Feature Activation Rate** - Percentage of users who activate/use a new feature
+   - Typical benchmarks: 20-40% within 30 days, 40-60% within 90 days
+   - Tier thresholds: TIER_1 (60%), TIER_2 (45%), TIER_3 (25%)
+   - Leading indicator
+
+2. **Time to First Value (TTFV)** - Days until user achieves first meaningful outcome
+   - Typical benchmarks: 1-7 days for simple features, 7-30 days for complex features
+   - Tier thresholds: TIER_1 (max 3 days), TIER_2 (max 7 days), TIER_3 (max 14 days)
+   - Leading indicator
+
+3. **Daily Active Users / Monthly Active Users (DAU/MAU)** - Engagement frequency ratio
+   - Typical benchmarks: 20-40% DAU/MAU ratio indicates strong engagement
+   - Tier thresholds: TIER_1 (40%), TIER_2 (30%), TIER_3 (20%)
+   - Leading indicator
+
+**REVENUE Metrics:**
+4. **Monthly Recurring Revenue (MRR) Growth** - Month-over-month revenue growth
+   - Typical benchmarks: 10%+ MoM for early-stage, 3% MoM for established
+   - Tier thresholds: TIER_1 (10%), TIER_2 (5%), TIER_3 (3%)
+   - Lagging indicator
+
+5. **Net Revenue Retention (NRR)** - Revenue retained from existing customers
+   - Typical benchmarks: 110-120% is strong, 125%+ is world-class
+   - Tier thresholds: TIER_1 (125%), TIER_2 (115%), TIER_3 (110%)
+   - Lagging indicator
+
+6. **Average Revenue Per User (ARPU)** - Average revenue generated per user
+   - Typical benchmarks: Varies by segment; growth indicates pricing success
+   - Tier thresholds: TIER_1 (min $100), TIER_2 (min $50), TIER_3 (min $25)
+   - Lagging indicator
+
+**RETENTION Metrics:**
+7. **Customer Churn Rate** - Percentage of customers who cancel subscriptions
+   - Typical benchmarks: 4-7% annually is healthy
+   - Tier thresholds: TIER_1 (max 4%), TIER_2 (max 6%), TIER_3 (max 7%)
+   - Lagging indicator
+
+8. **Feature Stickiness** - Percentage of users who use feature multiple times
+   - Typical benchmarks: 30-50% return within 7 days indicates stickiness
+   - Tier thresholds: TIER_1 (50%), TIER_2 (40%), TIER_3 (30%)
+   - Leading indicator
+
+**ENABLEMENT Metrics:**
+9. **Onboarding Completion Rate** - Percentage completing setup/onboarding
+   - Typical benchmarks: 60-80% completion indicates good UX
+   - Tier thresholds: TIER_1 (80%), TIER_2 (70%), TIER_3 (60%)
+   - Leading indicator
+
+10. **Support Ticket Volume** - Number of support requests per user per month
+    - Typical benchmarks: <0.1 tickets/user/month is excellent
+    - Tier thresholds: TIER_1 (max 0.05), TIER_2 (max 0.1), TIER_3 (max 0.2)
+    - Leading indicator
+
+**Standard Adoption Benchmarks:**
+
+The system includes default adoption benchmarks for each launch tier based on industry standards:
+
+**TIER_1 (High-Impact Features):**
+- Day 30: 35% activation
+- Day 60: 55% activation
+- Day 90: 65% activation
+- TTFV: 2 days
+- Usage Depth: 3.5-4.5 sessions per week
+
+**TIER_2 (Medium-Impact Features):**
+- Day 30: 25% activation
+- Day 60: 40% activation
+- Day 90: 50% activation
+- TTFV: 5 days
+- Usage Depth: 2.5-3.5 sessions per week
+
+**TIER_3 (Low-Impact/Niche Features):**
+- Day 30: 15% activation
+- Day 60: 25% activation
+- Day 90: 35% activation
+- TTFV: 10 days
+- Usage Depth: 1.5-2.5 sessions per week
+
+These defaults can be customized per epic or feature type, and additional benchmarks can be created for specific use cases.
 
 #### 4.2 Feedback Collection
 - **Feedback Entry**: Manual feedback entry per epic
@@ -416,6 +509,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Email Allowlist**: Configure allowed email domains (default: clearcompany.com)
 - **Fallback User**: Configure fallback Product Ops user
 - **Timezone**: Configure company timezone
+- **Pod Order**: Configure user-defined order of pods for consistent display throughout the app
 - **Aha! Configuration**:
   - Webhook secret
   - Fields to load
@@ -515,8 +609,22 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Delegation Types**: 
   - Decision owner delegation
   - Condition owner delegation
+  - Post-launch owner delegation (for success measurement)
 - **Delegation History**: Track delegation changes
 - **Delegation Notifications**: Notify delegates of assignments
+
+### 14. Epic Watching / My Scope
+
+#### 14.1 Watch Management
+- **Watch/Unwatch Epics**: Users can watch epics to personalize their portfolio view
+- **My Scope Filter**: Filter portfolio view to show only watched epics
+- **Watch Persistence**: Watches persist across sessions
+- **Watch API**: RESTful API endpoints for managing watches (GET, POST, DELETE)
+
+#### 14.2 Watch Functionality
+- **Watch Status**: Check if user is watching a specific epic
+- **Bulk Operations**: Watch/unwatch multiple epics
+- **Watch Indicators**: Visual indicators in UI showing watched status
 
 ---
 
@@ -661,6 +769,8 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - `release_name` (Text, Unique)
 - `launch_date` (Text) - ISO date string
 - `archived` (Boolean, Default: false)
+- `aha_epic_count` (Integer, Nullable) - Cached total number of epics from Aha!
+- `aha_epic_count_updated_at` (Timestamp, Nullable) - When count was last fetched
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -754,6 +864,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - `allowlisted_domains` (Text Array, Default: ["clearcompany.com"])
 - `fallback_user_email` (Text, Default: "agrunwald@clearcompany.com")
 - `timezone` (Text, Default: "America/New_York")
+- `pod_order` (JSONB, Default: []) - Ordered array of pod names for consistent display
 - `aha_webhook_secret` (Text)
 - `aha_webhook_url` (Text)
 - `aha_fields_to_load` (Text Array)
@@ -815,6 +926,111 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - `meeting_id` (UUID, Foreign Key → meeting)
 - `epic_id` (UUID, Foreign Key → epic)
 - `created_at` (Timestamp)
+
+#### Epic Watches
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `user_id` (UUID, Foreign Key → app_user, ON DELETE CASCADE)
+- `created_at` (Timestamp)
+- UNIQUE(epic_id, user_id)
+
+#### Adoption Benchmarks
+- `id` (UUID, Primary Key)
+- `name` (Text)
+- `launch_tier` (Text, CHECK: TIER_1, TIER_2, TIER_3)
+- `feature_type` (Text)
+- `target_persona` (Text)
+- `horizon_days` (Integer Array)
+- `expected_activation` (Numeric Array)
+- `expected_usage_depth` (Numeric Array, Nullable)
+- `expected_ttfv_days` (Integer, Nullable)
+- `segment_modifiers` (JSONB, Nullable)
+- `is_default` (Boolean, Default: false)
+- `version` (Integer, Default: 1)
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
+
+#### Success Metrics
+- `id` (UUID, Primary Key)
+- `name` (Text)
+- `category` (Text, CHECK: ADOPTION, REVENUE, RETENTION, ENABLEMENT, FRICTION)
+- `description` (Text, Nullable)
+- `measurement_type` (Text, CHECK: PERCENTAGE, COUNT, DURATION, BOOLEAN)
+- `source` (Text, CHECK: PENDO, SNOWFLAKE, MANUAL)
+- `pendo_event_id` (Text, Nullable)
+- `leading_or_lagging` (Text, CHECK: LEADING, LAGGING)
+- `thresholds` (JSONB) - Tier-specific thresholds
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
+
+#### Epic Success Configs
+- `epic_id` (UUID, Primary Key, Foreign Key → epic, ON DELETE CASCADE)
+- `benchmark_id` (UUID, Foreign Key → adoption_benchmarks)
+- `post_launch_owner` (UUID, Foreign Key → app_user)
+- `delegated_post_launch_owner_id` (UUID, Foreign Key → app_user, Nullable, ON DELETE SET NULL)
+- `locked` (Boolean, Default: false)
+- `locked_at` (Timestamp, Nullable)
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
+
+#### Epic Success Metrics
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `metric_id` (UUID, Foreign Key → success_metrics, ON DELETE CASCADE)
+- `threshold_override` (JSONB, Nullable)
+- `created_at` (Timestamp)
+- UNIQUE(epic_id, metric_id)
+
+#### Epic Scorecards
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `snapshot_date` (Date)
+- `metric_results` (JSONB)
+- `benchmark_comparison` (JSONB)
+- `overall_status` (Text, CHECK: ON_TRACK, AT_RISK, MISSED)
+- `created_at` (Timestamp)
+- UNIQUE(epic_id, snapshot_date)
+
+#### Epic Retro Placeholders
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `day_marker` (Integer) - T+30, T+60, T+90
+- `due_date` (Date)
+- `submitted_at` (Timestamp, Nullable)
+- `submitted_by` (UUID, Foreign Key → app_user, Nullable)
+- `outcome` (Text, Nullable)
+- `blockers` (Text, Nullable)
+- `assumptions` (Text, Nullable)
+- `action_items` (Text, Nullable)
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
+
+#### Epic Success Reviews
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `reviewed_at` (Timestamp)
+- `reviewed_by` (UUID, Foreign Key → app_user)
+- `created_at` (Timestamp)
+
+#### Pendo Integrations
+- `id` (UUID, Primary Key)
+- `api_key_encrypted` (Text)
+- `environment` (Text, Default: 'prod')
+- `last_sync` (Timestamp, Nullable)
+- `status` (Text, Default: 'disconnected')
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
+
+#### Metric Values
+- `id` (UUID, Primary Key)
+- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
+- `metric_id` (UUID, Foreign Key → success_metrics, ON DELETE CASCADE)
+- `value_date` (Date)
+- `value` (Numeric)
+- `source` (Text, CHECK: PENDO, SNOWFLAKE, MANUAL)
+- `created_by` (UUID, Foreign Key → app_user, Nullable)
+- `created_at` (Timestamp)
+- `updated_at` (Timestamp)
 
 ---
 
@@ -895,6 +1111,15 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 8. User can manually link snippets to criteria
 9. Snippets appear in criterion detail view
 
+### Flow 7: Epic Watching / My Scope
+1. User navigates to Epic Portfolio View
+2. User clicks "Watch" button on an epic
+3. System creates epic_watch record linking user to epic
+4. User applies "My Scope" filter
+5. System filters epics to show only watched epics
+6. User can unwatch epics to remove from scope
+7. Watch status persists across sessions
+
 ---
 
 ## Integrations
@@ -926,6 +1151,19 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Manual Sync**: `/api/integrations/aha/sync` - Sync all or filtered epics
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
+
+### Epic Watching API
+
+#### Watch Management
+- **GET** `/api/epics/[id]/watch` - Check if user is watching an epic
+- **POST** `/api/epics/[id]/watch` - Watch an epic
+- **DELETE** `/api/epics/[id]/watch` - Unwatch an epic
+- **GET** `/api/epics/my-scope` - Get all epics user is watching
+
+### Product Manager API
+
+#### Product Manager Resolution
+- **GET** `/api/epics/[id]/product-manager` - Get product manager user ID for an epic (resolves from epic owner and pod mapping)
 
 ### Slack Integration
 
@@ -1152,6 +1390,6 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 ---
 
 **Document Status**: Complete  
-**Last Updated**: January 2025  
+**Last Updated**: January 2026  
 **Next Review**: As needed
 

@@ -33,7 +33,10 @@ export async function GET(req: NextRequest) {
     
     // Handle case where user doesn't exist in app_user table
     if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'User profile not found. Please contact an administrator to set up your account.' },
+        { status: 403 }
+      );
     }
     if (userError) {
       throw userError;
@@ -78,7 +81,10 @@ export async function PATCH(req: NextRequest) {
     
     // Handle case where user doesn't exist in app_user table
     if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+      return NextResponse.json(
+        { error: 'User profile not found. Please contact an administrator to set up your account.' },
+        { status: 403 }
+      );
     }
     if (userError) {
       throw userError;

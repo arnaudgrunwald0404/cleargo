@@ -33,8 +33,31 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(benchmarks);
   } catch (error: any) {
     console.error('Error fetching benchmarks:', error);
+    console.error('Error stack:', error.stack);
+    console.error('Error name:', error?.name);
+    console.error('Error code:', error?.code);
+    
+    // Parse filters again for error logging
+    try {
+      const { searchParams } = new URL(req.url);
+      const launch_tier = searchParams.get('launch_tier');
+      const feature_type = searchParams.get('feature_type');
+      const is_default = searchParams.get('is_default');
+      console.error('Filters:', { launch_tier, feature_type, is_default });
+    } catch {
+      // Ignore if URL parsing fails
+    }
+    
     return NextResponse.json(
-      { error: 'Failed to fetch benchmarks', details: error.message },
+      { 
+        error: 'Failed to fetch benchmarks', 
+        details: error?.message || 'Unknown error',
+        ...(process.env.NODE_ENV === 'development' && {
+          stack: error?.stack,
+          name: error?.name,
+          code: error?.code
+        })
+      },
       { status: 500 }
     );
   }

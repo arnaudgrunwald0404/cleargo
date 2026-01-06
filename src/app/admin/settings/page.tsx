@@ -35,6 +35,7 @@ export default function AdminSettingsPage() {
     // Pods state for mapping UI
     const [pods, setPods] = useState<string[]>([]);
     const [podsLoading, setPodsLoading] = useState(false);
+    const [draggedPodIndex, setDraggedPodIndex] = useState<number | null>(null);
 
     // User management state
     const [users, setUsers] = useState<any[]>([]);
@@ -49,6 +50,7 @@ export default function AdminSettingsPage() {
     const [activeSection, setActiveSection] = useState<string>("users-users");
     const [integrationsExpanded, setIntegrationsExpanded] = useState<boolean>(false);
     const [userManagementExpanded, setUserManagementExpanded] = useState<boolean>(true);
+    const [successMeasurementExpanded, setSuccessMeasurementExpanded] = useState<boolean>(false);
 
     // Permissions state
     const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -665,6 +667,16 @@ export default function AdminSettingsPage() {
         await autoSaveSettings(updatedSettings);
     };
 
+    const updatePodOrder = async (newOrder: string[]) => {
+        if (!settings) return;
+        const updatedSettings = {
+            ...settings,
+            pod_order: newOrder,
+        };
+        setSettings(updatedSettings);
+        await autoSaveSettings(updatedSettings);
+    };
+
     if (loading) {
         return (
             <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
@@ -925,6 +937,63 @@ export default function AdminSettingsPage() {
                                                 >
                                                     Calendar
                                                 </button>
+                                            </li>
+                                        </ul>
+                                    )}
+                                </li>
+                                <li>
+                                    <button
+                                        onClick={() => {
+                                            const newExpanded = !successMeasurementExpanded;
+                                            setSuccessMeasurementExpanded(newExpanded);
+                                        }}
+                                        className={`w-full text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                                            successMeasurementExpanded
+                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                : "text-gray-700 hover:bg-gray-50"
+                                        }`}
+                                    >
+                                        <span>Success Measurement</span>
+                                        <svg
+                                            className={`w-4 h-4 transition-transform ${successMeasurementExpanded ? "rotate-90" : ""}`}
+                                            fill="none"
+                                            stroke="currentColor"
+                                            viewBox="0 0 24 24"
+                                        >
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                        </svg>
+                                    </button>
+                                    {successMeasurementExpanded && (
+                                        <ul className="ml-4 mt-1 space-y-1">
+                                            <li>
+                                                <Link
+                                                    href="/settings/success-measurement/metrics"
+                                                    className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Metrics
+                                                </Link>
+                                            </li>
+                                            <li>
+                                                <Link
+                                                    href="/settings/success-measurement/benchmarks"
+                                                    className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Adoption Benchmarks
+                                                </Link>
+                                            </li>
+                                            <li>
+                                                <Link
+                                                    href="/settings/success-measurement/pendo"
+                                                    className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                        "text-gray-600 hover:bg-gray-50"
+                                                    }`}
+                                                >
+                                                    Pendo Integration
+                                                </Link>
                                             </li>
                                         </ul>
                                     )}
@@ -1222,6 +1291,7 @@ export default function AdminSettingsPage() {
                                 settings={settings}
                                 setSettings={setSettings}
                                 updatePodMapping={updatePodMapping}
+                                updatePodOrder={updatePodOrder}
                                 handleSave={handleSave}
                                 pods={pods}
                                 podsLoading={podsLoading}
@@ -1231,6 +1301,8 @@ export default function AdminSettingsPage() {
                                 addDomain={addDomain}
                                 removeDomain={removeDomain}
                                 activeSubSection={activeSection.replace("users-", "")}
+                                draggedPodIndex={draggedPodIndex}
+                                setDraggedPodIndex={setDraggedPodIndex}
                             />
                         )}
 

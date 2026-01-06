@@ -51,8 +51,8 @@ as $$
         'label', c.label,
         'category', c.category
       ) as criterion
-    from launch_criterion_status lcs
-    join epic la on la.id = lcs.launch_id
+    from epic_criterion_status lcs
+    join epic la on la.id = lcs.epic_id
     join criterion c on c.id = lcs.criterion_id
   )
   select id, status, condition, condition_due_date, last_updated_at, launch, criterion

@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { Card, Title, Text, Box, Tooltip } from '@mantine/core';
 import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
+import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
+import { ScopeFilterBanner } from './ScopeFilterBanner';
 
 interface Release {
   id: number;
@@ -18,6 +20,7 @@ interface EpicReleaseGridProps {
 }
 
 export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
+  const { scope, isMyScope } = useEpicScope();
   const [releases, setReleases] = useState<Release[]>([]);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(true);
@@ -25,9 +28,10 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
   useEffect(() => {
     async function fetchData() {
       try {
+        const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
         const [releasesRes, epicsRes] = await Promise.all([
           fetch('/api/releases', { credentials: 'include' }),
-          fetch('/api/epics', { credentials: 'include' }),
+          fetch(endpoint, { credentials: 'include' }),
         ]);
 
         if (releasesRes.ok) {
@@ -47,7 +51,7 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
     }
 
     fetchData();
-  }, []);
+  }, [scope]);
 
   // Extract release name from epic's aha_fields
   const getReleaseName = (epic: Epic): string | null => {
@@ -180,7 +184,9 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
   }
 
   return (
-    <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
+    <>
+      <ScopeFilterBanner />
+      <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
       <Title order={3} className="mb-12" style={{ 
         fontFamily: 'var(--font-heading)',
         color: 'var(--color-gray-900)',
@@ -387,6 +393,7 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
         </div>
       </Box>
     </Card>
+    </>
   );
 }
 

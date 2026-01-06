@@ -65,7 +65,7 @@ export function SignOut(props: React.ComponentPropsWithRef<"button">) {
         try {
             await fetch('/auth/signout', { method: 'POST', credentials: 'include' });
         } finally {
-            window.location.href = '/';
+            window.location.href = '/login';
         }
     };
 

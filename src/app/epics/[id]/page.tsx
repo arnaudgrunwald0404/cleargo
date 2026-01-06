@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -8,7 +8,7 @@ import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
+import { IconInfoCircle, IconUsers, IconEye, IconEyeOff } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
@@ -56,6 +56,8 @@ export default function EpicDetailPage() {
     const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [isWatching, setIsWatching] = useState<boolean | null>(null);
+    const [watchLoading, setWatchLoading] = useState(false);
     
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -171,6 +173,20 @@ export default function EpicDetailPage() {
             }
             const data = await epicRes.json();
             setEpic(data);
+
+            // Fetch watch status if user is authenticated
+            if (user?.email && id) {
+                try {
+                    const watchRes = await fetch(`/api/epics/${id}/watch`);
+                    if (watchRes.ok) {
+                        const watchData = await watchRes.json();
+                        setIsWatching(watchData.isWatching || false);
+                    }
+                } catch (err) {
+                    console.warn('Failed to fetch watch status:', err);
+                    setIsWatching(false);
+                }
+            }
 
             // Process settings once (used for both threshold and pod mapping)
             let settings: any = {};
@@ -615,8 +631,9 @@ export default function EpicDetailPage() {
                         batchSize: 5,
                         batchDelay: 200,
                         maxRetries: 1,
-                    }).then((results) => {
-                        results.forEach(({ url, response, error }, index) => {
+                    }).then(async (results) => {
+                        // Process all comment responses first (without updating state)
+                        const commentPromises = results.map(async ({ url, response, error }, index) => {
                             const itemId = realItemIds[index];
                             
                             if (error || !response) {
@@ -626,7 +643,8 @@ export default function EpicDetailPage() {
                             }
 
                             if (response.ok) {
-                                response.json().then((comments: any[]) => {
+                                try {
+                                    const comments = await response.json();
                                     const lastComment = comments && comments.length > 0 
                                         ? comments[comments.length - 1] 
                                         : null;
@@ -638,25 +656,19 @@ export default function EpicDetailPage() {
                                             created_by: lastComment.created_by,
                                         } : undefined,
                                     };
-                                    // Update matrix with new comment data
-                                    setMatrix(prevMatrix => prevMatrix.map((item: any) => {
-                                        const commentsInfo = commentsData[item.id] || { count: 0 };
-                                        return {
-                                            ...item,
-                                            commentCount: commentsInfo.count,
-                                            lastComment: commentsInfo.lastComment,
-                                        };
-                                    }));
-                                }).catch((e) => {
+                                } catch (e) {
                                     console.warn(`Failed to parse comments for ${itemId}:`, e);
                                     commentsData[itemId] = { count: 0 };
-                                });
+                                }
                             } else {
                                 commentsData[itemId] = { count: 0 };
                             }
                         });
                         
-                        // Final update of matrix with all comment data
+                        // Wait for all comment processing to complete
+                        await Promise.all(commentPromises);
+                        
+                        // Single batch update of matrix with all comment data
                         setMatrix(prevMatrix => prevMatrix.map((item: any) => {
                             const commentsInfo = commentsData[item.id] || { count: 0 };
                             return {
@@ -701,8 +713,9 @@ export default function EpicDetailPage() {
                             batchSize: 5,
                             batchDelay: 200,
                             maxRetries: 1,
-                        }).then((results) => {
-                            results.forEach(({ url, response, error }, index) => {
+                        }).then(async (results) => {
+                            // Process all attachment responses first (without updating state)
+                            const attachmentPromises = results.map(async ({ url, response, error }, index) => {
                                 const itemId = attachmentItemIds[index];
                                 const requestKey = `${id}-${itemId}`;
                                 
@@ -721,17 +734,13 @@ export default function EpicDetailPage() {
                                 }
 
                                 if (response.ok) {
-                                    response.json().then((attachments: any[]) => {
+                                    try {
+                                        const attachments = await response.json();
                                         attachmentsData[itemId] = attachments?.length || 0;
-                                        // Update matrix with new attachment data
-                                        setMatrix(prevMatrix => prevMatrix.map((item: any) => ({
-                                            ...item,
-                                            attachmentCount: attachmentsData[item.id] || 0,
-                                        })));
-                                    }).catch((e) => {
+                                    } catch (e) {
                                         console.warn(`Failed to parse attachments for ${itemId}:`, e);
                                         attachmentsData[itemId] = 0;
-                                    });
+                                    }
                                 } else if (response.status === 500) {
                                     // Don't retry 500 errors - mark as failed
                                     failedAttachmentRequestsRef.current.add(requestKey);
@@ -744,7 +753,10 @@ export default function EpicDetailPage() {
                                 }
                             });
                             
-                            // Final update of matrix with all attachment data
+                            // Wait for all attachment processing to complete
+                            await Promise.all(attachmentPromises);
+                            
+                            // Single batch update of matrix with all attachment data
                             setMatrix(prevMatrix => prevMatrix.map((item: any) => ({
                                 ...item,
                                 attachmentCount: attachmentsData[item.id] || 0,
@@ -909,7 +921,7 @@ export default function EpicDetailPage() {
         }
     }, [id]);
 
-    const fetchSuccessData = async () => {
+    const fetchSuccessData = useCallback(async () => {
         if (!id) return;
         setLoadingSuccessData(true);
         try {
@@ -923,7 +935,20 @@ export default function EpicDetailPage() {
                 const configData = await configRes.json();
                 setSuccessConfig(configData);
             } else if (configRes.status !== 404) {
-                console.error('Error fetching success config:', configRes.statusText);
+                let errorDetails = configRes.statusText;
+                try {
+                    const errorData = await configRes.json();
+                    errorDetails = errorData.details || errorData.error || configRes.statusText;
+                    console.error('Error fetching success config:', errorDetails);
+                    if (errorData.stack && process.env.NODE_ENV === 'development') {
+                        console.error('Error stack:', errorData.stack);
+                    }
+                    if (errorData.code && process.env.NODE_ENV === 'development') {
+                        console.error('Error code:', errorData.code);
+                    }
+                } catch {
+                    console.error('Error fetching success config:', configRes.statusText);
+                }
             } else {
                 setSuccessConfig(null);
             }
@@ -932,7 +957,17 @@ export default function EpicDetailPage() {
                 const metricsData = await metricsRes.json();
                 setSuccessMetrics(Array.isArray(metricsData) ? metricsData : []);
             } else {
-                console.error('Error fetching success metrics:', metricsRes.statusText);
+                let errorDetails = metricsRes.statusText;
+                try {
+                    const errorData = await metricsRes.json();
+                    errorDetails = errorData.details || errorData.error || metricsRes.statusText;
+                    console.error('Error fetching success metrics:', errorDetails);
+                    if (errorData.stack && process.env.NODE_ENV === 'development') {
+                        console.error('Error stack:', errorData.stack);
+                    }
+                } catch {
+                    console.error('Error fetching success metrics:', metricsRes.statusText);
+                }
                 setSuccessMetrics([]);
             }
 
@@ -957,14 +992,24 @@ export default function EpicDetailPage() {
         } finally {
             setLoadingSuccessData(false);
         }
-    };
+    }, [id]);
+
+    // Track the last epic ID we fetched success data for to prevent infinite loops
+    const lastFetchedEpicIdRef = useRef<string | null>(null);
+    const epicIdString = useMemo(() => epic?.id ? String(epic.id) : null, [epic?.id]);
 
     useEffect(() => {
-        if (id && epic) {
+        // Reset ref when route id changes (new epic loaded)
+        lastFetchedEpicIdRef.current = null;
+    }, [id]);
+
+    useEffect(() => {
+        // Only fetch if we have both id and epic, and the epic ID has actually changed (string comparison)
+        if (id && epicIdString && epicIdString !== lastFetchedEpicIdRef.current) {
+            lastFetchedEpicIdRef.current = epicIdString;
             fetchSuccessData();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [id, epic?.id]);
+    }, [id, epicIdString]);
 
     useEffect(() => {
         if (id) {
@@ -1176,14 +1221,14 @@ export default function EpicDetailPage() {
                     >← Back to Epics</Link>
                 </div>
 
-            <div className="flex justify-between items-start mb-4">
+            <div className="flex justify-between items-center mb-4">
                     <div className="flex-1">
                         <h1 style={{
                           fontFamily: 'var(--font-heading)',
                           fontSize: 'var(--font-size-page-title)',
                           fontWeight: 'var(--font-weight-bold)',
                           color: 'var(--color-gray-900)',
-                          marginBottom: 'var(--spacing-2)'
+                          marginBottom: 0
                         }}>{epic.name}</h1>
                         <div className="flex gap-2 items-center flex-wrap">
                         {pmOwner && pmOwner.email && (
@@ -1249,11 +1294,59 @@ export default function EpicDetailPage() {
                            
                         </div>
                     </div>
-                    <div className="ml-6 flex-shrink-0">
+                    <div className="ml-6 flex-shrink-0" style={{ alignSelf: 'center' }}>
                         <div style={{ 
                             display: 'flex', 
-                            gap: 'var(--spacing-2)'
+                            gap: 'var(--spacing-2)',
+                            alignItems: 'center'
                         }}>
+                            {currentUserEmail && (
+                                <Button
+                                    size="xs"
+                                    variant={isWatching ? "filled" : "outline"}
+                                    loading={watchLoading}
+                                    onClick={async () => {
+                                        if (!id) return;
+                                        setWatchLoading(true);
+                                        try {
+                                            const method = isWatching ? 'DELETE' : 'POST';
+                                            const res = await fetch(`/api/epics/${id}/watch`, {
+                                                method,
+                                            });
+                                            if (res.ok) {
+                                                const data = await res.json();
+                                                setIsWatching(data.isWatching || !isWatching);
+                                                notifications.show({
+                                                    title: isWatching ? 'Unwatched' : 'Watching',
+                                                    message: isWatching 
+                                                        ? 'Epic removed from your watch list' 
+                                                        : 'Epic added to your watch list',
+                                                    color: 'blue',
+                                                });
+                                            } else {
+                                                throw new Error('Failed to update watch status');
+                                            }
+                                        } catch (err: any) {
+                                            notifications.show({
+                                                title: 'Error',
+                                                message: err?.message || 'Failed to update watch status',
+                                                color: 'red',
+                                            });
+                                        } finally {
+                                            setWatchLoading(false);
+                                        }
+                                    }}
+                                    leftSection={<IconEye size={14} />}
+                                    styles={{
+                                        root: {
+                                            fontFamily: 'var(--font-body)',
+                                            fontSize: 'var(--font-size-sm)'
+                                        }
+                                    }}
+                                >
+                                    {isWatching ? 'Watching' : 'Watch'}
+                                </Button>
+                            )}
                             <Button 
                                 size="xs" 
                                 variant={showFieldsSidebar ? "filled" : "outline"}
@@ -1477,25 +1570,6 @@ export default function EpicDetailPage() {
                 styles={{
                     list: {
                         display: 'none'
-                    },
-                    tab: {
-                        fontFamily: 'var(--font-body)',
-                        fontSize: 'var(--font-size-base)',
-                        fontWeight: 'var(--font-weight-medium)',
-                        color: 'var(--color-gray-900)',
-                        padding: 'var(--spacing-2) var(--spacing-3)',
-                        borderRadius: 'var(--radius-base)',
-                        transition: 'var(--transition-base)',
-                        backgroundColor: 'var(--color-white)',
-                        '&[data-active]': {
-                            backgroundColor: 'var(--color-gray-200)',
-                            color: 'var(--color-gray-900)',
-                            fontWeight: 'var(--font-weight-medium)'
-                        },
-                        '&:hover:not([data-active])': {
-                            backgroundColor: 'var(--color-gray-100)',
-                            color: 'var(--color-gray-900)'
-                        }
                     }
                 }}
             >
@@ -1687,25 +1761,17 @@ export default function EpicDetailPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="adoption" pt="md">
-                    <Stack gap="md">
-                        <SuccessConfigSection
-                            epicId={epic.id}
-                            epicName={epic.name}
-                            epicTier={epic.tier}
-                            config={successConfig}
-                            isAdmin={isAdmin}
-                            onRefresh={fetchSuccessData}
-                            epicOwnerId={epic.owner_id}
-                            pmOwner={pmOwner}
-                        />
-                        <EpicMetricsManager
-                            epicId={epic.id}
-                            metrics={successMetrics}
-                            isAdmin={isAdmin}
-                            configLocked={successConfig?.locked || false}
-                            onRefresh={fetchSuccessData}
-                        />
-                    </Stack>
+                    <SuccessConfigSection
+                        epicId={epic.id}
+                        epicName={epic.name}
+                        epicTier={epic.tier}
+                        config={successConfig}
+                        metrics={successMetrics}
+                        isAdmin={isAdmin}
+                        onRefresh={fetchSuccessData}
+                        epicOwnerId={epic.owner_id}
+                        pmOwner={pmOwner}
+                    />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="scorecard" pt="md">

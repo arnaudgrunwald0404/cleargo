@@ -65,6 +65,42 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       if (res.ok) {
         const data = await res.json();
         setScorecards(Array.isArray(data) ? data : []);
+        
+        // Auto-generate scorecard for today if none exists and config/metrics are set
+        const today = new Date().toISOString().split('T')[0];
+        const hasTodayScorecard = Array.isArray(data) && data.some((sc: any) => sc.snapshot_date === today);
+        
+        if (!hasTodayScorecard && (isAdmin || isPM)) {
+          try {
+            // Check if config exists before attempting generation
+            const configRes = await fetchWithRateLimit(`/api/epics/${epicId}/success/config`, {
+              maxRetries: 1,
+            });
+            if (configRes.ok) {
+              const config = await configRes.json();
+              if (config && config.benchmark_id) {
+                // Silently attempt to generate scorecard for today
+                await fetch(`/api/epics/${epicId}/success/scorecards`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ snapshot_date: today }),
+                }).catch((err) => {
+                  // Silently fail - user can manually generate if needed
+                  console.warn('Auto-generation of scorecard failed:', err);
+                });
+                
+                // Refresh scorecards after generation attempt
+                setTimeout(() => {
+                  fetchScorecards();
+                }, 1000);
+              }
+            }
+          } catch (error) {
+            // Silently fail auto-generation
+            console.warn('Error checking config for auto-generation:', error);
+          }
+        }
+        
         // Auto-select most recent if available
         if (data && data.length > 0 && !selectedDate) {
           setSelectedDate(data[0].snapshot_date);

@@ -1,8 +1,8 @@
 "use client";
 import { PurpleLoader } from '../../PurpleLoader';
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Drawer, Stack, Group, TextInput, MultiSelect, Checkbox, Button } from "@mantine/core";
-import { IconTrash, IconMail, IconPencil } from "@tabler/icons-react";
+import { IconTrash, IconMail, IconPencil, IconGripVertical } from "@tabler/icons-react";
 import type { AppSettings } from "@/lib/settings-db";
 import { ROLES } from "@/lib/constants/settings";
 
@@ -34,6 +34,7 @@ type Props = {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
   updatePodMapping: (pod: string, userEmail: string | null) => Promise<void>;
+  updatePodOrder: (newOrder: string[]) => Promise<void>;
   handleSave: (e: React.FormEvent) => Promise<void>;
   pods: string[];
   podsLoading: boolean;
@@ -43,6 +44,8 @@ type Props = {
   addDomain: () => void;
   removeDomain: (domain: string) => void;
   activeSubSection?: string;
+  draggedPodIndex: number | null;
+  setDraggedPodIndex: (index: number | null) => void;
 };
 
 export default function UserManagementSection(props: Props) {
@@ -63,6 +66,7 @@ export default function UserManagementSection(props: Props) {
     settings,
     setSettings,
     updatePodMapping,
+    updatePodOrder,
     handleSave,
     pods,
     podsLoading,
@@ -72,6 +76,8 @@ export default function UserManagementSection(props: Props) {
     addDomain,
     removeDomain,
     activeSubSection = "users",
+    draggedPodIndex,
+    setDraggedPodIndex,
   } = props;
 
   const [newUser, setNewUser] = useState({ email: "", first_name: "", last_name: "", roles: [] as string[], is_active: true });
@@ -366,7 +372,7 @@ export default function UserManagementSection(props: Props) {
             {/* Pod → Product Manager Mapping */}
             <div className="mb-4">
               <h3 className="text-md font-semibold text-gray-900">Pod → Product Manager Mapping</h3>
-              <p className="text-sm text-gray-500">Map pod names to product managers for criteria resolution</p>
+              <p className="text-sm text-gray-500">Map pod names to product managers for criteria resolution. Drag and drop to reorder pods (this order will be used throughout the app).</p>
             </div>
             <div>
               {podsLoading ? (
@@ -374,48 +380,16 @@ export default function UserManagementSection(props: Props) {
               ) : pods.length === 0 ? (
                 <p className="text-sm text-gray-500 italic">No pods found. Pods will appear here once launches are synced from AHA.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pod</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Manager</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {pods.map((pod: string) => {
-                        const currentMapping = settings.pod_product_manager_mapping || {};
-                        const currentEmail = currentMapping[pod] || "";
-                        return (
-                          <tr key={pod} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="text-sm font-medium text-gray-900">{pod}</span>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <select
-                                value={currentEmail}
-                                onChange={(e) => updatePodMapping(pod, e.target.value || null)}
-                                className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
-                              >
-                                <option value="">— Select Product Manager —</option>
-                                {users
-                                  .filter((u) => u.is_active !== false)
-                                  .map((user) => {
-                                    const displayName = user.first_name || user.last_name ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : user.email;
-                                    return (
-                                      <option key={user.id} value={user.email}>
-                                        {displayName} {user.email !== displayName ? `(${user.email})` : ""}
-                                      </option>
-                                    );
-                                  })}
-                              </select>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <PodMappingTable
+                  pods={pods}
+                  settings={settings}
+                  setSettings={setSettings}
+                  users={users}
+                  updatePodMapping={updatePodMapping}
+                  updatePodOrder={updatePodOrder}
+                  draggedPodIndex={draggedPodIndex}
+                  setDraggedPodIndex={setDraggedPodIndex}
+                />
               )}
             </div>
           </div>
@@ -481,6 +455,167 @@ export default function UserManagementSection(props: Props) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function PodMappingTable({
+  pods,
+  settings,
+  setSettings,
+  users,
+  updatePodMapping,
+  updatePodOrder,
+  draggedPodIndex,
+  setDraggedPodIndex,
+}: {
+  pods: string[];
+  settings: AppSettings;
+  setSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
+  users: User[];
+  updatePodMapping: (pod: string, userEmail: string | null) => Promise<void>;
+  updatePodOrder: (newOrder: string[]) => Promise<void>;
+  draggedPodIndex: number | null;
+  setDraggedPodIndex: (index: number | null) => void;
+}) {
+  const podOrder = settings.pod_order || [];
+  
+  // Sort pods based on saved order, then add any new pods at the end
+  const sortedPods = useMemo(() => {
+    const ordered: string[] = [];
+    const unordered: string[] = [];
+    
+    // First, add pods in the saved order
+    podOrder.forEach(pod => {
+      if (pods.includes(pod)) {
+        ordered.push(pod);
+      }
+    });
+    
+    // Then add any pods not in the order
+    pods.forEach(pod => {
+      if (!podOrder.includes(pod)) {
+        unordered.push(pod);
+      }
+    });
+    
+    return [...ordered, ...unordered];
+  }, [pods, podOrder]);
+
+  const handleDragStart = (index: number) => {
+    setDraggedPodIndex(index);
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.currentTarget.classList.add('opacity-50');
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.currentTarget.classList.remove('opacity-50');
+  };
+
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    e.currentTarget.classList.remove('opacity-50');
+    
+    if (draggedPodIndex === null || draggedPodIndex === dropIndex) {
+      setDraggedPodIndex(null);
+      return;
+    }
+
+    const newOrder = [...sortedPods];
+    const [draggedPod] = newOrder.splice(draggedPodIndex, 1);
+    newOrder.splice(dropIndex, 0, draggedPod);
+
+    // Optimistically update UI
+    const updatedSettings = {
+      ...settings,
+      pod_order: newOrder,
+    };
+    setSettings(updatedSettings);
+
+    // Save to database directly
+    try {
+      await updatePodOrder(newOrder);
+      console.log('Pod order saved successfully:', newOrder);
+    } catch (error: any) {
+      console.error('Failed to save pod order:', error);
+      // Revert on error
+      setSettings(settings);
+      alert(`Failed to save pod order: ${error.message || error}`);
+    }
+
+    setDraggedPodIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedPodIndex(null);
+    // Remove opacity from all rows
+    document.querySelectorAll('.pod-row').forEach(row => {
+      row.classList.remove('opacity-50');
+    });
+  };
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="min-w-full divide-y divide-gray-200">
+        <thead className="bg-gray-50">
+          <tr>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pod</th>
+            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Product Manager</th>
+          </tr>
+        </thead>
+        <tbody className="bg-white divide-y divide-gray-200">
+          {sortedPods.map((pod: string, index: number) => {
+            const currentMapping = settings.pod_product_manager_mapping || {};
+            const currentEmail = currentMapping[pod] || "";
+            const isDragging = draggedPodIndex === index;
+            
+            return (
+              <tr
+                key={pod}
+                className={`pod-row hover:bg-gray-50 transition-colors ${isDragging ? 'opacity-50' : ''}`}
+                draggable
+                onDragStart={() => handleDragStart(index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                style={{ cursor: 'move' }}
+              >
+                <td className="px-6 py-4 whitespace-nowrap w-12">
+                  <IconGripVertical className="w-5 h-5 text-gray-400" />
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <span className="text-sm font-medium text-gray-900">{pod}</span>
+                </td>
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <select
+                    value={currentEmail}
+                    onChange={(e) => updatePodMapping(pod, e.target.value || null)}
+                    className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white text-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">— Select Product Manager —</option>
+                    {users
+                      .filter((u) => u.is_active !== false)
+                      .map((user) => {
+                        const displayName = user.first_name || user.last_name ? `${user.first_name || ""} ${user.last_name || ""}`.trim() : user.email;
+                        return (
+                          <option key={user.id} value={user.email}>
+                            {displayName} {user.email !== displayName ? `(${user.email})` : ""}
+                          </option>
+                        );
+                      })}
+                  </select>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

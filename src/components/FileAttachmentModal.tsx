@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Modal, Button, Group, Text, Stack, FileButton, List, ActionIcon } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
 import { IconPaperclip, IconTrash, IconDownload, IconFile } from '@tabler/icons-react';
@@ -155,10 +155,12 @@ export function FileAttachmentModal({
     return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
-  // Fetch attachments on open
-  if (opened && attachments.length === 0 && !loading) {
-    fetchAttachments();
-  }
+  // Fetch attachments when modal opens
+  useEffect(() => {
+    if (opened) {
+      fetchAttachments();
+    }
+  }, [opened]);
 
   return (
     <Modal

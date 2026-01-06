@@ -34,29 +34,60 @@ export interface BenchmarkFilters {
 
 export async function getBenchmarks(filters?: BenchmarkFilters): Promise<AdoptionBenchmark[]> {
   const supabase = createClient();
-  let query = supabase
-    .from('adoption_benchmarks')
-    .select('*')
-    .order('created_at', { ascending: false });
+  
+  try {
+    let query = supabase
+      .from('adoption_benchmarks')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (filters?.launch_tier) {
-    query = query.eq('launch_tier', filters.launch_tier);
-  }
-  if (filters?.feature_type) {
-    query = query.eq('feature_type', filters.feature_type);
-  }
-  if (filters?.is_default !== undefined) {
-    query = query.eq('is_default', filters.is_default);
-  }
+    if (filters?.launch_tier) {
+      query = query.eq('launch_tier', filters.launch_tier);
+    }
+    if (filters?.feature_type) {
+      query = query.eq('feature_type', filters.feature_type);
+    }
+    if (filters?.is_default !== undefined) {
+      query = query.eq('is_default', filters.is_default);
+    }
 
-  const { data, error } = await query;
+    const { data, error } = await query;
 
-  if (error) {
-    console.error('Error fetching benchmarks:', error);
-    throw new Error(`Failed to fetch benchmarks: ${error.message}`);
+    if (error) {
+      // Check if table doesn't exist (migration not applied)
+      if (error.message?.includes("Could not find the table") || 
+          error.message?.includes("does not exist") ||
+          error.code === '42P01') {
+        console.warn('Table adoption_benchmarks does not exist. Migration may not have been applied.');
+        return []; // Return empty array gracefully
+      }
+      
+      console.error('Error fetching benchmarks:', error);
+      console.error('Error code:', error.code);
+      console.error('Error details:', error.details);
+      console.error('Error hint:', error.hint);
+      throw new Error(`Failed to fetch benchmarks: ${error.message}`);
+    }
+
+    return (data || []) as AdoptionBenchmark[];
+  } catch (err: any) {
+    // Check if table doesn't exist (migration not applied)
+    if (err?.message?.includes("Could not find the table") || 
+        err?.message?.includes("does not exist") ||
+        err?.code === '42P01' ||
+        err?.message?.includes("adoption_benchmarks")) {
+      console.warn('Table adoption_benchmarks does not exist. Migration may not have been applied.');
+      return []; // Return empty array gracefully
+    }
+    
+    // Re-throw if it's already our custom error
+    if (err.message && err.message.includes('Failed to fetch benchmarks')) {
+      throw err;
+    }
+    // Wrap unexpected errors
+    console.error('Unexpected error in getBenchmarks:', err);
+    throw new Error(`Unexpected error fetching benchmarks: ${err?.message || 'Unknown error'}`);
   }
-
-  return (data || []) as AdoptionBenchmark[];
 }
 
 export async function getBenchmarkById(id: string): Promise<AdoptionBenchmark | null> {
@@ -440,26 +471,163 @@ export async function resolveProductManagerUserId(epicId: string): Promise<strin
 
 export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessConfigWithDetails | null> {
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('epic_success_configs')
-    .select(`
-      *,
-      benchmark:adoption_benchmarks(*),
-      post_launch_owner_details:app_user!post_launch_owner(id, email, first_name, last_name, avatar_url),
-      delegated_post_launch_owner_details:app_user!delegated_post_launch_owner_id(id, email, first_name, last_name, avatar_url)
-    `)
-    .eq('epic_id', epicId)
-    .single();
+  
+  try {
+    // Try with relationship syntax first
+    const { data, error } = await supabase
+      .from('epic_success_configs')
+      .select(`
+        *,
+        benchmark:adoption_benchmarks(*),
+        post_launch_owner_details:app_user!post_launch_owner(id, email, first_name, last_name, avatar_url),
+        delegated_post_launch_owner_details:app_user!delegated_post_launch_owner_id(id, email, first_name, last_name, avatar_url)
+      `)
+      .eq('epic_id', epicId)
+      .single();
 
-  if (error) {
-    if (error.code === 'PGRST116') {
-      return null; // Not found
+    if (error) {
+      // If relationship error (PGRST200), fall back to separate queries
+      if (error.code === 'PGRST200' || error.message?.includes('relationship') || error.message?.includes('PGRST200')) {
+        console.warn('Relationship query failed, falling back to separate queries:', error.message);
+        return await getEpicSuccessConfigWithSeparateQueries(epicId);
+      }
+      
+      if (error.code === 'PGRST116') {
+        return null; // Not found
+      }
+      
+      console.error('Error fetching epic success config:', error);
+      console.error('Error details:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+      
+      // Check message for relationship error before throwing
+      if (error.message?.includes('relationship') || error.message?.includes('PGRST200')) {
+        console.warn('Relationship error detected in message, falling back to separate queries');
+        return await getEpicSuccessConfigWithSeparateQueries(epicId);
+      }
+      
+      throw new Error(`Failed to fetch epic success config: ${error.message} (code: ${error.code})`);
     }
-    console.error('Error fetching epic success config:', error);
-    throw new Error(`Failed to fetch epic success config: ${error.message}`);
-  }
 
-  return data as EpicSuccessConfigWithDetails;
+    return data as EpicSuccessConfigWithDetails;
+  } catch (error: any) {
+    // If relationship error in catch block, try fallback
+    const errorMessage = error?.message || '';
+    const errorCode = error?.code || '';
+    
+    if (errorCode === 'PGRST200' || 
+        errorMessage.includes('relationship') || 
+        errorMessage.includes('PGRST200') ||
+        errorMessage.includes('Could not find a relationship')) {
+      console.warn('Relationship error caught in catch block, trying fallback:', errorMessage);
+      try {
+        return await getEpicSuccessConfigWithSeparateQueries(epicId);
+      } catch (fallbackError: any) {
+        console.error('Fallback query also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
+    
+    // Re-throw if it's already our custom error (but check for relationship errors first)
+    if (errorMessage.includes('Failed to fetch epic success config') && 
+        !errorMessage.includes('relationship') && 
+        !errorMessage.includes('PGRST200')) {
+      throw error;
+    }
+    
+    // Wrap unexpected errors
+    console.error('Unexpected error in getEpicSuccessConfig:', error);
+    throw new Error(`Unexpected error fetching epic success config: ${errorMessage || 'Unknown error'}`);
+  }
+}
+
+async function getEpicSuccessConfigWithSeparateQueries(epicId: string): Promise<EpicSuccessConfigWithDetails | null> {
+  const supabase = createClient();
+  
+  try {
+    // Fetch config without relationships
+    const { data: config, error: configError } = await supabase
+      .from('epic_success_configs')
+      .select('*')
+      .eq('epic_id', epicId)
+      .single();
+
+    if (configError) {
+      if (configError.code === 'PGRST116') {
+        return null; // Not found
+      }
+      throw new Error(`Failed to fetch epic success config: ${configError.message}`);
+    }
+
+    if (!config) {
+      return null;
+    }
+
+    // Fetch benchmark separately (non-blocking - if it fails, just don't include it)
+    let benchmark = null;
+    if (config.benchmark_id) {
+      try {
+        const { data: benchmarkData, error: benchmarkError } = await supabase
+          .from('adoption_benchmarks')
+          .select('*')
+          .eq('id', config.benchmark_id)
+          .single();
+        if (!benchmarkError && benchmarkData) {
+          benchmark = benchmarkData;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch benchmark details:', e);
+      }
+    }
+
+    // Fetch post-launch owner details separately (non-blocking)
+    let postLaunchOwnerDetails = null;
+    if (config.post_launch_owner) {
+      try {
+        const { data: ownerData, error: ownerError } = await supabase
+          .from('app_user')
+          .select('id, email, first_name, last_name, avatar_url')
+          .eq('id', config.post_launch_owner)
+          .single();
+        if (!ownerError && ownerData) {
+          postLaunchOwnerDetails = ownerData;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch post-launch owner details:', e);
+      }
+    }
+
+    // Fetch delegated post-launch owner details separately (non-blocking)
+    let delegatedPostLaunchOwnerDetails = null;
+    if (config.delegated_post_launch_owner_id) {
+      try {
+        const { data: delegatedOwnerData, error: delegatedOwnerError } = await supabase
+          .from('app_user')
+          .select('id, email, first_name, last_name, avatar_url')
+          .eq('id', config.delegated_post_launch_owner_id)
+          .single();
+        if (!delegatedOwnerError && delegatedOwnerData) {
+          delegatedPostLaunchOwnerDetails = delegatedOwnerData;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch delegated post-launch owner details:', e);
+      }
+    }
+
+    return {
+      ...config,
+      benchmark: benchmark || undefined,
+      post_launch_owner_details: postLaunchOwnerDetails || undefined,
+      delegated_post_launch_owner_details: delegatedPostLaunchOwnerDetails || undefined,
+    } as EpicSuccessConfigWithDetails;
+  } catch (error: any) {
+    console.error('Error in getEpicSuccessConfigWithSeparateQueries:', error);
+    throw error;
+  }
 }
 
 export async function createEpicSuccessConfig(
@@ -586,6 +754,7 @@ export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccess
   const supabase = createClient();
   
   try {
+    // Try the join query first with explicit foreign key syntax
     const { data, error } = await supabase
       .from('epic_success_metrics')
       .select(`
@@ -596,11 +765,68 @@ export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccess
       .order('created_at', { ascending: true });
 
     if (error) {
-      console.error('Error fetching epic success metrics:', error);
-      console.error('Error code:', error.code);
-      console.error('Error details:', error.details);
-      console.error('Error hint:', error.hint);
-      throw new Error(`Failed to fetch epic success metrics: ${error.message}`);
+      // Check if table doesn't exist (migration not applied)
+      if (error.message?.includes("Could not find the table") || 
+          error.message?.includes("does not exist") ||
+          error.code === '42P01') {
+        console.warn('Table epic_success_metrics does not exist. Migration may not have been applied.');
+        return []; // Return empty array gracefully
+      }
+      
+      // If join fails, try fetching metrics separately as fallback
+      console.warn('Join query failed, trying separate queries. Error:', error.message, 'Code:', error.code);
+      
+      // Fetch epic_success_metrics first
+      const { data: metricsData, error: metricsError } = await supabase
+        .from('epic_success_metrics')
+        .select('*')
+        .eq('epic_id', epicId)
+        .order('created_at', { ascending: true });
+
+      if (metricsError) {
+        // Check if table doesn't exist (migration not applied)
+        if (metricsError.message?.includes("Could not find the table") || 
+            metricsError.message?.includes("does not exist") ||
+            metricsError.code === '42P01') {
+          console.warn('Table epic_success_metrics does not exist. Migration may not have been applied.');
+          return []; // Return empty array gracefully
+        }
+        
+        console.error('Error fetching epic success metrics:', metricsError);
+        console.error('Error code:', metricsError.code);
+        console.error('Error details:', metricsError.details);
+        console.error('Error hint:', metricsError.hint);
+        throw new Error(`Failed to fetch epic success metrics: ${metricsError.message}`);
+      }
+
+      if (!metricsData || metricsData.length === 0) {
+        return [];
+      }
+
+      // Fetch success_metrics for each metric_id
+      const metricIds = metricsData.map(m => m.metric_id);
+      const { data: successMetricsData, error: successMetricsError } = await supabase
+        .from('success_metrics')
+        .select('*')
+        .in('id', metricIds);
+
+      if (successMetricsError) {
+        console.error('Error fetching success metrics:', successMetricsError);
+        // Return metrics without the joined data rather than failing completely
+        return metricsData.map((item: any) => ({
+          ...item,
+          metric: null,
+        })) as EpicSuccessMetricWithDetails[];
+      }
+
+      // Create a map of metric_id -> metric for quick lookup
+      const metricsMap = new Map((successMetricsData || []).map((m: any) => [m.id, m]));
+
+      // Combine the data
+      return metricsData.map((item: any) => ({
+        ...item,
+        metric: metricsMap.get(item.metric_id) || null,
+      })) as EpicSuccessMetricWithDetails[];
     }
 
     // Transform the data to match the expected interface
@@ -610,6 +836,15 @@ export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccess
       metric: item.metric || null,
     })) as EpicSuccessMetricWithDetails[];
   } catch (err: any) {
+    // Check if table doesn't exist (migration not applied)
+    if (err?.message?.includes("Could not find the table") || 
+        err?.message?.includes("does not exist") ||
+        err?.code === '42P01' ||
+        err?.message?.includes("epic_success_metrics")) {
+      console.warn('Table epic_success_metrics does not exist. Migration may not have been applied.');
+      return []; // Return empty array gracefully
+    }
+    
     console.error('Exception in getEpicSuccessMetrics:', err);
     console.error('Exception stack:', err.stack);
     throw err;
@@ -629,6 +864,12 @@ export async function addEpicSuccessMetric(
     .eq('epic_id', epicId);
 
   if (countError) {
+    // Check if table doesn't exist (migration not applied)
+    if (countError.message?.includes("Could not find the table") || 
+        countError.message?.includes("does not exist") ||
+        countError.code === '42P01') {
+      throw new Error('Table epic_success_metrics does not exist. Please apply the migration: 20250104000000_success_measurement_schema.sql');
+    }
     console.error('Error checking metric count:', countError);
     throw new Error(`Failed to check metric count: ${countError.message}`);
   }

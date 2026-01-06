@@ -377,7 +377,7 @@ export default function ReleaseScheduleSection(props: Props) {
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Epics Loaded vs. Total</th>
-                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-900">Actions</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-gray-900"></th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">

@@ -10,7 +10,11 @@ import {
   Group,
   NumberInput,
   Text,
+  Alert,
+  Divider,
 } from '@mantine/core';
+import { IconSparkles, IconInfoCircle } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import type {
   CreateSuccessMetricDTO,
   MetricCategory,
@@ -49,6 +53,9 @@ export function MetricForm({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [naturalLanguageDescription, setNaturalLanguageDescription] = useState('');
+  const [isParsing, setIsParsing] = useState(false);
+  const [parseError, setParseError] = useState<string | null>(null);
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -104,9 +111,107 @@ export function MetricForm({
     });
   };
 
+  const handleParseDescription = async () => {
+    if (!naturalLanguageDescription.trim()) {
+      setParseError('Please enter a description');
+      return;
+    }
+
+    setIsParsing(true);
+    setParseError(null);
+
+    try {
+      const response = await fetch('/api/settings/success-measurement/metrics/parse-description', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ description: naturalLanguageDescription }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to parse description');
+      }
+
+      const { metric } = await response.json();
+      
+      // Update form data with parsed values (use parsed values directly, with fallbacks only for required fields)
+      setFormData({
+        name: metric.name || 'Untitled Metric',
+        category: metric.category || 'ADOPTION',
+        description: metric.description || naturalLanguageDescription,
+        measurement_type: metric.measurement_type || 'PERCENTAGE',
+        source: metric.source || 'MANUAL',
+        pendo_event_id: metric.pendo_event_id ?? null,
+        leading_or_lagging: metric.leading_or_lagging || 'LAGGING',
+        thresholds: metric.thresholds || {
+          TIER_1: {},
+          TIER_2: {},
+          TIER_3: {},
+        },
+      });
+
+      notifications.show({
+        title: 'Description parsed',
+        message: 'The form has been filled with the parsed information. Please review and adjust as needed.',
+        color: 'blue',
+      });
+
+      // Clear the natural language description after successful parse
+      setNaturalLanguageDescription('');
+    } catch (error: any) {
+      console.error('Error parsing description:', error);
+      setParseError(error.message || 'Failed to parse description. Please try again.');
+      notifications.show({
+        title: 'Parse failed',
+        message: error.message || 'Failed to parse description',
+        color: 'red',
+      });
+    } finally {
+      setIsParsing(false);
+    }
+  };
+
+  const isCreating = !initialData || !initialData.name;
+
   return (
     <form onSubmit={handleSubmit}>
       <Stack gap="md">
+        {isCreating && (
+          <>
+            <Alert icon={<IconInfoCircle size={16} />} color="blue" title="Quick Start">
+              Describe your metric in plain English, and we'll automatically fill in the form fields for you.
+            </Alert>
+            
+            <Textarea
+              label="Describe your metric"
+              placeholder="e.g., 'I want to track the percentage of users who complete onboarding within 7 days. This is an adoption metric from Pendo event ID abc123. Target is 80% for tier 1.'"
+              value={naturalLanguageDescription}
+              onChange={(e) => {
+                setNaturalLanguageDescription(e.target.value);
+                setParseError(null);
+              }}
+              minRows={4}
+              error={parseError}
+            />
+            
+            <Group justify="flex-end">
+              <Button
+                type="button"
+                leftSection={<IconSparkles size={16} />}
+                onClick={handleParseDescription}
+                loading={isParsing}
+                disabled={!naturalLanguageDescription.trim()}
+                variant="light"
+              >
+                Parse Description
+              </Button>
+            </Group>
+
+            <Divider label="Or fill in manually" labelPosition="center" />
+          </>
+        )}
         <TextInput
           label="Name"
           required

@@ -3,6 +3,11 @@ import { useState, useEffect, Suspense } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams, useRouter } from "next/navigation";
 import { PurpleLoader } from "@/components/PurpleLoader";
+import { HeroVideo } from "@/components/auth/HeroVideo";
+import { FeatureGrid } from "@/components/auth/FeatureGrid";
+import { TimelineVisualization } from "@/components/auth/TimelineVisualization";
+import { SSOButton } from "@/components/auth/SSOButton";
+import { Container, Title, Text, Stack, Group } from "@mantine/core";
 
 const ALLOWED_DOMAIN = "clearcompany.com";
 
@@ -28,12 +33,22 @@ function LoginForm() {
   const code = searchParams.get("code");
   const redirectTo = searchParams.get("redirect") || "/";
 
-  const [mode, setMode] = useState<"signin" | "signup" | "reset">("signin");
+  const [selectedMethod, setSelectedMethod] = useState<"sso" | "email" | "magic" | null>(null);
+  const [emailFormExpanded, setEmailFormExpanded] = useState(false);
+  const [mode, setMode] = useState<"signin" | "signup" | "reset" | "magic">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+
+  // Pre-fill email from query params
+  useEffect(() => {
+    const emailParam = searchParams.get("email");
+    if (emailParam) {
+      setEmail(emailParam);
+    }
+  }, [searchParams]);
 
   // Handle OAuth code redirect
   useEffect(() => {
@@ -140,6 +155,42 @@ function LoginForm() {
     }
   }
 
+  async function handleMagicLink(e: React.FormEvent) {
+    e.preventDefault();
+    setMessage(null);
+
+    const validation = validateEmail(email);
+    if (!validation.valid) {
+      setMessage({ type: "error", text: validation.error! });
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch("/api/auth/magic-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to send magic link");
+      }
+
+      setMessage({
+        type: "success",
+        text: "Magic link sent! Check your email (including spam folder) and click the link to sign in. The link expires in 30 minutes.",
+      });
+      setEmail(""); // Clear email field for security
+    } catch (err: any) {
+      setMessage({ type: "error", text: err?.message || "Failed to send magic link" });
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setMessage(null);
@@ -171,9 +222,9 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex">
-      {/* Left Panel - Branding */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative overflow-hidden">
+    <div className="min-h-screen flex flex-col lg:flex-row">
+      {/* Left Panel - Marketing Content with Dark Theme (60%) */}
+      <div className="hidden lg:flex lg:w-3/6 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative overflow-y-auto">
         {/* Decorative elements */}
         <div className="absolute inset-0 opacity-30">
           <div className="absolute top-20 left-20 w-72 h-72 bg-indigo-500 rounded-full blur-[128px]" />
@@ -191,7 +242,7 @@ function LoginForm() {
         />
 
         {/* Content */}
-        <div className="relative z-10 flex flex-col justify-center px-16 py-12">
+        <div className="relative z-10 w-full px-12 py-16">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-16">
             <div className="w-12 h-12 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
@@ -201,36 +252,44 @@ function LoginForm() {
             </div>
             <span className="text-3xl font-bold text-white tracking-tight">ClearGO</span>
           </div>
-
-          {/* Tagline */}
-          <h1 className="text-5xl font-bold text-white leading-tight mb-6">
-            Launch with
-            <br />
-            <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              Confidence
-            </span>
-          </h1>
-          
-          <p className="text-xl text-slate-300 leading-relaxed max-w-md mb-12">
-            Your intelligent launch readiness console. Replace spreadsheet chaos with real-time insights and automated gates.
-          </p>
-
-          {/* Feature highlights */}
-          <div className="space-y-4">
-            {[
-              { icon: "📊", text: "Portfolio-wide visibility" },
-              { icon: "🎯", text: "Automated readiness scoring" },
-              { icon: "🔔", text: "Smart alerts & accountability" },
-            ].map((feature, i) => (
-              <div key={i} className="flex items-center gap-3 text-slate-300">
-                <span className="text-xl">{feature.icon}</span>
-                <span className="text-lg">{feature.text}</span>
-              </div>
-            ))}
+     
+          {/* Hero Section */}
+          <div className="mb-16">
+            <Title order={1} style={{ fontSize: '44px', fontWeight: 800, lineHeight: 1.2, color: '#FFFFFF', marginBottom: '24px' }}>
+            Launch with <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+              Confidence.
+              </span>
+            </Title>
+             <div style={{ color: '#CBD5E1', lineHeight: 1.8, marginBottom: '12px', fontSize: '22px' }}>
+               <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                 <li style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                   <span style={{ fontSize: '24px', lineHeight: '1' }}>🎯</span>
+                   <span style={{ fontSize: '18px' }}>Replace static spreadsheets with an intelligent portfolio-wide control tower</span>
+                 </li>
+                  <li style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <span style={{ fontSize: '24px', lineHeight: '1' }}>🤝</span>
+                    <span style={{ fontSize: '18px' }}>Align all stakeholders on a single set of readiness criteria</span>
+                  </li>
+                 <li style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                    <span style={{ fontSize: '24px', lineHeight: '1' }}>🔔</span>
+                    <span style={{ fontSize: '18px' }}>Drive accountability & highlight blockers before it's too late</span>
+                  </li>
+               </ul>
+             </div>
+ 
           </div>
 
+          {/* Hero Video */}
+          <div className="mb-12">
+            <HeroVideo />
+          </div>
+
+         
+
+         
+
           {/* Footer */}
-          <div className="mt-auto pt-12">
+          <div className="mt-auto pt-12 border-t border-slate-700/50">
             <p className="text-sm text-slate-500">
               © {new Date().getFullYear()} ClearCompany. Internal Use Only.
             </p>
@@ -238,191 +297,431 @@ function LoginForm() {
         </div>
       </div>
 
-      {/* Right Panel - Auth Form */}
-      <div className="w-full lg:w-1/2 flex items-center justify-center p-8 bg-white">
-        <div className="w-full max-w-md">
-          {/* Mobile logo */}
-          <div className="lg:hidden flex items-center gap-2 mb-8 justify-center">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <span className="text-2xl font-bold text-gray-900">ClearGO</span>
+      {/* Mobile Marketing Content */}
+      <div className="lg:hidden w-full bg-white">
+        <div className="px-8 py-12">
+          
+
+          {/* Hero Section */}
+          <div className="mb-8 text-center">
+            <Title order={1} style={{ fontSize: '36px', fontWeight: 800, lineHeight: 1.2, color: '#1E3A8A', marginBottom: '16px' }}>
+              Launch with Confidence.{' '}
+              <span style={{ color: '#228BE6' }}>Not Spreadsheets.</span>
+            </Title>
+            <Text size="lg" style={{ color: '#495057', lineHeight: 1.6, marginBottom: '24px' }}>
+              Replace the chaos of static matrices with a living, intelligent control tower.
+            </Text>
           </div>
 
-          {/* Form Header */}
+          {/* Hero Video */}
           <div className="mb-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-2">
-              {mode === "signin" && "Welcome back"}
-              {mode === "signup" && "Create your account"}
-              {mode === "reset" && "Reset your password"}
-            </h2>
-            <p className="text-gray-500">
-              {mode === "signin" && "Sign in to access the launch console"}
-              {mode === "signup" && "Join your team on ClearGO"}
-              {mode === "reset" && "We'll send you a reset link"}
-            </p>
+            <HeroVideo />
           </div>
 
-          {/* Message */}
-          {message && (
-            <div
-              className={`mb-6 p-4 rounded-lg text-sm ${
-                message.type === "error"
-                  ? "bg-red-50 text-red-700 border border-red-200"
-                  : "bg-green-50 text-green-700 border border-green-200"
-              }`}
-            >
-              {message.text}
+          {/* Feature Highlights */}
+          <div className="mb-8">
+            <FeatureGrid />
+          </div>
+        </div>
+      </div>
+
+      {/* Right Panel - Auth Form (40%, Sticky) */}
+      <div className="w-full lg:w-2/4 flex items-center justify-center p-8 bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+        <div className="w-full max-w-md">
+
+          {/* Three Choice Boxes */}
+          {!selectedMethod && (
+            <div className="space-y-4 w-full">
+              {/* Choice 1: Google SSO */}
+              <button
+                onClick={() => {
+                  const redirectTo = `${window.location.origin}/auth/callback`;
+                  supabase.auth.signInWithOAuth({
+                    provider: 'google',
+                    options: {
+                      redirectTo,
+                      queryParams: {
+                        prompt: 'select_account',
+                      },
+                    },
+                  });
+                }}
+                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Log in with Google SSO</h3>
+                    <p className="text-sm text-gray-500">Quick and secure single sign-on</p>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Choice 2: Email and Password */}
+              <button
+                onClick={() => {
+                  setSelectedMethod("email");
+                  setEmailFormExpanded(true);
+                  setMode("signin");
+                }}
+                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Log in with Email and Password</h3>
+                    <p className="text-sm text-gray-500">Sign in with your email and password</p>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+
+              {/* Choice 3: Magic Link */}
+              <button
+                onClick={() => {
+                  setSelectedMethod("magic");
+                  setMode("magic");
+                }}
+                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Send me a Magic Link</h3>
+                    <p className="text-sm text-gray-500">Passwordless sign-in via email</p>
+                  </div>
+                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
             </div>
           )}
 
-          {/* Form */}
-          <form onSubmit={mode === "signin" ? handleSignIn : mode === "signup" ? handleSignUp : handleResetPassword}>
-            <div className="space-y-5">
-              {/* Email */}
-              <div>
-                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Work Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  placeholder="you@clearcompany.com"
-                  className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
-                />
-                <p className="mt-1.5 text-xs text-gray-400">
-                  Only @clearcompany.com addresses allowed
-                </p>
-              </div>
-
-              {/* Password */}
-              {mode !== "reset" && (
-                <div>
-                  <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Password
-                  </label>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
-                  />
-                  {mode === "signup" && (
-                    <p className="mt-1.5 text-xs text-gray-400">
-                      Must be at least 8 characters
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Confirm Password (signup only) */}
-              {mode === "signup" && (
-                <div>
-                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1.5">
-                    Confirm Password
-                  </label>
-                  <input
-                    id="confirmPassword"
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    minLength={8}
-                    placeholder="••••••••"
-                    className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
-                  />
-                </div>
-              )}
-
-              {/* Forgot password link */}
-              {mode === "signin" && (
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => setMode("reset")}
-                    className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-                  >
-                    Forgot password?
-                  </button>
-                </div>
-              )}
-
-              {/* Submit button */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
-              >
-                {loading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Please wait...
-                  </span>
-                ) : (
-                  <>
-                    {mode === "signin" && "Sign in"}
-                    {mode === "signup" && "Create account"}
-                    {mode === "reset" && "Send reset link"}
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          {/* Mode toggle */}
-          <div className="mt-8 text-center">
-            {mode === "signin" && (
-              <p className="text-gray-600">
-                Don&apos;t have an account?{" "}
+          {/* Email/Password Form - Expanded */}
+          {selectedMethod === "email" && emailFormExpanded && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-gray-900">
+                  {mode === "signin" && "Welcome back"}
+                  {mode === "signup" && "Create your account"}
+                  {mode === "reset" && "Reset your password"}
+                </h2>
                 <button
                   onClick={() => {
-                    setMode("signup");
+                    setSelectedMethod(null);
+                    setEmailFormExpanded(false);
                     setMessage(null);
                   }}
-                  className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  Sign up
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-              </p>
-            )}
-            {mode === "signup" && (
-              <p className="text-gray-600">
-                Already have an account?{" "}
+              </div>
+
+              {/* Message */}
+              {message && (
+                <div
+                  className={`p-4 rounded-lg text-sm ${
+                    message.type === "error"
+                      ? "bg-red-50 text-red-700 border border-red-200"
+                      : "bg-green-50 text-green-700 border border-green-200"
+                  }`}
+                >
+                  {message.text}
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={
+                mode === "signin" ? handleSignIn : 
+                mode === "signup" ? handleSignUp : 
+                handleResetPassword
+              }>
+                <div className="space-y-5">
+                  {/* Email */}
+                  <div>
+                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Work Email
+                    </label>
+                    <input
+                      id="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      placeholder="you@clearcompany.com"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                    />
+                    <p className="mt-1.5 text-xs text-gray-400">
+                      Only @clearcompany.com addresses allowed
+                    </p>
+                  </div>
+
+                  {/* Password */}
+                  {mode !== "reset" && (
+                    <div>
+                      <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Password
+                      </label>
+                      <input
+                        id="password"
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        placeholder="••••••••"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                      />
+                      {mode === "signup" && (
+                        <p className="mt-1.5 text-xs text-gray-400">
+                          Must be at least 8 characters
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Confirm Password (signup only) */}
+                  {mode === "signup" && (
+                    <div>
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1.5">
+                        Confirm Password
+                      </label>
+                      <input
+                        id="confirmPassword"
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        required
+                        minLength={8}
+                        placeholder="••••••••"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                      />
+                    </div>
+                  )}
+
+                  {/* Forgot password / Magic link toggle (signin only) */}
+                  {mode === "signin" && (
+                    <div className="flex justify-between items-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedMethod("magic");
+                          setEmailFormExpanded(false);
+                          setMode("magic");
+                          setMessage(null);
+                        }}
+                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                      >
+                        Send me a magic link
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("reset");
+                          setMessage(null);
+                        }}
+                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                      >
+                        Forgot password?
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Submit button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Please wait...
+                      </span>
+                    ) : (
+                      <>
+                        {mode === "signin" && "Sign in"}
+                        {mode === "signup" && "Create account"}
+                        {mode === "reset" && "Send reset link"}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* Mode toggle */}
+              <div className="mt-6 text-center">
+                {mode === "signin" && (
+                  <p className="text-gray-600">
+                    Don&apos;t have an account?{" "}
+                    <button
+                      onClick={() => {
+                        setMode("signup");
+                        setMessage(null);
+                      }}
+                      className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                    >
+                      Sign up
+                    </button>
+                  </p>
+                )}
+                {mode === "signup" && (
+                  <p className="text-gray-600">
+                    Already have an account?{" "}
+                    <button
+                      onClick={() => {
+                        setMode("signin");
+                        setMessage(null);
+                      }}
+                      className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                    >
+                      Sign in
+                    </button>
+                  </p>
+                )}
+                {mode === "reset" && (
+                  <button
+                    onClick={() => {
+                      setMode("signin");
+                      setMessage(null);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                  >
+                    ← Back to sign in
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Magic Link Form */}
+          {selectedMethod === "magic" && (
+            <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Launch with Magic Link</h2>
+                  <p className="text-gray-500">
+                    Enter your email and we'll send you a secure, passwordless sign-in link. No password needed!
+                  </p>
+                </div>
                 <button
                   onClick={() => {
+                    setSelectedMethod(null);
                     setMode("signin");
                     setMessage(null);
                   }}
-                  className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                  className="text-gray-400 hover:text-gray-600 transition-colors"
                 >
-                  Sign in
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
                 </button>
-              </p>
-            )}
-            {mode === "reset" && (
-              <button
-                onClick={() => {
-                  setMode("signin");
-                  setMessage(null);
-                }}
-                className="text-indigo-600 hover:text-indigo-700 font-semibold"
-              >
-                ← Back to sign in
-              </button>
-            )}
-          </div>
+              </div>
+
+              {/* Message */}
+              {message && (
+                <div
+                  className={`p-4 rounded-lg text-sm ${
+                    message.type === "error"
+                      ? "bg-red-50 text-red-700 border border-red-200"
+                      : "bg-green-50 text-green-700 border border-green-200"
+                  }`}
+                >
+                  {message.text}
+                </div>
+              )}
+
+              {/* Form */}
+              <form onSubmit={handleMagicLink}>
+                <div className="space-y-5">
+                  {/* Email */}
+                  <div>
+                    <label htmlFor="magic-email" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      Work Email
+                    </label>
+                    <input
+                      id="magic-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      placeholder="you@clearcompany.com"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                    />
+                    <p className="mt-1.5 text-xs text-gray-400">
+                      Only @clearcompany.com addresses allowed
+                    </p>
+                  </div>
+
+                  {/* Submit button */}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
+                  >
+                    {loading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Please wait...
+                      </span>
+                    ) : (
+                      "Send magic link"
+                    )}
+                  </button>
+                </div>
+              </form>
+
+              {/* Back to choices */}
+              <div className="mt-6 text-center">
+                <p className="text-gray-600">
+                  Prefer to use a password?{" "}
+                  <button
+                    onClick={() => {
+                      setSelectedMethod("email");
+                      setEmailFormExpanded(true);
+                      setMode("signin");
+                      setMessage(null);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                  >
+                    Sign in with password
+                  </button>
+                </p>
+                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <p className="text-xs text-blue-800">
+                    <strong>💡 Tip:</strong> Magic links are faster and more secure. Check your email (including spam) after clicking send.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

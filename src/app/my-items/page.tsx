@@ -284,7 +284,7 @@ export default function MyItemsPage() {
                                     fontFamily: 'var(--font-body)',
                                     width: '96px',
                                     borderBottom: `1px solid var(--color-blue-200)`
-                                }}>Action</th>
+                                }}></th>
                             </tr>
                         </thead>
                         <tbody style={{ backgroundColor: 'var(--color-white)' }}>

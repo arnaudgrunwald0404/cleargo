@@ -72,6 +72,19 @@ export async function PATCH(
     }
 
     const mapping = await updateEpicSuccessMetric(epicId, metricId, parsed.data.threshold_override || null);
+
+    // Auto-generate scorecards for benchmark horizon days if epic is launched and has config
+    try {
+      const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
+        await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
+        // Log but don't fail the request if scorecard generation fails
+        console.warn('Failed to auto-generate scorecards after metric update:', err);
+      });
+    } catch (error) {
+      // Ignore scorecard generation errors - metric update should still succeed
+      console.warn('Error attempting to auto-generate scorecards:', error);
+    }
+
     return NextResponse.json(mapping);
   } catch (error: any) {
     console.error('Error updating epic success metric:', error);

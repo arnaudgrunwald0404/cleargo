@@ -62,7 +62,31 @@ export async function GET(request: NextRequest) {
 
         if (error) {
             console.error("Error fetching releases:", error);
+            // If error is about missing aha_epic_count column, still return data (migration not run yet)
+            if (error.message && error.message.includes("aha_epic_count") && error.message.includes("does not exist")) {
+                console.warn("aha_epic_count column does not exist yet - migration may not have been run");
+                // Try to fetch without the problematic column by selecting specific columns
+                const fallbackQuery = supabase
+                    .from("release_schedule")
+                    .select("id, release_name, launch_date, archived, created_at, updated_at");
+                if (!includeArchived) {
+                    fallbackQuery.eq("archived", false);
+                }
+                const fallbackResult = await fallbackQuery.order("launch_date", { ascending: true });
+                if (!fallbackResult.error) {
+                    return NextResponse.json(fallbackResult.data || []);
+                }
+            }
             return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        // Log first release to debug aha_epic_count field
+        if (data && data.length > 0 && process.env.NODE_ENV === 'development') {
+            console.log("Sample release data:", {
+                release_name: data[0].release_name,
+                has_aha_epic_count: 'aha_epic_count' in data[0],
+                aha_epic_count: data[0].aha_epic_count
+            });
         }
 
         return NextResponse.json(data || []);

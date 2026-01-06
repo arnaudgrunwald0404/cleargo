@@ -29,6 +29,12 @@ export async function GET(
   } catch (error: any) {
     console.error('Error fetching epic success metrics:', error);
     console.error('Error stack:', error.stack);
+    try {
+      const { id: epicId } = await params;
+      console.error('Epic ID:', epicId);
+    } catch {
+      // Ignore if params can't be accessed
+    }
     return NextResponse.json(
       { 
         error: 'Failed to fetch success metrics', 
@@ -107,6 +113,19 @@ export async function POST(
     }
 
     const mapping = await addEpicSuccessMetric(epicId, parsed.data);
+
+    // Auto-generate scorecards for benchmark horizon days if epic is launched and has config
+    try {
+      const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
+        await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
+        // Log but don't fail the request if scorecard generation fails
+        console.warn('Failed to auto-generate scorecards after metric addition:', err);
+      });
+    } catch (error) {
+      // Ignore scorecard generation errors - metric addition should still succeed
+      console.warn('Error attempting to auto-generate scorecards:', error);
+    }
+
     return NextResponse.json(mapping, { status: 201 });
   } catch (error: any) {
     console.error('Error adding epic success metric:', error);

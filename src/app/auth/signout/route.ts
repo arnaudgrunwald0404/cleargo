@@ -40,7 +40,7 @@ async function doSignOut(request: NextRequest) {
   await supabase.auth.signOut()
 
   // Build a redirect after signout so cookies are cleared on the response actually sent to the browser
-  const redirectTo = new URL('/', request.url)
+  const redirectTo = new URL('/login', request.url)
   const redirectResponse = NextResponse.redirect(redirectTo)
   const cookieDomain = request.headers.get('host')?.split(':')[0] || undefined
   storedCookies.forEach(({ name, value, options }) => {

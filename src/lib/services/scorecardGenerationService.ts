@@ -120,3 +120,65 @@ export async function generateScorecardsForToday(): Promise<ScorecardGenerationR
   return await generateScorecardsForDate(today);
 }
 
+/**
+ * Generate scorecards for benchmark horizon days if epic is launched
+ * This generates scorecards for the days specified in the benchmark's horizon_days array
+ */
+export async function generateScorecardsForBenchmarkHorizons(
+  epicId: string
+): Promise<ScorecardGenerationResult[]> {
+  try {
+    const { getEpicSuccessConfig } = await import('./successMeasurementService');
+    const { getEpic } = await import('@/lib/epics');
+    
+    const config = await getEpicSuccessConfig(epicId);
+    const epic = await getEpic(epicId);
+    
+    if (!config || !config.benchmark || !epic || !epic.target_launch_date) {
+      return [];
+    }
+
+    // Only generate for launched epics
+    if (epic.status !== 'LAUNCHED' && epic.status !== 'POST_LAUNCH') {
+      return [];
+    }
+
+    const benchmark = config.benchmark;
+    const launchDate = new Date(epic.target_launch_date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    launchDate.setHours(0, 0, 0, 0);
+
+    const results: ScorecardGenerationResult[] = [];
+
+    // Generate scorecards for each horizon day that has passed
+    for (const horizonDay of benchmark.horizon_days) {
+      const horizonDate = new Date(launchDate);
+      horizonDate.setDate(horizonDate.getDate() + horizonDay);
+      
+      // Only generate if the horizon date has passed
+      if (horizonDate <= today) {
+        const snapshotDate = horizonDate.toISOString().split('T')[0];
+        const result = await generateScorecardForEpic(epicId, snapshotDate);
+        results.push(result);
+      }
+    }
+
+    // Also generate for today if it's after launch
+    if (launchDate <= today) {
+      const todayStr = today.toISOString().split('T')[0];
+      const result = await generateScorecardForEpic(epicId, todayStr);
+      results.push(result);
+    }
+
+    return results;
+  } catch (error: any) {
+    console.error(`Error generating scorecards for benchmark horizons for epic ${epicId}:`, error);
+    return [{
+      epicId,
+      success: false,
+      error: error.message || 'Unknown error',
+    }];
+  }
+}
+

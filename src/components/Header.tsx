@@ -1,9 +1,14 @@
 "use client";
 
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
+import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
+import { SegmentedControl } from '@mantine/core';
+import { canRolesPerform } from '@/lib/permissions';
+import type { CapabilityId } from '@/lib/permissions';
 
 interface HeaderProps {
     email?: string | null;
@@ -13,6 +18,47 @@ interface HeaderProps {
 
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
+    const { scope, setScope } = useEpicScope();
+    const [userRoles, setUserRoles] = useState<string[]>([]);
+    const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
+
+    // Fetch user roles and check settings access
+    useEffect(() => {
+        const fetchUserRoles = async () => {
+            try {
+                const res = await fetch('/api/me', { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const roles = Array.isArray(data.user?.roles) 
+                        ? data.user.roles 
+                        : (data.user?.role ? [data.user.role] : []);
+                    setUserRoles(roles);
+
+                    // Check if user has access to any settings-related capability
+                    const settingsCapabilities: CapabilityId[] = [
+                        'settings.read',
+                        'settings.emailTemplates.read',
+                        'settings.ahaFields.read',
+                        'settings.webhookUrl.read',
+                    ];
+
+                    const hasAccess = settingsCapabilities.some(capability => 
+                        canRolesPerform(roles, capability)
+                    );
+                    setHasSettingsAccess(hasAccess);
+                }
+            } catch (error) {
+                console.error('Failed to fetch user roles:', error);
+            }
+        };
+
+        fetchUserRoles();
+    }, []);
+
+    // Hide header on setup-password page
+    if (pathname?.includes('/setup-password')) {
+        return null;
+    }
 
     // Check if user has only the OTHER role (pending access)
     const hasOnlyOtherRole = !role || role === 'OTHER';
@@ -27,7 +73,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         { link: '/epics', label: 'Releases' },
         ...(canViewMeetings ? [{ link: '/meetings', label: 'Meetings' }] : []),
         { link: '/my-items', label: 'My Items' },
-        { link: '/admin/settings', label: 'Settings' },
+        ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 
     const isActive = (path: string) => {
@@ -153,8 +199,37 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                         )}
                     </div>
 
-                    {/* Right side: Search and User Avatar */}
+                    {/* Right side: Scope Toggle, Search and User Avatar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                        {/* Scope Toggle - Only show for users with proper roles */}
+                        {!hasOnlyOtherRole && (
+                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                <SegmentedControl
+                                    value={scope}
+                                    onChange={(value) => setScope(value as 'all' | 'my')}
+                                    data={[
+                                        { label: 'All scope', value: 'all' },
+                                        { label: 'My scope', value: 'my' },
+                                    ]}
+                                    size="sm"
+                                    styles={{
+                                        root: {
+                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                                        },
+                                        indicator: {
+                                            backgroundColor: 'var(--color-accent, #6B46C1)',
+                                        },
+                                        label: {
+                                            color: 'var(--nav-text, #FFFFFF)',
+                                            fontSize: 'var(--font-size-sm, 12px)',
+                                            fontWeight: 'var(--font-weight-medium, 500)',
+                                            padding: '4px 12px',
+                                        },
+                                    }}
+                                />
+                            </div>
+                        )}
                         {/* Epic Search */}
                         <div style={{
                             position: 'relative',

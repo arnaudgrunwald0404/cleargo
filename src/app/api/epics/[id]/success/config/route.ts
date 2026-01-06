@@ -22,8 +22,18 @@ export async function GET(
 ) {
   try {
     const { id: epicId } = await params;
+    if (!epicId) {
+      return NextResponse.json({ error: 'Epic ID is required' }, { status: 400 });
+    }
+
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    
+    if (authError) {
+      console.error('Auth error in success config GET:', authError);
+      return NextResponse.json({ error: 'Authentication failed', details: authError.message }, { status: 401 });
+    }
+    
     if (!user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -36,8 +46,21 @@ export async function GET(
     return NextResponse.json(config);
   } catch (error: any) {
     console.error('Error fetching epic success config:', error);
+    console.error('Error name:', error?.name);
+    console.error('Error message:', error?.message);
+    console.error('Error stack:', error?.stack);
+    console.error('Error code:', error?.code);
+    
     return NextResponse.json(
-      { error: 'Failed to fetch success configuration', details: error.message },
+      { 
+        error: 'Failed to fetch success configuration', 
+        details: error?.message || 'Unknown error',
+        ...(process.env.NODE_ENV === 'development' && {
+          stack: error?.stack,
+          name: error?.name,
+          code: error?.code
+        })
+      },
       { status: 500 }
     );
   }
@@ -131,6 +154,19 @@ export async function POST(
       benchmark_id: parsed.data.benchmark_id,
       ...(parsed.data.post_launch_owner ? { post_launch_owner: parsed.data.post_launch_owner } : {}),
     });
+
+    // Auto-generate scorecards for benchmark horizon days if epic is launched
+    try {
+      const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
+      await generateScorecardsForBenchmarkHorizons(epicId).catch((err) => {
+        // Log but don't fail the request if scorecard generation fails
+        console.warn('Failed to auto-generate scorecards after config creation:', err);
+      });
+    } catch (error) {
+      // Ignore scorecard generation errors - config creation should still succeed
+      console.warn('Error attempting to auto-generate scorecards:', error);
+    }
+
     return NextResponse.json(config, { status: 201 });
   } catch (error: any) {
     console.error('Error creating epic success config:', error);
@@ -233,6 +269,21 @@ export async function PATCH(
     }
 
     const config = await updateEpicSuccessConfig(epicId, parsed.data);
+
+    // Auto-generate scorecards for benchmark horizon days if benchmark was updated and epic is launched
+    if (parsed.data.benchmark_id) {
+      try {
+        const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
+        await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
+          // Log but don't fail the request if scorecard generation fails
+          console.warn('Failed to auto-generate scorecards after config update:', err);
+        });
+      } catch (error) {
+        // Ignore scorecard generation errors - config update should still succeed
+        console.warn('Error attempting to auto-generate scorecards:', error);
+      }
+    }
+
     return NextResponse.json(config);
   } catch (error: any) {
     console.error('Error updating epic success config:', error);

@@ -140,7 +140,10 @@ export async function POST(
 
     if (uploadError) {
       console.error('Storage upload error:', uploadError);
-      return NextResponse.json({ error: 'Failed to upload file to storage' }, { status: 500 });
+      const errorMessage = process.env.NODE_ENV === 'development'
+        ? `Failed to upload file to storage: ${uploadError.message || JSON.stringify(uploadError)}`
+        : 'Failed to upload file to storage. Please ensure the storage bucket exists and you have permission to upload.';
+      return NextResponse.json({ error: errorMessage }, { status: 500 });
     }
 
     // Create attachment record

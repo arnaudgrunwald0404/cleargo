@@ -18,6 +18,7 @@ export interface AppSettings {
     aha_webhook_url?: string | null; // Custom webhook URL, if null uses computed URL
     email_sender: string;
     pod_product_manager_mapping?: Record<string, string>; // pod_name -> email
+    pod_order?: string[]; // Ordered list of pod names for consistent display
     aha_fields_to_load?: string[]; // List of AHA custom field aliases to load
     email_template_invite_subject?: string | null;
     email_template_invite_html?: string | null;

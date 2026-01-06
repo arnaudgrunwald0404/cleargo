@@ -4,7 +4,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { NextResponse } from 'next/server';
 
 // Public routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password'];
+const PUBLIC_ROUTES = ['/login', '/welcome', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password', '/setup-password'];
 
 // Routes accessible to users with only the OTHER role (pending access)
 const PENDING_ACCESS_ROUTES = ['/access-pending', '/auth/signout', '/account'];
@@ -96,17 +96,18 @@ export async function proxy(request: NextRequest) {
     
     // For protected routes, check if user is authenticated
     if (!isPublicRoute) {
-        // Check for Supabase auth cookies
+        // Check for both Supabase auth cookies AND lr_session cookie
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
         const authCookieName = projectRef ? `sb-${projectRef}-auth-token` : null;
         
-        // Look for auth token in cookies
         const hasAuthCookie = authCookieName 
             ? request.cookies.has(authCookieName) || request.cookies.has(`${authCookieName}.0`)
             : request.cookies.getAll().some(c => c.name.includes('auth-token'));
         
-        if (!hasAuthCookie) {
+        const hasLrSession = request.cookies.has('lr_session');
+        
+        if (!hasAuthCookie && !hasLrSession) {
             // Redirect to login page
             const loginUrl = new URL('/login', request.url);
             loginUrl.searchParams.set('redirect', pathname);

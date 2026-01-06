@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   Table,
   Button,
@@ -156,16 +158,18 @@ export default function MetricsPage() {
     }
   };
 
+  const pathname = usePathname();
+
   if (loading && metrics.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
+      <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
         <PurpleLoader size="lg" />
-      </div>
+      </main>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       <div style={{
         maxWidth: 'var(--page-container-max-width)',
         margin: '0 auto',
@@ -176,7 +180,75 @@ export default function MetricsPage() {
       }}
       className="sm:px-6 lg:px-8"
       >
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        {error && (
+          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-6">
+          {/* Sidebar Navigation */}
+          <div className="w-64 flex-shrink-0">
+            <nav>
+              <ul className="space-y-1">
+                <li>
+                  <Link
+                    href="/admin/settings"
+                    className="block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm text-gray-600 hover:bg-gray-50 mb-2"
+                  >
+                    ← Back to Settings
+                  </Link>
+                </li>
+                <li>
+                  <div className="px-4 py-2 text-sm font-medium text-gray-900 mb-1">
+                    Success Measurement
+                  </div>
+                  <ul className="ml-4 space-y-1">
+                    <li>
+                      <Link
+                        href="/settings/success-measurement/metrics"
+                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                          pathname === '/settings/success-measurement/metrics'
+                            ? 'bg-indigo-50 text-indigo-700 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Metrics
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/settings/success-measurement/benchmarks"
+                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                          pathname === '/settings/success-measurement/benchmarks'
+                            ? 'bg-indigo-50 text-indigo-700 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Adoption Benchmarks
+                      </Link>
+                    </li>
+                    <li>
+                      <Link
+                        href="/settings/success-measurement/pendo"
+                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                          pathname === '/settings/success-measurement/pendo'
+                            ? 'bg-indigo-50 text-indigo-700 font-medium'
+                            : 'text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        Pendo Integration
+                      </Link>
+                    </li>
+                  </ul>
+                </li>
+              </ul>
+            </nav>
+          </div>
+
+          {/* Main Content */}
+          <div className="flex-1 min-w-0">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <Group justify="space-between" mb="md">
             <div>
               <h1 style={{
@@ -199,13 +271,7 @@ export default function MetricsPage() {
             </Button>
           </Group>
 
-          {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-              {error}
-            </div>
-          )}
-
-          <Stack gap="md" mb="md">
+              <Stack gap="md" mb="md">
             <Group>
               <Select
                 label="Category"
@@ -311,7 +377,9 @@ export default function MetricsPage() {
             <Text ta="center" c="dimmed" py="xl">
               No metrics found. Create one to get started.
             </Text>
-          )}
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -343,7 +411,7 @@ export default function MetricsPage() {
           />
         )}
       </Drawer>
-    </div>
+    </main>
   );
 }
 

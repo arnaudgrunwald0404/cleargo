@@ -13,12 +13,15 @@ import {
   ActionIcon,
   Tooltip,
 } from '@mantine/core';
-import { IconLock, IconEdit, IconAlertCircle, IconArrowsRightLeft } from '@tabler/icons-react';
+import { IconLock, IconEdit, IconAlertCircle, IconArrowsRightLeft, IconPlus, IconTrash, IconPencil } from '@tabler/icons-react';
 import { SuccessConfigForm } from './SuccessConfigForm';
 import { DelegationModal, DelegationType } from '../DelegationModal';
-import type { EpicSuccessConfigWithDetails } from '@/lib/services/successMeasurementService';
+import { MetricSelectionModal } from './MetricSelectionModal';
+import { ThresholdOverrideEditor } from './ThresholdOverrideEditor';
+import { ManualMetricEntry } from './ManualMetricEntry';
+import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from '@/lib/services/successMeasurementService';
 import type { EpicTier } from '@/types/epics';
-import type { CreateEpicSuccessConfigDTO } from '@/lib/success/types';
+import type { CreateEpicSuccessConfigDTO, MetricThresholds, SuccessMetric } from '@/lib/success/types';
 import { notifications } from '@mantine/notifications';
 
 interface SuccessConfigSectionProps {
@@ -26,6 +29,7 @@ interface SuccessConfigSectionProps {
   epicName?: string;
   epicTier: EpicTier;
   config: EpicSuccessConfigWithDetails | null;
+  metrics: EpicSuccessMetricWithDetails[];
   isAdmin: boolean;
   onRefresh: () => Promise<void>;
   epicOwnerId?: string | null;
@@ -37,6 +41,7 @@ export function SuccessConfigSection({
   epicName = '',
   epicTier,
   config,
+  metrics,
   isAdmin,
   onRefresh,
   epicOwnerId,
@@ -46,6 +51,9 @@ export function SuccessConfigSection({
   const [submitting, setSubmitting] = useState(false);
   const [delegationModalOpen, setDelegationModalOpen] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [showMetricModal, setShowMetricModal] = useState(false);
+  const [editingThresholdMetric, setEditingThresholdMetric] = useState<EpicSuccessMetricWithDetails | null>(null);
+  const [manualEntryMetric, setManualEntryMetric] = useState<SuccessMetric | null>(null);
 
   // Get current user email
   React.useEffect(() => {
@@ -141,11 +149,89 @@ export function SuccessConfigSection({
         epicOwnerId={epicOwnerId}
         onCancel={config ? handleCancel : undefined}
         pmOwner={pmOwner}
+        epicName={epicName}
+        isAdmin={isAdmin}
+        onRefresh={onRefresh}
+        config={config}
+        metrics={metrics}
       />
     );
   }
 
   const canEdit = !config.locked || isAdmin;
+  const configLocked = config?.locked || false;
+
+  const handleAddMetric = async (metricId: string) => {
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/metrics`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metric_id: metricId }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to add metric');
+      }
+
+      await onRefresh();
+    } catch (error: any) {
+      alert(`Failed to add metric: ${error.message}`);
+      throw error;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleRemoveMetric = async (metricId: string) => {
+    if (!confirm('Are you sure you want to remove this metric?')) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to remove metric');
+      }
+
+      await onRefresh();
+    } catch (error: any) {
+      alert(`Failed to remove metric: ${error.message}`);
+    }
+  };
+
+  const handleUpdateThreshold = async (thresholds: MetricThresholds | null) => {
+    if (!editingThresholdMetric) return;
+
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${editingThresholdMetric.metric_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ threshold_override: thresholds }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update threshold');
+      }
+
+      await onRefresh();
+      setEditingThresholdMetric(null);
+    } catch (error: any) {
+      alert(`Failed to update threshold: ${error.message}`);
+      throw error;
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const selectedMetricIds = metrics.map((m) => m.metric_id);
 
   return (
     <>
@@ -155,7 +241,7 @@ export function SuccessConfigSection({
             <Text size="lg" fw={500}>
               Success Configuration
             </Text>
-            {config.locked && (
+            {config?.locked && (
               <Badge leftSection={<IconLock size={12} />} color="orange">
                 Locked
               </Badge>
@@ -166,11 +252,112 @@ export function SuccessConfigSection({
             <Text size="sm" fw={500} mb="xs">
               Adoption Benchmark
             </Text>
-            <Text>{config.benchmark?.name || 'Unknown'}</Text>
-            {config.benchmark && (
+            <Text>{config?.benchmark?.name || 'Unknown'}</Text>
+            {config?.benchmark && (
               <Text size="xs" c="dimmed" mt="xs">
                 {config.benchmark.feature_type} • {config.benchmark.target_persona}
               </Text>
+            )}
+          </div>
+
+          <div>
+            <Group justify="space-between" mb="xs">
+              <Text size="sm" fw={500}>
+                Success Metrics
+              </Text>
+              {canEdit && metrics.length < 7 && (
+                <Button
+                  size="xs"
+                  leftSection={<IconPlus size={14} />}
+                  onClick={() => setShowMetricModal(true)}
+                >
+                  Add Metric
+                </Button>
+              )}
+            </Group>
+            <Text size="xs" c="dimmed" mb="xs">
+              {metrics.length} of 7 metrics selected
+            </Text>
+            {metrics.length === 0 ? (
+              <Alert icon={<IconAlertCircle size={16} />} title="No Metrics" color="yellow" size="sm">
+                No success metrics have been selected for this epic. Add metrics to start tracking post-launch success.
+              </Alert>
+            ) : (
+              <Stack gap="xs">
+                {metrics.map((epicMetric) => {
+                  const metric = epicMetric.metric;
+                  if (!metric) return null;
+
+                  return (
+                    <Card key={epicMetric.id} padding="sm" withBorder>
+                      <Group justify="space-between">
+                        <div style={{ flex: 1 }}>
+                          <Group gap="xs" mb="xs">
+                            <Text size="sm" fw={500}>{metric.name}</Text>
+                            {epicMetric.threshold_override && (
+                              <Badge size="xs" color="orange">Custom Thresholds</Badge>
+                            )}
+                          </Group>
+                          {metric.description && (
+                            <Text size="xs" c="dimmed" mb="xs">
+                              {metric.description}
+                            </Text>
+                          )}
+                          <Group gap="xs">
+                            <Badge variant="light" size="xs">{metric.category}</Badge>
+                            <Badge variant="outline" size="xs">{metric.measurement_type}</Badge>
+                            <Badge
+                              color={metric.source === 'PENDO' ? 'blue' : metric.source === 'SNOWFLAKE' ? 'cyan' : 'gray'}
+                              size="xs"
+                            >
+                              {metric.source}
+                            </Badge>
+                            <Badge
+                              color={metric.leading_or_lagging === 'LEADING' ? 'green' : 'orange'}
+                              size="xs"
+                            >
+                              {metric.leading_or_lagging}
+                            </Badge>
+                          </Group>
+                        </div>
+                        {canEdit && (
+                          <Group gap="xs">
+                            {metric.source === 'MANUAL' && (
+                              <ActionIcon
+                                variant="light"
+                                color="green"
+                                size="sm"
+                                onClick={() => setManualEntryMetric(metric)}
+                                title="Enter manual value"
+                              >
+                                <IconPencil size={14} />
+                              </ActionIcon>
+                            )}
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              size="sm"
+                              onClick={() => setEditingThresholdMetric(epicMetric)}
+                              title="Edit threshold override"
+                            >
+                              <IconEdit size={14} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="light"
+                              color="red"
+                              size="sm"
+                              onClick={() => handleRemoveMetric(epicMetric.metric_id)}
+                              title="Remove metric"
+                            >
+                              <IconTrash size={14} />
+                            </ActionIcon>
+                          </Group>
+                        )}
+                      </Group>
+                    </Card>
+                  );
+                })}
+              </Stack>
             )}
           </div>
 
@@ -192,14 +379,42 @@ export function SuccessConfigSection({
 
               return (
                 <Group gap="xs" style={{ position: 'relative' }}>
-                  <Avatar
-                    src={ownerDetails.avatar_url}
-                    color={getAvatarColor(ownerDetails.email)}
-                    radius="xl"
-                    size="sm"
+                  <Tooltip 
+                    label={canDelegate && !config.locked 
+                      ? "Click to delegate post-launch owner" 
+                      : undefined}
+                    position="top"
+                    withArrow
                   >
-                    {getInitials(ownerDetails.email)}
-                  </Avatar>
+                    <div
+                      style={{
+                        cursor: canDelegate && !config.locked ? 'pointer' : 'default',
+                        position: 'relative',
+                      }}
+                      onClick={() => {
+                        if (canDelegate && !config.locked) {
+                          setDelegationModalOpen(true);
+                        }
+                      }}
+                      onMouseEnter={(e) => {
+                        if (canDelegate && !config.locked) {
+                          e.currentTarget.style.opacity = '0.8';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.opacity = '1';
+                      }}
+                    >
+                      <Avatar
+                        src={ownerDetails.avatar_url}
+                        color={getAvatarColor(ownerDetails.email)}
+                        radius="xl"
+                        size="sm"
+                      >
+                        {getInitials(ownerDetails.email)}
+                      </Avatar>
+                    </div>
+                  </Tooltip>
                   <div style={{ flex: 1 }}>
                     <Group gap="xs">
                       <Text size="sm">
@@ -238,7 +453,7 @@ export function SuccessConfigSection({
             })()}
           </div>
 
-          {config.locked_at && (
+          {config?.locked_at && (
             <div>
               <Text size="xs" c="dimmed">
                 Locked at: {new Date(config.locked_at).toLocaleString()}
@@ -314,6 +529,58 @@ export function SuccessConfigSection({
               throw error;
             }
           }}
+        />
+      )}
+
+      <MetricSelectionModal
+        opened={showMetricModal}
+        onClose={() => setShowMetricModal(false)}
+        onSelect={handleAddMetric}
+        selectedMetricIds={selectedMetricIds}
+        isSubmitting={submitting}
+      />
+
+      <ThresholdOverrideEditor
+        opened={!!editingThresholdMetric}
+        onClose={() => setEditingThresholdMetric(null)}
+        initialThresholds={editingThresholdMetric?.threshold_override || null}
+        onSubmit={handleUpdateThreshold}
+        isSubmitting={submitting}
+      />
+
+      {manualEntryMetric && (
+        <ManualMetricEntry
+          opened={!!manualEntryMetric}
+          onClose={() => setManualEntryMetric(null)}
+          epicId={epicId}
+          metric={manualEntryMetric}
+          onSubmit={async (value, snapshotDate) => {
+            setSubmitting(true);
+            try {
+              const res = await fetch(`/api/epics/${epicId}/success/metrics/${manualEntryMetric.id}/manual`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  snapshot_date: snapshotDate,
+                  value,
+                }),
+              });
+
+              if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to save manual value');
+              }
+
+              setManualEntryMetric(null);
+              await onRefresh();
+            } catch (error: any) {
+              alert(`Failed to save manual value: ${error.message}`);
+              throw error;
+            } finally {
+              setSubmitting(false);
+            }
+          }}
+          isSubmitting={submitting}
         />
       )}
     </>

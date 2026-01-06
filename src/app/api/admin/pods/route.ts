@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { sortPodsByOrder } from '@/lib/pod-utils';
 
 export async function GET(req: NextRequest) {
     const supabase = createClient();
@@ -7,8 +8,7 @@ export async function GET(req: NextRequest) {
     const { data, error } = await supabase
         .from('epic')
         .select('pod')
-        .neq('pod', null)
-        .order('pod', { ascending: true });
+        .neq('pod', null);
     if (error) {
         console.error('Error fetching pods:', error);
         return NextResponse.json({ error: 'Failed to fetch pods' }, { status: 500 });
@@ -19,5 +19,9 @@ export async function GET(req: NextRequest) {
         if (row.pod) podsSet.add(row.pod);
     });
     const pods = Array.from(podsSet);
-    return NextResponse.json({ pods });
+    
+    // Sort pods by saved order
+    const sortedPods = await sortPodsByOrder(pods);
+    
+    return NextResponse.json({ pods: sortedPods });
 }

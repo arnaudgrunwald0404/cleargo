@@ -5,11 +5,12 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { Header } from "@/components/Header";
+import { HeaderWrapper } from "@/components/HeaderWrapper";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
+import { EpicScopeProvider } from "@/lib/contexts/EpicScopeContext";
 
 // Force dynamic rendering for the root layout since it uses cookies for auth
 export const dynamic = 'force-dynamic';
@@ -42,17 +43,14 @@ export default async function RootLayout({
   let email: string | null = null;
   let avatarUrl: string | null = null;
   let role: Role | null = null;
-  let shouldShowHeader = false;
 
   try {
     const supabase = createClient();
     const { data: { user }, error } = await supabase.auth.getUser();
     
-    // If we have a user (even without email), we should show the header
-    shouldShowHeader = !error && !!user;
-    email = user?.email || null;
+    if (!error && user?.email) {
+      email = user.email;
 
-    if (email) {
       try {
         const { data: profile } = await supabase
           .from('app_user')
@@ -71,9 +69,8 @@ export default async function RootLayout({
       }
     }
   } catch (error) {
-    // If auth check fails completely, don't show header
-    // This could happen if Supabase client creation fails
-    shouldShowHeader = false;
+    // If auth check fails, HeaderWrapper will handle client-side check
+    console.error('Server-side auth check failed:', error);
   }
 
   return (
@@ -82,12 +79,14 @@ export default async function RootLayout({
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased ${shouldShowHeader ? 'pt-[64px]' : ''}`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <MantineProvider theme={theme}>
-          <Notifications />
-          {shouldShowHeader && <Header email={email} role={role} imageUrl={avatarUrl} />}
-          {children}
+          <EpicScopeProvider>
+            <Notifications />
+            <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+            {children}
+          </EpicScopeProvider>
         </MantineProvider>
       </body>
     </html>
