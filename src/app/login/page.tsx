@@ -393,14 +393,16 @@ function LoginForm() {
 
                     // Create a fresh Supabase client for OAuth (don't use the conditional one)
                     const oauthClient = createClient();
-                    // CRITICAL: Use production URL for redirect (must match Supabase Redirect URLs EXACTLY)
-                    // Supabase ignores redirectTo if it doesn't match Redirect URLs list exactly
+                    // CRITICAL: Always use production URL for redirect (must match Supabase Redirect URLs EXACTLY)
+                    // Never use preview branch URLs - Supabase ignores redirectTo if it doesn't match Redirect URLs list exactly
                     // When redirectTo doesn't match, Supabase redirects to Site URL WITHOUT the code parameter
                     // This is why we're seeing redirects to /login without code
                     const productionUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
-                    // Remove trailing slash if present
-                    const baseUrl = productionUrl.replace(/\/$/, '');
-                    const redirectTo = `${baseUrl}/auth/callback`;
+                    // Remove trailing slash if present and ensure it's the production URL (not preview branch)
+                    const baseUrl = productionUrl.replace(/\/$/, '').replace(/^https:\/\/[^-]+--/, 'https://');
+                    // Ensure we're using the production domain, not a preview branch
+                    const finalBaseUrl = baseUrl.includes('--') ? 'https://cleargo.netlify.app' : baseUrl;
+                    const redirectTo = `${finalBaseUrl}/auth/callback`;
                     
                     console.log('🔐 Initiating Google OAuth:', {
                       redirectTo,

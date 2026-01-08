@@ -15,6 +15,26 @@ export async function GET(request: NextRequest) {
 
     const requestUrl = new URL(request.url)
     
+    // Redirect to production URL if called from preview branch
+    // This ensures we never process OAuth callbacks on preview branches
+    const hostname = requestUrl.hostname;
+    const productionUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
+    const productionHostname = new URL(productionUrl).hostname;
+    
+    if (hostname !== productionHostname && hostname.includes('netlify.app')) {
+        // This is a preview branch URL - redirect to production
+        const productionCallbackUrl = new URL('/auth/callback', productionUrl);
+        // Preserve all query parameters (especially the code)
+        searchParams.forEach((value, key) => {
+            productionCallbackUrl.searchParams.set(key, value);
+        });
+        console.log('🔄 Redirecting from preview branch to production:', {
+            from: request.url,
+            to: productionCallbackUrl.toString(),
+        });
+        return NextResponse.redirect(productionCallbackUrl);
+    }
+    
     // Log ALL parameters to debug what Supabase is sending
     console.log('🔍 Callback route - Full request details:', {
         url: request.url,
@@ -26,6 +46,8 @@ export async function GET(request: NextRequest) {
         hasAccessToken: !!access_token,
         referer: request.headers.get('referer'),
         origin: request.headers.get('origin'),
+        hostname,
+        productionHostname,
     })
     const response = NextResponse.next({
         request: {
