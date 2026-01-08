@@ -14,8 +14,29 @@ function isAllowed(email: string) {
 }
 
 export async function POST(req: NextRequest) {
+  let body: any;
+  
   try {
-    const body = await req.json();
+    // Try to parse JSON body
+    try {
+      body = await req.json();
+    } catch (parseError) {
+      console.error("JSON parse error:", parseError);
+      return NextResponse.json({ error: "Invalid request body. Expected JSON." }, { status: 400 });
+    }
+    
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    }
+    
+    if (!body.email) {
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
+    }
+
+    if (typeof body.email !== 'string') {
+      return NextResponse.json({ error: "Email must be a string" }, { status: 400 });
+    }
+
     const email = emailSchema.parse(body.email);
     if (!isAllowed(email)) {
       return NextResponse.json({ error: "Email domain not allowed" }, { status: 403 });
@@ -35,7 +56,18 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true });
   } catch (err: any) {
-    console.error(err);
-    return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    console.error("Magic link error:", err);
+    
+    // Handle Zod validation errors
+    if (err.name === "ZodError" || err.issues) {
+      return NextResponse.json({ error: "Invalid email address format" }, { status: 400 });
+    }
+    
+    // Handle other known errors
+    if (err.message) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
+    
+    return NextResponse.json({ error: "Failed to send magic link. Please try again." }, { status: 500 });
   }
 }

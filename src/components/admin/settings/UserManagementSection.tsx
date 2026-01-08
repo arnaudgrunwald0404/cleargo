@@ -265,22 +265,20 @@ export default function UserManagementSection(props: Props) {
 
         {activeSubSection === "users" && (
           <div>
-            {/* Pending Users Section - Always show so admins know the feature exists */}
-            <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                    <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                    Pending Access Requests ({pendingUsers.length})
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {pendingUsers.length > 0 
-                      ? "Users waiting for approval" 
-                      : "No pending access requests"}
-                  </p>
+            {/* Pending Users Section - Only show when there are pending requests */}
+            {pendingUsers.length > 0 && (
+              <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                      <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                      Pending Access Requests ({pendingUsers.length})
+                    </h3>
+                    <p className="text-sm text-gray-600 mt-1">
+                      Users waiting for approval
+                    </p>
+                  </div>
                 </div>
-              </div>
-              {pendingUsers.length > 0 ? (
                 <div className="space-y-2">
                   {pendingUsers.map((pendingUser) => (
                     <div key={pendingUser.id || pendingUser.email} className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
@@ -316,12 +314,8 @@ export default function UserManagementSection(props: Props) {
                     </div>
                   ))}
                 </div>
-              ) : (
-                <p className="text-sm text-gray-500 italic text-center py-4">
-                  All users who have signed up have been approved. New access requests will appear here.
-                </p>
-              )}
-            </div>
+              </div>
+            )}
 
             <div className="flex items-center justify-between mb-6">
               <div>

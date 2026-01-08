@@ -173,7 +173,12 @@ function LoginForm() {
         body: JSON.stringify({ email }),
       });
 
-      const result = await response.json();
+      let result: any;
+      try {
+        result = await response.json();
+      } catch (parseError) {
+        throw new Error(`Server error (${response.status}): ${response.statusText}`);
+      }
 
       if (!response.ok) {
         throw new Error(result.error || "Failed to send magic link");
