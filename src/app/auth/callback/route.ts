@@ -160,8 +160,39 @@ export async function GET(request: NextRequest) {
             allCookieNames: allCookies.map(c => c.name),
         })
 
-        console.log('🔄 Attempting code exchange...');
-        const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+        console.log('🔄 Attempting code exchange...', {
+            codeLength: code.length,
+            codePrefix: code.substring(0, 10),
+            hasCodeVerifier: !!codeVerifierCookie,
+            supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        });
+        
+        let exchangeResult;
+        const exchangeStartTime = Date.now();
+        try {
+            console.log('⏳ Calling exchangeCodeForSession...');
+            exchangeResult = await Promise.race([
+                supabase.auth.exchangeCodeForSession(code),
+                new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('Code exchange timeout after 10 seconds')), 10000)
+                )
+            ]) as { data: any; error: any };
+            const exchangeDuration = Date.now() - exchangeStartTime;
+            console.log(`⏱️ Code exchange completed in ${exchangeDuration}ms`);
+        } catch (timeoutError: any) {
+            const exchangeDuration = Date.now() - exchangeStartTime;
+            console.error('❌ Code exchange timeout or error:', {
+                error: timeoutError,
+                duration: exchangeDuration,
+                message: timeoutError?.message,
+                stack: timeoutError?.stack,
+            });
+            const errorUrl = new URL('/login?error=auth_failed', requestUrl);
+            errorUrl.searchParams.set('message', timeoutError?.message || 'Code exchange timed out');
+            return NextResponse.redirect(errorUrl);
+        }
+        
+        const { data, error } = exchangeResult;
 
         if (error) {
             console.error('❌ Code exchange error:', {
