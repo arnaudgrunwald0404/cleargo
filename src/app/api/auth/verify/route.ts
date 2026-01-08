@@ -88,8 +88,12 @@ export async function GET(req: NextRequest) {
         // Issue session cookie (7 days)
         const session = await createToken({ email: payload.email, t: "session" }, "7d");
         
-        // Determine if we should use secure cookies (only in production with HTTPS)
-        const isSecure = req.url.startsWith('https://') || process.env.NODE_ENV === 'production';
+        // Determine if we should use secure cookies
+        // Check x-forwarded-proto header (set by Netlify/proxies) or URL protocol
+        const forwardedProto = req.headers.get('x-forwarded-proto');
+        const isHttps = forwardedProto === 'https' || req.url.startsWith('https://');
+        const isLocalhost = req.url.includes('localhost') || req.url.includes('127.0.0.1');
+        const isSecure = isHttps && !isLocalhost;
         
         // If user doesn't have a password, redirect to setup-password
         if (!hasPassword) {
