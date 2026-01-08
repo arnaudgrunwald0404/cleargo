@@ -1,7 +1,8 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar } from "@mantine/core";
+import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text } from "@mantine/core";
+import { IconTrash, IconAlertCircle } from '@tabler/icons-react';
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
@@ -75,6 +76,8 @@ export function CriteriaManager() {
     last_name?: string | null;
     avatar_url?: string | null;
   }>>({});
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [criteriaToDelete, setCriteriaToDelete] = useState<Item | null>(null);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -277,6 +280,28 @@ export function CriteriaManager() {
     const { item } = await res.json();
     setItems((prev) => prev.map((c) => (c.id === id ? item : c)).sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)));
     setEditingId(null);
+  }
+
+  async function handleDelete(id: string) {
+    setError(null);
+    try {
+      const res = await fetch(`/api/criteria/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Failed to delete criteria");
+        return;
+      }
+      setItems((prev) => prev.filter((c) => c.id !== id));
+      setDeleteModalOpen(false);
+      setCriteriaToDelete(null);
+      if (editingId === id) {
+        setEditingId(null);
+      }
+    } catch (e: any) {
+      setError(e.message || "Failed to delete criteria");
+    }
   }
 
   async function handleReorder(draggedId: string, targetId: string, targetIndex: number) {
@@ -690,15 +715,67 @@ export function CriteriaManager() {
               submitEdit(editingId, patch);
               setEditingId(null);
             }}
+            onDelete={() => {
+              setCriteriaToDelete(editingItem);
+              setDeleteModalOpen(true);
+            }}
             launchStages={launchStages}
           />
         ) : null;
       })()}
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setCriteriaToDelete(null);
+        }}
+        title={
+          <div className="flex items-center gap-2">
+            <IconTrash size={20} className="text-red-600" />
+            <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Delete Criteria</span>
+          </div>
+        }
+        centered
+        size="md"
+      >
+        <div className="space-y-4">
+          <Text size="sm" c="dimmed">
+            Are you sure you want to delete <strong>"{criteriaToDelete?.label}"</strong>?
+          </Text>
+          <Alert icon={<IconAlertCircle size={16} />} title="Warning" color="red" variant="light">
+            This action cannot be undone. This criteria will be permanently removed from all epics.
+          </Alert>
+          <Group justify="flex-end" mt="xl">
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setCriteriaToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              onClick={() => {
+                if (criteriaToDelete) {
+                  handleDelete(criteriaToDelete.id);
+                }
+              }}
+              leftSection={<IconTrash size={16} />}
+            >
+              Delete Criteria
+            </Button>
+          </Group>
+        </div>
+      </Modal>
     </div>
   );
 }
 
-function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Item; opened: boolean; onClose: () => void; onSave: (patch: Partial<Item>) => void; launchStages: LaunchStage[] }) {
+function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: { item: Item; opened: boolean; onClose: () => void; onSave: (patch: Partial<Item>) => void; onDelete: () => void; launchStages: LaunchStage[] }) {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
   const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null; avatar_url?: string | null }>>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -937,13 +1014,23 @@ function EditDrawer({ item, opened, onClose, onSave, launchStages }: { item: Ite
           onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
         />
 
-        <Group justify="flex-end" mt="xl">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
+        <Group justify="space-between" mt="xl">
+          <Button 
+            variant="outline" 
+            color="red" 
+            leftSection={<IconTrash size={16} />} 
+            onClick={onDelete}
+          >
+            Delete
           </Button>
-          <Button onClick={() => onSave(patch)}>
-            Save Changes
-          </Button>
+          <Group>
+            <Button variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button onClick={() => onSave(patch)}>
+              Save Changes
+            </Button>
+          </Group>
         </Group>
       </Stack>
     </Drawer>
