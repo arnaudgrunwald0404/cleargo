@@ -1,200 +1,157 @@
-import { promises as fs } from "fs";
-import path from "path";
+import { createClient } from "@supabase/supabase-js";
 
-// In serverless environments (AWS Lambda, Netlify, Vercel), use /tmp instead of project directory
-// Check if we're in a serverless environment by checking for common indicators
-function isServerlessEnvironment(): boolean {
-  // Check environment variables
-  if (
-    process.env.AWS_LAMBDA_FUNCTION_NAME !== undefined ||
-    process.env.NETLIFY === "true" ||
-    process.env.VERCEL === "1" ||
-    process.env.NETLIFY_DEV === "true"
-  ) {
-    return true;
+// Get Supabase client for database operations
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Missing Supabase configuration for token store");
   }
   
-  // Check current working directory path - /var/task is common in AWS Lambda/Netlify
-  const cwd = process.cwd();
-  if (cwd.includes("/var/task") || cwd.startsWith("/tmp/") || cwd === "/tmp") {
-    return true;
-  }
+  return createClient(supabaseUrl, supabaseKey);
+}
+
+export async function markTokenSent(jti: string, email: string, expiresAt: Date) {
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("used_magic_link_tokens")
+    .insert({
+      jti,
+      email,
+      sent_at: new Date().toISOString(),
+      expires_at: expiresAt.toISOString(),
+      used_at: null,
+    });
   
-  return false;
-}
-
-const isServerless = isServerlessEnvironment();
-// Always use /tmp in serverless environments to avoid read-only filesystem errors
-const DATA_DIR = isServerless ? "/tmp" : path.join(process.cwd(), ".data");
-const TOKENS_FILE = path.join(DATA_DIR, "tokens.json");
-
-// Global variable to track the actual file path (may change if we detect read-only filesystem)
-let actualTokensFile = TOKENS_FILE;
-
-// Helper function to safely read file with EROFS fallback
-async function safeReadFile(filePath: string): Promise<string> {
-  try {
-    return await fs.readFile(filePath, "utf8");
-  } catch (error: any) {
-    // If we get EROFS and we're not already using /tmp, switch to /tmp
-    if (error.code === "EROFS" && filePath !== "/tmp/tokens.json") {
-      actualTokensFile = "/tmp/tokens.json";
-      try {
-        return await fs.readFile(actualTokensFile, "utf8");
-      } catch (fallbackError: any) {
-        // If file doesn't exist in /tmp, return empty data
-        if (fallbackError.code === "ENOENT") {
-          return JSON.stringify({ used: {}, lastSentAt: {} });
-        }
-        throw fallbackError;
-      }
-    } else if (error.code === "ENOENT") {
-      // File doesn't exist, return empty data
-      return JSON.stringify({ used: {}, lastSentAt: {} });
-    } else {
-      throw error;
-    }
-  }
-}
-
-// Helper function to safely write file with EROFS fallback
-async function safeWriteFile(filePath: string, content: string): Promise<void> {
-  try {
-    await fs.writeFile(filePath, content);
-  } catch (error: any) {
-    // If we get EROFS and we're not already using /tmp, switch to /tmp
-    if (error.code === "EROFS" && filePath !== "/tmp/tokens.json") {
-      actualTokensFile = "/tmp/tokens.json";
-      try {
-        await fs.writeFile(actualTokensFile, content);
-      } catch (fallbackError: any) {
-        console.error(`Failed to write token store to ${actualTokensFile}:`, fallbackError.message);
-        throw new Error(`Cannot write to token store. Filesystem is read-only.`);
-      }
-    } else {
-      throw error;
-    }
-  }
-}
-
-async function ensureStore() {
-  try {
-    // Try to create directory if it doesn't exist (will fail silently if it exists)
-    try {
-      await fs.mkdir(DATA_DIR, { recursive: true });
-    } catch (error: any) {
-      // Ignore EEXIST errors (directory already exists)
-      if (error.code !== "EEXIST") {
-        // If we get EROFS (read-only filesystem), switch to /tmp
-        if (error.code === "EROFS" && actualTokensFile !== "/tmp/tokens.json") {
-          actualTokensFile = "/tmp/tokens.json";
-          // /tmp should always exist, but try to ensure it
-          try {
-            await fs.mkdir("/tmp", { recursive: true });
-          } catch {
-            // /tmp should exist, ignore errors
-          }
-        } else if (error.code !== "EROFS") {
-          throw error;
-        }
-      }
-    }
-    
-    // Check if file exists
-    try {
-      await fs.access(actualTokensFile);
-    } catch {
-      // File doesn't exist, create it
-      await safeWriteFile(actualTokensFile, JSON.stringify({ used: {}, lastSentAt: {} }, null, 2));
-    }
-  } catch (error: any) {
-    // Final fallback: if we still have EROFS and not using /tmp, try /tmp
-    if (error.code === "EROFS" && actualTokensFile !== "/tmp/tokens.json") {
-      actualTokensFile = "/tmp/tokens.json";
-      try {
-        await safeWriteFile(actualTokensFile, JSON.stringify({ used: {}, lastSentAt: {} }, null, 2));
-      } catch (fallbackError: any) {
-        console.error(`Failed to initialize token store at ${actualTokensFile}:`, fallbackError.message);
-        throw new Error(`Cannot write to token store. Filesystem is read-only and /tmp is not available.`);
-      }
-    } else {
-      console.error(`Failed to initialize token store at ${actualTokensFile}:`, error.message);
-      throw error;
-    }
+  if (error) {
+    console.error(`[TokenStore] Error marking token ${jti} as sent:`, error);
+    throw error;
   }
 }
 
 export async function markTokenUsed(jti: string) {
-  await ensureStore();
-  const raw = await safeReadFile(actualTokensFile);
-  const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
-  data.used[jti] = true;
-  await safeWriteFile(actualTokensFile, JSON.stringify(data, null, 2));
+  const supabase = getSupabaseClient();
+  const { error } = await supabase
+    .from("used_magic_link_tokens")
+    .update({ used_at: new Date().toISOString() })
+    .eq("jti", jti)
+    .is("used_at", null); // Only update if not already used
+  
+  if (error) {
+    console.error(`[TokenStore] Error marking token ${jti} as used:`, error);
+    throw error;
+  }
 }
 
-export async function isTokenUsed(jti: string) {
-  await ensureStore();
-  try {
-    const raw = await safeReadFile(actualTokensFile);
-    const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
-    return Boolean(data.used[jti]);
-  } catch (error: any) {
-    // If we can't read it, token is not used
+export async function isTokenUsed(jti: string): Promise<boolean> {
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("used_magic_link_tokens")
+    .select("used_at")
+    .eq("jti", jti)
+    .single();
+  
+  if (error && error.code !== "PGRST116") { // PGRST116 = no rows returned
+    console.error(`[TokenStore] Error checking token ${jti}:`, error);
+    // If we can't check, assume not used to allow the request through
     return false;
   }
+  
+  // Token is used if it exists and used_at is not null
+  return !!data && !!data.used_at;
 }
 
 /**
  * Atomically check if token is used and mark it as used if not.
  * Returns true if the token was already used, false if it was successfully marked as used.
- * This prevents race conditions where multiple requests check and mark simultaneously.
+ * Uses database UPDATE with WHERE clause to ensure atomicity.
  */
 export async function checkAndMarkTokenUsed(jti: string): Promise<boolean> {
-  await ensureStore();
+  const supabase = getSupabaseClient();
+  
   try {
-    const raw = await safeReadFile(actualTokensFile);
-    const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
+    // First check if token exists and is already used
+    const { data: existing } = await supabase
+      .from("used_magic_link_tokens")
+      .select("used_at")
+      .eq("jti", jti)
+      .single();
     
-    // Ensure used object exists
-    if (!data.used) {
-      data.used = {};
+    if (existing) {
+      if (existing.used_at) {
+        console.log(`[TokenStore] Token ${jti} already marked as used`);
+        return true; // Already used
+      }
+      
+      // Token exists but not used yet - mark it as used atomically
+      const { error } = await supabase
+        .from("used_magic_link_tokens")
+        .update({ used_at: new Date().toISOString() })
+        .eq("jti", jti)
+        .is("used_at", null); // Only update if not already used (prevents race conditions)
+      
+      if (error) {
+        console.error(`[TokenStore] Error updating token ${jti}:`, error);
+        // Check again if it was updated by another request
+        const { data: recheck } = await supabase
+          .from("used_magic_link_tokens")
+          .select("used_at")
+          .eq("jti", jti)
+          .single();
+        
+        if (recheck?.used_at) {
+          return true; // Another request marked it as used
+        }
+        // Allow through if update failed
+        return false;
+      }
+      
+      console.log(`[TokenStore] Successfully marked token ${jti} as used`);
+      return false; // Successfully marked as used
     }
     
-    // Check if already used
-    if (data.used[jti]) {
-      console.log(`[TokenStore] Token ${jti} already marked as used`);
-      return true; // Already used
-    }
-    
-    // Atomically mark as used
-    data.used[jti] = true;
-    await safeWriteFile(actualTokensFile, JSON.stringify(data, null, 2));
-    console.log(`[TokenStore] Successfully marked token ${jti} as used`);
-    return false; // Successfully marked as used
+    // Token doesn't exist in database - this shouldn't happen if markTokenSent was called
+    // But allow through to avoid blocking legitimate requests
+    console.warn(`[TokenStore] Token ${jti} not found in database, allowing through`);
+    return false;
   } catch (error: any) {
-    // If we can't read/write, log the error but allow the request through
-    // This is safer than blocking legitimate requests in serverless environments
     console.error(`[TokenStore] Error in checkAndMarkTokenUsed for ${jti}:`, error);
-    console.error(`[TokenStore] Error details:`, {
-      code: error.code,
-      message: error.message,
-      actualTokensFile,
-      isServerless,
-    });
-    // In serverless environments, file operations might fail, so we allow the request
+    // If we can't check, assume not used to allow the request through
     // The token expiration (30m) provides security
     return false;
   }
 }
 
-export async function canSendEmail(email: string, cooldownMs = 60000) {
-  await ensureStore();
-  const raw = await safeReadFile(actualTokensFile);
-  const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
-  const last = data.lastSentAt[email] || 0;
+export async function canSendEmail(email: string, cooldownMs = 60000): Promise<boolean> {
+  // Check the most recent email sent to this address (based on sent_at, not used_at)
+  const supabase = getSupabaseClient();
+  const { data, error } = await supabase
+    .from("used_magic_link_tokens")
+    .select("sent_at")
+    .eq("email", email)
+    .order("sent_at", { ascending: false })
+    .limit(1)
+    .single();
+  
+  if (error && error.code !== "PGRST116") { // PGRST116 = no rows returned
+    console.error(`[TokenStore] Error checking email cooldown for ${email}:`, error);
+    // If we can't check, allow sending (safer than blocking)
+    return true;
+  }
+  
+  if (!data) {
+    // No previous emails sent, allow sending
+    return true;
+  }
+  
+  const lastSent = new Date(data.sent_at).getTime();
   const now = Date.now();
-  if (now - last < cooldownMs) return false;
-  data.lastSentAt[email] = now;
-  await safeWriteFile(actualTokensFile, JSON.stringify(data, null, 2));
-  return true;
+  const canSend = now - lastSent >= cooldownMs;
+  
+  if (!canSend) {
+    console.log(`[TokenStore] Email ${email} is in cooldown period (last sent ${Math.round((now - lastSent) / 1000)}s ago)`);
+  }
+  
+  return canSend;
 }

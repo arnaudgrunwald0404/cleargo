@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { createToken } from "@/lib/jwt";
-import { canSendEmail } from "@/lib/tokenStore";
+import { canSendEmail, markTokenSent } from "@/lib/tokenStore";
 import { sendMagicLinkEmail } from "@/lib/sendEmail";
 
 const emailSchema = z.string().email();
@@ -47,11 +47,18 @@ export async function POST(req: NextRequest) {
     }
 
     const jti = randomUUID();
-    const token = await createToken({ email, jti, t: "magic" }, "30m");
+    const expiresIn = "30m";
+    const token = await createToken({ email, jti, t: "magic" }, expiresIn);
+
+    // Calculate expiration date (30 minutes from now)
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
     const link = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
 
+    // Mark token as sent in database before sending email
+    await markTokenSent(jti, email, expiresAt);
+    
     await sendMagicLinkEmail(email, link);
 
     return NextResponse.json({ ok: true });

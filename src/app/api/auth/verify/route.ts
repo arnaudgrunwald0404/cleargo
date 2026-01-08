@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
   
   try {
-    const payload = await verifyToken<{ email: string; jti: string; t: string }>(token);
+    const payload = await verifyToken<{ email: string; jti: string; t: string; exp?: number }>(token);
     if (payload.t !== "magic") throw new Error("Wrong token type");
     
     console.log(`[Verify] Processing magic link token for ${payload.email}, jti: ${payload.jti}`);

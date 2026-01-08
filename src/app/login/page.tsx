@@ -42,6 +42,7 @@ function LoginForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
+  const [tokenRedirected, setTokenRedirected] = useState(false);
 
   // Pre-fill email from query params
   useEffect(() => {
@@ -51,22 +52,30 @@ function LoginForm() {
     }
   }, [searchParams]);
 
-  // Handle magic link token redirect
+  // Handle magic link token redirect - only once
   useEffect(() => {
-    if (token) {
-      window.location.href = `/api/auth/verify?token=${encodeURIComponent(token)}`;
+    if (token && !tokenRedirected) {
+      setTokenRedirected(true);
+      // Use replace instead of href to avoid adding to history
+      window.location.replace(`/api/auth/verify?token=${encodeURIComponent(token)}`);
     }
-  }, [token]);
+  }, [token, tokenRedirected]);
 
-  // Handle OAuth code redirect
+  // Handle OAuth code redirect - must happen immediately before client tries to process it
   useEffect(() => {
     if (code) {
-      window.location.href = `/auth/callback?code=${code}`;
+      // Immediately redirect to callback route - don't let client process the code
+      // The server-side callback route will handle the code exchange
+      window.location.replace(`/auth/callback?code=${code}`);
     }
   }, [code]);
 
-  // Check if already authenticated
+  // Check if already authenticated - but skip if we have a code (let callback handle it)
   useEffect(() => {
+    if (code) {
+      // Don't check auth if we have a code - let the callback route handle it
+      return;
+    }
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
@@ -74,7 +83,7 @@ function LoginForm() {
       }
     };
     checkAuth();
-  }, [supabase, router, redirectTo]);
+  }, [supabase, router, redirectTo, code]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -347,17 +356,66 @@ function LoginForm() {
             <div className="space-y-4 w-full">
               {/* Choice 1: Google SSO */}
               <button
-                onClick={() => {
-                  const redirectTo = `${window.location.origin}/auth/callback`;
-                  supabase.auth.signInWithOAuth({
-                    provider: 'google',
-                    options: {
+                onClick={async () => {
+                  try {
+                    // Verify Supabase URL is configured
+                    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+                    if (!supabaseUrl) {
+                      setMessage({ 
+                        type: 'error', 
+                        text: 'Supabase configuration error: NEXT_PUBLIC_SUPABASE_URL is not set' 
+                      });
+                      console.error('❌ Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+                      return;
+                    }
+
+                    // Verify URL format
+                    if (!supabaseUrl.match(/^https:\/\/[^.]+\.supabase\.co$/)) {
+                      setMessage({ 
+                        type: 'error', 
+                        text: `Invalid Supabase URL format: ${supabaseUrl}` 
+                      });
+                      console.error('❌ Invalid Supabase URL format:', supabaseUrl);
+                      return;
+                    }
+
+                    const redirectTo = `${window.location.origin}/auth/callback`;
+                    console.log('🔐 Initiating Google OAuth:', {
                       redirectTo,
-                      queryParams: {
-                        prompt: 'select_account',
+                      supabaseUrl,
+                      origin: window.location.origin,
+                    });
+                    
+                    const { data, error } = await supabase.auth.signInWithOAuth({
+                      provider: 'google',
+                      options: {
+                        redirectTo,
+                        queryParams: {
+                          prompt: 'select_account',
+                        },
                       },
-                    },
-                  });
+                    });
+                    
+                    if (error) {
+                      console.error('❌ OAuth error:', error);
+                      setMessage({ type: 'error', text: `OAuth error: ${error.message}` });
+                      return;
+                    }
+                    
+                    if (data?.url) {
+                      console.log('✅ Redirecting to OAuth provider:', data.url);
+                      window.location.href = data.url;
+                    } else {
+                      console.error('❌ No OAuth URL returned');
+                      setMessage({ type: 'error', text: 'Failed to initiate OAuth flow. Please check Supabase configuration.' });
+                    }
+                  } catch (err: any) {
+                    console.error('❌ OAuth exception:', err);
+                    setMessage({ 
+                      type: 'error', 
+                      text: `OAuth failed: ${err?.message || 'Unknown error'}. Please verify Supabase configuration.` 
+                    });
+                  }
                 }}
                 className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
               >

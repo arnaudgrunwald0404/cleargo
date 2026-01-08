@@ -31,15 +31,29 @@ export async function GET(request: NextRequest) {
         ),
     })
 
+    // Validate Supabase URL
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+        console.error('❌ Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+        return NextResponse.redirect(new URL('/login?error=config_error', requestUrl));
+    }
+
+    // Validate URL format
+    if (!supabaseUrl.match(/^https:\/\/[^.]+\.supabase\.co$/)) {
+        console.error('❌ Invalid Supabase URL format:', supabaseUrl);
+        return NextResponse.redirect(new URL('/login?error=config_error', requestUrl));
+    }
+
     // Use new publishable key, fallback to legacy anon key for backward compatibility
     const publishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     
     if (!publishableKey) {
-        throw new Error('Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY in environment variables');
+        console.error('❌ Missing NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY');
+        return NextResponse.redirect(new URL('/login?error=config_error', requestUrl));
     }
 
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        supabaseUrl,
         publishableKey,
         {
             cookies: {
@@ -112,7 +126,6 @@ export async function GET(request: NextRequest) {
         // Check for code_verifier cookie before exchange
         // Supabase uses: sb-{project}-auth-token-code-verifier (not sb-{project}-auth-code-verifier)
         const allCookies = request.cookies.getAll()
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
         
         // Try both possible cookie name formats

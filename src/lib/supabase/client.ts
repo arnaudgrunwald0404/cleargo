@@ -8,18 +8,50 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
     // PostgREST requires application/json or application/vnd.pgjson.object+json
     headers.set('Accept', 'application/json, application/vnd.pgjson.object+json');
 
-    return fetch(url, {
+    const response = await fetch(url, {
         ...options,
         headers: Object.fromEntries(headers.entries()),
     });
+
+    // Log auth endpoint errors for debugging
+    if (!response.ok && typeof url === 'string' && url.includes('/auth/v1/')) {
+        console.error('❌ Supabase Auth API Error:', {
+            url,
+            status: response.status,
+            statusText: response.statusText,
+            method: options?.method || 'GET',
+        });
+        
+        // If it's a 404 on the token endpoint, provide helpful error message
+        if (response.status === 404 && url.includes('/auth/v1/token')) {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+            console.error('⚠️ Auth token endpoint not found. Please verify:');
+            console.error('   1. NEXT_PUBLIC_SUPABASE_URL is correct:', supabaseUrl);
+            console.error('   2. Supabase project exists and auth is enabled');
+            console.error('   3. Supabase client library version is compatible');
+        }
+    }
+
+    return response;
 };
 
 export function createClient() {
+    // Validate Supabase URL before creating client
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) {
+        throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL environment variable');
+    }
+    
+    // Validate URL format
+    if (!supabaseUrl.match(/^https:\/\/[^.]+\.supabase\.co$/)) {
+        console.error('⚠️ Invalid Supabase URL format:', supabaseUrl);
+        console.error('Expected format: https://[project-ref].supabase.co');
+    }
+    
     // Intercept localStorage to also store PKCE code_verifier in cookies
     // Supabase SSR might still use localStorage internally even with cookie methods
     if (typeof window !== 'undefined' && typeof Storage !== 'undefined') {
         const originalSetItem = Storage.prototype.setItem;
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
         const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
         // Supabase actually uses: sb-{project}-auth-token-code-verifier
         const codeVerifierCookieName = projectRef ? `sb-${projectRef}-auth-token-code-verifier` : null;
@@ -94,7 +126,7 @@ export function createClient() {
     }
 
     return createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        supabaseUrl,
         publishableKey,
         {
             global: {
@@ -103,8 +135,10 @@ export function createClient() {
             auth: {
                 persistSession: true,
                 autoRefreshToken: false, // let middleware refresh on navigation
-                detectSessionInUrl: false, // we exchange the code on the server
+                detectSessionInUrl: false, // we exchange the code on the server - CRITICAL: prevents client-side code exchange
                 flowType: 'pkce',
+                // Don't specify storage - let Supabase SSR handle it automatically
+                // storage: typeof window !== 'undefined' ? window.localStorage : undefined,
             },
             cookies: {
                 getAll() {
