@@ -18,7 +18,7 @@ import { IconArrowsRightLeft, IconPlus, IconAlertCircle } from '@tabler/icons-re
 import { DelegationModal, DelegationType } from '../DelegationModal';
 import { MetricSelectionModal } from './MetricSelectionModal';
 import { notifications } from '@mantine/notifications';
-import type { AdoptionBenchmark, CreateEpicSuccessConfigDTO } from '@/lib/success/types';
+import type { CreateEpicSuccessConfigDTO } from '@/lib/success/types';
 import type { EpicTier } from '@/types/epics';
 import type { EpicSuccessMetricWithDetails } from '@/lib/services/successMeasurementService';
 
@@ -53,9 +53,6 @@ export function SuccessConfigForm({
   config,
   metrics = [],
 }: SuccessConfigFormProps) {
-  const [benchmarks, setBenchmarks] = useState<AdoptionBenchmark[]>([]);
-  const [loadingBenchmarks, setLoadingBenchmarks] = useState(false);
-  const [selectedBenchmarkId, setSelectedBenchmarkId] = useState<string>(initialData?.benchmark_id || '');
   const [delegationModalOpen, setDelegationModalOpen] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
   const [showMetricModal, setShowMetricModal] = useState(false);
@@ -78,65 +75,6 @@ export function SuccessConfigForm({
     fetchCurrentUser();
   }, []);
 
-  useEffect(() => {
-    fetchBenchmarks();
-  }, [epicTier]);
-
-  const fetchBenchmarks = async () => {
-    setLoadingBenchmarks(true);
-    try {
-      const params = new URLSearchParams();
-      params.append('launch_tier', epicTier);
-      params.append('is_default', 'true');
-
-      const res = await fetch(`/api/settings/success-measurement/benchmarks?${params.toString()}`);
-      if (!res.ok) {
-        let errorDetails = res.statusText;
-        try {
-          const errorData = await res.json();
-          errorDetails = errorData.details || errorData.error || res.statusText;
-          console.error('Error fetching benchmarks:', errorDetails);
-          if (errorData.stack && process.env.NODE_ENV === 'development') {
-            console.error('Error stack:', errorData.stack);
-          }
-        } catch {
-          console.error('Error fetching benchmarks:', res.statusText);
-        }
-        // Don't throw - just log and continue with empty array
-        setBenchmarks([]);
-        return;
-      }
-      const data = await res.json();
-      const benchmarksList = Array.isArray(data) ? data : [];
-      
-      // Also fetch all benchmarks for this tier to show in dropdown
-      const allParams = new URLSearchParams();
-      allParams.append('launch_tier', epicTier);
-      const allRes = await fetch(`/api/settings/success-measurement/benchmarks?${allParams.toString()}`);
-      if (allRes.ok) {
-        const allData = await allRes.json();
-        const allBenchmarks = Array.isArray(allData) ? allData : [];
-        setBenchmarks(allBenchmarks);
-        
-        // Set default benchmark if available
-        if (!selectedBenchmarkId && benchmarksList.length > 0) {
-          setSelectedBenchmarkId(benchmarksList[0].id);
-        }
-      } else {
-        // If second fetch fails, still set benchmarks from first fetch if available
-        setBenchmarks(benchmarksList);
-        if (!selectedBenchmarkId && benchmarksList.length > 0) {
-          setSelectedBenchmarkId(benchmarksList[0].id);
-        }
-      }
-    } catch (error: any) {
-      console.error('Error fetching benchmarks:', error);
-      // Set empty array on error to prevent UI crashes
-      setBenchmarks([]);
-    } finally {
-      setLoadingBenchmarks(false);
-    }
-  };
 
 
   const getInitials = (email: string): string => {
@@ -153,16 +91,12 @@ export function SuccessConfigForm({
   };
 
   const handleSubmit = async () => {
-    if (!selectedBenchmarkId) {
-      alert('Please select a benchmark');
-      return;
-    }
-
     // Post-launch owner will be auto-set by the backend to the product manager
     // We don't need to pass it - backend will auto-resolve to PM if not provided
+    // Benchmark is now selected as a metric, so no need to pass benchmark_id
     try {
       await onSubmit({
-        benchmark_id: selectedBenchmarkId,
+        // benchmark_id is no longer required - benchmarks are selected as metrics
         // post_launch_owner is optional - backend will auto-resolve to PM if not provided
       } as Omit<CreateEpicSuccessConfigDTO, 'epic_id'>);
     } catch (error: any) {
@@ -279,20 +213,6 @@ export function SuccessConfigForm({
           </Text>
         </div>
 
-        <Select
-          label="Adoption Benchmark"
-          required
-          description="Select a benchmark that matches this epic's tier"
-          data={benchmarks.map((b) => ({
-            value: b.id,
-            label: `${b.name}${b.is_default ? ' (Default)' : ''}`,
-          }))}
-          value={selectedBenchmarkId}
-          onChange={(value) => setSelectedBenchmarkId(value || '')}
-          disabled={loadingBenchmarks}
-          searchable
-        />
-
         <div>
           <Group justify="space-between" mb="xs">
             <Text size="sm" fw={500}>
@@ -343,13 +263,13 @@ export function SuccessConfigForm({
           )}
         </div>
 
-        <Group justify="flex-end" mt="md">
+          <Group justify="flex-end" mt="md">
           {onCancel && (
             <Button variant="subtle" onClick={onCancel} disabled={isSubmitting}>
               Cancel
             </Button>
           )}
-          <Button onClick={handleSubmit} loading={isSubmitting} disabled={!selectedBenchmarkId}>
+          <Button onClick={handleSubmit} loading={isSubmitting}>
             Save
           </Button>
         </Group>
@@ -411,6 +331,9 @@ export function SuccessConfigForm({
         onSelect={handleAddMetric}
         selectedMetricIds={selectedMetricIds}
         isSubmitting={submittingMetric}
+        epicTier={epicTier}
+        epicId={epicId}
+        onBenchmarkSelected={onRefresh}
       />
     </Card>
   );

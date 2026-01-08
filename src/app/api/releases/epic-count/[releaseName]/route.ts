@@ -124,21 +124,22 @@ export async function GET(
             }
             
             if (!matchingRelease) {
-                // Cache null count to avoid repeated lookups for non-existent releases
+                // Try to cache null count, but only if release already exists in release_schedule
+                // (to avoid violating launch_date NOT NULL constraint)
                 const now = new Date().toISOString();
-                await supabase
+                const { error: nullUpdateError } = await supabase
                     .from('release_schedule')
-                    .upsert(
-                        {
-                            release_name: releaseName,
-                            aha_epic_count: null,
-                            aha_epic_count_updated_at: now,
-                            updated_at: now,
-                        },
-                        {
-                            onConflict: 'release_name',
-                        }
-                    );
+                    .update({
+                        aha_epic_count: null,
+                        aha_epic_count_updated_at: now,
+                        updated_at: now,
+                    })
+                    .eq('release_name', releaseName);
+                
+                if (nullUpdateError) {
+                    // Release doesn't exist in release_schedule, can't cache without launch_date
+                    console.warn(`Could not cache null count for release ${releaseName} (release not in release_schedule):`, nullUpdateError.message);
+                }
                 
                 return NextResponse.json({ 
                     ahaCount: null,
@@ -174,23 +175,21 @@ export async function GET(
             }
 
             // Cache the count in the database
+            // Only update if the release already exists (to avoid violating launch_date NOT NULL constraint)
             const now = new Date().toISOString();
             const { error: updateError } = await supabase
                 .from('release_schedule')
-                .upsert(
-                    {
-                        release_name: releaseName,
-                        aha_epic_count: totalCount,
-                        aha_epic_count_updated_at: now,
-                        updated_at: now,
-                    },
-                    {
-                        onConflict: 'release_name',
-                    }
-                );
+                .update({
+                    aha_epic_count: totalCount,
+                    aha_epic_count_updated_at: now,
+                    updated_at: now,
+                })
+                .eq('release_name', releaseName);
 
             if (updateError) {
-                console.error(`Error caching AHA epic count for release ${releaseName}:`, updateError);
+                // If update failed, check if it's because the release doesn't exist
+                // In that case, we can't cache without a launch_date, so just log and continue
+                console.warn(`Could not cache AHA epic count for release ${releaseName} (release may not exist in release_schedule table):`, updateError.message);
                 // Continue anyway - we still return the count
             }
 

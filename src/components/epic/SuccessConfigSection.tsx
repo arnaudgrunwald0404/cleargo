@@ -249,18 +249,6 @@ export function SuccessConfigSection({
           </Group>
 
           <div>
-            <Text size="sm" fw={500} mb="xs">
-              Adoption Benchmark
-            </Text>
-            <Text>{config?.benchmark?.name || 'Unknown'}</Text>
-            {config?.benchmark && (
-              <Text size="xs" c="dimmed" mt="xs">
-                {config.benchmark.feature_type} • {config.benchmark.target_persona}
-              </Text>
-            )}
-          </div>
-
-          <div>
             <Group justify="space-between" mb="xs">
               <Text size="sm" fw={500}>
                 Success Metrics
@@ -538,6 +526,9 @@ export function SuccessConfigSection({
         onSelect={handleAddMetric}
         selectedMetricIds={selectedMetricIds}
         isSubmitting={submitting}
+        epicTier={epicTier}
+        epicId={epicId}
+        onBenchmarkSelected={onRefresh}
       />
 
       <ThresholdOverrideEditor

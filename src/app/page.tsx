@@ -9,7 +9,7 @@ export default async function HomePage() {
   const supabase = createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   
-  // Redirect to marketing website (welcome page) if user is not authenticated
+  // Redirect to login if user is not authenticated
   // Do this BEFORE any try-catch so redirect always happens
   if (error || !user?.email) {
     const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
@@ -17,8 +17,8 @@ export default async function HomePage() {
       // External marketing website
       redirect(marketingUrl);
     } else {
-      // Internal welcome page
-      redirect('/welcome');
+      // Internal login page
+      redirect('/login');
     }
   }
   

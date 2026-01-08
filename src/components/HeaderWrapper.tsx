@@ -87,8 +87,8 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
     checkAuth();
   }, [serverEmail, serverRole, serverImageUrl]);
 
-  // Hide header on login/welcome pages
-  const isPublicPage = pathname === '/login' || pathname === '/welcome' || pathname?.includes('/setup-password');
+  // Hide header on login page
+  const isPublicPage = pathname === '/login' || pathname?.includes('/setup-password');
   
   // Update body padding when header visibility changes
   useEffect(() => {
@@ -105,7 +105,7 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
     };
   }, [shouldShow, isLoading, isPublicPage]);
 
-  // Hide header on login/welcome pages
+  // Hide header on login page
   if (isPublicPage) {
     return null;
   }

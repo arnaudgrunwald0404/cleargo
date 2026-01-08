@@ -4,7 +4,7 @@ import { rateLimit } from '@/lib/rate-limit';
 import { NextResponse } from 'next/server';
 
 // Public routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/welcome', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password', '/setup-password'];
+const PUBLIC_ROUTES = ['/login', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password', '/setup-password'];
 
 // Routes accessible to users with only the OTHER role (pending access)
 const PENDING_ACCESS_ROUTES = ['/access-pending', '/auth/signout', '/account'];

@@ -118,17 +118,19 @@ export async function POST(
       );
     }
 
-    // Validate benchmark exists and matches epic tier
-    const { getBenchmarkById } = await import('@/lib/services/successMeasurementService');
-    const benchmark = await getBenchmarkById(parsed.data.benchmark_id);
-    if (!benchmark) {
-      return NextResponse.json({ error: 'Benchmark not found' }, { status: 404 });
-    }
-    if (benchmark.launch_tier !== epic.tier) {
-      return NextResponse.json(
-        { error: `Benchmark tier (${benchmark.launch_tier}) does not match epic tier (${epic.tier})` },
-        { status: 400 }
-      );
+    // Validate benchmark exists and matches epic tier if provided
+    if (parsed.data.benchmark_id) {
+      const { getBenchmarkById } = await import('@/lib/services/successMeasurementService');
+      const benchmark = await getBenchmarkById(parsed.data.benchmark_id);
+      if (!benchmark) {
+        return NextResponse.json({ error: 'Benchmark not found' }, { status: 404 });
+      }
+      if (benchmark.launch_tier !== epic.tier) {
+        return NextResponse.json(
+          { error: `Benchmark tier (${benchmark.launch_tier}) does not match epic tier (${epic.tier})` },
+          { status: 400 }
+        );
+      }
     }
 
     // Validate post-launch owner exists if provided (otherwise will be auto-resolved to PM)
@@ -151,7 +153,7 @@ export async function POST(
     }
 
     const config = await createEpicSuccessConfig(epicId, {
-      benchmark_id: parsed.data.benchmark_id,
+      ...(parsed.data.benchmark_id ? { benchmark_id: parsed.data.benchmark_id } : {}),
       ...(parsed.data.post_launch_owner ? { post_launch_owner: parsed.data.post_launch_owner } : {}),
     });
 

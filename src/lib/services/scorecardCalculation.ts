@@ -98,20 +98,22 @@ export async function calculateMetricResults(
 
 /**
  * Calculate benchmark comparison for a given epic and snapshot date
+ * Returns null if no benchmark is configured (benchmarks are now selected as metrics)
  */
 export async function calculateBenchmarkComparison(
   epicId: string,
   snapshotDate: string
-): Promise<BenchmarkComparison> {
+): Promise<BenchmarkComparison | null> {
   const config = await getEpicSuccessConfig(epicId);
   const epic = await getEpic(epicId);
 
+  // Benchmark is now optional - benchmarks are selected as metrics
   if (!config || !config.benchmark) {
-    throw new Error('Epic success configuration or benchmark not found');
+    return null;
   }
 
   if (!epic || !epic.target_launch_date) {
-    throw new Error('Epic or target launch date not found');
+    return null;
   }
 
   const benchmark = config.benchmark;

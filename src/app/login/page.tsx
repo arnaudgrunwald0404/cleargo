@@ -520,21 +520,9 @@ function LoginForm() {
                     </div>
                   )}
 
-                  {/* Forgot password / Magic link toggle (signin only) */}
+                  {/* Forgot password (signin only) */}
                   {mode === "signin" && (
-                    <div className="flex justify-between items-center">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedMethod("magic");
-                          setEmailFormExpanded(false);
-                          setMode("magic");
-                          setMessage(null);
-                        }}
-                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
-                      >
-                        Send me a magic link
-                      </button>
+                    <div className="flex justify-end items-center">
                       <button
                         type="button"
                         onClick={() => {

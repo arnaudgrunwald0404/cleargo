@@ -211,7 +211,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                                         fontSize: 'var(--font-size-sm)',
                                         fontWeight: 'var(--font-weight-medium)'
                                     }}>
-                                        <Link href={`/dashboard/epics/${epic.id}`} style={{
+                                        <Link href={`/epics/${epic.id}`} style={{
                                             color: 'var(--color-blue-600)',
                                             textDecoration: 'none',
                                             fontFamily: 'var(--font-body)'

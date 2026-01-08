@@ -100,12 +100,17 @@ export async function POST(
     const benchmarkComparison = await calculateBenchmarkComparison(epicId, snapshotDate);
     const overallStatus = determineOverallStatus(metricResults);
 
-    // Create scorecard
+    // Create scorecard (benchmarkComparison can be null if no benchmark configured)
     const scorecard = await createEpicScorecard(
       epicId,
       snapshotDate,
       metricResults,
-      benchmarkComparison,
+      benchmarkComparison || {
+        horizons: [],
+        expectedActivation: [],
+        actualActivation: null,
+        dataMissing: true,
+      },
       overallStatus
     );
 

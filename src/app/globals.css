@@ -263,3 +263,10 @@ body {
 .mantine-Modal-inner {
   padding-top: 80px !important; /* Navbar is 60px, so 80px gives 20px gap */
 }
+
+/* SegmentedControl selected label styling - white text on purple */
+.mantine-SegmentedControl-input:checked + .mantine-SegmentedControl-label,
+.mantine-SegmentedControl-label[data-active="true"] {
+  color: #FFFFFF !important;
+  font-weight: 600 !important;
+}

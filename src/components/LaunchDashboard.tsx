@@ -78,7 +78,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                                         {epic.readiness_score !== undefined ? `${epic.readiness_score}%` : 'N/A'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <Link href={`/dashboard/epics/${epic.id}`} className="text-blue-600 hover:text-blue-900">
+                                        <Link href={`/epics/${epic.id}`} className="text-blue-600 hover:text-blue-900">
                                             View
                                         </Link>
                                     </td>

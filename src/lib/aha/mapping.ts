@@ -33,6 +33,19 @@ export function getCustomFieldKey(fieldAlias: string): string {
 }
 
 /**
+ * Safely gets custom field key, returning null if not configured
+ * Use this for optional fields that may not be configured in Aha!
+ */
+export function getCustomFieldKeySafe(fieldAlias: string): string | null {
+    const config = loadAhaConfig();
+    const field = config.fields[fieldAlias];
+    if (!field || !field.key) {
+        return null;
+    }
+    return field.key;
+}
+
+/**
  * Fetches and caches custom field definitions to map option codes to labels
  */
 async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, string> | null> {
@@ -297,35 +310,70 @@ export function buildWriteBackPayload(data: {
 }): Record<string, any> {
     const payload: Record<string, any> = {};
 
-    // Readiness fields
+    // Readiness fields - skip if field key not configured
     if (data.readiness_status !== null) {
-        payload[getCustomFieldKey('launch_readiness_status')] = data.readiness_status;
+        const fieldKey = getCustomFieldKeySafe('launch_readiness_status');
+        if (fieldKey) {
+            payload[fieldKey] = data.readiness_status;
+        } else {
+            console.warn('Skipping launch_readiness_status write-back: field key not configured');
+        }
     }
 
     if (data.readiness_score !== null) {
-        const scorePercent = Math.round(data.readiness_score * 100);
-        payload[getCustomFieldKey('launch_readiness_score_pct')] = scorePercent;
+        const fieldKey = getCustomFieldKeySafe('launch_readiness_score_pct');
+        if (fieldKey) {
+            const scorePercent = Math.round(data.readiness_score * 100);
+            payload[fieldKey] = scorePercent;
+        } else {
+            console.warn('Skipping launch_readiness_score_pct write-back: field key not configured');
+        }
     }
 
     if (data.risk_level !== null) {
-        payload[getCustomFieldKey('launch_risk')] = data.risk_level;
+        const fieldKey = getCustomFieldKeySafe('launch_risk');
+        if (fieldKey) {
+            payload[fieldKey] = data.risk_level;
+        } else {
+            console.warn('Skipping launch_risk write-back: field key not configured');
+        }
     }
 
     if (data.last_go_no_go_decision_date !== null) {
-        payload[getCustomFieldKey('launch_go_no_go_decision_date')] = data.last_go_no_go_decision_date;
+        const fieldKey = getCustomFieldKeySafe('launch_go_no_go_decision_date');
+        if (fieldKey) {
+            payload[fieldKey] = data.last_go_no_go_decision_date;
+        } else {
+            console.warn('Skipping launch_go_no_go_decision_date write-back: field key not configured');
+        }
     }
 
     if (data.console_url !== null) {
-        payload[getCustomFieldKey('launch_console_url')] = data.console_url;
+        const fieldKey = getCustomFieldKeySafe('launch_console_url');
+        if (fieldKey) {
+            payload[fieldKey] = data.console_url;
+        } else {
+            console.warn('Skipping launch_console_url write-back: field key not configured');
+        }
     }
 
     // Phase 1: Core epic fields
     if (data.tier !== undefined && data.tier !== null) {
-        payload[getCustomFieldKey('launch_tier')] = mapTierToAha(data.tier);
+        const fieldKey = getCustomFieldKeySafe('launch_tier');
+        if (fieldKey) {
+            payload[fieldKey] = mapTierToAha(data.tier);
+        } else {
+            console.warn('Skipping launch_tier write-back: field key not configured');
+        }
     }
 
     if (data.target_launch_date !== undefined && data.target_launch_date !== null) {
-        payload[getCustomFieldKey('estimated_ga_release_pm_owned')] = data.target_launch_date;
+        const fieldKey = getCustomFieldKeySafe('estimated_ga_release_pm_owned');
+        if (fieldKey) {
+            payload[fieldKey] = data.target_launch_date;
+        } else {
+            console.warn('Skipping estimated_ga_release_pm_owned write-back: field key not configured');
+        }
     }
 
     return payload;

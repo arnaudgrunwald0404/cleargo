@@ -111,7 +111,7 @@ export const updateSuccessMetricSchema = successMetricBaseSchema.partial().refin
 // ============================================================================
 
 export const createEpicSuccessConfigSchema = z.object({
-  benchmark_id: z.string().uuid("Invalid benchmark ID"),
+  benchmark_id: z.string().uuid("Invalid benchmark ID").optional(),
   post_launch_owner: z.string().uuid("Invalid post-launch owner ID").optional(),
 });
 
