@@ -14,6 +14,19 @@ export async function GET(request: NextRequest) {
     const refresh_token = searchParams.get('refresh_token')
 
     const requestUrl = new URL(request.url)
+    
+    // Log ALL parameters to debug what Supabase is sending
+    console.log('🔍 Callback route - Full request details:', {
+        url: request.url,
+        pathname: requestUrl.pathname,
+        search: requestUrl.search,
+        allParams: Object.fromEntries(searchParams.entries()),
+        hasCode: !!code,
+        hasTokenHash: !!token_hash,
+        hasAccessToken: !!access_token,
+        referer: request.headers.get('referer'),
+        origin: request.headers.get('origin'),
+    })
     const response = NextResponse.next({
         request: {
             headers: request.headers,
@@ -126,7 +139,7 @@ export async function GET(request: NextRequest) {
         // Check for code_verifier cookie before exchange
         // Supabase uses: sb-{project}-auth-token-code-verifier (not sb-{project}-auth-code-verifier)
         const allCookies = request.cookies.getAll()
-        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
+        const projectRef = supabaseUrl.match(/                                                                                                                                  https:\/\/([^.]+)\.supabase\.co/)?.[1] || ''
         
         // Try both possible cookie name formats
         const codeVerifierCookieName1 = projectRef ? `sb-${projectRef}-auth-code-verifier` : null
