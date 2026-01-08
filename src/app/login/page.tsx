@@ -393,11 +393,18 @@ function LoginForm() {
 
                     // Create a fresh Supabase client for OAuth (don't use the conditional one)
                     const oauthClient = createClient();
-                    const redirectTo = `${window.location.origin}/auth/callback`;
+                    // CRITICAL: Use current origin (including branch previews) for redirect
+                    // This ensures the redirect URL matches the current deployment
+                    // For Netlify preview branches, use the actual current origin
+                    const currentOrigin = window.location.origin;
+                    const redirectTo = `${currentOrigin}/auth/callback`;
                     console.log('🔐 Initiating Google OAuth:', {
                       redirectTo,
                       supabaseUrl,
-                      origin: window.location.origin,
+                      origin: currentOrigin,
+                      hostname: window.location.hostname,
+                      fullUrl: window.location.href,
+                      note: 'Make sure this redirectTo is in Supabase Redirect URLs list',
                     });
                     
                     const { data, error } = await oauthClient.auth.signInWithOAuth({
@@ -407,17 +414,31 @@ function LoginForm() {
                         queryParams: {
                           prompt: 'select_account',
                         },
+                        skipBrowserRedirect: false, // Ensure browser redirect happens
                       },
                     });
                     
                     if (error) {
                       console.error('❌ OAuth error:', error);
+                      console.error('❌ OAuth error details:', {
+                        message: error.message,
+                        status: error.status,
+                        redirectTo,
+                        currentOrigin: window.location.origin,
+                      });
                       setMessage({ type: 'error', text: `OAuth error: ${error.message}` });
                       return;
                     }
                     
                     if (data?.url) {
                       console.log('✅ Redirecting to OAuth provider:', data.url);
+                      console.log('🔍 OAuth URL details:', {
+                        fullUrl: data.url,
+                        redirectToInUrl: data.url.includes(encodeURIComponent(redirectTo)),
+                        redirectToValue: redirectTo,
+                      });
+                      // Store redirectTo in sessionStorage as fallback
+                      sessionStorage.setItem('oauth_redirect_to', redirectTo);
                       window.location.href = data.url;
                     } else {
                       console.error('❌ No OAuth URL returned');

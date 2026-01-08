@@ -15,8 +15,16 @@ export default async function HomePage({
   // Check if OAuth code is present in URL - if so, redirect to callback route
   const code = searchParams?.code;
   if (code && typeof code === 'string') {
+    console.log('🔍 Root page: OAuth code detected, redirecting to callback');
     // Redirect to callback route to handle code exchange
     redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+  }
+  
+  // Also check for other OAuth parameters that might be present
+  // Sometimes Supabase redirects with different parameter names
+  const allParams = Object.keys(searchParams || {});
+  if (allParams.length > 0) {
+    console.log('🔍 Root page: Search params detected:', allParams);
   }
   
   const supabase = createClient();
