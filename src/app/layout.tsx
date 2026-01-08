@@ -11,6 +11,7 @@ import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
 import { EpicScopeProvider } from "@/lib/contexts/EpicScopeContext";
+import { getSession } from "@/lib/auth";
 
 // Force dynamic rendering for the root layout since it uses cookies for auth
 export const dynamic = 'force-dynamic';
@@ -48,8 +49,15 @@ export default async function RootLayout({
     const supabase = createClient();
     const { data: { user }, error } = await supabase.auth.getUser();
     
-    if (!error && user?.email) {
-      email = user.email;
+    // Check for custom lr_session cookie (used by magic link)
+    const session = await getSession();
+    const sessionEmail = session?.email;
+    
+    // Use email from Supabase auth or from lr_session cookie
+    const userEmail = user?.email || sessionEmail;
+    
+    if (userEmail) {
+      email = userEmail;
 
       try {
         const { data: profile } = await supabase

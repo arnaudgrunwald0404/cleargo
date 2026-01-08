@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
+import { getSession } from "@/lib/auth";
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -12,8 +13,15 @@ const updateProfileSchema = z.object({
 export async function PATCH(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    
+    // Check for custom lr_session cookie (used by magic link)
+    const session = await getSession();
+    const sessionEmail = session?.email;
+    
+    // Use email from Supabase auth or from lr_session cookie
+    const userEmail = user?.email || sessionEmail;
 
-    if (!user?.email) {
+    if (!userEmail) {
         return new NextResponse("Unauthorized", { status: 401 });
     }
 
@@ -47,7 +55,7 @@ export async function PATCH(req: NextRequest) {
         .from("app_user")
         .upsert(
             {
-                email: user.email,
+                email: userEmail,
                 ...updateData,
                 updated_at: new Date().toISOString(),
             },
@@ -71,7 +79,7 @@ export async function PATCH(req: NextRequest) {
                 .from("app_user")
                 .upsert(
                     {
-                        email: user.email,
+                        email: userEmail,
                         ...updateData,
                         updated_at: new Date().toISOString(),
                     },
@@ -103,15 +111,22 @@ export async function PATCH(req: NextRequest) {
 export async function GET(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    
+    // Check for custom lr_session cookie (used by magic link)
+    const session = await getSession();
+    const sessionEmail = session?.email;
+    
+    // Use email from Supabase auth or from lr_session cookie
+    const userEmail = user?.email || sessionEmail;
 
-    if (!user?.email) {
+    if (!userEmail) {
         return new NextResponse("Unauthorized", { status: 401 });
     }
 
     const { data: profile, error } = await supabase
         .from("app_user")
         .select("*")
-        .eq("email", user.email)
+        .eq("email", userEmail)
         .single();
 
     if (error) {

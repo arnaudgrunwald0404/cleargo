@@ -24,56 +24,68 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        // First check if server provided email (from layout.tsx)
+        if (serverEmail) {
+          setShouldShow(true);
+          setEmail(serverEmail);
+          if (serverRole) setRole(serverRole);
+          if (serverImageUrl) setImageUrl(serverImageUrl);
+        }
+        
+        // Try Supabase auth
         const supabase = createClient();
         const { data: { user }, error } = await supabase.auth.getUser();
         
-        if (!error && user) {
-          // User is authenticated
-          setShouldShow(true);
-          
-          // Use server-provided data if available, otherwise fetch from API
-          if (!email && user.email) {
-            setEmail(user.email);
-          }
-          
-          // Fetch profile data including role and avatar from /api/me
-          try {
-            const res = await fetch('/api/me', { credentials: 'include' });
-            if (res.ok) {
-              const data = await res.json();
-              const profile = data.user;
+        // Check /api/me which supports both Supabase auth and lr_session cookie
+        try {
+          const res = await fetch('/api/me', { credentials: 'include' });
+          if (res.ok) {
+            const data = await res.json();
+            const profile = data.user;
+            
+            if (profile) {
+              // User is authenticated (via either method)
+              setShouldShow(true);
               
-              if (profile) {
-                // Set email if not already set
-                if (!email && profile.email) {
-                  setEmail(profile.email);
-                }
+              // Set email if not already set
+              if (!email && profile.email) {
+                setEmail(profile.email);
+              }
+              
+              // Set avatar if available
+              if (profile.avatar_url) {
+                setImageUrl(profile.avatar_url);
+              }
+              
+              // Set role if available (prioritize roles array, fallback to role string)
+              if (!role) {
+                const roles = profile.roles as string[] | null;
+                const legacyRole = profile.role as string | null;
                 
-                // Set avatar if available
-                if (profile.avatar_url) {
-                  setImageUrl(profile.avatar_url);
-                }
-                
-                // Set role if available (prioritize roles array, fallback to role string)
-                if (!role) {
-                  const roles = profile.roles as string[] | null;
-                  const legacyRole = profile.role as string | null;
-                  
-                  if (roles && roles.length > 0) {
-                    setRole(roles[0] as Role);
-                  } else if (legacyRole) {
-                    setRole(legacyRole as Role);
-                  }
+                if (roles && roles.length > 0) {
+                  setRole(roles[0] as Role);
+                } else if (legacyRole) {
+                  setRole(legacyRole as Role);
                 }
               }
             }
-          } catch (apiError) {
-            console.error('Failed to fetch profile from /api/me:', apiError);
-            // Continue with Supabase user data
+          } else if (res.status === 401) {
+            // Not authenticated
+            if (!serverEmail) {
+              setShouldShow(false);
+            }
           }
-        } else {
-          // User is not authenticated
-          setShouldShow(false);
+        } catch (apiError) {
+          console.error('Failed to fetch profile from /api/me:', apiError);
+          // If Supabase auth worked, use that
+          if (!error && user) {
+            setShouldShow(true);
+            if (!email && user.email) {
+              setEmail(user.email);
+            }
+          } else if (!serverEmail) {
+            setShouldShow(false);
+          }
         }
       } catch (error) {
         console.error('HeaderWrapper auth check failed:', error);
