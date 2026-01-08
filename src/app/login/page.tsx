@@ -505,10 +505,7 @@ function LoginForm() {
               </button>
 
               {/* Choice 3: Magic Link - Disabled */}
-              <button
-                disabled
-                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl opacity-50 cursor-not-allowed text-left"
-              >
+              <div className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl opacity-50 cursor-not-allowed text-left bg-gray-50">
                 <div className="flex items-center gap-3 sm:gap-4">
                   <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-300 rounded-lg flex items-center justify-center flex-shrink-0">
                     <svg className="w-6 h-6 sm:w-7 sm:h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -520,7 +517,7 @@ function LoginForm() {
                     <p className="text-xs sm:text-sm text-gray-400">Coming soon</p>
                   </div>
                 </div>
-              </button>
+              </div>
             </div>
           )}
 
