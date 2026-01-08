@@ -72,7 +72,6 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Releases' },
         ...(canViewMeetings ? [{ link: '/meetings', label: 'Meetings' }] : []),
-        { link: '/my-items', label: 'My Items' },
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 
