@@ -12,9 +12,16 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Get query parameter for showing all items vs pending only
+        const { searchParams } = new URL(req.url);
+        const showAll = searchParams.get('showAll') === 'true';
+
         // Let the database filter items using pod->PM mapping and indexes
         const { data, error } = await supabase
-            .rpc('my_items_for_user', { p_email: user.email });
+            .rpc('my_items_for_user', { 
+                p_email: user.email,
+                p_show_all: showAll
+            });
 
         if (error) throw error;
 

@@ -193,15 +193,6 @@ export async function POST(request: NextRequest) {
                     },
                     url: `${APP_URL}/portfolio`,
                 },
-                {
-                    type: 'button',
-                    text: {
-                        type: 'plain_text',
-                        text: 'View My Items',
-                        emoji: true,
-                    },
-                    url: `${APP_URL}/my-items`,
-                },
             ],
         });
 
