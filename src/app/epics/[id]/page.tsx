@@ -20,6 +20,7 @@ import { ScorecardPageContent } from "@/components/epic/ScorecardPageContent";
 import { RetroPageContent } from "@/components/epic/RetroPageContent";
 import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from "@/lib/services/successMeasurementService";
 import { EpicDetailTabs } from "@/components/EpicDetailTabs";
+import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 
 export default function EpicDetailPage() {
     const params = useParams();
@@ -118,7 +119,7 @@ export default function EpicDetailPage() {
             // Use shared rate-limit-aware fetch utility
             const fetchWithRetry = (url: string) => fetchWithRateLimit(url, { maxRetries: 1 });
 
-            // PARALLEL FETCH: Fetch epic, settings, criteria, matrix, launch stages, and release schedule simultaneously
+            // PARALLEL FETCH: Fetch epic, settings, criteria, matrix, launch stages, release schedule, watch status, and success data simultaneously
             // This dramatically reduces load time
             const [
                 epicRes,
@@ -126,7 +127,10 @@ export default function EpicDetailPage() {
                 criteriaRes,
                 matrixQuery,
                 launchStagesQuery,
-                releaseScheduleQuery
+                releaseScheduleQuery,
+                watchRes,
+                successConfigRes,
+                successMetricsRes
             ] = await Promise.all([
                 fetchWithRetry(`/api/epics/${id}`),
                 fetchWithRetry('/api/settings'),
@@ -154,7 +158,13 @@ export default function EpicDetailPage() {
                     .select('id, name, sort_order, duration_days')
                     .order('sort_order', { ascending: true }),
                 // Release schedule will be fetched conditionally after we get epic data
-                Promise.resolve({ data: null, error: null })
+                Promise.resolve({ data: null, error: null }),
+                // Fetch watch status in parallel
+                user?.email && id ? fetchWithRetry(`/api/epics/${id}/watch`).catch(() => Promise.resolve({ ok: false, json: async () => ({ isWatching: false }) })) : Promise.resolve({ ok: false, json: async () => ({ isWatching: false }) }),
+                // Fetch success config in parallel
+                fetchWithRetry(`/api/epics/${id}/success/config`).catch(() => Promise.resolve({ ok: false, json: async () => null })),
+                // Fetch success metrics in parallel
+                fetchWithRetry(`/api/epics/${id}/success/metrics`).catch(() => Promise.resolve({ ok: false, json: async () => [] }))
             ]);
 
             // Process epic data
@@ -174,25 +184,53 @@ export default function EpicDetailPage() {
             const data = await epicRes.json();
             setEpic(data);
 
-            // Fetch watch status if user is authenticated
-            if (user?.email && id) {
-                try {
-                    const watchRes = await fetch(`/api/epics/${id}/watch`);
-                    if (watchRes.ok) {
-                        const watchData = await watchRes.json();
-                        setIsWatching(watchData.isWatching || false);
-                    }
-                } catch (err) {
-                    console.warn('Failed to fetch watch status:', err);
+            // Process watch status (already fetched in parallel)
+            try {
+                if (watchRes && watchRes.ok) {
+                    const watchData = await watchRes.json();
+                    setIsWatching(watchData.isWatching || false);
+                } else {
                     setIsWatching(false);
                 }
+            } catch (err) {
+                console.warn('Failed to parse watch status:', err);
+                setIsWatching(false);
+            }
+
+            // Process success config and metrics (already fetched in parallel)
+            try {
+                if (successConfigRes && successConfigRes.ok) {
+                    const configData = await successConfigRes.json();
+                    setSuccessConfig(configData);
+                } else if (successConfigRes && (successConfigRes as any).status === 404) {
+                    setSuccessConfig(null);
+                }
+            } catch (err) {
+                console.warn('Failed to parse success config:', err);
+            }
+
+            try {
+                if (successMetricsRes && successMetricsRes.ok) {
+                    const metricsData = await successMetricsRes.json();
+                    setSuccessMetrics(Array.isArray(metricsData) ? metricsData : []);
+                } else {
+                    setSuccessMetrics([]);
+                }
+            } catch (err) {
+                console.warn('Failed to parse success metrics:', err);
+                setSuccessMetrics([]);
             }
 
             // Process settings once (used for both threshold and pod mapping)
-            let settings: any = {};
-            let settingsMapping: Record<string, string> = {};
-            if (settingsRes.ok) {
+            // Check cache first, then fetch if needed
+            let settings: any = epicDetailCache.getSettings();
+            if (!settings && settingsRes.ok) {
                 settings = await settingsRes.json();
+                epicDetailCache.setSettings(settings);
+            }
+            
+            let settingsMapping: Record<string, string> = {};
+            if (settings) {
                 settingsMapping = settings.pod_product_manager_mapping || {};
                 
                 // Set threshold immediately
@@ -218,15 +256,30 @@ export default function EpicDetailPage() {
             const { data: matrixData, error: matrixError } = matrixQuery;
             if (matrixError) throw matrixError;
 
-            // Process criteria
-            let allActiveCriteria: any[] = [];
-            if (criteriaRes.ok) {
+            // Process criteria - check cache first
+            let allActiveCriteria: any[] = epicDetailCache.getCriteria() || [];
+            if (allActiveCriteria.length === 0 && criteriaRes.ok) {
                 const criteriaData = await criteriaRes.json();
                 allActiveCriteria = (criteriaData.items || []).filter((c: any) => c.is_active === true);
+                epicDetailCache.setCriteria(allActiveCriteria);
             }
 
-            // Process launch stages
-            const { data: stagesData, error: stagesError } = launchStagesQuery;
+            // Process launch stages - check cache first
+            let cachedStages = epicDetailCache.getLaunchStages();
+            let stagesData: any[] | null = null;
+            let stagesError: any = null;
+            
+            if (cachedStages) {
+                stagesData = cachedStages;
+            } else {
+                const queryResult = launchStagesQuery;
+                stagesData = queryResult.data;
+                stagesError = queryResult.error;
+                if (!stagesError && stagesData) {
+                    epicDetailCache.setLaunchStages(stagesData);
+                }
+            }
+            
             let fetchedLaunchStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null }> = [];
             // Pre-calculate days-before-launch for each stage (optimization: calculate once, reuse many times)
             const calculatedDaysBeforeLaunch = new Map<number, number>();
@@ -518,25 +571,57 @@ export default function EpicDetailPage() {
                 }
             });
             
-            // Fetch user info for all approver emails using API endpoint
-            // This works even without authentication, allowing email-to-name translation
+            // Collect PM email for batching with approver emails (using pod already declared above)
+            let pmEmail: string | null = null;
+            if (pod && settingsMapping[pod]) {
+                pmEmail = settingsMapping[pod];
+            } else if (pod) {
+                const podLower = pod.toLowerCase();
+                const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
+                if (matchingKey && settingsMapping[matchingKey]) {
+                    pmEmail = settingsMapping[matchingKey];
+                }
+            }
+            
+            // If no PM email from pod mapping, try Aha assigned user
+            if (!pmEmail) {
+                const assignedUser = ahaFields?.standard_fields?.assigned_to_user;
+                if (assignedUser?.email) {
+                    pmEmail = assignedUser.email;
+                }
+            }
+
+            // Batch fetch user info for all approver emails AND PM owner in a single API call
             const userInfoMap: Record<string, { first_name?: string; last_name?: string; avatar_url?: string }> = {};
-            if (approverEmails.size > 0) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:493',message:'Before /api/users/by-email call for approvers',data:{approverCount:approverEmails.size,emails:Array.from(approverEmails)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
+            const allEmailsToFetch = new Set(approverEmails);
+            if (pmEmail && pmEmail.includes("@")) {
+                allEmailsToFetch.add(pmEmail);
+            }
+
+            if (allEmailsToFetch.size > 0) {
                 try {
-                    const emailsParam = Array.from(approverEmails).join(',');
+                    const emailsParam = Array.from(allEmailsToFetch).join(',');
                     const userInfoRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(emailsParam)}`);
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:496',message:'After /api/users/by-email call for approvers',data:{status:userInfoRes.status,ok:userInfoRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                    // #endregion
                     if (userInfoRes.ok) {
                         const fetchedUserMap = await userInfoRes.json();
                         // Merge fetched user info into userInfoMap
                         Object.keys(fetchedUserMap).forEach(email => {
                             userInfoMap[email.toLowerCase()] = fetchedUserMap[email];
                         });
+                        
+                        // Set PM owner if we have the email
+                        if (pmEmail) {
+                            const pmInfo = userInfoMap[pmEmail.toLowerCase()];
+                            if (pmInfo) {
+                                setPmOwner({
+                                    email: pmEmail,
+                                    name: pmInfo.first_name && pmInfo.last_name 
+                                        ? `${pmInfo.first_name} ${pmInfo.last_name}` 
+                                        : pmInfo.first_name || pmInfo.last_name || undefined,
+                                    avatar_url: pmInfo.avatar_url,
+                                });
+                            }
+                        }
                     }
                 } catch (e) {
                     console.warn('Failed to fetch user info from API:', e);
@@ -622,147 +707,37 @@ export default function EpicDetailPage() {
                     fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:582',message:'Fetching comments for itemIds',data:{totalIds:itemIds.length,virtualIdsCount:virtualCommentIds.length,virtualIds:virtualCommentIds.slice(0,5),realIdsCount:realItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
                     // #endregion
                     
-                    // Fetch comments counts and last comment for each item using batch fetching
-                    const commentUrls = realItemIds.map(
-                        (itemId: string) => `/api/epics/${id}/criteria/${itemId}/comments`
-                    );
-
-                    batchFetchWithRateLimit(commentUrls, {
-                        batchSize: 5,
-                        batchDelay: 200,
-                        maxRetries: 1,
-                    }).then(async (results) => {
-                        // Process all comment responses first (without updating state)
-                        const commentPromises = results.map(async ({ url, response, error }, index) => {
-                            const itemId = realItemIds[index];
-                            
-                            if (error || !response) {
-                                console.warn(`Failed to fetch comments for ${itemId}:`, error);
-                                commentsData[itemId] = { count: 0 };
-                                return;
-                            }
-
-                            if (response.ok) {
-                                try {
-                                    const comments = await response.json();
-                                    const lastComment = comments && comments.length > 0 
-                                        ? comments[comments.length - 1] 
-                                        : null;
-                                    commentsData[itemId] = {
-                                        count: comments?.length || 0,
-                                        lastComment: lastComment ? {
-                                            comment_text: lastComment.comment_text,
-                                            created_at: lastComment.created_at,
-                                            created_by: lastComment.created_by,
-                                        } : undefined,
-                                    };
-                                } catch (e) {
-                                    console.warn(`Failed to parse comments for ${itemId}:`, e);
-                                    commentsData[itemId] = { count: 0 };
-                                }
-                            } else {
-                                commentsData[itemId] = { count: 0 };
-                            }
-                        });
-                        
-                        // Wait for all comment processing to complete
-                        await Promise.all(commentPromises);
-                        
-                        // Single batch update of matrix with all comment data
-                        setMatrix(prevMatrix => prevMatrix.map((item: any) => {
-                            const commentsInfo = commentsData[item.id] || { count: 0 };
-                            return {
-                                ...item,
-                                commentCount: commentsInfo.count,
-                                lastComment: commentsInfo.lastComment,
-                            };
-                        }));
-                    });
-                    
-                    // Fetch attachments counts for each item with deduplication and error handling
-                    // Use batch fetching with rate limit handling to avoid overwhelming the server
-                    // Filter out virtual IDs - they don't have status rows and can't have attachments
-                    const realAttachmentItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
-                    
-                    // #region agent log
-                    const virtualAttachmentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:644',message:'Before filtering attachment itemIds',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualAttachmentIds.length,virtualIds:virtualAttachmentIds.slice(0,5),realIdsCount:realAttachmentItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'G'})}).catch(()=>{});
-                    // #endregion
-                    
-                    const attachmentItemIds = realAttachmentItemIds.filter((itemId: string) => {
-                        // Skip if already pending or previously failed with 500
-                        const requestKey = `${id}-${itemId}`;
-                        if (pendingAttachmentRequestsRef.current.has(requestKey)) {
-                            return false;
+                    // Use optimized batch counts API to fetch all comment and attachment counts in a single request
+                    fetch(`/api/epics/${id}/criteria/counts`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        credentials: 'include',
+                        body: JSON.stringify({ statusIds: itemIds })
+                    }).then(async (res) => {
+                        if (!res.ok) {
+                            console.warn('Failed to fetch batch counts:', res.status);
+                            return;
                         }
-                        if (failedAttachmentRequestsRef.current.has(requestKey)) {
-                            return false;
+
+                        try {
+                            const countsData = await res.json();
+                            
+                            // Process counts data and update matrix in a single state update
+                            setMatrix(prevMatrix => prevMatrix.map((item: any) => {
+                                const counts = countsData[item.id] || { commentCount: 0, attachmentCount: 0 };
+                                return {
+                                    ...item,
+                                    commentCount: counts.commentCount || 0,
+                                    attachmentCount: counts.attachmentCount || 0,
+                                    ...(counts.lastComment ? { lastComment: counts.lastComment } : {}),
+                                };
+                            }));
+                        } catch (e) {
+                            console.warn('Failed to parse batch counts:', e);
                         }
-                        pendingAttachmentRequestsRef.current.add(requestKey);
-                        return true;
+                    }).catch((err) => {
+                        console.warn('Failed to fetch batch counts:', err);
                     });
-
-                    if (attachmentItemIds.length > 0) {
-                        // Build URLs for batch fetching
-                        const attachmentUrls = attachmentItemIds.map(
-                            (itemId: string) => `/api/epics/${id}/criteria/${itemId}/attachments`
-                        );
-
-                        // Use batch fetch with rate limit handling (processes in batches of 5)
-                        batchFetchWithRateLimit(attachmentUrls, {
-                            batchSize: 5,
-                            batchDelay: 200,
-                            maxRetries: 1,
-                        }).then(async (results) => {
-                            // Process all attachment responses first (without updating state)
-                            const attachmentPromises = results.map(async ({ url, response, error }, index) => {
-                                const itemId = attachmentItemIds[index];
-                                const requestKey = `${id}-${itemId}`;
-                                
-                                // Remove from pending set
-                                pendingAttachmentRequestsRef.current.delete(requestKey);
-                                
-                                if (error) {
-                                    console.warn(`Failed to fetch attachments for ${itemId}:`, error);
-                                    attachmentsData[itemId] = 0;
-                                    return;
-                                }
-
-                                if (!response) {
-                                    attachmentsData[itemId] = 0;
-                                    return;
-                                }
-
-                                if (response.ok) {
-                                    try {
-                                        const attachments = await response.json();
-                                        attachmentsData[itemId] = attachments?.length || 0;
-                                    } catch (e) {
-                                        console.warn(`Failed to parse attachments for ${itemId}:`, e);
-                                        attachmentsData[itemId] = 0;
-                                    }
-                                } else if (response.status === 500) {
-                                    // Don't retry 500 errors - mark as failed
-                                    failedAttachmentRequestsRef.current.add(requestKey);
-                                    console.warn(`Server error (500) fetching attachments for ${itemId}, skipping retries`);
-                                    attachmentsData[itemId] = 0;
-                                } else {
-                                    // Other errors - don't retry
-                                    failedAttachmentRequestsRef.current.add(requestKey);
-                                    attachmentsData[itemId] = 0;
-                                }
-                            });
-                            
-                            // Wait for all attachment processing to complete
-                            await Promise.all(attachmentPromises);
-                            
-                            // Single batch update of matrix with all attachment data
-                            setMatrix(prevMatrix => prevMatrix.map((item: any) => ({
-                                ...item,
-                                attachmentCount: attachmentsData[item.id] || 0,
-                            })));
-                        });
-                    }
                 }, 100); // Small delay to let initial render complete
             }
             
@@ -831,33 +806,9 @@ export default function EpicDetailPage() {
 
             setMatrix(resolvedMatrix);
             
-            // Resolve PM owner: prioritize pod mapping (source of truth), then fallback to assigned_to_user or PM criteria approver
-            let pmEmail: string | null = null;
-            
-            // First priority: pod mapping (this is the authoritative source for PM assignment)
-            // Try exact match first
-            if (pod && settingsMapping[pod]) {
-                pmEmail = settingsMapping[pod];
-            } else if (pod) {
-                // Try case-insensitive match
-                const podLower = pod.toLowerCase();
-                const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
-                if (matchingKey) {
-                    pmEmail = settingsMapping[matchingKey];
-                }
-            }
-            
-            if (pmEmail) {
-                console.log('Resolved PM owner from pod mapping:', pmEmail);
-            }
-            
-            // Second priority: assigned_to_user from AHA fields
-            if (!pmEmail && ahaFields?.standard_fields?.assigned_to_user) {
-                const assignedUser = ahaFields.standard_fields.assigned_to_user;
-                pmEmail = assignedUser.email || null;
-            }
-            
-            // Third priority: get it from Product Management & Documentation Foundation criteria
+            // PM owner email resolution is already done above (pmEmail variable)
+            // Now check if we need to fetch PM owner info (if not already fetched in batch)
+            // Third priority: get it from Product Management & Documentation Foundation criteria if not found earlier
             if (!pmEmail) {
                 const pmFoundationItems = resolvedMatrix.filter((item: any) => {
                     const category = item.criterion?.category;
@@ -869,45 +820,52 @@ export default function EpicDetailPage() {
                 }
             }
             
-            // Fetch PM owner info if email is available using API endpoint
+            // Fetch PM owner info if email is available and wasn't already fetched in batch
             if (pmEmail) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:818',message:'Before /api/users/by-email call for PM owner',data:{pmEmail},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
-                // Normalize email to lowercase for consistent lookup
-                const normalizedEmail = pmEmail.toLowerCase().trim();
-                try {
-                    const pmUserRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(normalizedEmail)}`);
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:822',message:'After /api/users/by-email call for PM owner',data:{status:pmUserRes.status,ok:pmUserRes.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                    // #endregion
-                    if (pmUserRes.ok) {
-                        const pmUserMap = await pmUserRes.json();
-                        const pmUser = pmUserMap[normalizedEmail];
-                        
-                        if (pmUser) {
-                            const fullName = [pmUser.first_name, pmUser.last_name]
-                                .filter(Boolean)
-                                .join(' ')
-                                .trim();
+                // Check if PM owner was already set from batch fetch above
+                const pmInfoFromBatch = userInfoMap[pmEmail.toLowerCase()];
+                if (pmInfoFromBatch) {
+                    // Already fetched in batch, just set it
+                    setPmOwner({
+                        email: pmEmail,
+                        name: pmInfoFromBatch.first_name && pmInfoFromBatch.last_name 
+                            ? `${pmInfoFromBatch.first_name} ${pmInfoFromBatch.last_name}` 
+                            : pmInfoFromBatch.first_name || pmInfoFromBatch.last_name || undefined,
+                        avatar_url: pmInfoFromBatch.avatar_url,
+                    });
+                } else {
+                    // Not in batch (e.g., found from PM Foundation criteria), fetch separately
+                    const normalizedEmail = pmEmail.toLowerCase().trim();
+                    try {
+                        const pmUserRes = await fetch(`/api/users/by-email?emails=${encodeURIComponent(normalizedEmail)}`);
+                        if (pmUserRes.ok) {
+                            const pmUserMap = await pmUserRes.json();
+                            const pmUser = pmUserMap[normalizedEmail];
                             
-                            setPmOwner({
-                                name: fullName || undefined,
-                                email: pmEmail,
-                                avatar_url: pmUser.avatar_url || undefined
-                            });
+                            if (pmUser) {
+                                const fullName = [pmUser.first_name, pmUser.last_name]
+                                    .filter(Boolean)
+                                    .join(' ')
+                                    .trim();
+                                
+                                setPmOwner({
+                                    name: fullName || undefined,
+                                    email: pmEmail,
+                                    avatar_url: pmUser.avatar_url || undefined
+                                });
+                            } else {
+                                // If user not found, use email
+                                setPmOwner({ email: pmEmail });
+                            }
                         } else {
-                            // If user not found, use email
+                            // If API call failed, use email
                             setPmOwner({ email: pmEmail });
                         }
-                    } else {
-                        // If API call failed, use email
+                    } catch (e) {
+                        console.warn('Error fetching PM owner info:', e);
+                        // If error, use email
                         setPmOwner({ email: pmEmail });
                     }
-                } catch (e) {
-                    console.warn('Error fetching PM owner info:', e);
-                    // If error, use email
-                    setPmOwner({ email: pmEmail });
                 }
             } else {
                 setPmOwner(null);
@@ -998,18 +956,8 @@ export default function EpicDetailPage() {
     const lastFetchedEpicIdRef = useRef<string | null>(null);
     const epicIdString = useMemo(() => epic?.id ? String(epic.id) : null, [epic?.id]);
 
-    useEffect(() => {
-        // Reset ref when route id changes (new epic loaded)
-        lastFetchedEpicIdRef.current = null;
-    }, [id]);
-
-    useEffect(() => {
-        // Only fetch if we have both id and epic, and the epic ID has actually changed (string comparison)
-        if (id && epicIdString && epicIdString !== lastFetchedEpicIdRef.current) {
-            lastFetchedEpicIdRef.current = epicIdString;
-            fetchSuccessData();
-        }
-    }, [id, epicIdString]);
+    // Success data is now fetched in parallel with initial load, so we don't need a separate useEffect
+    // The fetchSuccessData function is kept for manual refresh scenarios (e.g., when user clicks refresh button)
 
     useEffect(() => {
         if (id) {
@@ -1389,13 +1337,19 @@ export default function EpicDetailPage() {
                             let totalDurationDays = 0;
                             
                             if (launchStages.length > 0) {
+                                // Target release date is the beginning of Cohort 1 Live (sort_order 3)
+                                // Go/No-Go date should only consider pre-launch phases (before Cohort 1 Live)
+                                // This includes: GTM Access (sort_order 1) + Internal Readiness (sort_order 2)
                                 totalDurationDays = launchStages
-                                    .filter(stage => stage.duration_days !== null)
+                                    .filter(stage => 
+                                        stage.duration_days !== null && 
+                                        stage.sort_order < 3 // Only stages before Cohort 1 Live
+                                    )
                                     .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
                             }
                             
                             if (totalDurationDays === 0) {
-                                totalDurationDays = 63;
+                                totalDurationDays = 35; // Default: GTM Access (14) + Internal Readiness (21)
                             }
                             
                             goNoGoDate = new Date(targetDate);
@@ -1753,33 +1707,48 @@ export default function EpicDetailPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="decisions" pt="md">
-                    <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
+                    {/* Lazy load snapshots only when decisions tab is active */}
+                    {activeTab === 'decisions' && (
+                        <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
+                    )}
                 </Tabs.Panel>
 
                 <Tabs.Panel value="feedback" pt="md">
-                    <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
+                    {/* Lazy load feedback only when feedback tab is active */}
+                    {activeTab === 'feedback' && (
+                        <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
+                    )}
                 </Tabs.Panel>
 
                 <Tabs.Panel value="adoption" pt="md">
-                    <SuccessConfigSection
-                        epicId={epic.id}
-                        epicName={epic.name}
-                        epicTier={epic.tier}
-                        config={successConfig}
-                        metrics={successMetrics}
-                        isAdmin={isAdmin}
-                        onRefresh={fetchSuccessData}
-                        epicOwnerId={epic.owner_id}
-                        pmOwner={pmOwner}
-                    />
+                    {/* Success data is already loaded in parallel, but component renders only when tab is active */}
+                    {activeTab === 'adoption' && (
+                        <SuccessConfigSection
+                            epicId={epic.id}
+                            epicName={epic.name}
+                            epicTier={epic.tier}
+                            config={successConfig}
+                            metrics={successMetrics}
+                            isAdmin={isAdmin}
+                            onRefresh={fetchSuccessData}
+                            epicOwnerId={epic.owner_id}
+                            pmOwner={pmOwner}
+                        />
+                    )}
                 </Tabs.Panel>
 
                 <Tabs.Panel value="scorecard" pt="md">
-                    <ScorecardPageContent epicId={epic.id} />
+                    {/* Lazy load scorecard only when tab is active */}
+                    {activeTab === 'scorecard' && (
+                        <ScorecardPageContent epicId={epic.id} />
+                    )}
                 </Tabs.Panel>
 
                 <Tabs.Panel value="retro" pt="md">
-                    <RetroPageContent epicId={epic.id} />
+                    {/* Lazy load retro only when tab is active */}
+                    {activeTab === 'retro' && (
+                        <RetroPageContent epicId={epic.id} />
+                    )}
                 </Tabs.Panel>
             </Tabs>
 
