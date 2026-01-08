@@ -229,13 +229,15 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                 />
                             </div>
                         )}
-                        {/* Epic Search */}
-                        <div style={{
-                            position: 'relative',
-                            width: '280px'
-                        }}>
-                            <EpicSearch fetchEpics={true} className="header-search" />
-                        </div>
+                        {/* Epic Search - Hidden for users with only OTHER role */}
+                        {!hasOnlyOtherRole && (
+                            <div style={{
+                                position: 'relative',
+                                width: '280px'
+                            }}>
+                                <EpicSearch fetchEpics={true} className="header-search" />
+                            </div>
+                        )}
 
                         {/* User Avatar */}
                         <UserAvatar email={email} role={role} imageUrl={imageUrl} />

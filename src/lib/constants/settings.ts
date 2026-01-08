@@ -1,4 +1,5 @@
 export const ROLES = [
+  "SUPERADMIN",
   "CPO",
   "PRODUCT_LEAD",
   "PM",

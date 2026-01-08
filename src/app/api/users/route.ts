@@ -80,7 +80,47 @@ export async function GET(req: NextRequest) {
     last_logged_in: authUserMap.get(u.email?.toLowerCase()) || u.last_logged_in,
   })) || [];
 
-  return NextResponse.json({ users: usersWithLogin });
+  // Find pending users: users in auth.users but not in app_user
+  const appUserEmails = new Set(users?.map(u => u.email?.toLowerCase()).filter(Boolean) || []);
+  
+  // Debug logging
+  console.log("[Users API] Checking for pending users:", {
+    totalAuthUsers: authUsers?.users.length || 0,
+    totalAppUsers: users?.length || 0,
+    appUserEmailsCount: appUserEmails.size,
+  });
+  
+  const pendingUsers = authUsers?.users
+    .filter(authUser => {
+      const email = authUser.email?.toLowerCase();
+      const isPending = email && !appUserEmails.has(email);
+      if (email?.includes('test1')) {
+        console.log("[Users API] Checking test1 user:", {
+          email,
+          inAppUser: appUserEmails.has(email),
+          isPending,
+          appUserEmails: Array.from(appUserEmails).slice(0, 10), // First 10 for debugging
+        });
+      }
+      return isPending;
+    })
+    .map(authUser => ({
+      id: authUser.id,
+      email: authUser.email || '',
+      first_name: null,
+      last_name: null,
+      roles: [],
+      is_active: true,
+      last_logged_in: authUser.last_sign_in_at,
+      pending: true, // Flag to indicate this is a pending user
+    })) || [];
+  
+  console.log("[Users API] Found pending users:", {
+    count: pendingUsers.length,
+    emails: pendingUsers.map(u => u.email),
+  });
+
+  return NextResponse.json({ users: usersWithLogin, pendingUsers });
 }
 
 export async function POST(req: NextRequest) {

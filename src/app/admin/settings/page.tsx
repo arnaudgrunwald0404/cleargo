@@ -39,6 +39,7 @@ export default function AdminSettingsPage() {
 
     // User management state
     const [users, setUsers] = useState<any[]>([]);
+    const [pendingUsers, setPendingUsers] = useState<any[]>([]);
     const [usersLoading, setUsersLoading] = useState(false);
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
     const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
@@ -468,9 +469,16 @@ export default function AdminSettingsPage() {
         setUsersLoading(true);
         try {
             const data = await getUsers();
+            console.log("Fetched users data:", { 
+                usersCount: data.users?.length || 0, 
+                pendingUsersCount: data.pendingUsers?.length || 0,
+                hasPendingUsers: !!data.pendingUsers 
+            });
             setUsers(data.users || []);
+            setPendingUsers(data.pendingUsers || []);
         } catch (error: any) {
             console.error("Failed to fetch users:", error);
+            setPendingUsers([]); // Ensure pendingUsers is set even on error
         } finally {
             setUsersLoading(false);
         }
@@ -1276,6 +1284,7 @@ export default function AdminSettingsPage() {
                           activeSection === "users-domains") && (
                             <UserManagementSection
                                 users={users}
+                                pendingUsers={pendingUsers}
                                 loading={usersLoading}
                                 onRefresh={fetchUsers}
                                 editingUserId={editingUserId}

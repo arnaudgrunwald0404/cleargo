@@ -2,7 +2,7 @@
 import { PurpleLoader } from '../../PurpleLoader';
 import React, { useState, useMemo } from "react";
 import { Drawer, Stack, Group, TextInput, MultiSelect, Checkbox, Button } from "@mantine/core";
-import { IconTrash, IconMail, IconPencil, IconGripVertical } from "@tabler/icons-react";
+import { IconTrash, IconMail, IconPencil, IconGripVertical, IconCheck, IconX } from "@tabler/icons-react";
 import type { AppSettings } from "@/lib/settings-db";
 import { ROLES } from "@/lib/constants/settings";
 
@@ -15,10 +15,12 @@ type User = {
   role?: string;
   is_active?: boolean;
   last_logged_in?: string | null;
+  pending?: boolean;
 };
 
 type Props = {
   users: User[];
+  pendingUsers?: User[];
   loading: boolean;
   onRefresh: () => void;
   editingUserId: string | null;
@@ -51,6 +53,7 @@ type Props = {
 export default function UserManagementSection(props: Props) {
   const {
     users,
+    pendingUsers = [],
     loading,
     onRefresh,
     editingUserId,
@@ -81,6 +84,9 @@ export default function UserManagementSection(props: Props) {
   } = props;
 
   const [newUser, setNewUser] = useState({ email: "", first_name: "", last_name: "", roles: [] as string[], is_active: true });
+  const [approvingUserEmail, setApprovingUserEmail] = useState<string | null>(null);
+  const [approveRoles, setApproveRoles] = useState<string[]>([]);
+  const [approving, setApproving] = useState(false);
 
   const handleAddUser = async () => {
     try {
@@ -186,6 +192,60 @@ export default function UserManagementSection(props: Props) {
     }
   };
 
+  const handleApproveUser = async () => {
+    if (!approvingUserEmail) return;
+    if (approveRoles.length === 0) {
+      alert("Please select at least one role");
+      return;
+    }
+    setApproving(true);
+    try {
+      const pendingUser = pendingUsers.find(u => u.email === approvingUserEmail);
+      const res = await fetch("/api/users/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: approvingUserEmail,
+          first_name: pendingUser?.first_name,
+          last_name: pendingUser?.last_name,
+          roles: approveRoles,
+          is_active: true,
+        }),
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to approve user");
+      }
+      setApprovingUserEmail(null);
+      setApproveRoles([]);
+      onRefresh();
+      alert("User approved successfully! An email has been sent to notify them.");
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const handleDenyUser = async (email: string) => {
+    if (!confirm(`Are you sure you want to deny and delete the access request for ${email}? This action cannot be undone.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/users/pending/${encodeURIComponent(email)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Failed to deny user");
+      }
+      onRefresh();
+      alert("Access request denied. The user has been removed from the system and an email notification has been sent.");
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    }
+  };
+
   const editingUser = users.find((u) => u.id === editingUserId);
 
   return (
@@ -205,6 +265,64 @@ export default function UserManagementSection(props: Props) {
 
         {activeSubSection === "users" && (
           <div>
+            {/* Pending Users Section - Always show so admins know the feature exists */}
+            <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-md font-semibold text-gray-900 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
+                    Pending Access Requests ({pendingUsers.length})
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    {pendingUsers.length > 0 
+                      ? "Users waiting for approval" 
+                      : "No pending access requests"}
+                  </p>
+                </div>
+              </div>
+              {pendingUsers.length > 0 ? (
+                <div className="space-y-2">
+                  {pendingUsers.map((pendingUser) => (
+                    <div key={pendingUser.id || pendingUser.email} className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-gray-900">{pendingUser.email}</p>
+                        {pendingUser.last_logged_in && (
+                          <p className="text-xs text-gray-500 mt-1">
+                            Last logged in: {new Date(pendingUser.last_logged_in).toLocaleDateString()}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleDenyUser(pendingUser.email)}
+                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors flex items-center gap-2"
+                          title="Deny and delete access request"
+                        >
+                          <IconX className="w-4 h-4" />
+                          Deny
+                        </button>
+                        <button
+                          onClick={() => {
+                            setApprovingUserEmail(pendingUser.email);
+                            setApproveRoles([]);
+                          }}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors flex items-center gap-2"
+                          title="Approve access request"
+                        >
+                          <IconCheck className="w-4 h-4" />
+                          Approve
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-gray-500 italic text-center py-4">
+                  All users who have signed up have been approved. New access requests will appear here.
+                </p>
+              )}
+            </div>
+
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Users</h3>
@@ -455,7 +573,74 @@ export default function UserManagementSection(props: Props) {
           }}
         />
       )}
+
+      {approvingUserEmail && (
+        <ApproveUserDrawer
+          email={approvingUserEmail}
+          opened={!!approvingUserEmail}
+          onClose={() => {
+            setApprovingUserEmail(null);
+            setApproveRoles([]);
+          }}
+          onApprove={handleApproveUser}
+          roles={approveRoles}
+          setRoles={setApproveRoles}
+          approving={approving}
+        />
+      )}
     </div>
+  );
+}
+
+function ApproveUserDrawer({
+  email,
+  opened,
+  onClose,
+  onApprove,
+  roles,
+  setRoles,
+  approving,
+}: {
+  email: string;
+  opened: boolean;
+  onClose: () => void;
+  onApprove: () => void;
+  roles: string[];
+  setRoles: (roles: string[]) => void;
+  approving: boolean;
+}) {
+  return (
+    <Drawer opened={opened} onClose={onClose} title="Approve User Access" position="right" size="xl" padding="lg">
+      <Stack gap="md">
+        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-sm text-green-800">
+            <strong>Email:</strong> {email}
+          </p>
+          <p className="text-sm text-green-700 mt-2">
+            This user has requested access to ClearGO. Select their roles below and approve to grant access. An email will be sent to notify them.
+          </p>
+        </div>
+        <MultiSelect
+          label="Roles *"
+          description="Select one or more roles for this user"
+          data={ROLES as unknown as string[]}
+          value={roles}
+          onChange={(value) => setRoles(value)}
+          placeholder="Select roles"
+          required
+          styles={{ input: { minHeight: "calc(2.5rem + 4px)", height: "calc(2.5rem + 4px)", fontSize: "1rem", display: "flex", alignItems: "center" } }}
+          classNames={{ input: "text-base" }}
+        />
+        <Group justify="space-between" mt="xl">
+          <Button variant="outline" onClick={onClose} disabled={approving}>
+            Cancel
+          </Button>
+          <Button onClick={onApprove} disabled={approving || roles.length === 0} leftSection={<IconCheck size={16} />}>
+            {approving ? "Approving..." : "Approve Access"}
+          </Button>
+        </Group>
+      </Stack>
+    </Drawer>
   );
 }
 
