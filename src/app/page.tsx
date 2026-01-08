@@ -25,6 +25,16 @@ export default async function HomePage({
   const allParams = Object.keys(searchParams || {});
   if (allParams.length > 0) {
     console.log('🔍 Root page: Search params detected:', allParams);
+    // If we have params but no code, Supabase might have redirected to Site URL
+    // This happens when redirectTo doesn't match Supabase Redirect URLs configuration
+    if (!code) {
+      console.error('❌ Root page: Redirected without code parameter!', {
+        searchParams: Object.fromEntries(Object.entries(searchParams || {})),
+        issue: 'redirectTo URL might not match Supabase Redirect URLs configuration',
+        expected: 'https://cleargo.netlify.app/auth/callback',
+        action: 'Verify https://cleargo.netlify.app/auth/callback is in Supabase Redirect URLs',
+      });
+    }
   }
   
   const supabase = createClient();
