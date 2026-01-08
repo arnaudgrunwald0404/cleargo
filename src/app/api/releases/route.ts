@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export async function GET(request: NextRequest) {
     // #region agent log
@@ -19,17 +20,9 @@ export async function GET(request: NextRequest) {
         try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
         // #endregion
         
-        // Check authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        // #region agent log
-        const logEntry4 = {location:'releases/route.ts:12',message:'After getUser',data:{hasUser:!!user,userEmail:user?.email,authError:authError?.message,authErrorCode:authError?.code,authErrorStatus:authError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry4) + '\n'); } catch(e) {}
-        // #endregion
-        if (authError || !user) {
-            // #region agent log
-            const logEntry5 = {location:'releases/route.ts:14',message:'Returning 401',data:{authError:authError?.message,authErrorCode:authError?.code},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-            try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry5) + '\n'); } catch(e) {}
-            // #endregion
+        // Check authentication (supports both Supabase auth and magic link)
+        const userEmail = await getAuthenticatedUserEmail();
+        if (!userEmail) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
@@ -100,9 +93,9 @@ export async function POST(request: NextRequest) {
     try {
         const supabase = createClient();
         
-        // Check authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
+        // Check authentication (supports both Supabase auth and magic link)
+        const userEmail = await getAuthenticatedUserEmail();
+        if (!userEmail) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
@@ -110,7 +103,7 @@ export async function POST(request: NextRequest) {
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table

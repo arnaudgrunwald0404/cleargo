@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,17 +62,9 @@ export async function GET(req: NextRequest) {
         const logEntry3 = {location:'activity-feed/route.ts:52',message:'After createClient - before getUser',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
         try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
         // #endregion
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        // #region agent log
-        const logEntry4 = {location:'activity-feed/route.ts:54',message:'After getUser',data:{hasUser:!!user,userEmail:user?.email,authError:authError?.message,authErrorCode:authError?.code,authErrorStatus:authError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry4) + '\n'); } catch(e) {}
-        // #endregion
-
-        if (!user) {
-            // #region agent log
-            const logEntry5 = {location:'activity-feed/route.ts:58',message:'Returning 401 - no user',data:{authError:authError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-            try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry5) + '\n'); } catch(e) {}
-            // #endregion
+        // Check authentication (supports both Supabase auth and magic link)
+        const userEmail = await getAuthenticatedUserEmail();
+        if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
