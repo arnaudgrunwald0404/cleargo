@@ -3,7 +3,7 @@
 import { Button, Container, Title, Text, SimpleGrid, Card, Tabs, Stack, Group, Box, Flex } from '@mantine/core';
 import { IconTable, IconCalculator, IconRefresh, IconBell } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 function SSOButton({ children, ...buttonProps }: any) {
   const supabase = createClient();
@@ -35,6 +35,7 @@ function SSOButton({ children, ...buttonProps }: any) {
 
 export function WelcomePage() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [videoError, setVideoError] = useState(false);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -55,14 +56,31 @@ export function WelcomePage() {
       }
     };
 
-    video.addEventListener('loadedmetadata', () => {
-      video.addEventListener('timeupdate', handleTimeUpdate);
-    });
+    const handleError = () => {
+      // Only log in development to reduce console noise
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Video failed to load');
+      }
+      setVideoError(true);
+    };
 
+    const handleLoadedMetadata = () => {
+      video.addEventListener('timeupdate', handleTimeUpdate);
+    };
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
     video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('error', handleError);
+
+    // Try to play the video
+    video.play().catch(() => {
+      // Autoplay might be blocked, but video should still be playable via controls
+    });
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('error', handleError);
     };
   }, []);
 
@@ -121,21 +139,27 @@ export function WelcomePage() {
 
           {/* Hero Visual - Before/After Transformation Video */}
           <Box style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
-            <video
-              ref={videoRef}
-              src="/hero_video.mp4"
-              autoPlay
-              muted
-              playsInline
-              controls
-              style={{
-                width: '100%',
-                height: 'auto',
-                display: 'block',
-              }}
-            >
-              Your browser does not support the video tag.
-            </video>
+            {videoError ? (
+              <Box style={{ padding: '40px', textAlign: 'center', color: '#CBD5E1', minHeight: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Text size="sm" c="dimmed">Video unavailable</Text>
+              </Box>
+            ) : (
+              <video
+                ref={videoRef}
+                src="/hero_video.mp4"
+                autoPlay
+                muted
+                playsInline
+                controls
+                style={{
+                  width: '100%',
+                  height: 'auto',
+                  display: 'block',
+                }}
+              >
+                Your browser does not support the video tag.
+              </video>
+            )}
           </Box>
         </SimpleGrid>
       </Container>

@@ -27,7 +27,10 @@ export function HeroVideo() {
     };
 
     const handleError = (e: Event) => {
-      console.error('Video error:', e);
+      // Only log in development to reduce console noise
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Video failed to load:', e);
+      }
       setError('Failed to load video');
     };
 
@@ -41,8 +44,11 @@ export function HeroVideo() {
 
     // Try to play the video
     video.play().catch((err) => {
-      console.warn('Autoplay prevented:', err);
       // Autoplay might be blocked, but video should still be playable via controls
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Autoplay prevented:', err);
+      }
     });
 
     return () => {

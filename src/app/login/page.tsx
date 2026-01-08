@@ -31,6 +31,7 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
+  const token = searchParams.get("token");
   const redirectTo = searchParams.get("redirect") || "/";
 
   const [selectedMethod, setSelectedMethod] = useState<"sso" | "email" | "magic" | null>(null);
@@ -49,6 +50,13 @@ function LoginForm() {
       setEmail(emailParam);
     }
   }, [searchParams]);
+
+  // Handle magic link token redirect
+  useEffect(() => {
+    if (token) {
+      window.location.href = `/api/auth/verify?token=${encodeURIComponent(token)}`;
+    }
+  }, [token]);
 
   // Handle OAuth code redirect
   useEffect(() => {

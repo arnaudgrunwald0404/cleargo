@@ -39,10 +39,7 @@ export async function GET(
     }
 
     const config = await getEpicSuccessConfig(epicId);
-    if (!config) {
-      return NextResponse.json({ error: 'Success configuration not found' }, { status: 404 });
-    }
-
+    // Return null instead of 404 for optional resource
     return NextResponse.json(config);
   } catch (error: any) {
     console.error('Error fetching epic success config:', error);
