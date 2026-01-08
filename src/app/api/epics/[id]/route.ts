@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEpic, updateEpic, deleteEpic } from '@/lib/epics';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,9 +33,9 @@ export async function PATCH(
     try {
         const { id } = await params;
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const userEmail = await getAuthenticatedUserEmail();
 
-        if (!user) {
+        if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -50,7 +51,7 @@ export async function PATCH(
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table
@@ -119,9 +120,9 @@ export async function DELETE(
     try {
         const { id } = await params;
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const userEmail = await getAuthenticatedUserEmail();
 
-        if (!user) {
+        if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -129,7 +130,7 @@ export async function DELETE(
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table

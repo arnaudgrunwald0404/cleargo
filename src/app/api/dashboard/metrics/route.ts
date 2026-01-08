@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,14 +8,8 @@ export async function GET(req: NextRequest) {
     try {
         const supabase = createClient();
         
-        // Get user email from auth
-        let userEmail: string | null = null;
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            userEmail = user?.email || null;
-        } catch {
-            // Continue without user email
-        }
+        // Get user email from auth (supports both Supabase auth and magic link)
+        const userEmail = await getAuthenticatedUserEmail();
 
         // Try epic table first, fallback to launch table
         let activeEpicsCount = 0;

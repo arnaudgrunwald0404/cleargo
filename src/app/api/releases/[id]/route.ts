@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export async function PATCH(
     request: NextRequest,
@@ -9,9 +10,9 @@ export async function PATCH(
         const { id } = await params;
         const supabase = createClient();
         
-        // Check authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
+        // Check authentication (supports both Supabase auth and magic link)
+        const userEmail = await getAuthenticatedUserEmail();
+        if (!userEmail) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
@@ -19,7 +20,7 @@ export async function PATCH(
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table

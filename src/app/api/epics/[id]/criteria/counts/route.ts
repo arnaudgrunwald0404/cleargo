@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,9 +13,9 @@ export async function POST(
     const { id: epicId } = await params;
     const supabase = createClient();
     
-    // Authenticate user
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user?.email) {
+    // Authenticate user (supports both Supabase auth and magic link)
+    const userEmail = await getAuthenticatedUserEmail();
+    if (!userEmail) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

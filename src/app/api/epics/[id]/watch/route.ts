@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export async function GET(
   req: NextRequest,
@@ -8,9 +9,9 @@ export async function GET(
   try {
     const { id: epicId } = await params;
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = await getAuthenticatedUserEmail();
     
-    if (!user?.email) {
+    if (!userEmail) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -18,7 +19,7 @@ export async function GET(
     const { data: appUser, error: userError } = await supabase
       .from('app_user')
       .select('id')
-      .eq('email', user.email.toLowerCase())
+      .eq('email', userEmail.toLowerCase())
       .single();
 
     if (userError || !appUser) {
@@ -56,9 +57,9 @@ export async function POST(
   try {
     const { id: epicId } = await params;
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = await getAuthenticatedUserEmail();
     
-    if (!user?.email) {
+    if (!userEmail) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -66,7 +67,7 @@ export async function POST(
     const { data: appUser, error: userError } = await supabase
       .from('app_user')
       .select('id')
-      .eq('email', user.email.toLowerCase())
+      .eq('email', userEmail.toLowerCase())
       .single();
 
     if (userError || !appUser) {
@@ -122,9 +123,9 @@ export async function DELETE(
   try {
     const { id: epicId } = await params;
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = await getAuthenticatedUserEmail();
     
-    if (!user?.email) {
+    if (!userEmail) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -132,7 +133,7 @@ export async function DELETE(
     const { data: appUser, error: userError } = await supabase
       .from('app_user')
       .select('id')
-      .eq('email', user.email.toLowerCase())
+      .eq('email', userEmail.toLowerCase())
       .single();
 
     if (userError || !appUser) {

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/settings-db";
 import { createClient } from "@/lib/supabase/server";
 import { debugLog } from "@/lib/debug";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export const dynamic = 'force-dynamic';
 
@@ -12,11 +13,11 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
     console.log("GET /api/settings called");
     try {
-        // Check authentication
+        // Check authentication (supports both Supabase auth and magic link)
         const supabase = createClient();
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        const userEmail = await getAuthenticatedUserEmail();
         
-        if (authError || !user?.email) {
+        if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table
@@ -58,11 +59,9 @@ export async function GET(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
     try {
         const supabase = createClient();
-        const {
-            data: { user },
-        } = await supabase.auth.getUser();
+        const userEmail = await getAuthenticatedUserEmail();
 
-        if (!user) {
+        if (!userEmail) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
 
@@ -70,7 +69,7 @@ export async function PATCH(req: NextRequest) {
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
         
         // Handle case where user doesn't exist in app_user table

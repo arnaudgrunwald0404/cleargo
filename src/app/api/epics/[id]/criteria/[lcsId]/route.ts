@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { recomputeEpicReadiness } from '@/lib/readiness';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export async function PATCH(
     req: NextRequest,
@@ -21,9 +22,9 @@ export async function PATCH(
         // #endregion
         
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const userEmail = await getAuthenticatedUserEmail();
 
-        if (!user?.email) {
+        if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -31,7 +32,7 @@ export async function PATCH(
         const { data: appUser, error: userError } = await supabase
             .from('app_user')
             .select('id')
-            .eq('email', user.email)
+            .eq('email', userEmail)
             .single();
 
         if (userError || !appUser) {

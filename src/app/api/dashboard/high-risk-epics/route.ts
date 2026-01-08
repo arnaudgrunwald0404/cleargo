@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getSettings } from '@/lib/settings-db';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -168,9 +169,9 @@ async function assessEpicRisk(epic: any, supabase: any): Promise<{ riskScore: nu
 export async function GET(req: NextRequest) {
   try {
     const supabase = createClient();
-    const { data: { user } } = await supabase.auth.getUser();
+    const userEmail = await getAuthenticatedUserEmail();
 
-    if (!user) {
+    if (!userEmail) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
