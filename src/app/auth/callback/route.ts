@@ -49,6 +49,9 @@ export async function GET(request: NextRequest) {
         hostname,
         productionHostname,
     })
+    
+    // Store cookies as they're set so we can apply them to redirect response
+    const storedCookies: Array<{ name: string; value: string; options?: any }> = []
     const response = NextResponse.next({
         request: {
             headers: request.headers,
@@ -105,7 +108,10 @@ export async function GET(request: NextRequest) {
                         count: cookiesToSet.length,
                         names: cookiesToSet.map(c => c.name),
                     })
+                    // Store cookies for later use in redirect response
+                    storedCookies.length = 0
                     cookiesToSet.forEach(({ name, value, options }) => {
+                        storedCookies.push({ name, value, options })
                         request.cookies.set(name, value)
                         response.cookies.set(name, value, options)
                     })
@@ -125,7 +131,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(new URL('/login?error=invalid_token', requestUrl))
         }
         
-        return NextResponse.redirect(new URL('/reset-password', requestUrl))
+        const redirectResponse = NextResponse.redirect(new URL('/reset-password', requestUrl));
+        storedCookies.forEach(({ name, value, options }) => {
+            redirectResponse.cookies.set(name, value, options);
+        });
+        return redirectResponse;
     }
 
     // Handle email confirmation and other OTP types with token_hash
@@ -140,7 +150,11 @@ export async function GET(request: NextRequest) {
                 return NextResponse.redirect(new URL('/login?error=invalid_token', requestUrl))
             }
             
-            return NextResponse.redirect(new URL('/reset-password', requestUrl))
+            const redirectResponse = NextResponse.redirect(new URL('/reset-password', requestUrl));
+            storedCookies.forEach(({ name, value, options }) => {
+                redirectResponse.cookies.set(name, value, options);
+            });
+            return redirectResponse;
         }
         
         // Handle other OTP types (email confirmation, magic link, etc.)
@@ -153,7 +167,11 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(new URL('/login?error=auth_failed', requestUrl))
         }
         
-        return NextResponse.redirect(new URL(next, requestUrl))
+        const redirectResponse = NextResponse.redirect(new URL(next, requestUrl));
+        storedCookies.forEach(({ name, value, options }) => {
+            redirectResponse.cookies.set(name, value, options);
+        });
+        return redirectResponse;
     }
 
     // Handle OAuth flows with code (PKCE)
@@ -239,23 +257,15 @@ export async function GET(request: NextRequest) {
             console.log('🔄 Redirecting to:', next);
             const redirectUrl = new URL(next, requestUrl);
             console.log('🔄 Full redirect URL:', redirectUrl.toString());
-            // CRITICAL: Copy cookies from response to redirect response
-            // Creating a new NextResponse.redirect() would lose the cookies set by setAll()
+            // CRITICAL: Apply stored cookies to redirect response
+            // This ensures all cookie options (domain, secure, etc.) are properly set
             const redirectResponse = NextResponse.redirect(redirectUrl);
-            // Copy all cookies from the response that has the session cookies
-            response.cookies.getAll().forEach(cookie => {
-                redirectResponse.cookies.set(cookie.name, cookie.value, {
-                    httpOnly: cookie.httpOnly,
-                    secure: cookie.secure,
-                    sameSite: cookie.sameSite as 'strict' | 'lax' | 'none' | undefined,
-                    path: cookie.path,
-                    maxAge: cookie.maxAge,
-                    domain: cookie.domain,
-                });
+            storedCookies.forEach(({ name, value, options }) => {
+                redirectResponse.cookies.set(name, value, options);
             });
-            console.log('🍪 Cookies copied to redirect response:', {
-                count: redirectResponse.cookies.getAll().length,
-                names: redirectResponse.cookies.getAll().map(c => c.name),
+            console.log('🍪 Cookies applied to redirect response:', {
+                count: storedCookies.length,
+                names: storedCookies.map(c => c.name),
             });
             return redirectResponse;
         }
