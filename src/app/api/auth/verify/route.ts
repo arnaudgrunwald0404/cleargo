@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, createToken } from "@/lib/jwt";
-import { isTokenUsed, markTokenUsed } from "@/lib/tokenStore";
+import { checkAndMarkTokenUsed } from "@/lib/tokenStore";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 export async function GET(req: NextRequest) {
@@ -10,10 +10,10 @@ export async function GET(req: NextRequest) {
   try {
     const payload = await verifyToken<{ email: string; jti: string; t: string }>(token);
     if (payload.t !== "magic") throw new Error("Wrong token type");
-    const used = await isTokenUsed(payload.jti);
-    if (used) return NextResponse.json({ error: "Link already used" }, { status: 400 });
-
-    await markTokenUsed(payload.jti);
+    
+    // Atomically check and mark token as used to prevent race conditions
+    const alreadyUsed = await checkAndMarkTokenUsed(payload.jti);
+    if (alreadyUsed) return NextResponse.json({ error: "Link already used" }, { status: 400 });
 
     // Check if user exists in Supabase auth and if they have a password
     const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;

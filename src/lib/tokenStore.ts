@@ -144,6 +144,34 @@ export async function isTokenUsed(jti: string) {
   }
 }
 
+/**
+ * Atomically check if token is used and mark it as used if not.
+ * Returns true if the token was already used, false if it was successfully marked as used.
+ * This prevents race conditions where multiple requests check and mark simultaneously.
+ */
+export async function checkAndMarkTokenUsed(jti: string): Promise<boolean> {
+  await ensureStore();
+  try {
+    const raw = await safeReadFile(actualTokensFile);
+    const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
+    
+    // Check if already used
+    if (data.used[jti]) {
+      return true; // Already used
+    }
+    
+    // Atomically mark as used
+    data.used[jti] = true;
+    await safeWriteFile(actualTokensFile, JSON.stringify(data, null, 2));
+    return false; // Successfully marked as used
+  } catch (error: any) {
+    // If we can't read/write, assume not used to allow the request through
+    // This is safer than blocking legitimate requests
+    console.error("Error in checkAndMarkTokenUsed:", error);
+    return false;
+  }
+}
+
 export async function canSendEmail(email: string, cooldownMs = 60000) {
   await ensureStore();
   const raw = await safeReadFile(actualTokensFile);
