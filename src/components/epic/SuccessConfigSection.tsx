@@ -267,7 +267,7 @@ export function SuccessConfigSection({
               {metrics.length} of 7 metrics selected
             </Text>
             {metrics.length === 0 ? (
-              <Alert icon={<IconAlertCircle size={16} />} title="No Metrics" color="yellow" size="sm">
+              <Alert icon={<IconAlertCircle size={16} />} title="No Metrics" color="yellow">
                 No success metrics have been selected for this epic. Add metrics to start tracking post-launch success.
               </Alert>
             ) : (

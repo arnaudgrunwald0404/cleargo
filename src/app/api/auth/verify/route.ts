@@ -45,7 +45,10 @@ export async function GET(req: NextRequest) {
           }
         } else {
           // Check if user has a password set
-          hasPassword = !!authUser.encrypted_password;
+          // If user has signed in before or has email identity, they likely have a password
+          // Note: Supabase doesn't expose encrypted_password directly, so we use heuristics
+          hasPassword = !!(authUser.last_sign_in_at || 
+            authUser.identities?.some((identity) => identity.provider === 'email'));
         }
       } catch (err) {
         console.error("Error checking/creating Supabase auth user:", err);

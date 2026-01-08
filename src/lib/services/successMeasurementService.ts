@@ -1007,7 +1007,7 @@ export async function createEpicScorecard(
   epicId: string,
   snapshotDate: string,
   metricResults: MetricResult[],
-  benchmarkComparison: BenchmarkComparison,
+  benchmarkComparison: BenchmarkComparison | null,
   overallStatus: ScorecardStatus
 ): Promise<EpicScorecard> {
   const supabase = createClient();

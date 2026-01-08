@@ -898,7 +898,7 @@ export function MyTasks() {
                     alignItems: 'center',
                     gap: 'var(--spacing-2)'
                 }}>
-                    <PurpleLoader size="xs" />
+                    <PurpleLoader size="sm" />
                     <span>Refreshing data...</span>
                 </div>
             )}
