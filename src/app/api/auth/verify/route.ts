@@ -130,9 +130,6 @@ export async function GET(req: NextRequest) {
     processingTokens.set(payload.jti, processingPromise);
     return await processingPromise;
   } catch (e: any) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:125',message:'Verify error caught',data:{error:String(e),message:e?.message,name:e?.name,stack:e?.stack?.substring(0,200)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,C,D,E'})}).catch(()=>{});
-    // #endregion
     console.error("[Verify] Error:", e);
     return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 });
   }

@@ -13,9 +13,6 @@ export default async function HomePage() {
   // Check for custom lr_session cookie (used by magic link)
   const session = await getSession();
   const sessionEmail = session?.email;
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:12',message:'Home page auth check',data:{hasSupabaseUser:!!user?.email,supabaseError:error?.message,sessionEmail,hasSession:!!session},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-  // #endregion
   
   // Redirect to login if user is not authenticated
   // Do this BEFORE any try-catch so redirect always happens
