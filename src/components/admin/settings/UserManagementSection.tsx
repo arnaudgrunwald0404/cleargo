@@ -248,6 +248,24 @@ export default function UserManagementSection(props: Props) {
 
   const editingUser = users.find((u) => u.id === editingUserId);
 
+  const sortedUsers = useMemo(() => {
+    return [...users].sort((a, b) => {
+      // Sort by last_name first (case-insensitive)
+      const aLastName = (a.last_name || "").toLowerCase();
+      const bLastName = (b.last_name || "").toLowerCase();
+      const lastNameCompare = aLastName.localeCompare(bLastName);
+      
+      if (lastNameCompare !== 0) {
+        return lastNameCompare;
+      }
+      
+      // If last names are equal, sort by email (case-insensitive)
+      const aEmail = (a.email || "").toLowerCase();
+      const bEmail = (b.email || "").toLowerCase();
+      return aEmail.localeCompare(bEmail);
+    });
+  }, [users]);
+
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -415,9 +433,9 @@ export default function UserManagementSection(props: Props) {
                   <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-12">
                     <input
                       type="checkbox"
-                      checked={selectedUserIds.size === users.length && users.length > 0}
+                      checked={selectedUserIds.size === sortedUsers.length && sortedUsers.length > 0}
                       onChange={(e) => {
-                        if (e.target.checked) setSelectedUserIds(new Set(users.map((u) => u.id)));
+                        if (e.target.checked) setSelectedUserIds(new Set(sortedUsers.map((u) => u.id)));
                         else setSelectedUserIds(new Set());
                       }}
                     />
@@ -431,7 +449,7 @@ export default function UserManagementSection(props: Props) {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-purple-200">
-                {users.map((user) => (
+                {sortedUsers.map((user) => (
                   <tr key={user.id} className="hover:bg-purple-50 transition-colors">
                     <td className="px-4 py-3">
                       <input
