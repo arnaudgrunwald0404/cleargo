@@ -393,18 +393,25 @@ function LoginForm() {
 
                     // Create a fresh Supabase client for OAuth (don't use the conditional one)
                     const oauthClient = createClient();
-                    // CRITICAL: Use current origin (including branch previews) for redirect
-                    // This ensures the redirect URL matches the current deployment
-                    // For Netlify preview branches, use the actual current origin
-                    const currentOrigin = window.location.origin;
-                    const redirectTo = `${currentOrigin}/auth/callback`;
+                    // CRITICAL: Use production URL for redirect (must match Supabase Redirect URLs EXACTLY)
+                    // Supabase ignores redirectTo if it doesn't match Redirect URLs list exactly
+                    // When redirectTo doesn't match, Supabase redirects to Site URL WITHOUT the code parameter
+                    // This is why we're seeing redirects to /login without code
+                    const productionUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
+                    // Remove trailing slash if present
+                    const baseUrl = productionUrl.replace(/\/$/, '');
+                    const redirectTo = `${baseUrl}/auth/callback`;
+                    
                     console.log('🔐 Initiating Google OAuth:', {
                       redirectTo,
                       supabaseUrl,
-                      origin: currentOrigin,
+                      productionUrl,
+                      baseUrl,
+                      currentOrigin: window.location.origin,
                       hostname: window.location.hostname,
                       fullUrl: window.location.href,
-                      note: 'Make sure this redirectTo is in Supabase Redirect URLs list',
+                      CRITICAL: 'redirectTo MUST match EXACTLY what is in Supabase Redirect URLs',
+                      format: 'https://cleargo.netlify.app/auth/callback (no trailing slash, exact match)',
                     });
                     
                     const { data, error } = await oauthClient.auth.signInWithOAuth({
