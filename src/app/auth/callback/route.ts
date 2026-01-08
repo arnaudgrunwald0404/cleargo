@@ -239,7 +239,25 @@ export async function GET(request: NextRequest) {
             console.log('🔄 Redirecting to:', next);
             const redirectUrl = new URL(next, requestUrl);
             console.log('🔄 Full redirect URL:', redirectUrl.toString());
-            return NextResponse.redirect(redirectUrl)
+            // CRITICAL: Copy cookies from response to redirect response
+            // Creating a new NextResponse.redirect() would lose the cookies set by setAll()
+            const redirectResponse = NextResponse.redirect(redirectUrl);
+            // Copy all cookies from the response that has the session cookies
+            response.cookies.getAll().forEach(cookie => {
+                redirectResponse.cookies.set(cookie.name, cookie.value, {
+                    httpOnly: cookie.httpOnly,
+                    secure: cookie.secure,
+                    sameSite: cookie.sameSite as 'strict' | 'lax' | 'none' | undefined,
+                    path: cookie.path,
+                    maxAge: cookie.maxAge,
+                    domain: cookie.domain,
+                });
+            });
+            console.log('🍪 Cookies copied to redirect response:', {
+                count: redirectResponse.cookies.getAll().length,
+                names: redirectResponse.cookies.getAll().map(c => c.name),
+            });
+            return redirectResponse;
         }
         
         console.error('❌ Code exchange succeeded but no session returned');
