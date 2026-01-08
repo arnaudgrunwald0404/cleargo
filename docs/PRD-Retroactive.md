@@ -586,6 +586,18 @@ These defaults can be customized per epic or feature type, and additional benchm
 - **Stage-Based Criteria**: Link criteria to specific stages
 - **Rating Timing**: Link criteria rating timing to stages
 
+#### 11.2 Launch Stage Phases
+The system uses the following launch stage phases:
+- **GTM Access** (14 days): Features available and functioning properly. Go/No-Go decision typically happens during this phase.
+- **Internal Readiness** (21 days): Product Education documentation and training ready for internal teams.
+- **Cohort 1 Live** (28 days): First batch of customers are live with the new feature.
+- **GA / Cohort 2 Live** (ongoing): All customers are live with the new feature.
+
+#### 11.3 Date Calculations
+- **Target Release Date**: Represents the beginning of Cohort 1 Live phase
+- **Go/No-Go Date Calculation**: Calculated by subtracting only the pre-launch phases (GTM Access + Internal Readiness = 35 days) from the target release date. The calculation excludes Cohort 1 Live duration since the target release date already represents the start of that phase.
+- **Default Fallback**: If launch stages are not configured, defaults to 35 days before target release date
+
 ### 12. Comments & Collaboration
 
 #### 12.1 Criterion Comments
