@@ -2,6 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getReleases } from "@/lib/aha/client";
 
+// In-memory cache for Aha releases (5 minute TTL)
+let ahaReleasesCache: { releases: any[]; timestamp: number } | null = null;
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export async function GET() {
     try {
         const supabase = createClient();
@@ -12,11 +16,24 @@ export async function GET() {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
         
-            // Fetch all synchronized epics (those with aha_id) and their AHA fields
-            const { data, error } = await supabase
-                .from("epic")
-                .select("aha_fields, target_launch_date")
-                .not("aha_id", "is", null);
+        // First, check database for releases that already have dates
+        const { data: releasesInDb, error: releasesError } = await supabase
+            .from("release_schedule")
+            .select("release_name, launch_date")
+            .not("launch_date", "is", null);
+
+        const dbReleaseDateMap = new Map<string, string>();
+        releasesInDb?.forEach(release => {
+            if (release.release_name && release.launch_date) {
+                dbReleaseDateMap.set(release.release_name, release.launch_date);
+            }
+        });
+
+        // Fetch all synchronized epics (those with aha_id) and their AHA fields
+        const { data, error } = await supabase
+            .from("epic")
+            .select("aha_fields, target_launch_date")
+            .not("aha_id", "is", null);
 
         if (error) {
             console.error("Error fetching epics:", error);
@@ -89,6 +106,13 @@ export async function GET() {
 
         console.log(`Found ${releaseNames.size} unique release names:`, Array.from(releaseNames));
 
+        // Merge database dates into releaseDateMap
+        dbReleaseDateMap.forEach((date, name) => {
+            if (!releaseDateMap.has(name)) {
+                releaseDateMap.set(name, date);
+            }
+        });
+
         // For releases without dates, fetch from Aha's releases API
         const releasesNeedingDates = Array.from(releaseNames).filter(name => !releaseDateMap.has(name));
         
@@ -96,19 +120,31 @@ export async function GET() {
             console.log(`Fetching ${releasesNeedingDates.length} release dates from Aha API...`);
             console.log(`Releases needing dates:`, releasesNeedingDates);
             try {
-                // Fetch all releases from Aha (paginated)
+                // Check cache first
                 let allReleases: any[] = [];
-                let page = 1;
-                const perPage = 50;
-                let hasMore = true;
+                const now = Date.now();
+                
+                if (ahaReleasesCache && (now - ahaReleasesCache.timestamp) < CACHE_TTL_MS) {
+                    console.log(`Using cached Aha releases (${Math.round((now - ahaReleasesCache.timestamp) / 1000)}s old)`);
+                    allReleases = ahaReleasesCache.releases;
+                } else {
+                    // Fetch all releases from Aha (paginated)
+                    let page = 1;
+                    const perPage = 50;
+                    let hasMore = true;
 
-                while (hasMore) {
-                    const response = await getReleases({ per_page: perPage, page });
-                    const releases = response.releases || [];
-                    allReleases = allReleases.concat(releases);
+                    while (hasMore) {
+                        const response = await getReleases({ per_page: perPage, page });
+                        const releases = response.releases || [];
+                        allReleases = allReleases.concat(releases);
 
-                    hasMore = releases.length === perPage;
-                    page++;
+                        hasMore = releases.length === perPage;
+                        page++;
+                    }
+
+                    // Update cache
+                    ahaReleasesCache = { releases: allReleases, timestamp: now };
+                    console.log(`Cached ${allReleases.length} Aha releases`);
                 }
 
                 console.log(`Fetched ${allReleases.length} releases from Aha`);

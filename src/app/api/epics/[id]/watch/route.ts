@@ -25,13 +25,13 @@ export async function GET(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Check if user is watching this epic
+    // Check if user is watching this epic (optimized with composite index)
     const { data: watch, error: watchError } = await supabase
       .from('epic_watches')
       .select('id')
       .eq('epic_id', epicId)
       .eq('user_id', appUser.id)
-      .single();
+      .maybeSingle();
 
     if (watchError && watchError.code !== 'PGRST116') {
       // PGRST116 is "not found" which is fine

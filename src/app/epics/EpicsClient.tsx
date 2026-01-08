@@ -65,37 +65,41 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
         });
 
-        fetch("/api/me", { credentials: 'include' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.user?.roles && Array.isArray(data.user.roles)) {
-                    setCurrentUserRoles(data.user.roles);
-                }
-            })
-            .catch(err => console.error("Failed to load user roles:", err));
-
-        // Load settings to get configured tags
-        fetch("/api/settings", { credentials: 'include' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
-                    setConfiguredTags(data.aha_tags);
-                }
-            })
-            .catch(err => console.error("Failed to load settings:", err));
-
         // Only load additional data if we don't have initial epics
         if (initialEpics.length === 0) {
             loadData();
         } else {
-            // Still load products and releases
+            // Optimized: Load all data in parallel
             Promise.all([
+                fetch("/api/me", { credentials: 'include' }),
+                fetch("/api/settings", { credentials: 'include' }),
                 fetch("/api/products", { credentials: 'include' }),
                 fetch("/api/releases", { credentials: 'include' })
-            ]).then(([productsRes, releasesRes]) => {
+            ]).then(([meRes, settingsRes, productsRes, releasesRes]) => {
+                // Handle user roles
+                if (meRes.ok) {
+                    meRes.json().then(data => {
+                        if (data.user?.roles && Array.isArray(data.user.roles)) {
+                            setCurrentUserRoles(data.user.roles);
+                        }
+                    }).catch(err => console.error("Failed to load user roles:", err));
+                }
+
+                // Handle settings
+                if (settingsRes.ok) {
+                    settingsRes.json().then(data => {
+                        if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
+                            setConfiguredTags(data.aha_tags);
+                        }
+                    }).catch(err => console.error("Failed to load settings:", err));
+                }
+
+                // Handle products
                 if (productsRes.ok) {
                     productsRes.json().then(data => setProducts(data));
                 }
+
+                // Handle releases
                 if (releasesRes.ok) {
                     releasesRes.json().then(data => {
                         setReleaseSchedule(data || []);
@@ -104,7 +108,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         // This will be handled by the useEffect that fetches missing dates
                     });
                 }
-            });
+            }).catch(err => console.error("Failed to load initial data:", err));
         }
     }, [initialEpics.length]);
 
@@ -116,28 +120,37 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }, [scope]);
 
-    // Fetch watch statuses when epics or user email changes
+    // Fetch watch statuses when epics or user email changes (batch API call, lazy loaded)
     useEffect(() => {
         if (currentUserEmail && epics.length > 0) {
-            const watchPromises = epics.map(async (epic: Epic) => {
-                try {
-                    const watchRes = await fetch(`/api/epics/${epic.id}/watch`, { credentials: 'include' });
-                    if (watchRes.ok) {
-                        const watchData = await watchRes.json();
-                        return { epicId: epic.id, isWatching: watchData.isWatching || false };
-                    }
-                } catch (err) {
-                    console.warn(`Failed to fetch watch status for epic ${epic.id}:`, err);
-                }
-                return { epicId: epic.id, isWatching: false };
-            });
-            Promise.all(watchPromises).then(watchResults => {
-                const watchMap = new Map<string, boolean>();
-                watchResults.forEach(({ epicId, isWatching }) => {
-                    watchMap.set(epicId, isWatching);
-                });
-                setWatchStatuses(watchMap);
-            });
+            // Defer watch status loading until after initial render (non-critical data)
+            const timeoutId = setTimeout(() => {
+                // Batch fetch all watch statuses in a single API call
+                const epicIds = epics.map(epic => epic.id).join(',');
+                fetch(`/api/epics/watch-status?epic_ids=${encodeURIComponent(epicIds)}`, { credentials: 'include' })
+                    .then(res => {
+                        if (res.ok) {
+                            return res.json();
+                        }
+                        throw new Error('Failed to fetch watch statuses');
+                    })
+                    .then((watchData: Record<string, boolean>) => {
+                        const watchMap = new Map<string, boolean>();
+                        Object.entries(watchData).forEach(([epicId, isWatching]) => {
+                            watchMap.set(epicId, isWatching);
+                        });
+                        setWatchStatuses(watchMap);
+                    })
+                    .catch(err => {
+                        console.warn('Failed to fetch watch statuses:', err);
+                        // Fallback: set all to false on error
+                        const watchMap = new Map<string, boolean>();
+                        epics.forEach(epic => watchMap.set(epic.id, false));
+                        setWatchStatuses(watchMap);
+                    });
+            }, 100); // Defer by 100ms to allow initial render
+
+            return () => clearTimeout(timeoutId);
         }
     }, [epics, currentUserEmail]);
 
@@ -627,7 +640,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [releaseSchedule, epics.length, releaseGroups.length]);
 
-    // Load AHA epic counts from release_schedule (cached) and fetch missing ones
+    // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)
     useEffect(() => {
         // Don't run if we don't have release groups yet
         if (releaseGroups.length === 0) {
@@ -749,7 +762,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             releasesToFetch.forEach(name => fetchingAhaCountsRef.current.delete(name));
         };
 
-        loadAhaEpicCounts();
+        // Defer Aha epic counts loading until after initial render (non-critical data)
+        const timeoutId = setTimeout(() => {
+            loadAhaEpicCounts();
+        }, 200); // Defer by 200ms to allow initial render
+
+        return () => clearTimeout(timeoutId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [releaseGroups.length, releaseSchedule.length, releaseScheduleWithIds.length, epics.length]);
 

@@ -1,11 +1,12 @@
 "use client";
 
-import { Title, Text, Box } from '@mantine/core';
+import { Title, Text, Box, SegmentedControl } from '@mantine/core';
 import { ActivityFeed } from './ActivityFeed';
 import { EpicReleaseGrid } from './EpicReleaseGrid';
 import { PostLaunchPerformanceGrid } from './PostLaunchPerformanceGrid';
+import { MyTasks } from './MyTasks';
 import { createClient } from '@/lib/supabase/client';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 interface HomeDashboardProps {
@@ -18,6 +19,7 @@ interface HomeDashboardProps {
 export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true, isFirstTime = false }: HomeDashboardProps) {
   const router = useRouter();
   const supabase = createClient();
+  const [viewMode, setViewMode] = useState<'tasks' | 'portfolio'>('tasks');
   
   // Client-side auth check as fallback
   useEffect(() => {
@@ -25,12 +27,12 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
       if (!userEmail) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user?.email) {
-          const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
-          if (marketingUrl) {
-            window.location.href = marketingUrl;
-          } else {
-            router.push('/welcome');
-          }
+        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
+        if (marketingUrl) {
+          window.location.href = marketingUrl;
+        } else {
+          router.push('/login');
+        }
         }
       }
     };
@@ -127,41 +129,83 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
           )}
         </div>
 
-        {/* Two-Column Layout Below Welcome Section */}
-        <div style={{ 
-          display: 'flex', 
-          gap: 'var(--spacing-6)', 
-          alignItems: 'flex-start',
-          flexDirection: enableActivityFeed ? undefined : 'column',
-        }}>
-          {/* Left Column - Main Content */}
-          <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
-            {/* Epic Release Grid */}
-            <div className="mb-8">
-              <EpicReleaseGrid />
-            </div>
-
-            {/* Post-Launch Performance Grid */}
-            <div className="mb-8">
-              <PostLaunchPerformanceGrid />
-            </div>
-          </div>
-
-          {/* Right Column - Activity Feed */}
-          {enableActivityFeed && (
-            <div 
-              style={{ 
-                width: '380px',
-                flexShrink: 0
-              }}
-              className="hidden lg:block"
-            >
-              <Box>
-                <ActivityFeed />
-              </Box>
-            </div>
-          )}
+        {/* View Mode Toggle */}
+        <div style={{ marginBottom: 'var(--spacing-6)' }}>
+          <SegmentedControl
+            value={viewMode}
+            onChange={(value) => setViewMode(value as 'tasks' | 'portfolio')}
+            data={[
+              { label: 'My Tasks', value: 'tasks' },
+              { label: 'Portfolio View', value: 'portfolio' }
+            ]}
+            size="md"
+            color="violet"
+            styles={(theme) => ({
+              root: {
+                fontFamily: 'var(--font-body)',
+                backgroundColor: '#F3F4F6',
+                padding: '4px',
+                borderRadius: '8px',
+                border: '1px solid #E5E7EB',
+                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
+              },
+              indicator: {
+                backgroundColor: '#6B46C1', // Purple background for selected
+                borderRadius: '6px',
+                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.1)'
+              },
+              label: {
+                fontFamily: 'var(--font-body)',
+                fontSize: 'var(--font-size-base)',
+                fontWeight: 'var(--font-weight-medium)',
+                padding: '8px 20px',
+                color: '#6B7280', // Gray for unselected
+                transition: 'color 0.15s ease',
+                // Active state styling is handled in globals.css
+              }
+            })}
+          />
         </div>
+
+        {/* Content Based on View Mode */}
+        {viewMode === 'tasks' ? (
+          <MyTasks />
+        ) : (
+          <div style={{ 
+            display: 'flex', 
+            gap: 'var(--spacing-6)', 
+            alignItems: 'flex-start',
+            flexDirection: enableActivityFeed ? undefined : 'column',
+          }}>
+            {/* Left Column - Main Content */}
+            <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
+              {/* Epic Release Grid */}
+              <div className="mb-8">
+                <EpicReleaseGrid />
+              </div>
+
+              {/* Post-Launch Performance Grid */}
+              <div className="mb-8">
+                <PostLaunchPerformanceGrid />
+              </div>
+            </div>
+
+            {/* Right Column - Activity Feed */}
+            {enableActivityFeed && (
+              <div 
+                style={{ 
+                  width: '380px',
+                  flexShrink: 0
+                }}
+                className="hidden lg:block"
+              >
+                <Box>
+                  <ActivityFeed />
+                </Box>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
