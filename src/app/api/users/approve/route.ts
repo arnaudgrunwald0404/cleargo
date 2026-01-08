@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
       const appUrl = `${baseUrl}/login`;
 
       // Get sender info
-      const senderName = settings.email_sender_name || "ClearGO";
+      const senderName = "ClearGO";
       let senderEmail = "noreply@info.tacticalsync.com";
       if (process.env.EMAIL_SENDER) {
         const emailMatch = process.env.EMAIL_SENDER.match(/<(.+)>/);
