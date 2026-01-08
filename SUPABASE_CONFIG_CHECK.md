@@ -7,12 +7,12 @@
 Go to: **Supabase Dashboard** → **Your Project** → **Authentication** → **URL Configuration**
 
 #### Site URL
-- Should be: `https://cleargo.netlify.com`
+- Should be: `https://cleargo.netlify.app`
 
 #### Redirect URLs (MUST include both):
 ```
-https://cleargo.netlify.com/auth/callback
-https://cleargo.netlify.com/
+https://cleargo.netlify.app/auth/callback
+https://cleargo.netlify.app/
 ```
 
 **Important:** These URLs must match EXACTLY (including trailing slashes, protocol, etc.)
@@ -47,7 +47,7 @@ Ensure these are set in **Netlify Dashboard** → **Site Settings** → **Enviro
 NEXT_PUBLIC_SUPABASE_URL=https://[your-project-ref].supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=[your-publishable-key]
 SUPABASE_SECRET_KEY=[your-secret-key]
-NEXT_PUBLIC_APP_URL=https://cleargo.netlify.com
+NEXT_PUBLIC_APP_URL=https://cleargo.netlify.app
 ```
 
 **Note:** The code supports both new keys (`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`) and legacy keys (`NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`) for backward compatibility. However, we recommend using the new keys as they provide enhanced security features.
@@ -64,7 +64,7 @@ Supabase sets cookies with these default settings:
 
 After making changes:
 
-1. **Clear browser cookies** for `cleargo.netlify.com`
+1. **Clear browser cookies** for `cleargo.netlify.app`
 2. Try OAuth login again
 3. Check **Netlify Function Logs** for debug output:
    - Look for: `🔍`, `🔵`, `🟢`, `✅`, `🍪` emoji logs
