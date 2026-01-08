@@ -82,9 +82,6 @@ export default function EpicDetailPage() {
     };
 
     const loadData = useCallback(async () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:70',message:'loadData called',data:{inProgress:loadDataInProgressRef.current,timeSinceLastCall:Date.now()-lastLoadDataRef.current},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,D'})}).catch(()=>{});
-        // #endregion
         // Prevent multiple simultaneous calls
         if (loadDataInProgressRef.current) {
             console.warn('loadData already in progress, skipping duplicate call', { inProgress: loadDataInProgressRef.current });
@@ -326,19 +323,6 @@ export default function EpicDetailPage() {
                 // Store pre-calculated maps in state for reuse
                 setStageDaysBeforeLaunch(calculatedDaysBeforeLaunch);
                 setStageDaysAfterLaunch(calculatedDaysAfterLaunch);
-                
-                // #region agent log
-                console.log('[DEBUG] Launch stages loaded', stagesData);
-                console.log('[DEBUG] Pre-calculated days-before-launch', Object.fromEntries(calculatedDaysBeforeLaunch));
-                console.log('[DEBUG] Pre-calculated days-after-launch', Object.fromEntries(calculatedDaysAfterLaunch));
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:251',message:'Debug log call - Launch stages loaded',data:{callCount:'tracking',stagesCount:stagesData.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:202',message:'Launch stages loaded',data:{stages:stagesData,count:stagesData.length,daysBeforeLaunch:Object.fromEntries(calculatedDaysBeforeLaunch),daysAfterLaunch:Object.fromEntries(calculatedDaysAfterLaunch)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A,E'})}).catch(()=>{});
-                // #endregion
-            } else {
-                // #region agent log
-                console.error('[DEBUG] Launch stages error', stagesError);
-                fetch('/api/debug-log',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:207',message:'Launch stages error',data:{error:stagesError},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
             }
 
             // Fetch release schedule if needed (after we have epic data)
@@ -686,11 +670,6 @@ export default function EpicDetailPage() {
             // This allows the page to show immediately while counts load in background
             const itemIds = sorted.map((item: any) => item.id);
             
-            // #region agent log
-            const virtualIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:575',message:'Before fetching comments/attachments',data:{totalItemIds:itemIds.length,virtualIdsCount:virtualIds.length,virtualIds:virtualIds.slice(0,5),allItemIds:itemIds.slice(0,10)},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            
             if (itemIds.length > 0) {
                 // Clear any existing timeout to prevent duplicate requests
                 if (attachmentFetchTimeoutRef.current) {
@@ -701,11 +680,6 @@ export default function EpicDetailPage() {
                 attachmentFetchTimeoutRef.current = setTimeout(() => {
                     // Filter out virtual IDs - they don't have status rows and can't have comments/attachments
                     const realItemIds = itemIds.filter((itemId: string) => !itemId.startsWith('virtual-'));
-                    
-                    // #region agent log
-                    const virtualCommentIds = itemIds.filter((id: string) => id.startsWith('virtual-'));
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics/[id]/page.tsx:582',message:'Fetching comments for itemIds',data:{totalIds:itemIds.length,virtualIdsCount:virtualCommentIds.length,virtualIds:virtualCommentIds.slice(0,5),realIdsCount:realItemIds.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'F'})}).catch(()=>{});
-                    // #endregion
                     
                     // Use optimized batch counts API to fetch all comment and attachment counts in a single request
                     fetch(`/api/epics/${id}/criteria/counts`, {

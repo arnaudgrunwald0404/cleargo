@@ -39,14 +39,7 @@ export async function proxy(request: NextRequest) {
                 maxRequests: 100, // 100 requests per minute
             });
 
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'proxy.ts:25',message:'Rate limit check',data:{pathname,identifier,allowed:rateLimitResult.allowed,remaining:rateLimitResult.remaining,resetTime:new Date(rateLimitResult.resetTime).toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A,B,C'})}).catch(()=>{});
-            // #endregion
-
             if (!rateLimitResult.allowed) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'proxy.ts:30',message:'Rate limit exceeded',data:{pathname,identifier,remaining:rateLimitResult.remaining,resetTime:new Date(rateLimitResult.resetTime).toISOString()},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'A,B,C'})}).catch(()=>{});
-                // #endregion
                 return NextResponse.json(
                     { error: 'Too many requests. Please try again later.' },
                     {

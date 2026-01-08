@@ -691,23 +691,9 @@ function LoginForm() {
                 </div>
               </form>
 
-              {/* Back to choices */}
+              {/* Tip */}
               <div className="mt-6 text-center">
-                <p className="text-gray-600">
-                  Prefer to use a password?{" "}
-                  <button
-                    onClick={() => {
-                      setSelectedMethod("email");
-                      setEmailFormExpanded(true);
-                      setMode("signin");
-                      setMessage(null);
-                    }}
-                    className="text-indigo-600 hover:text-indigo-700 font-semibold"
-                  >
-                    Sign in with password
-                  </button>
-                </p>
-                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <p className="text-xs text-blue-800">
                     <strong>💡 Tip:</strong> Magic links are faster and more secure. Check your email (including spam) after clicking send.
                   </p>

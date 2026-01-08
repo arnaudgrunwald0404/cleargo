@@ -1251,18 +1251,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 
                                                 setSyncingReleaseName(group.releaseName);
                                                 try {
-                                                    // #region agent log
-                                                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:478',message:'Making sync request',data:{releaseName:group.releaseName,url:`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`,hasCredentials:'include'},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B,D'})}).catch(()=>{});
-                                                    // #endregion
                                                     const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
                                                         method: "POST",
                                                         credentials: "include",
                                                         headers: { "Content-Type": "application/json" },
                                                     });
-                                                    
-                                                    // #region agent log
-                                                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:485',message:'Sync request response',data:{status:res.status,statusText:res.statusText,ok:res.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'B,D'})}).catch(()=>{});
-                                                    // #endregion
                                                     
                                                     if (!res.ok) {
                                                         const errorData = await res.json();

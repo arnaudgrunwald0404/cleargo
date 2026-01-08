@@ -74,19 +74,10 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
     // Fetch user info for assigned_to_user if email is available using API endpoint
     // This works even without authentication, allowing email-to-name translation
     useEffect(() => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicFieldsSidebar.tsx:76',message:'useEffect triggered for assigned_to_user',data:{hasEmail:!!standardFields.assigned_to_user?.email,email:standardFields.assigned_to_user?.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,E'})}).catch(()=>{});
-        // #endregion
         const assignedToUser = standardFields.assigned_to_user;
         if (assignedToUser?.email) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicFieldsSidebar.tsx:79',message:'Before /api/users/by-email call in EpicFieldsSidebar',data:{email:assignedToUser.email},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,E'})}).catch(()=>{});
-            // #endregion
             fetch(`/api/users/by-email?emails=${encodeURIComponent(assignedToUser.email)}`)
                 .then(res => {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicFieldsSidebar.tsx:82',message:'After /api/users/by-email call in EpicFieldsSidebar',data:{status:res.status,ok:res.ok},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,E'})}).catch(()=>{});
-                    // #endregion
                     return res.ok ? res.json() : null;
                 })
                 .then(userMap => {

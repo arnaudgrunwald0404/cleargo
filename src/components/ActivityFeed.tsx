@@ -17,33 +17,14 @@ export function ActivityFeed() {
     }, []);
 
     const fetchActivities = async () => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:16',message:'fetchActivities entry',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4'})}).catch(()=>{});
-        // #endregion
         try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:18',message:'Before fetch request',data:{url:'/api/activity-feed?limit=15'},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4'})}).catch(()=>{});
-            // #endregion
             const res = await fetch('/api/activity-feed?limit=15', { credentials: 'include' });
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:20',message:'After fetch response',data:{status:res.status,statusText:res.statusText,ok:res.ok,headers:Object.fromEntries(res.headers.entries())},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'1,2,3,4,5'})}).catch(()=>{});
-            // #endregion
             if (!res.ok) {
-                // #region agent log
-                const errorText = await res.text().catch(() => 'Failed to read error body');
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:22',message:'Response not ok',data:{status:res.status,statusText:res.statusText,errorBody:errorText},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'1,2,3,5'})}).catch(()=>{});
-                // #endregion
                 throw new Error('Failed to fetch activities');
             }
             const data = await res.json();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:26',message:'Successfully parsed response',data:{activitiesCount:data.activities?.length||0},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'SUCCESS'})}).catch(()=>{});
-            // #endregion
             setActivities(data.activities || []);
         } catch (error) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'ActivityFeed.tsx:29',message:'Error caught in fetchActivities',data:{errorMessage:error instanceof Error?error.message:String(error),errorStack:error instanceof Error?error.stack:undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'4,5'})}).catch(()=>{});
-            // #endregion
             console.error('Error fetching activities:', error);
         } finally {
             setLoading(false);

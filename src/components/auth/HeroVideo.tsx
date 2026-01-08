@@ -1,10 +1,11 @@
 "use client";
 
 import { Box } from '@mantine/core';
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 export function HeroVideo() {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -25,34 +26,57 @@ export function HeroVideo() {
       }
     };
 
-    video.addEventListener('loadedmetadata', () => {
-      video.addEventListener('timeupdate', handleTimeUpdate);
-    });
+    const handleError = (e: Event) => {
+      console.error('Video error:', e);
+      setError('Failed to load video');
+    };
 
+    const handleLoadedMetadata = () => {
+      video.addEventListener('timeupdate', handleTimeUpdate);
+    };
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    video.addEventListener('error', handleError);
     video.addEventListener('timeupdate', handleTimeUpdate);
+
+    // Try to play the video
+    video.play().catch((err) => {
+      console.warn('Autoplay prevented:', err);
+      // Autoplay might be blocked, but video should still be playable via controls
+    });
 
     return () => {
       video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      video.removeEventListener('error', handleError);
     };
   }, []);
 
   return (
     <Box style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)' }}>
-      <video
-        ref={videoRef}
-        src="/hero_video.mp4"
-        autoPlay
-        muted
-        playsInline
-        controls
-        style={{
-          width: '100%',
-          height: 'auto',
-          display: 'block',
-        }}
-      >
-        Your browser does not support the video tag.
-      </video>
+      {error ? (
+        <Box style={{ padding: '40px', textAlign: 'center', color: '#CBD5E1' }}>
+          <p>Video unavailable</p>
+        </Box>
+      ) : (
+        <video
+          ref={videoRef}
+          src="/hero_video.mp4"
+          autoPlay
+          muted
+          playsInline
+          loop
+          preload="auto"
+          controls
+          style={{
+            width: '100%',
+            height: 'auto',
+            display: 'block',
+          }}
+        >
+          Your browser does not support the video tag.
+        </video>
+      )}
     </Box>
   );
 }

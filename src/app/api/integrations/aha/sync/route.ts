@@ -28,38 +28,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function POST(req: NextRequest) {
     try {
-        // #region agent log
-        const requestCookies = req.cookies.getAll();
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-        const authCookieName = projectRef ? `sb-${projectRef}-auth-token` : null;
-        const authCookies = requestCookies.filter(c => 
-            c.name === authCookieName || 
-            c.name === `${authCookieName}.0` ||
-            c.name.includes('auth-token')
-        );
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:29',message:'POST request received',data:{totalCookies:requestCookies.length,authCookieName,authCookiesCount:authCookies.length,authCookieNames:authCookies.map(c=>c.name),hasAuthCookie:authCookies.length>0,projectRef},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A,B,C'})}).catch(()=>{});
-        // #endregion
-        
         // Auth check - require admin role
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:32',message:'Creating Supabase client',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         const supabase = createClient();
-        
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:35',message:'Calling getUser()',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         const { data: { user }, error: getUserError } = await supabase.auth.getUser();
         
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:38',message:'getUser() result',data:{hasUser:!!user,userEmail:user?.email,getUserError:getUserError?.message,getUserErrorCode:getUserError?.status},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        
         if (!user?.email) {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:40',message:'Returning 401 - no user email',data:{getUserError:getUserError?.message},timestamp:Date.now(),sessionId:'debug-session',runId:'initial',hypothesisId:'A,B,C'})}).catch(()=>{});
-            // #endregion
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
         
