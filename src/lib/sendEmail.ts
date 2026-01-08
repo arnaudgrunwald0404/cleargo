@@ -4,6 +4,10 @@ const sender = process.env.EMAIL_SENDER || "noreply@tacticalsync.com";
 const apiKey = process.env.RESEND_API_KEY;
 
 export async function sendMagicLinkEmail(to: string, link: string) {
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sendEmail.ts:6',message:'sendMagicLinkEmail called',data:{to,linkLength:link.length,hasApiKey:!!apiKey,hasSender:!!sender},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
   if (!apiKey) throw new Error("RESEND_API_KEY not set");
   const resend = new Resend(apiKey);
   
@@ -15,7 +19,11 @@ export async function sendMagicLinkEmail(to: string, link: string) {
     .join(" ");
   const greeting = firstName ? `Hi ${firstName},` : "Hello,";
   
-  await resend.emails.send({
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sendEmail.ts:18',message:'Before resend.emails.send',data:{to,from:sender},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
+  const result = await resend.emails.send({
     from: sender,
     to,
     subject: "Your ClearGO sign-in link",
@@ -46,4 +54,15 @@ export async function sendMagicLinkEmail(to: string, link: string) {
       </div>
     `
   });
+  
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sendEmail.ts:49',message:'resend.emails.send completed',data:{to,resultId:(result as any)?.id,resultError:result?.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
+  
+  if (result.error) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sendEmail.ts:52',message:'Resend API error',data:{to,error:result.error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    throw new Error(`Failed to send email: ${result.error.message || JSON.stringify(result.error)}`);
+  }
 }

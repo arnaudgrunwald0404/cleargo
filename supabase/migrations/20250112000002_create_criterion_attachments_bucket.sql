@@ -33,5 +33,3 @@ create policy "Authenticated users can upload criterion attachments"
 create policy "Authenticated users can delete criterion attachments"
   on storage.objects for delete
   using ( bucket_id = 'criterion-attachments' and auth.role() = 'authenticated' );
-
-COMMENT ON TABLE storage.buckets IS 'Storage buckets for file uploads';

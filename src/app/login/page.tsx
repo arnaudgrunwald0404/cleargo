@@ -27,12 +27,15 @@ function validateEmail(email: string): { valid: boolean; error?: string } {
 }
 
 function LoginForm() {
-  const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
   const code = searchParams.get("code");
   const token = searchParams.get("token");
   const redirectTo = searchParams.get("redirect") || "/";
+  
+  // Only create Supabase client if we don't have a code (to prevent it from trying to exchange)
+  // If we have a code, we'll redirect immediately before the client initializes
+  const supabase = code ? null : createClient();
 
   const [selectedMethod, setSelectedMethod] = useState<"sso" | "email" | "magic" | null>(null);
   const [emailFormExpanded, setEmailFormExpanded] = useState(false);
@@ -61,19 +64,23 @@ function LoginForm() {
     }
   }, [token, tokenRedirected]);
 
-  // Handle OAuth code redirect - must happen immediately before client tries to process it
+  // Handle OAuth code redirect - must happen IMMEDIATELY before client tries to process it
+  // This runs synchronously on mount if code is present
   useEffect(() => {
     if (code) {
-      // Immediately redirect to callback route - don't let client process the code
-      // The server-side callback route will handle the code exchange
-      window.location.replace(`/auth/callback?code=${code}`);
+      // CRITICAL: Use replace (not href) and do it immediately
+      // This prevents the Supabase client from seeing the code and trying to exchange it
+      const callbackUrl = `/auth/callback?code=${encodeURIComponent(code)}${redirectTo !== '/' ? `&next=${encodeURIComponent(redirectTo)}` : ''}`;
+      console.log('🔄 Redirecting OAuth code to callback:', callbackUrl);
+      window.location.replace(callbackUrl);
+      return; // Exit early to prevent any other code from running
     }
-  }, [code]);
+  }, [code, redirectTo]);
 
   // Check if already authenticated - but skip if we have a code (let callback handle it)
   useEffect(() => {
-    if (code) {
-      // Don't check auth if we have a code - let the callback route handle it
+    if (code || !supabase) {
+      // Don't check auth if we have a code or if supabase client wasn't created
       return;
     }
     const checkAuth = async () => {
@@ -92,6 +99,11 @@ function LoginForm() {
     const validation = validateEmail(email);
     if (!validation.valid) {
       setMessage({ type: "error", text: validation.error! });
+      return;
+    }
+
+    if (!supabase) {
+      setMessage({ type: "error", text: "Authentication service unavailable" });
       return;
     }
 
@@ -156,6 +168,11 @@ function LoginForm() {
       } else {
         setMessage({ type: "success", text: "Account created! Redirecting..." });
         // Sign in automatically
+        if (!supabase) {
+          setMessage({ type: "success", text: "Account created! You can now sign in." });
+          setMode("signin");
+          return;
+        }
         const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) {
           setMessage({ type: "success", text: "Account created! You can now sign in." });
@@ -223,6 +240,11 @@ function LoginForm() {
       return;
     }
 
+    if (!supabase) {
+      setMessage({ type: "error", text: "Authentication service unavailable" });
+      return;
+    }
+
     setLoading(true);
     try {
       // Use current origin to ensure localhost links work correctly
@@ -244,7 +266,7 @@ function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-white lg:bg-transparent">
       {/* Left Panel - Marketing Content with Dark Theme (60%) */}
       <div className="hidden lg:flex lg:w-3/6 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative overflow-y-auto">
         {/* Decorative elements */}
@@ -319,41 +341,31 @@ function LoginForm() {
         </div>
       </div>
 
-      {/* Mobile Marketing Content */}
-      <div className="lg:hidden w-full bg-white">
-        <div className="px-8 py-12">
-          
-
-          {/* Hero Section */}
-          <div className="mb-8 text-center">
-            <Title order={1} style={{ fontSize: '36px', fontWeight: 800, lineHeight: 1.2, color: '#1E3A8A', marginBottom: '16px' }}>
-              Launch with Confidence.{' '}
-              <span style={{ color: '#228BE6' }}>Not Spreadsheets.</span>
-            </Title>
-            <Text size="lg" style={{ color: '#495057', lineHeight: 1.6, marginBottom: '24px' }}>
-              Replace the chaos of static matrices with a living, intelligent control tower.
-            </Text>
-          </div>
-
-          {/* Hero Video */}
-          <div className="mb-8">
-            <HeroVideo />
-          </div>
-
-          {/* Feature Highlights */}
-          <div className="mb-8">
-            <FeatureGrid />
-          </div>
-        </div>
-      </div>
-
       {/* Right Panel - Auth Form (40%, Sticky) */}
-      <div className="w-full lg:w-2/4 flex items-center justify-center p-8 bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
-        <div className="w-full max-w-md">
+      <div className="w-full lg:w-2/4 flex flex-col lg:items-center lg:justify-center p-4 sm:p-6 lg:p-8 bg-white lg:sticky lg:top-0 lg:h-screen lg:overflow-y-auto">
+        {/* Mobile Header - Compact */}
+        <div className="lg:hidden mb-6 sm:mb-8 pt-4">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
+              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <span className="text-2xl font-bold text-gray-900 tracking-tight">ClearGO</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
+            Launch with <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Confidence.</span>
+          </h1>
+          <p className="text-sm text-gray-600">
+            Sign in to access your launch readiness dashboard
+          </p>
+        </div>
+
+        <div className="w-full max-w-md lg:mx-auto">
 
           {/* Three Choice Boxes */}
           {!selectedMethod && (
-            <div className="space-y-4 w-full">
+            <div className="space-y-3 sm:space-y-4 w-full mt-0 lg:mt-0">
               {/* Choice 1: Google SSO */}
               <button
                 onClick={async () => {
@@ -379,6 +391,8 @@ function LoginForm() {
                       return;
                     }
 
+                    // Create a fresh Supabase client for OAuth (don't use the conditional one)
+                    const oauthClient = createClient();
                     const redirectTo = `${window.location.origin}/auth/callback`;
                     console.log('🔐 Initiating Google OAuth:', {
                       redirectTo,
@@ -386,7 +400,7 @@ function LoginForm() {
                       origin: window.location.origin,
                     });
                     
-                    const { data, error } = await supabase.auth.signInWithOAuth({
+                    const { data, error } = await oauthClient.auth.signInWithOAuth({
                       provider: 'google',
                       options: {
                         redirectTo,
@@ -417,19 +431,19 @@ function LoginForm() {
                     });
                   }
                 }}
-                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Log in with Google SSO</h3>
-                    <p className="text-sm text-gray-500">Quick and secure single sign-on</p>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Log in with Google SSO</h3>
+                    <p className="text-xs sm:text-sm text-gray-500">Quick and secure single sign-on</p>
                   </div>
-                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -442,19 +456,19 @@ function LoginForm() {
                   setEmailFormExpanded(true);
                   setMode("signin");
                 }}
-                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Log in with Email and Password</h3>
-                    <p className="text-sm text-gray-500">Sign in with your email and password</p>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Log in with Email and Password</h3>
+                    <p className="text-xs sm:text-sm text-gray-500">Sign in with your email and password</p>
                   </div>
-                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -466,19 +480,19 @@ function LoginForm() {
                   setSelectedMethod("magic");
                   setMode("magic");
                 }}
-                className="w-full p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group"
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
               >
-                <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-3 sm:gap-4">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-1">Send me a Magic Link</h3>
-                    <p className="text-sm text-gray-500">Passwordless sign-in via email</p>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Send me a Magic Link</h3>
+                    <p className="text-xs sm:text-sm text-gray-500">Passwordless sign-in via email</p>
                   </div>
-                  <svg className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -488,9 +502,9 @@ function LoginForm() {
 
           {/* Email/Password Form - Expanded */}
           {selectedMethod === "email" && emailFormExpanded && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-gray-900">
+            <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-center justify-between mb-4 sm:mb-6">
+                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
                   {mode === "signin" && "Welcome back"}
                   {mode === "signup" && "Create your account"}
                   {mode === "reset" && "Reset your password"}
@@ -501,9 +515,10 @@ function LoginForm() {
                     setEmailFormExpanded(false);
                     setMessage(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 -mr-1"
+                  aria-label="Close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -528,7 +543,7 @@ function LoginForm() {
                 mode === "signup" ? handleSignUp : 
                 handleResetPassword
               }>
-                <div className="space-y-5">
+                <div className="space-y-4 sm:space-y-5">
                   {/* Email */}
                   <div>
                     <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -541,7 +556,7 @@ function LoginForm() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="you@clearcompany.com"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
                     />
                     <p className="mt-1.5 text-xs text-gray-400">
                       Only @clearcompany.com addresses allowed
@@ -562,7 +577,7 @@ function LoginForm() {
                         required
                         minLength={8}
                         placeholder="••••••••"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
                       />
                       {mode === "signup" && (
                         <p className="mt-1.5 text-xs text-gray-400">
@@ -586,7 +601,7 @@ function LoginForm() {
                         required
                         minLength={8}
                         placeholder="••••••••"
-                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
                       />
                     </div>
                   )}
@@ -600,7 +615,7 @@ function LoginForm() {
                           setMode("reset");
                           setMessage(null);
                         }}
-                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium"
+                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium py-1"
                       >
                         Forgot password?
                       </button>
@@ -611,7 +626,7 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 sm:py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] text-base"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -679,11 +694,11 @@ function LoginForm() {
 
           {/* Magic Link Form */}
           {selectedMethod === "magic" && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-2">Launch with Magic Link</h2>
-                  <p className="text-gray-500">
+            <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
+              <div className="flex items-start justify-between mb-4 sm:mb-6 gap-2">
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">Launch with Magic Link</h2>
+                  <p className="text-sm sm:text-base text-gray-500">
                     Enter your email and we'll send you a secure, passwordless sign-in link. No password needed!
                   </p>
                 </div>
@@ -693,9 +708,10 @@ function LoginForm() {
                     setMode("signin");
                     setMessage(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors"
+                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 -mt-1 flex-shrink-0"
+                  aria-label="Close"
                 >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 </button>
@@ -716,7 +732,7 @@ function LoginForm() {
 
               {/* Form */}
               <form onSubmit={handleMagicLink}>
-                <div className="space-y-5">
+                <div className="space-y-4 sm:space-y-5">
                   {/* Email */}
                   <div>
                     <label htmlFor="magic-email" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -729,7 +745,7 @@ function LoginForm() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="you@clearcompany.com"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-gray-900 placeholder-gray-400"
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
                     />
                     <p className="mt-1.5 text-xs text-gray-400">
                       Only @clearcompany.com addresses allowed
@@ -740,7 +756,7 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40"
+                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] text-base"
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">

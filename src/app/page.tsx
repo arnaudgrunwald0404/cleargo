@@ -1,6 +1,7 @@
 import { HomeDashboard } from '@/components/HomeDashboard';
 import { createClient } from '@/lib/supabase/server';
 import { getSettings } from '@/lib/settings-db';
+import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
@@ -9,9 +10,17 @@ export default async function HomePage() {
   const supabase = createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   
+  // Check for custom lr_session cookie (used by magic link)
+  const session = await getSession();
+  const sessionEmail = session?.email;
+  // #region agent log
+  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'page.tsx:12',message:'Home page auth check',data:{hasSupabaseUser:!!user?.email,supabaseError:error?.message,sessionEmail,hasSession:!!session},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
+  // #endregion
+  
   // Redirect to login if user is not authenticated
   // Do this BEFORE any try-catch so redirect always happens
-  if (error || !user?.email) {
+  // Check both Supabase auth and custom lr_session cookie
+  if ((error || !user?.email) && !sessionEmail) {
     const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
     if (marketingUrl) {
       // External marketing website
@@ -22,19 +31,22 @@ export default async function HomePage() {
     }
   }
   
-  let email: string | null = null;
+  // Use email from Supabase auth or from lr_session cookie
+  const userEmail = user?.email || sessionEmail;
+  
+  let email: string | null = userEmail || null;
   let firstName: string | null = null;
   let enableActivityFeed = true;
   let isFirstTime = false;
   
   try {
     
-    if (user?.email) {
-      email = user.email;
+    if (userEmail) {
+      email = userEmail;
       
       // Check if this is the user's first login
       // If account was created recently (within last hour) and this is their first sign-in, show welcome message
-      if (user.created_at) {
+      if (user?.created_at) {
         const createdAt = new Date(user.created_at).getTime();
         const now = Date.now();
         const accountAge = now - createdAt;
@@ -51,7 +63,7 @@ export default async function HomePage() {
             isFirstTime = Math.abs(lastSignIn - createdAt) < 10 * 60 * 1000;
           }
         }
-      } else if (!user.last_sign_in_at) {
+      } else if (user && !user.last_sign_in_at) {
         // No created_at and no last_sign_in_at means first time
         isFirstTime = true;
       }
@@ -60,7 +72,7 @@ export default async function HomePage() {
       const { data: profile } = await supabase
         .from('app_user')
         .select('email, first_name, name')
-        .eq('email', user.email)
+        .eq('email', userEmail)
         .single();
       
       if (profile) {
