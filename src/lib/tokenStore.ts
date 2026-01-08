@@ -155,19 +155,34 @@ export async function checkAndMarkTokenUsed(jti: string): Promise<boolean> {
     const raw = await safeReadFile(actualTokensFile);
     const data = JSON.parse(raw) as { used: Record<string, boolean>; lastSentAt: Record<string, number> };
     
+    // Ensure used object exists
+    if (!data.used) {
+      data.used = {};
+    }
+    
     // Check if already used
     if (data.used[jti]) {
+      console.log(`[TokenStore] Token ${jti} already marked as used`);
       return true; // Already used
     }
     
     // Atomically mark as used
     data.used[jti] = true;
     await safeWriteFile(actualTokensFile, JSON.stringify(data, null, 2));
+    console.log(`[TokenStore] Successfully marked token ${jti} as used`);
     return false; // Successfully marked as used
   } catch (error: any) {
-    // If we can't read/write, assume not used to allow the request through
-    // This is safer than blocking legitimate requests
-    console.error("Error in checkAndMarkTokenUsed:", error);
+    // If we can't read/write, log the error but allow the request through
+    // This is safer than blocking legitimate requests in serverless environments
+    console.error(`[TokenStore] Error in checkAndMarkTokenUsed for ${jti}:`, error);
+    console.error(`[TokenStore] Error details:`, {
+      code: error.code,
+      message: error.message,
+      actualTokensFile,
+      isServerless,
+    });
+    // In serverless environments, file operations might fail, so we allow the request
+    // The token expiration (30m) provides security
     return false;
   }
 }
