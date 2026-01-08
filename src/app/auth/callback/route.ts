@@ -160,22 +160,36 @@ export async function GET(request: NextRequest) {
             allCookieNames: allCookies.map(c => c.name),
         })
 
+        console.log('🔄 Attempting code exchange...');
         const { data, error } = await supabase.auth.exchangeCodeForSession(code)
 
         if (error) {
-            console.error('Code exchange error:', {
+            console.error('❌ Code exchange error:', {
                 message: error.message,
                 status: error.status,
                 hasCodeVerifier: !!codeVerifierCookie,
+                errorDetails: error,
             })
             const errorUrl = new URL('/login?error=auth_failed', requestUrl)
             errorUrl.searchParams.set('message', error.message)
             return NextResponse.redirect(errorUrl)
         }
 
+        console.log('✅ Code exchange result:', {
+            hasSession: !!data?.session,
+            hasUser: !!data?.user,
+            sessionExpiresAt: data?.session?.expires_at,
+            userId: data?.user?.id,
+        });
+
         if (data?.session) {
-            return NextResponse.redirect(new URL(next, requestUrl))
+            console.log('🔄 Redirecting to:', next);
+            const redirectUrl = new URL(next, requestUrl);
+            console.log('🔄 Full redirect URL:', redirectUrl.toString());
+            return NextResponse.redirect(redirectUrl)
         }
+        
+        console.error('❌ Code exchange succeeded but no session returned');
     }
 
     // No valid auth parameters
