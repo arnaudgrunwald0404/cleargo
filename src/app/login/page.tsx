@@ -504,27 +504,21 @@ function LoginForm() {
                 </div>
               </button>
 
-              {/* Choice 3: Magic Link */}
+              {/* Choice 3: Magic Link - Disabled */}
               <button
-                onClick={() => {
-                  setSelectedMethod("magic");
-                  setMode("magic");
-                }}
-                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
+                disabled
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl opacity-50 cursor-not-allowed text-left"
               >
                 <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-300 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Send me a Magic Link</h3>
-                    <p className="text-xs sm:text-sm text-gray-500">Passwordless sign-in via email</p>
+                    <h3 className="text-base sm:text-lg font-semibold text-gray-500 mb-0.5 sm:mb-1">Send me a Magic Link</h3>
+                    <p className="text-xs sm:text-sm text-gray-400">Coming soon</p>
                   </div>
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
                 </div>
               </button>
             </div>
