@@ -6,14 +6,11 @@ const FALLBACK_PRODUCT_OPS = (process.env.FALLBACK_PRODUCT_OPS_EMAIL || "agrunwa
 /**
  * Resolve the primary role for a user by querying the database.
  * Falls back to OTHER if user not found or has no roles.
- * The FALLBACK_PRODUCT_OPS email always gets PRODUCT_OPS as a safety net.
+ * The FALLBACK_PRODUCT_OPS email gets PRODUCT_OPS only if user not found in database.
  * Uses admin client to bypass RLS for role lookups.
  */
 export async function resolveRole(email: string): Promise<Role> {
   const e = email.toLowerCase();
-  
-  // Safety net: fallback product ops email always gets PRODUCT_OPS
-  if (e === FALLBACK_PRODUCT_OPS) return "PRODUCT_OPS";
 
   try {
     // Use admin client to bypass RLS for role lookups
@@ -35,7 +32,13 @@ export async function resolveRole(email: string): Promise<Role> {
     console.log('🔍 resolveRole - email:', e, 'user:', user, 'error:', error?.message);
 
     if (error || !user) {
-      console.log('⚠️ resolveRole - No user found, returning OTHER');
+      console.log('⚠️ resolveRole - No user found');
+      // Safety net: fallback product ops email gets PRODUCT_OPS if user not found
+      if (e === FALLBACK_PRODUCT_OPS) {
+        console.log('⚠️ resolveRole - Using fallback PRODUCT_OPS for fallback email');
+        return "PRODUCT_OPS";
+      }
+      console.log('⚠️ resolveRole - Returning OTHER');
       return "OTHER";
     }
 
@@ -55,11 +58,21 @@ export async function resolveRole(email: string): Promise<Role> {
       return legacyRole as Role;
     }
 
-    console.log('⚠️ resolveRole - No roles found, returning OTHER');
+    console.log('⚠️ resolveRole - No roles found');
+    // Safety net: fallback product ops email gets PRODUCT_OPS if no roles in database
+    if (e === FALLBACK_PRODUCT_OPS) {
+      console.log('⚠️ resolveRole - Using fallback PRODUCT_OPS for fallback email (no roles in DB)');
+      return "PRODUCT_OPS";
+    }
+    console.log('⚠️ resolveRole - Returning OTHER');
     return "OTHER";
   } catch (err) {
-    // If database query fails, return OTHER
+    // If database query fails, use fallback for fallback email
     console.log('❌ resolveRole - Error:', err);
+    if (e === FALLBACK_PRODUCT_OPS) {
+      console.log('❌ resolveRole - Using fallback PRODUCT_OPS for fallback email (query failed)');
+      return "PRODUCT_OPS";
+    }
     return "OTHER";
   }
 }

@@ -5,6 +5,8 @@ import { IconLogout, IconSettings, IconUser } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { canRolesPerform } from '@/lib/permissions';
+import type { CapabilityId } from '@/lib/permissions';
 
 interface UserAvatarProps {
     email?: string | null;
@@ -17,19 +19,53 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
     const supabase = createClient();
     const [userEmail, setUserEmail] = useState<string | null>(email || null);
     const [userRole, setUserRole] = useState<string | null>(role || null);
+    const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
 
     useEffect(() => {
-        if (!email) {
-            const getUser = async () => {
+        const fetchUserData = async () => {
+            if (!email) {
                 const { data: { user } } = await supabase.auth.getUser();
                 if (user?.email) {
                     setUserEmail(user.email);
-                    // In a real app we might fetch the role here too if not provided
                 }
-            };
-            getUser();
-        }
-    }, [email, supabase]);
+            }
+
+            // Fetch user roles and check settings access
+            try {
+                const res = await fetch('/api/me', { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    const roles = Array.isArray(data.user?.roles) 
+                        ? data.user.roles 
+                        : (data.user?.role ? [data.user.role] : []);
+                    
+                    // Always update role from API response (API is source of truth)
+                    if (roles.length > 0) {
+                        setUserRole(roles[0]);
+                    } else if (data.user?.role) {
+                        setUserRole(data.user.role);
+                    }
+
+                    // Check if user has access to any settings-related capability
+                    const settingsCapabilities: CapabilityId[] = [
+                        'settings.read',
+                        'settings.emailTemplates.read',
+                        'settings.ahaFields.read',
+                        'settings.webhookUrl.read',
+                    ];
+
+                    const hasAccess = settingsCapabilities.some(capability => 
+                        canRolesPerform(roles, capability)
+                    );
+                    setHasSettingsAccess(hasAccess);
+                }
+            } catch (error) {
+                console.error('Failed to fetch user roles:', error);
+            }
+        };
+
+        fetchUserData();
+    }, [email, supabase, role]);
 
 
     const handleSignOut = async () => {
@@ -91,6 +127,15 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
                 >
                     Account Details
                 </Menu.Item>
+
+                {hasSettingsAccess && (
+                    <Menu.Item
+                        leftSection={<IconSettings style={{ width: rem(14), height: rem(14) }} />}
+                        onClick={() => router.push('/admin/settings')}
+                    >
+                        Settings
+                    </Menu.Item>
+                )}
 
                 <Menu.Divider />
 
