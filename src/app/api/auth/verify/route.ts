@@ -3,60 +3,6 @@ import { verifyToken, createToken } from "@/lib/jwt";
 import { checkAndMarkTokenUsed } from "@/lib/tokenStore";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
-// Helper function to ensure app_user profile exists
-async function ensureAppUserProfile(adminClient: any, authUserId: string, email: string) {
-  const emailLower = email.toLowerCase();
-  
-  // Check if profile already exists
-  const { data: existingProfile } = await adminClient
-    .from('app_user')
-    .select('id, roles')
-    .eq('email', emailLower)
-    .single();
-  
-  if (existingProfile) {
-    console.log(`[Verify] App user profile already exists for ${emailLower}`);
-    return;
-  }
-  
-  // Determine default roles based on email
-  let defaultRoles: string[] = ['OTHER'];
-  const emailName = emailLower.split('@')[0];
-  
-  // Special case for agrunwald@clearcompany.com - SUPERADMIN and CPO
-  if (emailLower === 'agrunwald@clearcompany.com') {
-    defaultRoles = ['SUPERADMIN', 'CPO'];
-  }
-  
-  // Extract name from email
-  const formattedName = emailName
-    .split(/[._-]/)
-    .map((part: string) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(' ');
-  
-  // Create app_user profile
-  const { error: profileError } = await adminClient
-    .from('app_user')
-    .upsert({
-      id: authUserId,
-      email: emailLower,
-      name: formattedName,
-      roles: defaultRoles,
-      is_active: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }, {
-      onConflict: 'email',
-    });
-  
-  if (profileError) {
-    console.error(`[Verify] Failed to create app_user profile for ${emailLower}:`, profileError);
-    // Don't throw - user can still log in, profile can be created later
-  } else {
-    console.log(`[Verify] Created app_user profile for ${emailLower} with roles:`, defaultRoles);
-  }
-}
-
 // In-memory lock to prevent duplicate processing of the same token
 // This is a fallback for race conditions within the same process
 const processingTokens = new Map<string, Promise<any>>();
@@ -116,7 +62,7 @@ export async function GET(req: NextRequest) {
 
             // If user doesn't exist in Supabase auth, create them (passwordless initially)
             if (!authUser) {
-              const { data: newAuthUser, error: createError } = await adminClient.auth.admin.createUser({
+              const { error: createError } = await adminClient.auth.admin.createUser({
                 email: payload.email,
                 email_confirm: true,
                 // Don't set password here - user will set it in setup-password
@@ -125,9 +71,6 @@ export async function GET(req: NextRequest) {
               if (createError) {
                 console.error("Failed to create Supabase auth user:", createError);
                 // Continue anyway - user can set password later
-              } else if (newAuthUser?.user) {
-                // Ensure app_user profile exists for new auth user
-                await ensureAppUserProfile(adminClient, newAuthUser.user.id, payload.email);
               }
             } else {
               // Check if user has a password set
@@ -135,9 +78,6 @@ export async function GET(req: NextRequest) {
               // Note: Supabase doesn't expose encrypted_password directly, so we use heuristics
               hasPassword = !!(authUser.last_sign_in_at || 
                 authUser.identities?.some((identity) => identity.provider === 'email'));
-              
-              // Ensure app_user profile exists (in case it was deleted or never created)
-              await ensureAppUserProfile(adminClient, authUser.id, payload.email);
             }
           } catch (err) {
             console.error("Error checking/creating Supabase auth user:", err);

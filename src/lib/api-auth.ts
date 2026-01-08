@@ -39,27 +39,3 @@ export async function requireAuth(): Promise<string> {
   }
   return email;
 }
-
-/**
- * Get the authenticated user's profile including roles.
- * This supports both standard Supabase authentication and magic link authentication.
- * 
- * @returns The user's profile with roles if authenticated, null otherwise
- */
-export async function getAuthenticatedUserWithRoles(): Promise<any | null> {
-  const userEmail = await getAuthenticatedUserEmail();
-  if (!userEmail) return null;
-
-  const supabase = createClient();
-  const { data: profile, error } = await supabase
-    .from("app_user")
-    .select('*, roles') // Select roles directly
-    .eq("email", userEmail.toLowerCase())
-    .single();
-
-  if (error && error.code !== 'PGRST116') {
-    console.error("Error fetching authenticated user profile with roles:", error);
-    return null;
-  }
-  return profile;
-}

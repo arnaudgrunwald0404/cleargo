@@ -13,7 +13,7 @@ const updateProfileSchema = z.object({
 export async function PATCH(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     // Check for custom lr_session cookie (used by magic link)
     const session = await getSession();
     const sessionEmail = session?.email;
@@ -111,7 +111,7 @@ export async function PATCH(req: NextRequest) {
 export async function GET(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    
+
     // Check for custom lr_session cookie (used by magic link)
     const session = await getSession();
     const sessionEmail = session?.email;

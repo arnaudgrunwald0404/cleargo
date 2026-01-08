@@ -26,9 +26,9 @@ export async function markTokenSent(jti: string, email: string, expiresAt: Date)
   
   if (error) {
     console.error(`[TokenStore] Error marking token ${jti} as sent:`, error);
-    throw error;
+      throw error;
+    }
   }
-}
 
 export async function markTokenUsed(jti: string) {
   const supabase = getSupabaseClient();
@@ -40,9 +40,9 @@ export async function markTokenUsed(jti: string) {
   
   if (error) {
     console.error(`[TokenStore] Error marking token ${jti} as used:`, error);
-    throw error;
+      throw error;
+    }
   }
-}
 
 export async function isTokenUsed(jti: string): Promise<boolean> {
   const supabase = getSupabaseClient();

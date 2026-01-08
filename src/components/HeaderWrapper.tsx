@@ -37,54 +37,54 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
         const { data: { user }, error } = await supabase.auth.getUser();
         
         // Check /api/me which supports both Supabase auth and lr_session cookie
-        try {
-          const res = await fetch('/api/me', { credentials: 'include' });
-          if (res.ok) {
-            const data = await res.json();
-            const profile = data.user;
-            
-            if (profile) {
+          try {
+            const res = await fetch('/api/me', { credentials: 'include' });
+            if (res.ok) {
+              const data = await res.json();
+              const profile = data.user;
+              
+              if (profile) {
               // User is authenticated (via either method)
               setShouldShow(true);
               
-              // Set email if not already set
-              if (!email && profile.email) {
-                setEmail(profile.email);
-              }
-              
-              // Set avatar if available
-              if (profile.avatar_url) {
-                setImageUrl(profile.avatar_url);
-              }
-              
-              // Set role if available (prioritize roles array, fallback to role string)
-              if (!role) {
-                const roles = profile.roles as string[] | null;
-                const legacyRole = profile.role as string | null;
+                // Set email if not already set
+                if (!email && profile.email) {
+                  setEmail(profile.email);
+                }
                 
-                if (roles && roles.length > 0) {
-                  setRole(roles[0] as Role);
-                } else if (legacyRole) {
-                  setRole(legacyRole as Role);
+                // Set avatar if available
+                if (profile.avatar_url) {
+                  setImageUrl(profile.avatar_url);
+                }
+                
+                // Set role if available (prioritize roles array, fallback to role string)
+                if (!role) {
+                  const roles = profile.roles as string[] | null;
+                  const legacyRole = profile.role as string | null;
+                  
+                  if (roles && roles.length > 0) {
+                    setRole(roles[0] as Role);
+                  } else if (legacyRole) {
+                    setRole(legacyRole as Role);
+                  }
                 }
               }
-            }
           } else if (res.status === 401) {
             // Not authenticated
             if (!serverEmail) {
               setShouldShow(false);
             }
-          }
-        } catch (apiError) {
-          console.error('Failed to fetch profile from /api/me:', apiError);
+            }
+          } catch (apiError) {
+            console.error('Failed to fetch profile from /api/me:', apiError);
           // If Supabase auth worked, use that
           if (!error && user) {
             setShouldShow(true);
             if (!email && user.email) {
               setEmail(user.email);
-            }
+          }
           } else if (!serverEmail) {
-            setShouldShow(false);
+          setShouldShow(false);
           }
         }
       } catch (error) {
