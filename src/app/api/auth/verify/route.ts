@@ -9,21 +9,11 @@ const processingTokens = new Map<string, Promise<any>>();
 
 export async function GET(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token");
-  // #region agent log
-  fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:10',message:'Verify request started',data:{hasToken:!!token,tokenLength:token?.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B,D'})}).catch(()=>{});
-  // #endregion
   
   if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
   
   try {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:15',message:'Before token verification',data:{hasSecret:!!process.env.MAGIC_LINK_SECRET},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
     const payload = await verifyToken<{ email: string; jti: string; t: string; exp?: number }>(token);
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:16',message:'Token verified',data:{email:payload.email,jti:payload.jti,type:payload.t,exp:payload.exp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     
     if (payload.t !== "magic") throw new Error("Wrong token type");
     
@@ -45,14 +35,7 @@ export async function GET(req: NextRequest) {
     const processingPromise = (async () => {
       try {
         // Atomically check and mark token as used to prevent race conditions
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:36',message:'Before checkAndMarkTokenUsed',data:{jti:payload.jti},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-        
         const alreadyUsed = await checkAndMarkTokenUsed(payload.jti);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:37',message:'Token usage check result',data:{jti:payload.jti,alreadyUsed},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
         
         if (alreadyUsed) {
           console.log(`[Verify] Token ${payload.jti} was already marked as used`);
@@ -103,27 +86,14 @@ export async function GET(req: NextRequest) {
         }
 
         // Issue session cookie (7 days)
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:86',message:'Before session creation',data:{email:payload.email,hasPassword},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
-        
         const session = await createToken({ email: payload.email, t: "session" }, "7d");
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:87',message:'Session token created',data:{email:payload.email,sessionLength:session.length},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         
         // Determine if we should use secure cookies (only in production with HTTPS)
         const isSecure = req.url.startsWith('https://') || process.env.NODE_ENV === 'production';
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:91',message:'Cookie secure flag determined',data:{isSecure,url:req.url,nodeEnv:process.env.NODE_ENV},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         
         // If user doesn't have a password, redirect to setup-password
         if (!hasPassword) {
           const redirectUrl = `/setup-password?token=${encodeURIComponent(session)}`;
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:95',message:'Redirecting to setup-password',data:{redirectUrl,hasPassword},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
-          // #endregion
           
           const res = NextResponse.redirect(new URL(redirectUrl, req.url));
           res.cookies.set({
@@ -135,17 +105,10 @@ export async function GET(req: NextRequest) {
             secure: isSecure,
             maxAge: 60 * 60 * 24 * 7,
           });
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:107',message:'Cookie set for setup-password',data:{cookieName:'lr_session',cookieSet:true,secure:isSecure},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-          // #endregion
           return res;
         }
 
         // User has password, redirect to home
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:115',message:'Redirecting to home',data:{hasPassword},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-        
         const res = NextResponse.redirect(new URL("/", req.url));
         res.cookies.set({
           name: "lr_session",
@@ -156,9 +119,6 @@ export async function GET(req: NextRequest) {
           secure: isSecure,
           maxAge: 60 * 60 * 24 * 7,
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'verify/route.ts:125',message:'Cookie set for home redirect',data:{cookieName:'lr_session',cookieSet:true,secure:isSecure},timestamp:Date.now(),sessionId:'debug-session',runId:'post-fix',hypothesisId:'E'})}).catch(()=>{});
-        // #endregion
         return res;
       } finally {
         // Clean up the lock after processing completes
