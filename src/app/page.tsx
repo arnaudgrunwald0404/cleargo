@@ -3,10 +3,22 @@ import { createClient } from '@/lib/supabase/server';
 import { getSettings } from '@/lib/settings-db';
 import { getSession } from '@/lib/auth';
 import { redirect } from 'next/navigation';
+import { OAuthCodeHandler } from '@/components/OAuthCodeHandler';
 
 export const dynamic = 'force-dynamic';
 
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams?: { code?: string; [key: string]: string | string[] | undefined };
+}) {
+  // Check if OAuth code is present in URL - if so, redirect to callback route
+  const code = searchParams?.code;
+  if (code && typeof code === 'string') {
+    // Redirect to callback route to handle code exchange
+    redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
+  }
+  
   const supabase = createClient();
   const { data: { user }, error } = await supabase.auth.getUser();
   
@@ -91,5 +103,10 @@ export default async function HomePage() {
     console.warn('Failed to fetch settings for activity feed:', error);
   }
 
-  return <HomeDashboard userEmail={email} firstName={firstName} enableActivityFeed={enableActivityFeed} isFirstTime={isFirstTime} />;
+  return (
+    <>
+      <OAuthCodeHandler />
+      <HomeDashboard userEmail={email} firstName={firstName} enableActivityFeed={enableActivityFeed} isFirstTime={isFirstTime} />
+    </>
+  );
 }
