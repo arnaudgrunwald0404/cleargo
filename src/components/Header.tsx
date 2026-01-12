@@ -21,6 +21,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const { scope, setScope } = useEpicScope();
     const [userRoles, setUserRoles] = useState<string[]>([]);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
+    const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
 
     // Fetch user roles and check settings access
     useEffect(() => {
@@ -46,6 +47,9 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                         canRolesPerform(roles, capability)
                     );
                     setHasSettingsAccess(hasAccess);
+
+                    const hasMeetings = canRolesPerform(roles, 'meetings.read');
+                    setHasMeetingsAccess(hasMeetings);
                 }
             } catch (error) {
                 console.error('Failed to fetch user roles:', error);
@@ -64,14 +68,10 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const hasOnlyOtherRole = !role || role === 'OTHER';
 
     // Primary navigation tabs
-    // Meetings is only visible to CPO and SUPERADMIN
-    const normalizedRole = role ? role.toUpperCase() : null;
-    const canViewMeetings = normalizedRole === 'CPO' || normalizedRole === 'SUPERADMIN';
-    
     const primaryTabs = [
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Releases' },
-        ...(canViewMeetings ? [{ link: '/meetings', label: 'Meetings' }] : []),
+        ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 

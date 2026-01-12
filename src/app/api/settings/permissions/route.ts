@@ -41,7 +41,16 @@ export async function GET() {
   try {
     const mapping = await readMapping();
     const settings = await getSettings();
-    const overrides = (settings.permissions || {}) as Record<string, string[]>;
+    const rawOverrides = (settings.permissions || {}) as Record<string, string[]>;
+    
+    // Filter out invalid capabilities (handle stale data gracefully)
+    const validCaps: Set<string> = new Set(CAPABILITIES.map(c => c.id as string));
+    const overrides: Record<string, string[]> = {};
+    for (const [cap, roles] of Object.entries(rawOverrides)) {
+      if (validCaps.has(cap)) {
+        overrides[cap] = roles;
+      }
+    }
 
     return NextResponse.json({
       roles: ALL_ROLES,
@@ -84,23 +93,29 @@ export async function PATCH(req: NextRequest) {
       }
       
       const { canRolesPerform } = await import('@/lib/permissions');
-      const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.update');
+      const ok = canRolesPerform((me?.roles as string[]) || [], 'settings.update');
       if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-      // Validate capability ids and roles
+      // Validate capability ids and roles, filter out invalid capabilities
       const validCaps: Set<string> = new Set(CAPABILITIES.map(c => c.id as string));
-      const entries = Object.entries(body.rules as Record<import('@/lib/permissions').CapabilityId, string[]>);
+      const filteredRules: Record<string, string[]> = {};
+      const entries = Object.entries(body.rules as Record<string, string[]>);
+      
       for (const [cap, roles] of entries) {
+        // Filter out invalid capabilities (handle stale data gracefully)
         if (!validCaps.has(cap)) {
-          return NextResponse.json({ error: `Invalid capability id: ${cap}` }, { status: 400 });
+          console.warn(`Filtering out invalid capability: ${cap}`);
+          continue;
         }
+        // Validate roles
         if (!Array.isArray(roles) || roles.some(r => !ALL_ROLES.includes(r as Role))) {
           return NextResponse.json({ error: `Invalid roles for ${cap}` }, { status: 400 });
         }
+        filteredRules[cap] = roles;
       }
 
-      // Persist overrides in app_settings.permissions
-      const updated = await updateSettings({ permissions: body.rules });
+      // Persist overrides in app_settings.permissions (only valid capabilities)
+      const updated = await updateSettings({ permissions: filteredRules });
 
       return NextResponse.json({
         roles: ALL_ROLES,

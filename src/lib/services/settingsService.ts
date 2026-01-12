@@ -188,7 +188,16 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to save permissions");
+  if (!res.ok) {
+    let errorMessage = "Failed to save permissions";
+    try {
+      const errorData = await res.json();
+      errorMessage = errorData.error || errorMessage;
+    } catch {
+      errorMessage = `Failed to save permissions: ${res.status} ${res.statusText}`;
+    }
+    throw new Error(errorMessage);
+  }
   return res.json().catch(() => ({}));
 }
 

@@ -6,6 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { IconCalendar, IconUpload, IconBrain, IconLink, IconRefresh, IconAlertCircle, IconX } from "@tabler/icons-react";
 import Link from "next/link";
 import { PurpleLoader } from "@/components/PurpleLoader";
+import { canRolesPerform } from "@/lib/permissions";
 
 interface Meeting {
     id: string;
@@ -55,7 +56,7 @@ export default function MeetingsPage() {
     const [isConnected, setIsConnected] = useState(false);
     const [checkingConnection, setCheckingConnection] = useState(true);
     const [deletingMeetingId, setDeletingMeetingId] = useState<string | null>(null);
-    const [userRole, setUserRole] = useState<string | null>(null);
+    const [hasAccess, setHasAccess] = useState(false);
     const [checkingRole, setCheckingRole] = useState(true);
 
     useEffect(() => {
@@ -63,14 +64,13 @@ export default function MeetingsPage() {
     }, []);
 
     useEffect(() => {
-        const normalizedRole = userRole ? userRole.toUpperCase() : null;
-        if (normalizedRole === 'CPO' || normalizedRole === 'SUPERADMIN') {
+        if (hasAccess) {
             checkGoogleCalendarConnection();
             fetchMeetings();
             fetchEpics();
             fetchReleaseSchedule();
         }
-    }, [userRole]);
+    }, [hasAccess]);
 
     const checkUserRole = async () => {
         try {
@@ -82,21 +82,15 @@ export default function MeetingsPage() {
                 const roles = Array.isArray(userData.roles) 
                     ? userData.roles 
                     : (userData.role ? [userData.role] : []);
-                // Check if user has CPO or SUPERADMIN role (case-insensitive)
-                const normalizedRoles = roles.map((r: string) => String(r).toUpperCase());
-                const hasAccess = normalizedRoles.includes('CPO') || normalizedRoles.includes('SUPERADMIN');
-                if (hasAccess) {
-                    const foundRole = normalizedRoles.find((r: string) => r === 'CPO' || r === 'SUPERADMIN');
-                    setUserRole(foundRole || null);
-                } else {
-                    setUserRole(null);
-                }
+                // Check if user has meetings.read capability
+                const access = canRolesPerform(roles, 'meetings.read');
+                setHasAccess(access);
             } else {
-                setUserRole(null);
+                setHasAccess(false);
             }
         } catch (error) {
             console.error("Error checking user role:", error);
-            setUserRole(null);
+            setHasAccess(false);
         } finally {
             setCheckingRole(false);
         }
@@ -484,8 +478,7 @@ export default function MeetingsPage() {
         );
     }
 
-    const normalizedUserRole = userRole ? userRole.toUpperCase() : null;
-    if (!normalizedUserRole || (normalizedUserRole !== 'CPO' && normalizedUserRole !== 'SUPERADMIN')) {
+    if (!hasAccess) {
         return (
             <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
                 <Card withBorder padding="xl" style={{ maxWidth: 600 }}>
@@ -493,7 +486,7 @@ export default function MeetingsPage() {
                         <IconAlertCircle size={48} color="var(--color-error-base)" />
                         <Title order={2}>Access Denied</Title>
                         <Text c="dimmed" ta="center">
-                            The Meetings section is only available to CPO and Super Admins.
+                            You do not have permission to access the Meetings section.
                         </Text>
                         <Button component={Link} href="/" variant="light">
                             Go to Home

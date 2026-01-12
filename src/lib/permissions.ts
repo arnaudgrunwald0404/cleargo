@@ -25,7 +25,8 @@ export type CapabilityId =
   | "settings.ahaFields.sync"
   | "settings.ahaTags.update"
   | "settings.webhookUrl.read"
-  | "settings.webhookUrl.update";
+  | "settings.webhookUrl.update"
+  | "meetings.read";
 
 export type Capability = {
   id: CapabilityId;
@@ -159,6 +160,11 @@ export const CAPABILITIES: Capability[] = [
     label: "Update Webhook URL",
     description: "Allow updating the Aha! webhook URL configuration.",
   },
+  {
+    id: "meetings.read",
+    label: "View Meetings",
+    description: "Allow viewing and accessing the Meetings section.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -187,6 +193,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.ahaTags.update": ["CPO"],
   "settings.webhookUrl.read": ["CPO", "PRODUCT_OPS", "PRODUCT_LEAD"],
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
+  "meetings.read": ["CPO", "SUPERADMIN"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;
