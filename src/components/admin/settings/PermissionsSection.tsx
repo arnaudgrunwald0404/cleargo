@@ -1,5 +1,5 @@
 "use client";
-import React from "react";
+import React, { useState, useMemo } from "react";
 import { PurpleLoader } from '../../PurpleLoader';
 
 type Capability = { id: string; label: string; description: string };
@@ -15,6 +15,28 @@ type Props = {
   autoSavePermissions: (mapping: Record<string, string[]>) => Promise<void> | void;
 };
 
+function getCapabilityCategory(capabilityId: string): string {
+  if (capabilityId.startsWith("users.")) {
+    return "Users";
+  }
+  if (capabilityId === "launchStages.manage" || capabilityId === "releases.manage") {
+    return "Releases";
+  }
+  if (capabilityId.startsWith("criteria.")) {
+    return "Go/no-go Criteria";
+  }
+  if (capabilityId.startsWith("launch.")) {
+    return "Epics";
+  }
+  if (capabilityId.startsWith("settings.emailTemplates")) {
+    return "Email Communication";
+  }
+  if (capabilityId.startsWith("settings.aha") || capabilityId.startsWith("settings.webhookUrl")) {
+    return "Aha Integration";
+  }
+  return "Other";
+}
+
 export default function PermissionsSection({
   rolesList,
   capabilities,
@@ -25,6 +47,33 @@ export default function PermissionsSection({
   saving,
   autoSavePermissions,
 }: Props) {
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
+    () => new Set(["Users"])
+  );
+
+  const groupedCapabilities = useMemo(() => {
+    const groups: Record<string, Capability[]> = {};
+    capabilities.forEach((cap) => {
+      const category = getCapabilityCategory(cap.id);
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(cap);
+    });
+    return groups;
+  }, [capabilities]);
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
   return (
     <div className="space-y-6">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -41,22 +90,9 @@ export default function PermissionsSection({
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className="text-sm text-gray-500">
             Configure which roles may perform each capability. Defaults come from code; overrides are saved in app settings.
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg"
-              onClick={() => {
-                const next = { ...defaultRules } as Record<string, string[]>;
-                setRules(next);
-                autoSavePermissions(next);
-              }}
-            >
-              Reset All to Defaults
-            </button>
           </div>
         </div>
 
@@ -68,7 +104,10 @@ export default function PermissionsSection({
         ) : (
           <div className="space-y-6">
             <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="min-w-full divide-y divide-gray-200">
+              <table className="min-w-full divide-y divide-gray-200 table-fixed">
+                <colgroup>
+                  <col style={{ width: '70%', minWidth: '300px' }} />
+                </colgroup>
                 <thead>
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Capability</th>
@@ -112,76 +151,103 @@ export default function PermissionsSection({
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {capabilities.map((cap) => {
-                    const isOverridden = (() => {
-                      const a = new Set((rules[cap.id] || []).slice().sort());
-                      const b = new Set((defaultRules[cap.id] || []).slice().sort());
-                      if (a.size !== b.size) return true;
-                      for (const v of a) if (!b.has(v)) return true;
-                      return false;
-                    })();
+                  {Object.entries(groupedCapabilities)
+                    .sort(([a], [b]) => {
+                      const order = ["Users", "Releases", "Go/no-go Criteria", "Epics", "Email Communication", "Aha Integration", "Other"];
+                      const indexA = order.indexOf(a);
+                      const indexB = order.indexOf(b);
+                      if (indexA === -1 && indexB === -1) return a.localeCompare(b);
+                      if (indexA === -1) return 1;
+                      if (indexB === -1) return -1;
+                      return indexA - indexB;
+                    })
+                    .map(([category, categoryCapabilities]) => {
+                    const isExpanded = expandedCategories.has(category);
                     return (
-                      <tr key={cap.id}>
-                        <td className="px-4 py-2 text-sm">
-                          <div className="font-medium text-gray-900 flex items-center gap-2">
-                            {cap.label}
-                            {isOverridden && (
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">Overridden</span>
-                            )}
-                          </div>
-                          <div className="text-xs text-gray-500">{cap.description}</div>
-                        </td>
-                        {rolesList.map((r) => {
-                          const enabled = (rules[cap.id] || []).includes(r);
-                          return (
-                            <td key={`${cap.id}-${r}`} className="px-4 py-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={enabled}
-                                onChange={(e) => {
-                                  const next = { ...rules } as Record<string, string[]>;
-                                  const current = new Set(next[cap.id] || []);
-                                  if (e.target.checked) current.add(r); else current.delete(r);
-                                  next[cap.id] = Array.from(current);
-                                  setRules(next);
-                                  autoSavePermissions(next);
-                                }}
-                              />
-                            </td>
-                          );
-                        })}
-                        <td className="px-4 py-2 text-center text-xs">
-                          <div className="inline-flex items-center gap-3">
+                      <React.Fragment key={category}>
+                        <tr className="bg-gray-50 hover:bg-gray-100">
+                          <td className="px-4 py-3" colSpan={rolesList.length + 2}>
                             <button
-                              className="text-indigo-700 underline"
-                              onClick={() => {
-                                const next = { ...rules } as Record<string, string[]>;
-                                next[cap.id] = rolesList.slice();
-                                setRules(next);
-                                autoSavePermissions(next);
-                              }}
-                            >All</button>
-                            <button
-                              className="text-indigo-700 underline"
-                              onClick={() => {
-                                const next = { ...rules } as Record<string, string[]>;
-                                next[cap.id] = [];
-                                setRules(next);
-                                autoSavePermissions(next);
-                              }}
-                            >None</button>
-                            <button
-                              className="text-gray-600 underline"
-                              onClick={() => {
-                                const next = { ...rules } as Record<string, string[]>;
-                                next[cap.id] = (defaultRules[cap.id] || []).slice();
-                                setRules(next);
-                                autoSavePermissions(next);
-                              }}
-                            >Reset</button>
-                          </div>
-                        </td>
-                      </tr>
+                              onClick={() => toggleCategory(category)}
+                              className="flex items-center gap-2 w-full text-left hover:text-indigo-700 transition-colors"
+                            >
+                              <svg
+                                className={`w-5 h-5 text-gray-500 transition-transform ${isExpanded ? "rotate-90" : ""}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                              <span className="font-semibold text-gray-900">{category}</span>
+                              <span className="text-sm text-gray-500">({categoryCapabilities.length})</span>
+                            </button>
+                          </td>
+                        </tr>
+                        {isExpanded &&
+                          categoryCapabilities.map((cap) => {
+                            return (
+                              <tr key={cap.id}>
+                                <td className="px-4 py-2 text-sm pl-8">
+                                  <div className="font-medium text-gray-900">
+                                    {cap.label}
+                                  </div>
+                                  <div className="text-xs text-gray-500">{cap.description}</div>
+                                </td>
+                                {rolesList.map((r) => {
+                                  const enabled = (rules[cap.id] || []).includes(r);
+                                  return (
+                                    <td key={`${cap.id}-${r}`} className="px-4 py-2 text-center">
+                                      <input
+                                        type="checkbox"
+                                        checked={enabled}
+                                        onChange={(e) => {
+                                          const next = { ...rules } as Record<string, string[]>;
+                                          const current = new Set(next[cap.id] || []);
+                                          if (e.target.checked) current.add(r); else current.delete(r);
+                                          next[cap.id] = Array.from(current);
+                                          setRules(next);
+                                          autoSavePermissions(next);
+                                        }}
+                                      />
+                                    </td>
+                                  );
+                                })}
+                                <td className="px-4 py-2 text-center text-xs">
+                                  <div className="inline-flex items-center gap-3">
+                                    <button
+                                      className="text-indigo-700 underline"
+                                      onClick={() => {
+                                        const next = { ...rules } as Record<string, string[]>;
+                                        next[cap.id] = rolesList.slice();
+                                        setRules(next);
+                                        autoSavePermissions(next);
+                                      }}
+                                    >All</button>
+                                    <button
+                                      className="text-indigo-700 underline"
+                                      onClick={() => {
+                                        const next = { ...rules } as Record<string, string[]>;
+                                        next[cap.id] = [];
+                                        setRules(next);
+                                        autoSavePermissions(next);
+                                      }}
+                                    >None</button>
+                                    <button
+                                      className="text-gray-600 underline"
+                                      onClick={() => {
+                                        const next = { ...rules } as Record<string, string[]>;
+                                        next[cap.id] = (defaultRules[cap.id] || []).slice();
+                                        setRules(next);
+                                        autoSavePermissions(next);
+                                      }}
+                                    >Reset</button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </React.Fragment>
                     );
                   })}
                 </tbody>
