@@ -1277,6 +1277,7 @@ The system uses the following launch stage phases:
 | Manage Settings | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | Manage Users | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
 | View Audit Log | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| View Meetings | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
 
 ### Row-Level Security (RLS)
 - **Epic**: All authenticated users can read, owners/Product Ops/CPO can write

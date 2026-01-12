@@ -106,7 +106,11 @@ export default function PermissionsSection({
             <div className="overflow-x-auto -mx-4 sm:mx-0">
               <table className="min-w-full divide-y divide-gray-200 table-fixed">
                 <colgroup>
-                  <col style={{ width: '70%', minWidth: '300px' }} />
+                  <col style={{ width: '40%', minWidth: '300px' }} />
+                  {rolesList.map((_, index) => (
+                    <col key={`role-col-${index}`} style={{ width: `${48 / rolesList.length}%` }} />
+                  ))}
+                  <col style={{ width: '12%', minWidth: '120px' }} />
                 </colgroup>
                 <thead>
                   <tr>
