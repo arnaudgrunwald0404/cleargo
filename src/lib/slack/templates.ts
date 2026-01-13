@@ -756,3 +756,74 @@ export function buildCriteriaNudgeMessage(
         blocks,
     };
 }
+
+/**
+ * Criterion Comment or Attachment Notification
+ */
+export function buildCriterionCommentOrAttachmentMessage(data: {
+    epic_name: string;
+    epic_id: string;
+    criterion_label: string;
+    criterion_status_id: string;
+    added_by_name: string;
+    has_comment: boolean;
+    has_attachment: boolean;
+}): { text: string; blocks: SlackBlock[] } {
+    const actionTypes: string[] = [];
+    if (data.has_comment) actionTypes.push('comment');
+    if (data.has_attachment) actionTypes.push('attachment');
+    const actionText = actionTypes.join(' and ');
+
+    return {
+        text: `${data.added_by_name} added a ${actionText} on "${data.criterion_label}" for ${data.epic_name}`,
+        blocks: [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: '💬 New Comment or Attachment',
+                    emoji: true,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${data.epic_name}*\n_${data.criterion_label}_`,
+                },
+            },
+            {
+                type: 'section',
+                fields: [
+                    {
+                        type: 'mrkdwn',
+                        text: `*Added By:*\n${data.added_by_name}`,
+                    },
+                    {
+                        type: 'mrkdwn',
+                        text: `*Type:*\n${actionTypes.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' and ')}`,
+                    },
+                ],
+            },
+            {
+                type: 'actions',
+                elements: [
+                    {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'View Comments & Attachments',
+                            emoji: true,
+                        },
+                        style: 'primary',
+                        url: `${APP_URL}/epics/${data.epic_id}?criterion=${data.criterion_status_id}&tab=comments`,
+                        action_id: 'view_comments',
+                    },
+                ],
+            },
+            {
+                type: 'divider',
+            },
+        ],
+    };
+}

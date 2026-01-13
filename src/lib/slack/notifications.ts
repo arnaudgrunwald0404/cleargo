@@ -13,6 +13,7 @@ import {
     buildLeadershipDigestMessage,
     buildLaunchStatusChangeMessage,
     buildDelegationMessage,
+    buildCriterionCommentOrAttachmentMessage,
 } from './templates';
 
 /**
@@ -190,6 +191,11 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                     criteria: payload.metadata.criteria || [],
                 };
                 message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type);
+                break;
+
+            case 'criterion_comment_or_attachment':
+                if (!payload.metadata) throw new Error('Missing metadata for criterion_comment_or_attachment');
+                message = buildCriterionCommentOrAttachmentMessage(payload.metadata as any);
                 break;
 
             default:

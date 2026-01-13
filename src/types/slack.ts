@@ -16,7 +16,8 @@ export type SlackNotificationType =
     | 'retro_reminder'
     | 'scorecard_alert'
     | 'escalation_alert'
-    | 'success_review_reminder';
+    | 'success_review_reminder'
+    | 'criterion_comment_or_attachment';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 
