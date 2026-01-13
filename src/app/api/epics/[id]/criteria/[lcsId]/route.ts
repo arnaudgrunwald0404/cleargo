@@ -41,7 +41,7 @@ export async function PATCH(
         }
 
         const body = await req.json();
-        const { status, notes, condition, condition_due_date } = body;
+        const { status, notes, condition, condition_due_date, data_source_values } = body;
 
         // Load current user's roles
         const { data: me } = await supabase
@@ -77,6 +77,7 @@ export async function PATCH(
         if (typeof notes !== 'undefined') updateData.current_status_notes = notes;
         if (typeof condition !== 'undefined') updateData.condition = condition;
         if (typeof condition_due_date !== 'undefined') updateData.condition_due_date = condition_due_date;
+        if (typeof data_source_values !== 'undefined') updateData.data_source_values = data_source_values;
 
         // Update the status
         const { data, error } = await supabase
@@ -84,7 +85,7 @@ export async function PATCH(
             .update(updateData)
             .eq('id', lcsId)
             .eq('epic_id', id) // Security check
-            .select()
+            .select('*, data_source_values')
             .single();
 
         if (error) {
@@ -96,6 +97,10 @@ export async function PATCH(
                 code: error.code || null
             }, { status: 500 });
         }
+        // #region agent log
+        const logEntry6 = {location:'route.ts:100',message:'Supabase update succeeded',data:{returnedDataKeys:data ? Object.keys(data) : [],returnedDataSourceValues:data?.data_source_values},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G',runId:'run1'};
+        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry6) + '\n'); } catch(e) {}
+        // #endregion
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
         await recomputeEpicReadiness(id);

@@ -5,9 +5,14 @@ import { resolveRole } from "@/lib/roles";
 import { createCriteria, getCriteria, listCriteria } from "@/lib/db/criteria";
 import type { CriterionCategory, DecisionOwnerRole, TierApplicability } from "@/types/criteria";
 
+const dataSourceSchema = z.object({
+  type: z.enum(["aha_field", "aha_description_part", "url"]),
+  value: z.string(), // Allow empty strings (especially for URL type where value is entered per-epic)
+});
+
 const createSchema = z.object({
   label: z.string().min(1),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   category: z.custom<CriterionCategory>(),
   gate: z.boolean(),
   tier_applicability: z.custom<TierApplicability>(),
@@ -17,6 +22,7 @@ const createSchema = z.object({
   status_definition_no_go: z.string().optional(),
   is_active: z.boolean().default(true),
   sort_order: z.number().int().default(0),
+  data_sources: z.array(dataSourceSchema).max(5).nullable().optional(),
 });
 
 function forbid() {
@@ -57,7 +63,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const parsed = createSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
+    console.error('Validation failed:', parsed.error.errors);
+    return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten(), errors: parsed.error.errors }, { status: 400 });
   }
   const item = await createCriteria(parsed.data as any);
   return NextResponse.json({ item }, { status: 201 });

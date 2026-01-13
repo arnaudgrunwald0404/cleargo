@@ -24,6 +24,13 @@ export type DecisionOwnerRole =
   | "PRODUCT_OPS"
   | "OTHER";
 
+export type DataSourceType = "aha_field" | "aha_description_part" | "url";
+
+export type DataSource = {
+  type: DataSourceType;
+  value: string;
+};
+
 export type Criterion = {
   id: string;
   label: string;
@@ -38,6 +45,7 @@ export type Criterion = {
   status_definition_no_go?: string;
   is_active: boolean;
   sort_order: number;
+  data_sources?: DataSource[] | null;
   created_at: string; // ISO
   updated_at: string; // ISO
 };

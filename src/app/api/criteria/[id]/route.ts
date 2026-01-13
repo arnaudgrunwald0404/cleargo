@@ -4,9 +4,14 @@ import { z } from "zod";
 import { deleteCriteria, updateCriteria } from "@/lib/db/criteria";
 import { resolveRole } from "@/lib/roles";
 
+const dataSourceSchema = z.object({
+  type: z.enum(["aha_field", "aha_description_part", "url"]),
+  value: z.string(), // Allow empty strings (especially for URL type where value is entered per-epic)
+});
+
 const updateSchema = z.object({
   label: z.string().min(1).optional(),
-  description: z.string().optional(),
+  description: z.string().nullable().optional(),
   category: z.string().optional(),
   gate: z.boolean().optional(),
   tier_applicability: z.string().optional(),
@@ -17,6 +22,7 @@ const updateSchema = z.object({
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   rating_timing: z.number().int().nullable().optional(),
+  data_sources: z.array(dataSourceSchema).max(5).nullable().optional(),
 });
 
 function forbid() {
@@ -97,7 +103,8 @@ export async function PUT(
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten() }, { status: 400 });
+    console.error('Validation failed:', parsed.error.errors);
+    return NextResponse.json({ error: "Validation failed", details: parsed.error.flatten(), errors: parsed.error.errors }, { status: 400 });
   }
   try {
     const updated = await updateCriteria(id, parsed.data as any);

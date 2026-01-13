@@ -461,7 +461,7 @@ export function CriteriaManager() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-8"></th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Timing</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Stage</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stakeholder</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GO Definition</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CONDITIONAL GO</th>
@@ -926,41 +926,45 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
       title="Edit Criterion"
       position="right"
       size="xl"
-      padding="lg"
+      padding={0}
+      styles={{
+        body: {
+          display: 'flex',
+          flexDirection: 'column',
+          height: 'calc(100vh - 80px)',
+          overflow: 'hidden',
+        },
+      }}
     >
-      <Stack gap="md">
-        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
-          <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: 'var(--mantine-spacing-lg)', minHeight: 0 }}>
+          <Stack gap="md">
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <TextInput
+                  label="Label"
+                  value={patch.label || ""}
+                  onChange={(e) => setPatch({ ...patch, label: e.target.value })}
+                  required
+                />
+              </div>
+              <div style={{ width: '120px', flexShrink: 0 }}>
+                <TextInput
+                  label="Sort Order"
+                  type="number"
+                  value={(patch.sort_order ?? 0) + 1}
+                  onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
+                />
+              </div>
+            </div>
+
             <TextInput
-              label="Label"
-              value={patch.label || ""}
-              onChange={(e) => setPatch({ ...patch, label: e.target.value })}
+              label="Category"
+              value={patch.category || ""}
+              onChange={(e) => setPatch({ ...patch, category: e.target.value })}
               required
             />
-          </div>
-          <div style={{ width: '120px', flexShrink: 0 }}>
-            <TextInput
-              label="Sort Order"
-              type="number"
-              value={(patch.sort_order ?? 0) + 1}
-              onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
-            />
-          </div>
-        </div>
 
-        <TextInput
-          label="Category"
-          value={patch.category || ""}
-          onChange={(e) => setPatch({ ...patch, category: e.target.value })}
-          required
-          description="Category from the table"
-        />
-
-        <Text size="lg" fw={600} mt="md" mb="xs">
-          {patch.label || "Untitled Criterion"}
-        </Text>
-
-        <Tabs value={activeTab} onChange={(value) => setActiveTab(value || "details")}>
+            <Tabs value={activeTab} onChange={(value) => setActiveTab(value || "details")}>
           <Tabs.List>
             <Tabs.Tab value="details">Details</Tabs.Tab>
             <Tabs.Tab value="data-source">Data Source</Tabs.Tab>
@@ -983,7 +987,7 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
               />
 
               <Select
-                label="Rating Timing"
+                label="Rating Stage"
                 value={patch.rating_timing?.toString() || ""}
                 onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
                 data={[
@@ -1220,26 +1224,33 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
             </Stack>
           </Tabs.Panel>
         </Tabs>
-
-        <Group justify="space-between" mt="xl">
-          <Button 
-            variant="outline" 
-            color="red" 
-            leftSection={<IconTrash size={16} />} 
-            onClick={onDelete}
-          >
-            Delete
-          </Button>
-          <Group>
-            <Button variant="outline" onClick={onClose}>
-              Cancel
+          </Stack>
+        </div>
+        <div style={{ 
+          borderTop: '1px solid var(--mantine-color-gray-3)', 
+          padding: '20px var(--mantine-spacing-lg) 0',
+          backgroundColor: 'var(--mantine-color-body)',
+          flexShrink: 0
+        }}>
+          <Group justify="space-between">
+            <Button 
+              variant="outline" 
+              color="red" 
+              leftSection={<IconTrash size={16} />} 
+              onClick={onDelete}
+            >
+              Delete
             </Button>
-            <Button onClick={() => onSave(patch)}>
-              Save Changes
-            </Button>
+            <Group>
+              <Button variant="outline" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button onClick={() => onSave(patch)}>
+                Save
+              </Button>
+            </Group>
           </Group>
-        </Group>
-      </Stack>
+        </div>
     </Drawer>
   );
 }
