@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
             { alias: 'reference_num', label: 'Reference Number', key: null, type: 'standard' },
             { alias: 'name', label: 'Name', key: null, type: 'standard' },
             { alias: 'url', label: 'URL', key: null, type: 'standard' },
+            { alias: 'description', label: 'Description', key: null, type: 'standard' },
             { alias: 'workflow_status', label: 'Workflow Status', key: null, type: 'standard' },
             { alias: 'assigned_to_user', label: 'Assigned To User', key: null, type: 'standard' },
             { alias: 'tags', label: 'Tags', key: null, type: 'standard' },
