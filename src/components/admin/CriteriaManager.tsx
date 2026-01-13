@@ -1,12 +1,19 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text } from "@mantine/core";
+import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text, Tabs, Combobox, useCombobox, InputBase } from "@mantine/core";
 import { IconTrash, IconAlertCircle } from '@tabler/icons-react';
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from '../PurpleLoader';
+
+const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
+
+type DataSource = {
+  type: "aha_field" | "aha_description_part" | "url";
+  value: string;
+};
 
 type Item = {
   id: string;
@@ -22,6 +29,7 @@ type Item = {
   status_definition_no_go?: string;
   is_active: boolean;
   sort_order: number;
+  data_sources?: DataSource[] | null;
   created_at: string;
   updated_at: string;
 };
@@ -267,14 +275,34 @@ export function CriteriaManager() {
 
   async function submitEdit(id: string, patch: Partial<Item>) {
     setError(null);
+    
+    // Ensure data_sources have value field for all items
+    const cleanedPatch = { ...patch };
+    if (cleanedPatch.data_sources) {
+      cleanedPatch.data_sources = cleanedPatch.data_sources.map(ds => ({
+        type: ds.type,
+        value: ds.value ?? '', // Ensure value is always a string
+      }));
+    }
+    
     const res = await fetch(`/api/criteria/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
+      body: JSON.stringify(cleanedPatch),
     });
     if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error || "Failed to update");
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        data = { error: `Failed to update (${res.status}): ${text.substring(0, 100)}` };
+      }
+      const errorMsg = data.error || "Failed to update";
+      const details = data.details ? ` Details: ${JSON.stringify(data.details)}` : '';
+      const errors = data.errors ? ` Errors: ${JSON.stringify(data.errors)}` : '';
+      setError(errorMsg + details + errors);
+      console.error('Validation error:', { status: res.status, statusText: res.statusText, data, text });
       return;
     }
     const { item } = await res.json();
@@ -779,12 +807,22 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
   const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null; avatar_url?: string | null }>>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [ahaFields, setAhaFields] = useState<Array<{ alias: string; label: string; type: string }>>([]);
+  const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<string>("details");
+  
+  const combobox = useCombobox({
+    onDropdownClose: () => combobox.resetSelectedOption(),
+  });
 
   useEffect(() => {
     if (opened) {
+      setPatch({ ...item });
+      setActiveTab("details");
       fetchUsers();
+      fetchAhaFields();
     }
-  }, [opened]);
+  }, [opened, item]);
 
   const fetchUsers = async () => {
     setUsersLoading(true);
@@ -797,6 +835,20 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
       console.error("Failed to fetch users:", error);
     } finally {
       setUsersLoading(false);
+    }
+  };
+
+  const fetchAhaFields = async () => {
+    setAhaFieldsLoading(true);
+    try {
+      const res = await fetchWithRateLimit("/api/settings/aha-fields", { maxRetries: 1 });
+      if (!res.ok) throw new Error("Failed to fetch Aha fields");
+      const data = await res.json();
+      setAhaFields(data.fields || []);
+    } catch (error: any) {
+      console.error("Failed to fetch Aha fields:", error);
+    } finally {
+      setAhaFieldsLoading(false);
     }
   };
 
@@ -817,15 +869,55 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
   };
 
   const selectedUser = users.find(u => u.email === patch.decision_owner_email);
-  const isCustomEmail = patch.decision_owner_email && !selectedUser;
+  const isCustomEmail = patch.decision_owner_email && !selectedUser && patch.decision_owner_email !== POD_PM_PLACEHOLDER;
+  const isPodPmPlaceholder = patch.decision_owner_email === POD_PM_PLACEHOLDER;
 
   const userSelectData = [
-    { value: "", label: "None" },
+    { value: "", label: "None", user: null },
+    { value: POD_PM_PLACEHOLDER, label: "PM of the pod", user: null, isPlaceholder: true },
     ...users.map(u => ({
       value: u.email,
       label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
-    }))
+      user: u,
+    })),
+    // Include custom email if it exists and doesn't match a user
+    ...(isCustomEmail ? [{ value: patch.decision_owner_email!, label: patch.decision_owner_email!, user: null }] : [])
   ];
+
+  const selectedOption = userSelectData.find(opt => opt.value === (patch.decision_owner_email || ""));
+  const selectedLabel = selectedOption?.label || "";
+
+  const dataSources = patch.data_sources || [];
+  const canAddDataSource = dataSources.length < 5;
+
+  const addDataSource = () => {
+    if (canAddDataSource) {
+      setPatch({
+        ...patch,
+        data_sources: [...dataSources, { type: "aha_field", value: "" }],
+      });
+    }
+  };
+
+  const updateDataSource = (index: number, updates: Partial<DataSource>) => {
+    const updated = [...dataSources];
+    updated[index] = { ...updated[index], ...updates };
+    // For URL type, don't store the value in settings - it will be entered per epic
+    if (updates.type === 'url' || updated[index].type === 'url') {
+      updated[index].value = '';
+    }
+    setPatch({ ...patch, data_sources: updated });
+  };
+
+  const removeDataSource = (index: number) => {
+    const updated = dataSources.filter((_, i) => i !== index);
+    setPatch({ ...patch, data_sources: updated.length > 0 ? updated : null });
+  };
+
+  const ahaFieldSelectData = ahaFields.map(field => ({
+    value: field.alias,
+    label: `${field.label} (${field.type === 'standard' ? 'Standard' : 'Custom'})`,
+  }));
 
   return (
     <Drawer
@@ -837,12 +929,24 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
       padding="lg"
     >
       <Stack gap="md">
-        <TextInput
-          label="Label"
-          value={patch.label || ""}
-          onChange={(e) => setPatch({ ...patch, label: e.target.value })}
-          required
-        />
+        <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start' }}>
+          <div style={{ flex: 1 }}>
+            <TextInput
+              label="Label"
+              value={patch.label || ""}
+              onChange={(e) => setPatch({ ...patch, label: e.target.value })}
+              required
+            />
+          </div>
+          <div style={{ width: '120px', flexShrink: 0 }}>
+            <TextInput
+              label="Sort Order"
+              type="number"
+              value={(patch.sort_order ?? 0) + 1}
+              onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
+            />
+          </div>
+        </div>
 
         <TextInput
           label="Category"
@@ -852,167 +956,270 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
           description="Category from the table"
         />
 
-        <Checkbox
-          label="Gate (blocks launch if NO_GO)"
-          checked={!!patch.gate}
-          onChange={(e) => setPatch({ ...patch, gate: e.target.checked })}
-        />
+        <Text size="lg" fw={600} mt="md" mb="xs">
+          {patch.label || "Untitled Criterion"}
+        </Text>
 
-        <Select
-          label="Tier Applicability"
-          value={patch.tier_applicability || ""}
-          onChange={(value) => setPatch({ ...patch, tier_applicability: value || "" })}
-          data={TIERS}
-          required
-        />
+        <Tabs value={activeTab} onChange={(value) => setActiveTab(value || "details")}>
+          <Tabs.List>
+            <Tabs.Tab value="details">Details</Tabs.Tab>
+            <Tabs.Tab value="data-source">Data Source</Tabs.Tab>
+          </Tabs.List>
 
-        <Select
-          label="Rating Timing"
-          value={patch.rating_timing?.toString() || ""}
-          onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
-          data={[
-            { value: "", label: "None" },
-            ...launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
-          ]}
-          placeholder="Select launch stage"
-          description="Launch stage by which the criteria needs to be rated"
-          clearable
-        />
+          <Tabs.Panel value="details" pt="md">
+            <Stack gap="md">
+              <Checkbox
+                label="Gate (blocks launch if NO_GO)"
+                checked={!!patch.gate}
+                onChange={(e) => setPatch({ ...patch, gate: e.target.checked })}
+              />
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Decision Owner
-          </label>
-          {selectedUser ? (
-            <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-center gap-3">
-              <Avatar
-                src={selectedUser.avatar_url || undefined}
-                alt={selectedUser.email}
-                radius="xl"
-                size={40}
-                color={getColor(selectedUser.email)}
+              <Select
+                label="Tier Applicability"
+                value={patch.tier_applicability || ""}
+                onChange={(value) => setPatch({ ...patch, tier_applicability: value || "" })}
+                data={TIERS}
+                required
+              />
+
+              <Select
+                label="Rating Timing"
+                value={patch.rating_timing?.toString() || ""}
+                onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
+                data={[
+                  { value: "", label: "None" },
+                  ...launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
+                ]}
+                placeholder="Select launch stage"
+                description="Launch stage by which the criteria needs to be rated"
+                clearable
+              />
+
+              <Combobox
+                store={combobox}
+                withinPortal={false}
+                onOptionSubmit={(value) => {
+                  setPatch({ ...patch, decision_owner_email: value === "" ? undefined : value });
+                  combobox.closeDropdown();
+                }}
               >
-                {getInitials(selectedUser.email, selectedUser.first_name, selectedUser.last_name)}
-              </Avatar>
+                <Combobox.Target>
+                  <InputBase
+                    component="button"
+                    type="button"
+                    pointer
+                    rightSection={<Combobox.Chevron />}
+                    rightSectionPointerEvents="none"
+                    onClick={() => combobox.toggleDropdown()}
+                    label="Decision Owner"
+                    disabled={usersLoading}
+                  >
+                    {selectedLabel || (
+                      <Text component="span" c="dimmed">
+                        Select a user
+                      </Text>
+                    )}
+                  </InputBase>
+                </Combobox.Target>
+
+                <Combobox.Dropdown>
+                  <Combobox.Options>
+                    {userSelectData.map((item) => {
+                      const user = item.user;
+                      const isPlaceholder = item.value === POD_PM_PLACEHOLDER;
+                      return (
+                        <Combobox.Option value={item.value} key={item.value}>
+                          <Group gap="xs">
+                            {user && (
+                              <Avatar
+                                src={user.avatar_url || undefined}
+                                radius="xl"
+                                size="sm"
+                                color={getColor(user.email)}
+                              >
+                                {getInitials(user.email, user.first_name, user.last_name)}
+                              </Avatar>
+                            )}
+                            {isPlaceholder && (
+                              <Avatar radius="xl" size="sm" color="gray">
+                                PM
+                              </Avatar>
+                            )}
+                            {!user && !isPlaceholder && item.value !== "" && (
+                              <Avatar radius="xl" size="sm" color="gray">
+                                {item.value.substring(0, 2).toUpperCase()}
+                              </Avatar>
+                            )}
+                            <span>{item.label}</span>
+                          </Group>
+                        </Combobox.Option>
+                      );
+                    })}
+                  </Combobox.Options>
+                </Combobox.Dropdown>
+              </Combobox>
+
               <div>
-                <div className="font-medium text-gray-900">
-                  {selectedUser.first_name || ""} {selectedUser.last_name || ""}
-                </div>
-                <div className="text-sm text-gray-500">{selectedUser.email}</div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Status Definitions</label>
+                <SimpleGrid cols={3} spacing="md">
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-green-900 mb-2">GO Definition</label>
+                    <Textarea
+                      value={patch.status_definition_go || ""}
+                      onChange={(e) => setPatch({ ...patch, status_definition_go: e.target.value || undefined })}
+                      placeholder="Definition for GO status"
+                      minRows={8}
+                      autosize
+                      maxRows={20}
+                      styles={{
+                        input: {
+                          backgroundColor: 'white',
+                          border: '1px solid #D1D5DB',
+                          borderRadius: '0.5rem',
+                          padding: '0.75rem',
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-orange-900 mb-2">CONDITIONAL GO Definition</label>
+                    <Textarea
+                      value={patch.status_definition_conditional || ""}
+                      onChange={(e) => setPatch({ ...patch, status_definition_conditional: e.target.value || undefined })}
+                      placeholder="Definition for CONDITIONAL GO status"
+                      minRows={8}
+                      autosize
+                      maxRows={20}
+                      styles={{
+                        input: {
+                          backgroundColor: 'white',
+                          border: '1px solid #D1D5DB',
+                          borderRadius: '0.5rem',
+                          padding: '0.75rem',
+                        }
+                      }}
+                    />
+                  </div>
+
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <label className="block text-sm font-semibold text-red-900 mb-2">NO GO Definition</label>
+                    <Textarea
+                      value={patch.status_definition_no_go || ""}
+                      onChange={(e) => setPatch({ ...patch, status_definition_no_go: e.target.value || undefined })}
+                      placeholder="Definition for NO GO status"
+                      minRows={8}
+                      autosize
+                      maxRows={20}
+                      styles={{
+                        input: {
+                          backgroundColor: 'white',
+                          border: '1px solid #D1D5DB',
+                          borderRadius: '0.5rem',
+                          padding: '0.75rem',
+                        }
+                      }}
+                    />
+                  </div>
+                </SimpleGrid>
               </div>
-            </div>
-          ) : isCustomEmail ? (
-            <div className="mb-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <div className="text-sm text-gray-600">{patch.decision_owner_email}</div>
-            </div>
-          ) : null}
-          <Select
-            label="Select User"
-            placeholder="Choose a user from the system"
-            value={selectedUser ? patch.decision_owner_email : ""}
-            onChange={(value) => {
-              if (value) {
-                setPatch({ ...patch, decision_owner_email: value });
-              } else {
-                setPatch({ ...patch, decision_owner_email: undefined });
-              }
-            }}
-            data={userSelectData}
-            searchable
-            clearable
-            disabled={usersLoading}
-            description="Select a user from the system"
-          />
-          <div className="text-center text-sm text-gray-500 my-2">or</div>
-          <TextInput
-            label="Enter Custom Email/Placeholder"
-            placeholder="e.g., email@example.com or [name of pod's product manager]"
-            value={isCustomEmail ? (patch.decision_owner_email ?? "") : ""}
-            onChange={(e) => {
-              const value = e.target.value;
-              setPatch({ ...patch, decision_owner_email: value || undefined });
-            }}
-            description="Enter a custom email address or placeholder text"
-          />
-        </div>
 
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">Status Definitions</label>
-          <SimpleGrid cols={3} spacing="md">
-            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-green-900 mb-2">GO Definition</label>
-              <Textarea
-                value={patch.status_definition_go || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_go: e.target.value || undefined })}
-                placeholder="Definition for GO status"
-                minRows={8}
-                autosize
-                maxRows={20}
-                styles={{
-                  input: {
-                    backgroundColor: 'white',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                  }
-                }}
+              <Checkbox
+                label="Active"
+                checked={!!patch.is_active}
+                onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
               />
-            </div>
+            </Stack>
+          </Tabs.Panel>
 
-            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-orange-900 mb-2">CONDITIONAL GO Definition</label>
-              <Textarea
-                value={patch.status_definition_conditional || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_conditional: e.target.value || undefined })}
-                placeholder="Definition for CONDITIONAL GO status"
-                minRows={8}
-                autosize
-                maxRows={20}
-                styles={{
-                  input: {
-                    backgroundColor: 'white',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                  }
-                }}
-              />
-            </div>
+          <Tabs.Panel value="data-source" pt="md">
+            <Stack gap="md">
+              <Text size="sm" c="dimmed">
+                Add up to 5 data sources for this criterion. Each source can be an Aha field, an Aha Description part, or a URL.
+              </Text>
 
-            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-              <label className="block text-sm font-semibold text-red-900 mb-2">NO GO Definition</label>
-              <Textarea
-                value={patch.status_definition_no_go || ""}
-                onChange={(e) => setPatch({ ...patch, status_definition_no_go: e.target.value || undefined })}
-                placeholder="Definition for NO GO status"
-                minRows={8}
-                autosize
-                maxRows={20}
-                styles={{
-                  input: {
-                    backgroundColor: 'white',
-                    border: '1px solid #D1D5DB',
-                    borderRadius: '0.5rem',
-                    padding: '0.75rem',
-                  }
-                }}
-              />
-            </div>
-          </SimpleGrid>
-        </div>
+              {dataSources.map((source, index) => (
+                <div key={index} className="p-4 border border-gray-200 rounded-lg bg-gray-50">
+                  <Group justify="space-between" mb="sm">
+                    <Text size="sm" fw={500}>Data Source {index + 1}</Text>
+                    <Button
+                      variant="subtle"
+                      color="red"
+                      size="xs"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={() => removeDataSource(index)}
+                    >
+                      Remove
+                    </Button>
+                  </Group>
 
-        <TextInput
-          label="Sort Order"
-          type="number"
-          value={(patch.sort_order ?? 0) + 1}
-          onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
-        />
+                  <Stack gap="sm">
+                    <Select
+                      label="Source Type"
+                      value={source.type}
+                      onChange={(value) => {
+                        if (value) {
+                          updateDataSource(index, { type: value as DataSource["type"], value: "" });
+                        }
+                      }}
+                      data={[
+                        { value: "aha_field", label: "Aha Field" },
+                        { value: "aha_description_part", label: "Aha Description Part" },
+                        { value: "url", label: "URL" },
+                      ]}
+                      required
+                    />
 
-        <Checkbox
-          label="Active"
-          checked={!!patch.is_active}
-          onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })}
-        />
+                    {source.type === "aha_field" && (
+                      <Select
+                        label="Aha Field"
+                        value={source.value}
+                        onChange={(value) => updateDataSource(index, { value: value || "" })}
+                        data={ahaFieldSelectData}
+                        placeholder="Select an Aha field"
+                        searchable
+                        disabled={ahaFieldsLoading}
+                        required
+                      />
+                    )}
+
+                    {source.type === "aha_description_part" && (
+                      <TextInput
+                        label="Description Part"
+                        value={source.value}
+                        onChange={(e) => updateDataSource(index, { value: e.target.value })}
+                        placeholder="Enter the part/keyword from the Aha Description field"
+                        required
+                      />
+                    )}
+
+                    {source.type === "url" && (
+                      <Text size="xs" c="dimmed" mt="xs">
+                        URL will be entered in the epic detail page drawer
+                      </Text>
+                    )}
+                  </Stack>
+                </div>
+              ))}
+
+              {canAddDataSource && (
+                <Button
+                  variant="outline"
+                  onClick={addDataSource}
+                  fullWidth
+                >
+                  + Add Data Source
+                </Button>
+              )}
+
+              {!canAddDataSource && (
+                <Alert icon={<IconAlertCircle size={16} />} color="blue" title="Maximum Reached">
+                  You have reached the maximum of 5 data sources.
+                </Alert>
+              )}
+            </Stack>
+          </Tabs.Panel>
+        </Tabs>
 
         <Group justify="space-between" mt="xl">
           <Button 

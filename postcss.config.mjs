@@ -1,7 +1,11 @@
 const config = {
   plugins: {
     "@tailwindcss/postcss": {},
-    "postcss-preset-mantine": {},
+    "postcss-preset-mantine": {
+      features: {
+        nested: false, // Disable postcss-nested to avoid conflict with Tailwind CSS v4
+      },
+    },
     "postcss-simple-vars": {
       variables: {
         "mantine-breakpoint-xs": "36em",

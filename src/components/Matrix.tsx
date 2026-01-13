@@ -47,6 +47,7 @@ type MatrixItem = {
         status_definition_go?: string;
         status_definition_conditional?: string;
         status_definition_no_go?: string;
+        data_sources?: Array<{ type: string; value: string }> | null;
     };
 };
 
@@ -197,9 +198,10 @@ type Props = {
     epicStatus?: string; // To determine if launched
     items: MatrixItem[];
     onUpdate: () => void;
+    epic?: { aha_fields?: Record<string, any> | null } | null;
 };
 
-export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }: Props) {
+export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic }: Props) {
     
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
@@ -255,6 +257,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
     const [selectedItemForAttachment, setSelectedItemForAttachment] = useState<MatrixItem | null>(null);
     const [commentsModalOpen, setCommentsModalOpen] = useState(false);
     const [selectedItemForComments, setSelectedItemForComments] = useState<MatrixItem | null>(null);
+    const [commentsModalInitialTab, setCommentsModalInitialTab] = useState<'content' | 'comments'>('content');
     const [pendingStatusChange, setPendingStatusChange] = useState<{ itemId: string; status: string } | null>(null);
     const [delegationModalOpen, setDelegationModalOpen] = useState(false);
     const [selectedItemForDelegation, setSelectedItemForDelegation] = useState<MatrixItem | null>(null);
@@ -403,6 +406,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
             const item = items.find(item => item.id === id);
             if (item) {
                 setSelectedItemForComments(item);
+                setCommentsModalInitialTab('comments');
                 setCommentsModalOpen(true);
             }
             return; // Don't save status yet, wait for comment
@@ -501,13 +505,17 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
 
     // Notes editing removed - use comments modal instead
     const handleEditNotes = (item: MatrixItem) => {
-        // Open comments modal instead of editing notes inline
-        handleOpenComments(item);
+        // Open comments modal with content tab (default) for viewing/editing notes
+        setSelectedItemForComments(item);
+        setCommentsModalInitialTab('content');
+        setCommentsModalOpen(true);
     };
 
     const handleOpenAttachments = (item: MatrixItem) => {
-        setSelectedItemForAttachment(item);
-        setAttachmentModalOpen(true);
+        // Open comments modal with comments tab instead of separate attachment modal
+        setSelectedItemForComments(item);
+        setCommentsModalInitialTab('comments');
+        setCommentsModalOpen(true);
     };
 
     const handleCloseAttachments = () => {
@@ -517,6 +525,13 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
 
     const handleOpenComments = (item: MatrixItem) => {
         setSelectedItemForComments(item);
+        setCommentsModalInitialTab('content');
+        setCommentsModalOpen(true);
+    };
+
+    const handleOpenCommentsForComments = (item: MatrixItem) => {
+        setSelectedItemForComments(item);
+        setCommentsModalInitialTab('comments');
         setCommentsModalOpen(true);
     };
 
@@ -773,6 +788,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                     <col style={{ width: '150px' }} />
                                     <col style={{ width: '120px' }} />
                                     <col style={{ width: 'auto' }} />
+                                    <col style={{ width: '40px' }} />
                                 </colgroup>
                                 <thead className="bg-purple-100">
                                     <tr>
@@ -781,6 +797,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Approver</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Comments</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '40px' }}></th>
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-purple-200">
@@ -811,12 +828,15 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                         )}
                                                     </span>
                                                 )}
-                                                <span className="flex items-center gap-1.5">
+                                                <button
+                                                    onClick={() => handleOpenComments(item)}
+                                                    className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer text-left"
+                                                >
                                                     {item.criterion.label}
                                                     {item.criterion.gate && (
                                                         <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
                                                     )}
-                                                </span>
+                                                </button>
                                             </div>
                                             {item.criterion.description && (
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
@@ -1028,7 +1048,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                 </div>
                                                 <div className="flex gap-1 flex-shrink-0">
                                                     <button
-                                                        onClick={() => handleOpenComments(item)}
+                                                        onClick={() => handleOpenCommentsForComments(item)}
                                                         className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative"
                                                         title="View/add comments"
                                                     >
@@ -1053,6 +1073,15 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                     </button>
                                                 </div>
                                             </div>
+                                        </td>
+                                        <td className="px-4 py-3 text-center">
+                                            <button
+                                                onClick={() => handleOpenComments(item)}
+                                                className="text-gray-400 hover:text-gray-600 transition-colors"
+                                                title="Open details"
+                                            >
+                                                <IconChevronRight size={20} />
+                                            </button>
                                         </td>
                                             </tr>
                                         );
@@ -1152,7 +1181,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                     return (
                                         <div 
                                             key={item.id} 
-                                            className={`bg-white border border-purple-200 rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''}`}
+                                            className={`bg-white border border-purple-200 rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
                                         >
                                             {/* Header: Criterion name */}
                                             <div className="mb-3">
@@ -1166,12 +1195,15 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                             )}
                                                         </span>
                                                     )}
-                                                    <span className="flex items-center gap-1.5">
+                                                    <button
+                                                        onClick={() => handleOpenComments(item)}
+                                                        className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer text-left"
+                                                    >
                                                         {item.criterion.label}
                                                         {item.criterion.gate && (
                                                             <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
                                                         )}
-                                                    </span>
+                                                    </button>
                                                 </div>
                                                 {item.criterion.description && (
                                                     <div className="text-xs text-gray-500 mt-1">{item.criterion.description}</div>
@@ -1299,7 +1331,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                     </div>
                                                     <div className="flex gap-2 flex-shrink-0">
                                                         <button
-                                                            onClick={() => handleOpenComments(item)}
+                                                            onClick={() => handleOpenCommentsForComments(item)}
                                                             className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
                                                             title="View/add comments"
                                                         >
@@ -1324,6 +1356,17 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                                                         </button>
                                                     </div>
                                                 </div>
+                                            </div>
+                                            
+                                            {/* Chevron indicator */}
+                                            <div className="absolute top-4 right-4">
+                                                <button
+                                                    onClick={() => handleOpenComments(item)}
+                                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                                    title="Open details"
+                                                >
+                                                    <IconChevronRight size={20} />
+                                                </button>
                                             </div>
                                         </div>
                                     );
@@ -1389,6 +1432,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate }
                     onCommentAdded={handleCommentAdded}
                     onCloseWithoutComment={handleCloseCommentsWithoutComment}
                     onCancel={handleCancelRating}
+                    criterion={selectedItemForComments.criterion}
+                    epic={epic}
+                    initialTab={commentsModalInitialTab}
                 />
             )}
 
