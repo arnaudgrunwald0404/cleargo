@@ -726,7 +726,7 @@ export default function AdminSettingsPage() {
 
                 <div className="flex gap-6">
                     {/* Sidebar Navigation */}
-                    <div className="w-64 flex-shrink-0">
+                    <div className="w-64 flex-shrink-0 sticky top-20 self-start">
                         <nav>
                             <ul className="space-y-1">
                                 <li>
