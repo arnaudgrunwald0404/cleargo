@@ -1673,7 +1673,7 @@ export default function EpicDetailPage() {
                                     return true;
                                 });
                                 
-                                return <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} />;
+                                return <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} />;
                             })()}
                         </>
                     )}

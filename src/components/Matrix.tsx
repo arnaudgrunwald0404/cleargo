@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { Select, Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft, IconLink, IconDatabase, IconFileText } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
 import { UserDisplayWithDelegation } from "./UserDisplayWithDelegation";
 import { FileAttachmentModal } from "./FileAttachmentModal";
@@ -35,6 +35,7 @@ type MatrixItem = {
         };
     };
     attachmentCount?: number;
+    data_source_values?: Record<string, string> | null;
     criterion: {
         id: string;
         label: string;
@@ -202,6 +203,105 @@ type Props = {
 };
 
 export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic }: Props) {
+    // Helper function to check if a data source has data for this epic
+    const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
+        if (source.type === 'aha_field' && source.value) {
+            const ahaFieldsStruct = epic?.aha_fields as any;
+            const standardFields = ahaFieldsStruct?.standard_fields || {};
+            const customFields = ahaFieldsStruct?.custom_fields || {};
+            
+            // Check standard fields first
+            if (standardFields[source.value] !== null && standardFields[source.value] !== undefined) {
+                const fieldValue = standardFields[source.value];
+                // Check if value is non-empty
+                if (fieldValue !== null && fieldValue !== undefined && fieldValue !== '' && 
+                    !(Array.isArray(fieldValue) && fieldValue.length === 0)) {
+                    return true;
+                }
+            }
+            // Then check custom fields
+            if (customFields[source.value] !== null && customFields[source.value] !== undefined) {
+                const fieldValue = customFields[source.value];
+                // Check if value is non-empty
+                if (fieldValue !== null && fieldValue !== undefined && fieldValue !== '' &&
+                    !(Array.isArray(fieldValue) && fieldValue.length === 0)) {
+                    return true;
+                }
+            }
+            return false;
+        } else if (source.type === 'aha_description_part' && source.value) {
+            const ahaFieldsStruct = epic?.aha_fields as any;
+            const standardFields = ahaFieldsStruct?.standard_fields || {};
+            const description = standardFields.description;
+            
+            if (description) {
+                let htmlContent: string | null = null;
+                // Handle both object format (with body property) and string format
+                if (typeof description === 'string') {
+                    htmlContent = description;
+                } else if (typeof description === 'object' && description !== null && 'body' in description) {
+                    htmlContent = typeof description.body === 'string' ? description.body : null;
+                }
+                
+                if (htmlContent) {
+                    // Parse HTML table to check if keyword exists in a table row
+                    try {
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(htmlContent, 'text/html');
+                        const rows = doc.querySelectorAll('tr');
+                        const keyword = source.value.toLowerCase();
+                        
+                        for (const row of rows) {
+                            const cells = row.querySelectorAll('td, th');
+                            if (cells.length >= 2) {
+                                const firstCell = cells[0];
+                                if (firstCell.hasAttribute('colspan')) {
+                                    continue;
+                                }
+                                const firstCellText = firstCell.textContent?.trim().toLowerCase() || '';
+                                if (firstCellText && firstCellText.includes(keyword)) {
+                                    // Check if second cell has content
+                                    const secondCell = cells[1];
+                                    const secondCellText = secondCell.textContent?.trim() || '';
+                                    const secondCellHTML = secondCell.innerHTML?.trim() || '';
+                                    if (secondCellText && secondCellHTML) {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Fallback to simple text search if parsing fails
+                        const keyword = source.value.toLowerCase();
+                        const descriptionText = htmlContent.toLowerCase();
+                        if (descriptionText.includes(keyword)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            return false;
+        } else if (source.type === 'url') {
+            // Check if URL exists in data_source_values
+            const urlValue = item.data_source_values?.[index.toString()];
+            return !!(urlValue && urlValue.trim() !== '');
+        }
+        return false;
+    };
+
+    // Helper function to get data source icons
+    const getDataSourceIcon = (sourceType: string) => {
+        switch (sourceType) {
+            case 'aha_field':
+                return IconDatabase;
+            case 'aha_description_part':
+                return IconFileText;
+            case 'url':
+                return IconLink;
+            default:
+                return IconDatabase;
+        }
+    };
     
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
@@ -787,6 +887,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                     <col style={{ width: '120px' }} />
                                     <col style={{ width: '150px' }} />
                                     <col style={{ width: '120px' }} />
+                                    <col style={{ width: '100px' }} />
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '40px' }} />
                                 </colgroup>
@@ -796,6 +897,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Status</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Approver</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '100px' }}>Sources</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Comments</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '40px' }}></th>
                                     </tr>
@@ -993,6 +1095,38 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     console.warn('Error parsing due date:', dueDateStr, e);
                                                     return '-';
                                                 }
+                                            })()}
+                                        </td>
+                                        <td className="px-4 py-3 text-sm" style={{ width: '100px' }}>
+                                            {(() => {
+                                                const dataSources = item.criterion.data_sources;
+                                                if (!dataSources || dataSources.length === 0) {
+                                                    return <span className="text-gray-400">-</span>;
+                                                }
+                                                
+                                                // Filter to only show data sources that have data
+                                                const sourcesWithData = dataSources.filter((source, index) => 
+                                                    hasDataSourceData(item, source, index)
+                                                );
+                                                
+                                                if (sourcesWithData.length === 0) {
+                                                    return <span className="text-gray-400">-</span>;
+                                                }
+                                                
+                                                return (
+                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                        {sourcesWithData.map((source, idx) => {
+                                                            const IconComponent = getDataSourceIcon(source.type);
+                                                            return (
+                                                                <Tooltip key={idx} label={source.type === 'aha_field' ? 'Aha Field' : source.type === 'aha_description_part' ? 'Aha Description Part' : 'URL'} position="top" withArrow>
+                                                                    <div className="text-gray-600 hover:text-gray-900 transition-colors">
+                                                                        <IconComponent size={16} />
+                                                                    </div>
+                                                                </Tooltip>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                );
                                             })()}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700">
@@ -1320,6 +1454,41 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             <div className="mb-3">
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Due On</div>
                                                 <div className="text-sm">{renderDueDate()}</div>
+                                            </div>
+                                            
+                                            {/* Sources Section */}
+                                            <div className="mb-3">
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Sources</div>
+                                                {(() => {
+                                                    const dataSources = item.criterion.data_sources;
+                                                    if (!dataSources || dataSources.length === 0) {
+                                                        return <span className="text-sm text-gray-400">-</span>;
+                                                    }
+                                                    
+                                                    // Filter to only show data sources that have data
+                                                    const sourcesWithData = dataSources.filter((source, index) => 
+                                                        hasDataSourceData(item, source, index)
+                                                    );
+                                                    
+                                                    if (sourcesWithData.length === 0) {
+                                                        return <span className="text-sm text-gray-400">-</span>;
+                                                    }
+                                                    
+                                                    return (
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            {sourcesWithData.map((source, idx) => {
+                                                                const IconComponent = getDataSourceIcon(source.type);
+                                                                return (
+                                                                    <Tooltip key={idx} label={source.type === 'aha_field' ? 'Aha Field' : source.type === 'aha_description_part' ? 'Aha Description Part' : 'URL'} position="top" withArrow>
+                                                                        <div className="text-gray-600 hover:text-gray-900 transition-colors">
+                                                                            <IconComponent size={18} />
+                                                                        </div>
+                                                                    </Tooltip>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
                                             
                                             {/* Comments Section */}
