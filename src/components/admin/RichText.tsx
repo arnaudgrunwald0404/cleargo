@@ -9,9 +9,10 @@ interface RichTextProps {
     placeholder?: string;
     rows?: number;
     readOnly?: boolean;
+    compactLists?: boolean;
 }
 
-export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false }: RichTextProps) {
+export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false }: RichTextProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [isFocused, setIsFocused] = useState(false);
     const savedSelectionRef = useRef<Range | null>(null);
@@ -20,7 +21,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
         if (editorRef.current && !isFocused) {
             editorRef.current.innerHTML = value || "";
         }
-    }, [value, isFocused]);
+    }, [value, isFocused, compactLists]);
 
     useEffect(() => {
         const editor = editorRef.current;
@@ -39,7 +40,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
         observer.observe(editor, { childList: true, subtree: true });
 
         return () => observer.disconnect();
-    }, []);
+    }, [compactLists]);
 
     const handleInput = () => {
         if (editorRef.current) {
@@ -145,9 +146,10 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
     };
 
     if (readOnly) {
+        const listSpacingClass = compactLists ? "[&_li]:mb-0" : "[&_li]:mb-1";
         return (
             <div
-                className="text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                className={`text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 ${listSpacingClass} [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800`}
                 dangerouslySetInnerHTML={{ __html: value || "" }}
                 style={{
                     whiteSpace: "pre-wrap",
@@ -231,9 +233,11 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
                     ref={editorRef}
                     contentEditable
                     onInput={handleInput}
-                    onFocus={() => setIsFocused(true)}
+                    onFocus={() => {
+                        setIsFocused(true);
+                    }}
                     onBlur={() => setIsFocused(false)}
-                    className="px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 [&_ul]:my-2 [&_ol]:list-decimal [&_ol]:ml-4 [&_ol]:my-2 [&_li]:mb-1 [&_p]:my-1"
+                    className={`px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? '[&_li]:mb-0' : '[&_li]:mb-1'} [&_p]:my-1`}
                     style={{
                         minHeight: `${rows * 20}px`,
                         whiteSpace: "pre-wrap",
