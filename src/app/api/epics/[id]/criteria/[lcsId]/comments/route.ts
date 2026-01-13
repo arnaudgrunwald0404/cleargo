@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { sendSlackNotification } from '@/lib/slack/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,10 +67,10 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get user ID
+    // Get user info
     const { data: appUser, error: userError } = await supabase
       .from('app_user')
-      .select('id')
+      .select('id, first_name, last_name, name')
       .eq('email', userEmail)
       .single();
 
@@ -98,6 +99,72 @@ export async function POST(
       .single();
 
     if (error) throw error;
+
+    // Send Slack notification to the approver (decision_owner)
+    try {
+      // Fetch criterion status with epic, criterion, and decision_owner info
+      const { data: criterionStatus, error: statusError } = await supabase
+        .from('epic_criterion_status')
+        .select(`
+          id,
+          epic:epic_id (
+            id,
+            name
+          ),
+          criterion:criterion_id (
+            id,
+            label
+          ),
+          decision_owner:decision_owner_id (
+            id,
+            email,
+            first_name,
+            last_name,
+            name,
+            slack_handle
+          )
+        `)
+        .eq('id', lcsId)
+        .single();
+
+      if (!statusError && criterionStatus && criterionStatus.decision_owner) {
+        const decisionOwner = criterionStatus.decision_owner as any;
+        const epic = criterionStatus.epic as any;
+        const criterion = criterionStatus.criterion as any;
+
+        // Get current user's display name
+        const currentUserName = appUser.name || 
+          (appUser.first_name && appUser.last_name ? `${appUser.first_name} ${appUser.last_name}` : 
+           appUser.first_name || appUser.last_name || userEmail);
+
+        // Send notification (even if the approver is the one who added the comment)
+        await sendSlackNotification({
+          type: 'criterion_comment_or_attachment',
+          priority: 'medium',
+          recipient: {
+            id: decisionOwner.id,
+            email: decisionOwner.email,
+            slack_handle: decisionOwner.slack_handle || undefined,
+            name: decisionOwner.name || 
+              (decisionOwner.first_name && decisionOwner.last_name ? `${decisionOwner.first_name} ${decisionOwner.last_name}` : 
+               decisionOwner.first_name || decisionOwner.last_name || decisionOwner.email),
+          },
+          launch_id: epicId,
+          metadata: {
+            epic_name: epic.name,
+            epic_id: epic.id,
+            criterion_label: criterion.label,
+            criterion_status_id: lcsId,
+            added_by_name: currentUserName,
+            has_comment: true,
+            has_attachment: false,
+          },
+        });
+      }
+    } catch (notificationError: any) {
+      // Log error but don't fail the comment creation
+      console.error('Failed to send Slack notification for comment:', notificationError);
+    }
 
     return NextResponse.json(comment, { status: 201 });
   } catch (error: any) {
