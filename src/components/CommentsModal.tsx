@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
-import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
+import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil } from '@tabler/icons-react';
 import { RichText } from './admin/RichText';
 
 interface Comment {
@@ -68,10 +68,14 @@ export function CommentsModal({
   const [hasAddedComment, setHasAddedComment] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
-  const [dataSourceValues, setDataSourceValues] = useState<Record<string, string>>({});
-  const [urlPreviews, setUrlPreviews] = useState<Record<string, { title?: string; description?: string; image?: string; domain?: string; url?: string } | null>>({});
+  const [dataSourceValues, setDataSourceValues] = useState<Record<string, string | { url: string; assetName?: string }>>({});
+  const [urlPreviews, setUrlPreviews] = useState<Record<string, { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null>>({});
   const [urlPreviewLoading, setUrlPreviewLoading] = useState<Record<string, boolean>>({});
+  const [savingDataSourceValues, setSavingDataSourceValues] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(initialTab);
+  const [isContentEditMode, setIsContentEditMode] = useState(false);
+  const baseContentRef = useRef<string>('');
+  const isInitialLoadRef = useRef<boolean>(false);
   
   // Expose comments count for parent component
   useEffect(() => {
@@ -242,12 +246,45 @@ export function CommentsModal({
     return email;
   };
 
+  // Helper functions to extract URL and asset name from data source values (supports both string and object formats)
+  const getUrlFromDataSourceValue = (value: string | { url: string; assetName?: string } | undefined): string => {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    return value.url || '';
+  };
+
+  const getAssetNameFromDataSourceValue = (value: string | { url: string; assetName?: string } | undefined): string => {
+    if (!value) return '';
+    if (typeof value === 'string') return '';
+    return value.assetName || '';
+  };
+
   // Fetch URL preview
   const fetchUrlPreview = async (url: string, dataSourceIndex: string) => {
     if (!url || !url.match(/^https?:\/\/.+/)) {
       setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: null }));
       return;
     }
+
+    // Extract domain as fallback
+    let domain: string | undefined;
+    try {
+      const urlObj = new URL(url);
+      domain = urlObj.hostname;
+    } catch (e) {
+      // Invalid URL, will handle below
+    }
+
+    // Generate favicon URL for fallback
+    // For subdomains, try base domain first as it often has better favicon
+    let faviconDomain = domain;
+    if (domain) {
+      const parts = domain.split('.');
+      if (parts.length > 2) {
+        faviconDomain = parts.slice(-2).join('.');
+      }
+    }
+    const favicon = faviconDomain ? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(faviconDomain)}&sz=64` : undefined;
 
     setUrlPreviewLoading(prev => ({ ...prev, [dataSourceIndex]: true }));
     try {
@@ -256,11 +293,14 @@ export function CommentsModal({
         const data = await res.json();
         setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: data }));
       } else {
-        setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: null }));
+        const errorData = await res.json().catch(() => ({}));
+        // Even if metadata fetch fails, store URL, domain, and favicon for fallback display
+        setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: { url, domain, favicon: errorData.favicon || favicon } }));
       }
     } catch (error) {
       console.error('Failed to fetch URL preview:', error);
-      setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: null }));
+      // Even on error, store URL, domain, and favicon for fallback display
+      setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: { url, domain, favicon } }));
     } finally {
       setUrlPreviewLoading(prev => ({ ...prev, [dataSourceIndex]: false }));
     }
@@ -269,93 +309,81 @@ export function CommentsModal({
   // Fetch content when drawer opens
   const fetchContent = async () => {
     setContentLoading(true);
+    isInitialLoadRef.current = true;
     try {
       const supabase = (await import('@/lib/supabase/client')).createClient();
-      const { data, error } = await supabase
+      
+      // Try to select with data_source_values first, fallback if column doesn't exist
+      let data: any = null;
+      let baseContent = '';
+      
+      const { data: dataWithColumn, error: errorWithColumn } = await supabase
         .from('epic_criterion_status')
         .select('current_status_notes, data_source_values')
         .eq('id', taskId)
         .single();
       
-      let baseContent = '';
-      if (!error && data) {
+      if (errorWithColumn) {
+        // If column doesn't exist (400 error), try without it
+        if (errorWithColumn.code === 'PGRST116' || errorWithColumn.message?.includes('column') || errorWithColumn.message?.includes('data_source_values')) {
+          const { data: dataWithoutColumn, error: errorWithoutColumn } = await supabase
+            .from('epic_criterion_status')
+            .select('current_status_notes')
+            .eq('id', taskId)
+            .single();
+          
+          if (errorWithoutColumn) {
+            console.error('Failed to fetch content:', errorWithoutColumn);
+            return;
+          }
+          data = dataWithoutColumn;
+        } else {
+          console.error('Failed to fetch content:', errorWithColumn);
+          return;
+        }
+      } else {
+        data = dataWithColumn;
+      }
+      
+      // Handle case where Supabase returns array instead of object (client-side query behavior)
+      if (Array.isArray(data) && data.length > 0) {
+        data = data[0];
+      }
+      
+      // Get data source values from fetched data (use local variable, not state)
+      const fetchedDataSourceValues = data?.data_source_values || {};
+      
+      if (data) {
         baseContent = data.current_status_notes || '';
-        // Load data source values
+        baseContentRef.current = baseContent;
+        // Load data source values if column exists
         if (data.data_source_values) {
           setDataSourceValues(data.data_source_values);
           // Fetch URL previews for any URL data sources
           if (criterion?.data_sources) {
             criterion.data_sources.forEach((source, index) => {
               if (source.type === 'url' && data.data_source_values[index.toString()]) {
-                fetchUrlPreview(data.data_source_values[index.toString()], index.toString());
+                const urlValue = getUrlFromDataSourceValue(data.data_source_values[index.toString()]);
+                if (urlValue) {
+                  fetchUrlPreview(urlValue, index.toString());
+                }
               }
             });
           }
         }
       }
 
-      // Append Aha field values if criterion has data_sources
-      const ahaFieldValues: string[] = [];
-      if (criterion?.data_sources && epic?.aha_fields) {
-        // aha_fields is structured as { standard_fields: {...}, custom_fields: {...} }
-        const ahaFieldsStruct = epic.aha_fields as any;
-        const standardFields = ahaFieldsStruct?.standard_fields || {};
-        const customFields = ahaFieldsStruct?.custom_fields || {};
-        
-        criterion.data_sources.forEach((source) => {
-          if (source.type === 'aha_field' && source.value) {
-            // Check standard fields first
-            if (standardFields[source.value] !== null && standardFields[source.value] !== undefined) {
-              const fieldValue = standardFields[source.value];
-              const displayValue = formatAhaFieldValue(fieldValue);
-              if (displayValue) {
-                ahaFieldValues.push(`**${source.value}**: ${displayValue}`);
-              }
-            } 
-            // Then check custom fields
-            else if (customFields[source.value] !== null && customFields[source.value] !== undefined) {
-              const fieldValue = customFields[source.value];
-              const displayValue = formatAhaFieldValue(fieldValue);
-              if (displayValue) {
-                ahaFieldValues.push(`**${source.value}**: ${displayValue}`);
-              }
-            }
-          } else if (source.type === 'aha_description_part' && source.value) {
-            // Parse description HTML table to find keyword and extract second column
-            const description = standardFields.description;
-            let htmlContent: string | null = null;
-            
-            // Handle both object format (with body property) and string format
-            if (description) {
-              if (typeof description === 'string') {
-                htmlContent = description;
-              } else if (typeof description === 'object' && description !== null && 'body' in description) {
-                htmlContent = typeof description.body === 'string' ? description.body : null;
-              }
-            }
-            
-            if (htmlContent) {
-              const extractedValue = parseDescriptionTable(htmlContent, source.value);
-              if (extractedValue) {
-                ahaFieldValues.push(`**${source.value}**: ${extractedValue}`);
-              }
-            }
-          }
-        });
-      }
-
-      // Combine base content with Aha field values
-      let finalContent = baseContent;
-      if (ahaFieldValues.length > 0) {
-        const ahaSection = `\n\n${ahaFieldValues.join('\n')}`;
-        finalContent = baseContent ? baseContent + ahaSection : ahaSection.trim();
-      }
-
+      // Build content from data sources
+      const finalContent = buildContentFromDataSources(baseContent, fetchedDataSourceValues, urlPreviews);
       setContent(finalContent);
     } catch (error) {
       console.error('Failed to fetch content:', error);
     } finally {
       setContentLoading(false);
+      // Allow a brief delay to ensure state updates complete before allowing autosave
+      setTimeout(() => {
+        isInitialLoadRef.current = false;
+      }, 100);
     }
   };
 
@@ -441,6 +469,77 @@ export function CommentsModal({
     }
   };
 
+  // Helper function to convert markdown bold (**text**) to HTML (<strong>text</strong>)
+  const convertMarkdownToHTML = (text: string): string => {
+    if (!text) return text;
+    // Replace **text** with <strong>text</strong>
+    // Use a regex that handles multiple occurrences and doesn't capture nested cases incorrectly
+    return text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  };
+
+  // Helper function to format checkbox items: remove bullets and put text inline with checkboxes
+  const formatCheckboxItems = (html: string): string => {
+    if (!html) return html;
+    
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      const body = doc.body;
+      
+      // Find all lists
+      const lists = body.querySelectorAll('ul, ol');
+      
+      lists.forEach((list) => {
+        const listItems = list.querySelectorAll('li');
+        const processedItems: Node[] = [];
+        
+        listItems.forEach((li) => {
+          const textContent = li.textContent || '';
+          const hasCheckbox = textContent.includes('☑') || textContent.includes('☐');
+          
+          if (hasCheckbox) {
+            // Get the text content and extract checkbox
+            const liHTML = li.innerHTML;
+            
+            // Find checkbox character
+            const checkboxMatch = textContent.match(/([☑☐])/);
+            if (checkboxMatch) {
+              const checkbox = checkboxMatch[1];
+              // Get text after checkbox, removing the checkbox character itself
+              let text = textContent.replace(/[☑☐]/g, '').trim();
+              
+              // Create a div with inline format: checkbox + space + text
+              const div = doc.createElement('div');
+              div.textContent = `${checkbox} ${text}`;
+              div.style.marginBottom = '4px';
+              
+              processedItems.push(div);
+            } else {
+              // No checkbox found, keep original
+              processedItems.push(li.cloneNode(true));
+            }
+          } else {
+            // No checkbox, keep original list item
+            processedItems.push(li.cloneNode(true));
+          }
+        });
+        
+        // If we processed any items, replace the list
+        if (processedItems.some(item => item.nodeName === 'DIV')) {
+          // Create a container div or replace list with divs
+          const container = doc.createElement('div');
+          processedItems.forEach(item => container.appendChild(item));
+          list.parentNode?.replaceChild(container, list);
+        }
+      });
+      
+      return body.innerHTML;
+    } catch (error) {
+      console.error('Error formatting checkbox items:', error);
+      return html;
+    }
+  };
+
   // Helper function to parse HTML table and extract second column value for a keyword
   const parseDescriptionTable = (htmlDescription: string, keyword: string): string | null => {
     if (!htmlDescription || !keyword) return null;
@@ -486,6 +585,181 @@ export function CommentsModal({
     }
   };
 
+  // Helper function to generate HTML for URL preview
+  const generateUrlPreviewHTML = (preview: { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null): string => {
+    if (!preview || !preview.url) return '';
+    
+    // Extract domain from URL if not provided
+    let domain = preview.domain;
+    if (!domain && preview.url) {
+      try {
+        const urlObj = new URL(preview.url);
+        domain = urlObj.hostname;
+      } catch (e) {
+        // Invalid URL, use as-is
+      }
+    }
+    
+    // Use title if available, otherwise use domain, otherwise use URL
+    const displayTitle = preview.title || domain || preview.url;
+    
+    // Format the URL for display (truncate if too long)
+    const displayUrl = preview.url.length > 60 
+      ? preview.url.substring(0, 57) + '...' 
+      : preview.url;
+    
+    const imageHtml = preview.image 
+      ? `<div style="width: 60px; height: 60px; flex-shrink: 0; overflow: hidden; border-radius: 4px; margin-right: 6px; background-color: #f0f0f0;">
+          <img src="${preview.image}" alt="${displayTitle}" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'" />
+        </div>`
+      : '';
+    
+    const faviconHtml = !preview.image && preview.favicon
+      ? `<img src="${preview.favicon}" alt="" style="width: 48px; height: 48px; flex-shrink: 0; object-fit: contain;" onerror="this.style.display='none'" />`
+      : '';
+    
+    const titleHtml = displayTitle
+      ? `<div style="font-size: 17px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; color: #1c1c1e;">${displayTitle}</div>`
+      : '';
+    
+    const descriptionHtml = preview.description
+      ? `<div style="font-size: 14px; color: #6e6e73; margin-top: 4px; margin-bottom: 2px; line-height: 1.5;">${preview.description}</div>`
+      : '';
+    
+    // Show domain/URL below the title when available
+    const urlHtml = domain && domain !== displayTitle
+      ? `<div style="font-size: 12px; color: #6b7280; text-transform: none;">${domain}</div>`
+      : '';
+    
+    const textContentHtml = `${titleHtml}${urlHtml}${descriptionHtml}`;
+    
+    if (preview.image) {
+      return `<div style="border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 8px; cursor: pointer; background-color: #ffffff; transition: all 0.2s ease;" onclick="window.open('${preview.url}', '_blank', 'noopener,noreferrer')" onmouseover="this.style.backgroundColor='#f9fafb'; this.style.borderColor='#d1d5db';" onmouseout="this.style.backgroundColor='#ffffff'; this.style.borderColor='#e5e7eb';">
+        <div style="display: flex; gap: 6px; align-items: flex-start;">
+          ${imageHtml}
+          <div style="flex: 1; min-width: 0;">
+            ${textContentHtml}
+          </div>
+        </div>
+      </div>`;
+    } else if (faviconHtml) {
+      return `<div style="border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 8px; cursor: pointer; background-color: #ffffff; transition: all 0.2s ease;" onclick="window.open('${preview.url}', '_blank', 'noopener,noreferrer')" onmouseover="this.style.backgroundColor='#f9fafb'; this.style.borderColor='#d1d5db';" onmouseout="this.style.backgroundColor='#ffffff'; this.style.borderColor='#e5e7eb';">
+        <div style="display: flex; gap: 12px; align-items: flex-start;">
+          ${faviconHtml}
+          <div style="flex: 1; min-width: 0;">
+            ${textContentHtml}
+          </div>
+        </div>
+      </div>`;
+    } else {
+      return `<div style="border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 8px; cursor: pointer; background-color: #ffffff; transition: all 0.2s ease;" onclick="window.open('${preview.url}', '_blank', 'noopener,noreferrer')" onmouseover="this.style.backgroundColor='#f9fafb'; this.style.borderColor='#d1d5db';" onmouseout="this.style.backgroundColor='#ffffff'; this.style.borderColor='#e5e7eb';">
+        ${textContentHtml}
+      </div>`;
+    }
+  };
+
+  // Helper function to build content from data sources
+  const buildContentFromDataSources = (
+    baseContent: string,
+    fetchedDataSourceValues: Record<string, string | { url: string; assetName?: string }>,
+    urlPreviews: Record<string, { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null>
+  ): string => {
+    // Process all data sources in order
+    const dataSourceItems: Array<{ content: string; type: string }> = [];
+    if (criterion?.data_sources) {
+      // aha_fields is structured as { standard_fields: {...}, custom_fields: {...} }
+      const ahaFieldsStruct = epic?.aha_fields as any;
+      const standardFields = ahaFieldsStruct?.standard_fields || {};
+      const customFields = ahaFieldsStruct?.custom_fields || {};
+      
+      criterion.data_sources.forEach((source, index) => {
+        if (source.type === 'aha_field' && source.value) {
+          // Check standard fields first
+          if (standardFields[source.value] !== null && standardFields[source.value] !== undefined) {
+            const fieldValue = standardFields[source.value];
+            const displayValue = formatAhaFieldValue(fieldValue);
+            if (displayValue) {
+              const markdownContent = `**${source.value}**: ${displayValue}`;
+              const htmlContent = convertMarkdownToHTML(markdownContent);
+              dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
+            }
+          } 
+          // Then check custom fields
+          else if (customFields[source.value] !== null && customFields[source.value] !== undefined) {
+            const fieldValue = customFields[source.value];
+            const displayValue = formatAhaFieldValue(fieldValue);
+            if (displayValue) {
+              const markdownContent = `**${source.value}**: ${displayValue}`;
+              const htmlContent = convertMarkdownToHTML(markdownContent);
+              dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
+            }
+          }
+        } else if (source.type === 'aha_description_part' && source.value) {
+          // Parse description HTML table to find keyword and extract second column
+          const description = standardFields.description;
+          let htmlContent: string | null = null;
+          
+          // Handle both object format (with body property) and string format
+          if (description) {
+            if (typeof description === 'string') {
+              htmlContent = description;
+            } else if (typeof description === 'object' && description !== null && 'body' in description) {
+              htmlContent = typeof description.body === 'string' ? description.body : null;
+            }
+          }
+          
+          if (htmlContent) {
+            const extractedValue = parseDescriptionTable(htmlContent, source.value);
+            if (extractedValue) {
+              const markdownContent = `**${source.value}**: ${extractedValue}`;
+              const convertedContent = convertMarkdownToHTML(markdownContent);
+              dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
+            }
+          }
+        } else if (source.type === 'url') {
+          // Get URL value from fetched data source values
+          const dataSourceValue = fetchedDataSourceValues[index.toString()];
+          const urlValue = getUrlFromDataSourceValue(dataSourceValue);
+          const assetName = getAssetNameFromDataSourceValue(dataSourceValue);
+          if (urlValue) {
+            // Check if we have a preview for this URL
+            const preview = urlPreviews[index.toString()];
+            // Use asset name as title if provided, otherwise use preview title
+            const previewWithAssetName = preview 
+              ? { ...preview, title: assetName || preview.title }
+              : { url: urlValue, title: assetName };
+            const previewHtml = generateUrlPreviewHTML(previewWithAssetName);
+            dataSourceItems.push({ content: previewHtml, type: 'url' });
+          }
+        }
+      });
+    }
+
+    // Combine base content with data source values
+    // Add HTML separators between different data source sections
+    let finalContent = baseContent;
+    if (dataSourceItems.length > 0) {
+      const processedContent: string[] = [];
+      
+      dataSourceItems.forEach((item, idx) => {
+        // Add separator between all data source items
+        if (idx > 0) {
+          processedContent.push('<hr style="border: none; border-top: 1px solid #e0e0e0; padding-top: 0px;margin-top: 20px;">');
+        }
+        
+        processedContent.push(item.content);
+      });
+      
+      const dataSection = processedContent.join('\n');
+      finalContent = baseContent ? baseContent + '\n\n' + dataSection : dataSection.trim();
+    }
+
+    // Process final content through checkbox formatter
+    finalContent = formatCheckboxItems(finalContent);
+
+    return finalContent;
+  };
+
   // Helper function to format Aha field values for display
   const formatAhaFieldValue = (value: any): string => {
     if (value === null || value === undefined) return '';
@@ -504,7 +778,8 @@ export function CommentsModal({
   };
 
   // Save data source values (debounced)
-  const handleSaveDataSourceValues = async (values: Record<string, string>) => {
+  const handleSaveDataSourceValues = async (values: Record<string, string | { url: string; assetName?: string }>) => {
+    setSavingDataSourceValues(true);
     try {
       const res = await fetch(`/api/epics/${epicId}/criteria/${taskId}`, {
         method: 'PATCH',
@@ -513,10 +788,19 @@ export function CommentsModal({
         body: JSON.stringify({ data_source_values: values }),
       });
       if (!res.ok) {
-        throw new Error('Failed to save data source values');
+        let errorDetails: any = null;
+        try {
+          errorDetails = await res.json();
+        } catch (e) {
+          errorDetails = { error: 'Failed to parse error response' };
+        }
+        throw new Error(errorDetails?.error || 'Failed to save data source values');
       }
+      await res.json();
     } catch (error) {
       console.error('Failed to save data source values:', error);
+    } finally {
+      setSavingDataSourceValues(false);
     }
   };
 
@@ -525,11 +809,14 @@ export function CommentsModal({
     if (savingContent) return;
     setSavingContent(true);
     try {
+      // Only save the base content (user-entered text), not the dynamically generated data sources
+      // Data sources are stored separately in data_source_values and rebuilt on load
+      const baseContentToSave = baseContentRef.current || contentToSave;
       const res = await fetch(`/api/epics/${epicId}/criteria/${taskId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ notes: contentToSave }),
+        body: JSON.stringify({ notes: baseContentToSave }),
       });
       if (!res.ok) {
         throw new Error('Failed to save content');
@@ -542,17 +829,26 @@ export function CommentsModal({
     }
   };
 
-  // Save data source values with debounce
+  // Save data source values with debounce (skip during initial load)
   useEffect(() => {
-    if (!opened || Object.keys(dataSourceValues).length === 0) return;
+    if (!opened || Object.keys(dataSourceValues).length === 0 || isInitialLoadRef.current) {
+      return;
+    }
     const timer = setTimeout(() => {
       handleSaveDataSourceValues(dataSourceValues);
     }, 1000);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [dataSourceValues, opened]);
 
   const handleUrlDataSourceChange = (dataSourceIndex: number, url: string) => {
-    const updatedValues = { ...dataSourceValues, [dataSourceIndex.toString()]: url };
+    const currentValue = dataSourceValues[dataSourceIndex.toString()];
+    const assetName = getAssetNameFromDataSourceValue(currentValue);
+    const updatedValue: { url: string; assetName?: string } | string = assetName 
+      ? { url, assetName } 
+      : url;
+    const updatedValues = { ...dataSourceValues, [dataSourceIndex.toString()]: updatedValue };
     setDataSourceValues(updatedValues);
     
     // Clear preview if URL is empty
@@ -565,6 +861,16 @@ export function CommentsModal({
     }
   };
 
+  const handleAssetNameChange = (dataSourceIndex: number, assetName: string) => {
+    const currentValue = dataSourceValues[dataSourceIndex.toString()];
+    const url = getUrlFromDataSourceValue(currentValue);
+    const updatedValue: { url: string; assetName?: string } | string = url && assetName
+      ? { url, assetName }
+      : url;
+    const updatedValues = { ...dataSourceValues, [dataSourceIndex.toString()]: updatedValue };
+    setDataSourceValues(updatedValues);
+  };
+
   // Fetch URL previews when data source values change (debounced)
   useEffect(() => {
     if (!criterion?.data_sources) return;
@@ -572,7 +878,8 @@ export function CommentsModal({
     const timers: NodeJS.Timeout[] = [];
     criterion.data_sources.forEach((source, index) => {
       if (source.type === 'url') {
-        const url = dataSourceValues[index.toString()];
+        const dataSourceValue = dataSourceValues[index.toString()];
+        const url = getUrlFromDataSourceValue(dataSourceValue);
         if (url && url.match(/^https?:\/\/.+/)) {
           const timer = setTimeout(() => {
             fetchUrlPreview(url, index.toString());
@@ -587,6 +894,20 @@ export function CommentsModal({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dataSourceValues, criterion?.data_sources]);
+
+  // Memoize string representations for stable dependency comparisons
+  const urlPreviewsKey = useMemo(() => JSON.stringify(urlPreviews), [urlPreviews]);
+  const dataSourceValuesKey = useMemo(() => JSON.stringify(dataSourceValues), [dataSourceValues]);
+
+  // Rebuild content when URL previews or data source values change
+  useEffect(() => {
+    if (!opened || contentLoading || Object.keys(dataSourceValues).length === 0 || !baseContentRef.current) return;
+    
+    // Rebuild content with updated previews using stored baseContent
+    const rebuiltContent = buildContentFromDataSources(baseContentRef.current, dataSourceValues, urlPreviews);
+    setContent(rebuiltContent);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlPreviewsKey, dataSourceValuesKey, opened, contentLoading]);
 
   // Auto-save content with debounce
   useEffect(() => {
@@ -606,6 +927,7 @@ export function CommentsModal({
       fetchContent();
       setHasAddedComment(false); // Reset when drawer opens
       setActiveTab(initialTab); // Reset to initial tab when drawer opens
+      setIsContentEditMode(false); // Reset edit mode when drawer opens
     }
   }, [opened, initialTab]);
 
@@ -659,11 +981,13 @@ export function CommentsModal({
             {/* URL Data Sources Section */}
             {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'url') && (
               <div>
-                <Text size="sm" fw={600} mb="xs">Data Sources</Text>
+
                 <Stack gap="sm">
                   {criterion.data_sources.map((source, index) => {
                     if (source.type !== 'url') return null;
-                    const urlValue = dataSourceValues[index.toString()] || '';
+                    const dataSourceValue = dataSourceValues[index.toString()];
+                    const urlValue = getUrlFromDataSourceValue(dataSourceValue);
+                    const assetNameValue = getAssetNameFromDataSourceValue(dataSourceValue);
                     const urlSources = criterion.data_sources!.filter(s => s.type === 'url');
                     const urlIndex = urlSources.indexOf(source) + 1;
                     return (
@@ -675,77 +999,72 @@ export function CommentsModal({
                           placeholder="https://figma.com/..., https://docs.google.com/..., etc."
                           type="url"
                         />
+                        <TextInput
+                          label="Asset name"
+                          value={assetNameValue}
+                          onChange={(e) => handleAssetNameChange(index, e.target.value)}
+                          placeholder="Optional: e.g., Design mockups, Product requirements, etc."
+                          mt="xs"
+                        />
                         {urlPreviewLoading[index.toString()] && (
                           <Text size="xs" c="dimmed" mt="xs">Loading preview...</Text>
                         )}
-                        {!urlPreviewLoading[index.toString()] && urlPreviews[index.toString()] && (() => {
-                          const preview = urlPreviews[index.toString()];
-                          if (!preview) return null;
-                          return (
-                            <Card
-                              withBorder
-                              padding="sm"
-                              radius="md"
-                              mt="sm"
-                              style={{ cursor: 'pointer' }}
-                              onClick={() => window.open(preview.url, '_blank', 'noopener,noreferrer')}
-                            >
-                              <Group gap="sm" align="flex-start">
-                                {preview.image && (
-                                  <div style={{ width: 60, height: 60, flexShrink: 0, overflow: 'hidden', borderRadius: '4px' }}>
-                                    <Image
-                                      src={preview.image}
-                                      alt={preview.title || 'Preview'}
-                                      width="100%"
-                                      height="100%"
-                                      fit="cover"
-                                      style={{ display: 'block' }}
-                                    />
-                                  </div>
-                                )}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  {preview.title && (
-                                    <Text size="sm" fw={500} lineClamp={2} mb={4}>
-                                      {preview.title}
-                                    </Text>
-                                  )}
-                                  {preview.description && (
-                                    <Text size="xs" c="dimmed" lineClamp={2} mb={4}>
-                                      {preview.description}
-                                    </Text>
-                                  )}
-                                  {preview.domain && (
-                                    <Text size="xs" c="dimmed" style={{ textTransform: 'uppercase' }}>
-                                      {preview.domain}
-                                    </Text>
-                                  )}
-                                </div>
-                              </Group>
-                            </Card>
-                          );
-                        })()}
                       </div>
                     );
                   })}
+                  {savingDataSourceValues && (
+                    <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
+                  )}
                 </Stack>
               </div>
             )}
 
             {/* Criterion Content Section - Takes available space */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+              {!contentLoading && !isContentEditMode && (
+                <Group justify="flex-end" mb="xs">
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    leftSection={<IconPencil size={14} />}
+                    onClick={() => setIsContentEditMode(true)}
+                  >
+                    Edit
+                  </Button>
+                </Group>
+              )}
               {contentLoading ? (
                 <div style={{ textAlign: 'center', padding: '20px' }}>
                   <PurpleLoader size="sm" />
                 </div>
               ) : (
-                <ScrollArea style={{ flex: 1, minHeight: 0 }}>
-                  <RichText
-                    value={content}
-                    onChange={setContent}
-                    placeholder="Add relevant content, links, and notes for this criterion..."
-                    rows={12}
-                    compactLists={true}
-                  />
+                <ScrollArea 
+                  style={{ flex: 1, minHeight: 0 }}
+                  styles={{
+                    scrollbar: { display: 'none' },
+                    thumb: { display: 'none' },
+                    viewport: { paddingBottom: 0 },
+                  }}
+                >
+                  <div style={{ paddingBottom: 0, marginBottom: 0 }}>
+                    <RichText
+                      value={content}
+                      onChange={(newContent) => {
+                        setContent(newContent);
+                        // Update baseContentRef when user edits
+                        // Note: This assumes the user is only editing the base content part,
+                        // not the data sources section (which should be read-only/non-editable)
+                        // Data sources are dynamically generated and appended, so they shouldn't be in the editable area
+                        if (isContentEditMode) {
+                          baseContentRef.current = newContent;
+                        }
+                      }}
+                      placeholder="Add relevant content, links, and notes for this criterion..."
+                      rows={12}
+                      compactLists={true}
+                      readOnly={!isContentEditMode}
+                    />
+                  </div>
                 </ScrollArea>
               )}
               {savingContent && (
@@ -759,7 +1078,14 @@ export function CommentsModal({
           <Stack gap="md" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {/* Comments List */}
             {(comments.length > 0 || standaloneAttachments.length > 0) && (
-              <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+              <ScrollArea 
+                style={{ flex: 1, minHeight: 0 }} 
+                type="auto"
+                styles={{
+                  scrollbar: { display: 'none' },
+                  thumb: { display: 'none' },
+                }}
+              >
                 {loading ? (
                   <div style={{ textAlign: 'center', padding: '20px' }}>
                     <PurpleLoader size="sm" />
