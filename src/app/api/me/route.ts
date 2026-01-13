@@ -3,6 +3,7 @@ import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -108,7 +109,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ user: updatedUser });
 }
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
@@ -139,3 +140,5 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ user: profile });
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.light);

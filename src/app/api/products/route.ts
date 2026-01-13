@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const userEmail = await getAuthenticatedUserEmail();
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-export async function POST(req: NextRequest) {
+export const GET = withRateLimit(getHandler, RATE_LIMITS.light);
+
+async function postHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const userEmail = await getAuthenticatedUserEmail();
@@ -55,3 +58,5 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Failed to create product' }, { status: 500 });
     }
 }
+
+export const POST = withRateLimit(postHandler, RATE_LIMITS.default);

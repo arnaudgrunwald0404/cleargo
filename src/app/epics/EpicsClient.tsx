@@ -69,46 +69,62 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         if (initialEpics.length === 0) {
             loadData();
         } else {
-            // Optimized: Load all data in parallel
-            Promise.all([
-                fetch("/api/me", { credentials: 'include' }),
-                fetch("/api/settings", { credentials: 'include' }),
-                fetch("/api/products", { credentials: 'include' }),
-                fetch("/api/releases", { credentials: 'include' })
-            ]).then(([meRes, settingsRes, productsRes, releasesRes]) => {
-                // Handle user roles
-                if (meRes.ok) {
-                    meRes.json().then(data => {
+            // Stagger requests to avoid rate limiting
+            (async () => {
+                try {
+                    const { fetchWithRateLimit, batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                    
+                    // Priority 1: Auth check
+                    const meRes = await fetchWithRateLimit("/api/me", { maxRetries: 1 });
+                    if (meRes.ok) {
+                        const data = await meRes.json();
                         if (data.user?.roles && Array.isArray(data.user.roles)) {
                             setCurrentUserRoles(data.user.roles);
                         }
-                    }).catch(err => console.error("Failed to load user roles:", err));
-                }
+                    }
 
-                // Handle settings
-                if (settingsRes.ok) {
-                    settingsRes.json().then(data => {
+                    // Priority 2: Batch fetch supporting data with delays
+                    const supportingUrls = [
+                        "/api/settings",
+                        "/api/products",
+                        "/api/releases"
+                    ];
+
+                    const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
+                        batchSize: 2,
+                        batchDelay: 150,
+                        maxRetries: 1
+                    });
+
+                    // Handle settings
+                    const settingsResult = supportingResults.find(r => r.url === '/api/settings');
+                    if (settingsResult?.response?.ok) {
+                        const data = await settingsResult.response.json();
                         if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
                             setConfiguredTags(data.aha_tags);
                         }
-                    }).catch(err => console.error("Failed to load settings:", err));
-                }
+                    }
 
-                // Handle products
-                if (productsRes.ok) {
-                    productsRes.json().then(data => setProducts(data));
-                }
+                    // Handle products
+                    const productsResult = supportingResults.find(r => r.url === '/api/products');
+                    if (productsResult?.response?.ok) {
+                        const data = await productsResult.response.json();
+                        setProducts(data);
+                    }
 
-                // Handle releases
-                if (releasesRes.ok) {
-                    releasesRes.json().then(data => {
+                    // Handle releases
+                    const releasesResult = supportingResults.find(r => r.url === '/api/releases');
+                    if (releasesResult?.response?.ok) {
+                        const data = await releasesResult.response.json();
                         setReleaseSchedule(data || []);
                         setReleaseScheduleWithIds(data || []);
                         // After releases are loaded, check if order needs to be determined
                         // This will be handled by the useEffect that fetches missing dates
-                    });
+                    }
+                } catch (err) {
+                    console.error("Failed to load initial data:", err);
                 }
-            }).catch(err => console.error("Failed to load initial data:", err));
+            })();
         }
     }, [initialEpics.length]);
 
@@ -124,31 +140,30 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     useEffect(() => {
         if (currentUserEmail && epics.length > 0) {
             // Defer watch status loading until after initial render (non-critical data)
-            const timeoutId = setTimeout(() => {
-                // Batch fetch all watch statuses in a single API call
-                const epicIds = epics.map(epic => epic.id).join(',');
-                fetch(`/api/epics/watch-status?epic_ids=${encodeURIComponent(epicIds)}`, { credentials: 'include' })
-                    .then(res => {
-                        if (res.ok) {
-                            return res.json();
-                        }
-                        throw new Error('Failed to fetch watch statuses');
-                    })
-                    .then((watchData: Record<string, boolean>) => {
+            const timeoutId = setTimeout(async () => {
+                try {
+                    const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                    // Batch fetch all watch statuses in a single API call
+                    const epicIds = epics.map(epic => epic.id).join(',');
+                    const res = await fetchWithRateLimit(`/api/epics/watch-status?epic_ids=${encodeURIComponent(epicIds)}`, { maxRetries: 1 });
+                    if (res.ok) {
+                        const watchData: Record<string, boolean> = await res.json();
                         const watchMap = new Map<string, boolean>();
                         Object.entries(watchData).forEach(([epicId, isWatching]) => {
                             watchMap.set(epicId, isWatching);
                         });
                         setWatchStatuses(watchMap);
-                    })
-                    .catch(err => {
-                        console.warn('Failed to fetch watch statuses:', err);
-                        // Fallback: set all to false on error
-                        const watchMap = new Map<string, boolean>();
-                        epics.forEach(epic => watchMap.set(epic.id, false));
-                        setWatchStatuses(watchMap);
-                    });
-            }, 100); // Defer by 100ms to allow initial render
+                    } else {
+                        throw new Error('Failed to fetch watch statuses');
+                    }
+                } catch (err) {
+                    console.warn('Failed to fetch watch statuses:', err);
+                    // Fallback: set all to false on error
+                    const watchMap = new Map<string, boolean>();
+                    epics.forEach(epic => watchMap.set(epic.id, false));
+                    setWatchStatuses(watchMap);
+                }
+            }, 200); // Defer by 200ms to allow initial render and other critical requests
 
             return () => clearTimeout(timeoutId);
         }
@@ -160,36 +175,50 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             // Use my-scope endpoint if scope is "my"
             const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
 
-            // Fast auth check: if not signed in, send to home/Welcome
-            const me = await fetch('/api/me', { credentials: 'include' });
+            // Import fetchWithRateLimit
+            const { fetchWithRateLimit, batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+
+            // Priority 1: Auth check (critical, must complete first)
+            const me = await fetchWithRateLimit('/api/me', { maxRetries: 1 });
             if (me.status === 401) {
                 router.push('/');
                 return;
             }
 
-            const [epicsRes, productsRes, releasesRes, settingsRes] = await Promise.all([
-                fetch(endpoint, { credentials: 'include' }),
-                fetch("/api/products", { credentials: 'include' }),
-                fetch("/api/releases", { credentials: 'include' }),
-                fetch("/api/settings", { credentials: 'include' })
-            ]);
-
+            // Priority 2: Main data (epics) - most important
+            const epicsRes = await fetchWithRateLimit(endpoint, { maxRetries: 1 });
             if (epicsRes.status === 401) {
                 router.push('/');
                 return;
             }
             if (!epicsRes.ok) throw new Error("Failed to fetch epics");
-            // Products might fail if table is empty or API error, but let's try
             const epicsData = await epicsRes.json();
             setEpics(epicsData);
 
-            if (productsRes.ok) {
-                const productsData = await productsRes.json();
+            // Priority 3: Supporting data (batch fetch with small delay)
+            // Use batchFetchWithRateLimit to process in smaller batches
+            const supportingUrls = [
+                "/api/products",
+                "/api/releases",
+                "/api/settings"
+            ];
+
+            const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
+                batchSize: 2, // Process 2 at a time
+                batchDelay: 150, // 150ms delay between batches
+                maxRetries: 1
+            });
+
+            // Process results
+            const productsResult = supportingResults.find(r => r.url === '/api/products');
+            if (productsResult?.response?.ok) {
+                const productsData = await productsResult.response.json();
                 setProducts(productsData);
             }
 
-            if (releasesRes.ok) {
-                const releasesData = await releasesRes.json();
+            const releasesResult = supportingResults.find(r => r.url === '/api/releases');
+            if (releasesResult?.response?.ok) {
+                const releasesData = await releasesResult.response.json();
                 if (process.env.NODE_ENV === 'development' && releasesData && releasesData.length > 0) {
                     console.log('[Releases] Sample release data:', {
                         release_name: releasesData[0].release_name,
@@ -202,8 +231,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
             
             // Load pod order from settings
-            if (settingsRes.ok) {
-                const settingsData = await settingsRes.json();
+            const settingsResult = supportingResults.find(r => r.url === '/api/settings');
+            if (settingsResult?.response?.ok) {
+                const settingsData = await settingsResult.response.json();
                 setPodOrder(settingsData.pod_order || []);
                 setSettingsLoaded(true);
             } else {

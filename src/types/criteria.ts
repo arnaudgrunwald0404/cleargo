@@ -29,6 +29,7 @@ export type DataSourceType = "aha_field" | "aha_description_part" | "url";
 export type DataSource = {
   type: DataSourceType;
   value: string;
+  label?: string; // Optional label for URL sources (e.g., "Figma designs", "PRD")
 };
 
 export type Criterion = {

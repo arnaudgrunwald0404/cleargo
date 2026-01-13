@@ -48,7 +48,7 @@ type MatrixItem = {
         status_definition_go?: string;
         status_definition_conditional?: string;
         status_definition_no_go?: string;
-        data_sources?: Array<{ type: string; value: string }> | null;
+        data_sources?: Array<{ type: string; value: string; label?: string }> | null;
     };
 };
 
@@ -284,7 +284,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         } else if (source.type === 'url') {
             // Check if URL exists in data_source_values
             const urlValue = item.data_source_values?.[index.toString()];
-            return !!(urlValue && urlValue.trim() !== '');
+            return !!(urlValue && typeof urlValue === 'string' && urlValue.trim() !== '');
         }
         return false;
     };
@@ -301,6 +301,60 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             default:
                 return IconDatabase;
         }
+    };
+
+    // Helper function to get field label for aha_field types
+    const getFieldLabel = (fieldAlias: string): string => {
+        const standardFieldLabels: Record<string, string> = {
+            'id': 'ID',
+            'reference_num': 'Reference Number',
+            'name': 'Name',
+            'url': 'URL',
+            'description': 'Description',
+            'workflow_status': 'Workflow Status',
+            'assigned_to_user': 'Assigned To User',
+            'tags': 'Tags',
+            'release': 'Release',
+        };
+        
+        if (standardFieldLabels[fieldAlias]) {
+            return standardFieldLabels[fieldAlias];
+        }
+        
+        // For custom fields, format the alias to a readable label
+        const acronymMap: Record<string, string> = {
+            'csm': 'CSM',
+            'wsjf': 'WSJF',
+            'gtm': 'GTM',
+            'ga': 'GA',
+            'pm': 'PM',
+            'aha': 'Aha',
+            'arr': 'ARR',
+            'ux': 'UX',
+        };
+        
+        return fieldAlias
+            .split('_')
+            .map(word => {
+                const lowerWord = word.toLowerCase();
+                if (acronymMap[lowerWord]) {
+                    return acronymMap[lowerWord];
+                }
+                return word.charAt(0).toUpperCase() + word.slice(1);
+            })
+            .join(' ');
+    };
+
+    // Helper function to get tooltip label for data source
+    const getDataSourceTooltip = (source: { type: string; value: string }): string => {
+        if (source.type === 'aha_field') {
+            return getFieldLabel(source.value);
+        } else if (source.type === 'aha_description_part') {
+            return source.value; // search term
+        } else if (source.type === 'url') {
+            return source.value; // URL
+        }
+        return '';
     };
     
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -1117,10 +1171,19 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     <div className="flex items-center gap-1.5 flex-wrap">
                                                         {sourcesWithData.map((source, idx) => {
                                                             const IconComponent = getDataSourceIcon(source.type);
+                                                            const tooltipLabel = getDataSourceTooltip(source);
                                                             return (
-                                                                <Tooltip key={idx} label={source.type === 'aha_field' ? 'Aha Field' : source.type === 'aha_description_part' ? 'Aha Description Part' : 'URL'} position="top" withArrow>
+                                                                <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                     <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                        <IconComponent size={16} />
+                                                                        {source.type === 'aha_field' ? (
+                                                                            <img 
+                                                                                src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
+                                                                                alt="Aha" 
+                                                                                className="w-3 h-3"
+                                                                            />
+                                                                        ) : (
+                                                                            <IconComponent size={16} />
+                                                                        )}
                                                                     </div>
                                                                 </Tooltip>
                                                             );
@@ -1478,10 +1541,19 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         <div className="flex items-center gap-2 flex-wrap">
                                                             {sourcesWithData.map((source, idx) => {
                                                                 const IconComponent = getDataSourceIcon(source.type);
+                                                                const tooltipLabel = getDataSourceTooltip(source);
                                                                 return (
-                                                                    <Tooltip key={idx} label={source.type === 'aha_field' ? 'Aha Field' : source.type === 'aha_description_part' ? 'Aha Description Part' : 'URL'} position="top" withArrow>
+                                                                    <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                         <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                            <IconComponent size={18} />
+                                                                            {source.type === 'aha_field' ? (
+                                                                                <img 
+                                                                                    src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
+                                                                                    alt="Aha" 
+                                                                                    className="w-3 h-3"
+                                                                                />
+                                                                            ) : (
+                                                                                <IconComponent size={18} />
+                                                                            )}
                                                                         </div>
                                                                     </Tooltip>
                                                                 );

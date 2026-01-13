@@ -3,6 +3,7 @@ import { getSettings, updateSettings } from "@/lib/settings-db";
 import { createClient } from "@/lib/supabase/server";
 import { debugLog } from "@/lib/debug";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +11,7 @@ export const dynamic = 'force-dynamic';
 // For now, we'll assume any authenticated user can read, but only specific roles can write.
 // TODO: refine RBAC.
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     console.log("GET /api/settings called");
     try {
         // Check authentication (supports both Supabase auth and magic link)
@@ -56,7 +57,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-export async function PATCH(req: NextRequest) {
+export const GET = withRateLimit(getHandler, RATE_LIMITS.default);
+
+async function patchHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const userEmail = await getAuthenticatedUserEmail();
@@ -111,3 +114,5 @@ export async function PATCH(req: NextRequest) {
         );
     }
 }
+
+export const PATCH = withRateLimit(patchHandler, RATE_LIMITS.default);

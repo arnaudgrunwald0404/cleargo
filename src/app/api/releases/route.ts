@@ -1,8 +1,9 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
-export async function GET(request: NextRequest) {
+async function getHandler(request: NextRequest) {
     // #region agent log
     const fs = require('fs');
     const logEntry1 = {location:'releases/route.ts:4',message:'GET releases called',data:{url:request.url,hasCookies:request.cookies.getAll().length>0,cookieNames:request.cookies.getAll().map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
@@ -89,7 +90,9 @@ export async function GET(request: NextRequest) {
     }
 }
 
-export async function POST(request: NextRequest) {
+export const GET = withRateLimit(getHandler, RATE_LIMITS.default);
+
+async function postHandler(request: NextRequest) {
     try {
         const supabase = createClient();
         
@@ -209,4 +212,6 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+export const POST = withRateLimit(postHandler, RATE_LIMITS.default);
 

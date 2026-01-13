@@ -1,12 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getReleases } from "@/lib/aha/client";
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 // In-memory cache for Aha releases (5 minute TTL)
 let ahaReleasesCache: { releases: any[]; timestamp: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export async function GET() {
+async function getHandler() {
     try {
         const supabase = createClient();
         
@@ -377,4 +378,6 @@ export async function GET() {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.heavy);
 

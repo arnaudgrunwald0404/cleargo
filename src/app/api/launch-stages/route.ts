@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -50,7 +51,9 @@ export async function GET(req: NextRequest) {
     }
 }
 
-export async function POST(req: NextRequest) {
+export const GET = withRateLimit(getHandler, RATE_LIMITS.light);
+
+async function postHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -118,7 +121,7 @@ export async function POST(req: NextRequest) {
     }
 }
 
-export async function PATCH(req: NextRequest) {
+async function patchHandler(req: NextRequest) {
     let body: any = null;
     try {
         const supabase = createClient();
@@ -200,8 +203,11 @@ export async function PATCH(req: NextRequest) {
     }
 }
 
+export const PATCH = withRateLimit(patchHandler, RATE_LIMITS.default);
 
-export async function PUT(req: NextRequest) {
+export const POST = withRateLimit(postHandler, RATE_LIMITS.default);
+
+async function putHandler(req: NextRequest) {
     try {
         const supabase = createClient();
         const { data: { user }, error: authError } = await supabase.auth.getUser();
@@ -267,3 +273,5 @@ export async function PUT(req: NextRequest) {
         );
     }
 }
+
+export const PUT = withRateLimit(putHandler, RATE_LIMITS.default);

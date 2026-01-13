@@ -115,23 +115,37 @@ export default function EpicDetailPage() {
 
             // Use shared rate-limit-aware fetch utility
             const fetchWithRetry = (url: string) => fetchWithRateLimit(url, { maxRetries: 1 });
+            const { batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
 
-            // PARALLEL FETCH: Fetch epic, settings, criteria, matrix, launch stages, release schedule, watch status, and success data simultaneously
-            // This dramatically reduces load time
-            const [
-                epicRes,
-                settingsRes,
-                criteriaRes,
-                matrixQuery,
-                launchStagesQuery,
-                releaseScheduleQuery,
-                watchRes,
-                successConfigRes,
-                successMetricsRes
-            ] = await Promise.all([
+            // Priority 1: Critical data (epic, settings, criteria) - fetch first
+            const [epicRes, settingsRes, criteriaRes] = await Promise.all([
                 fetchWithRetry(`/api/epics/${id}`),
                 fetchWithRetry('/api/settings'),
-                fetchWithRetry('/api/criteria'),
+                fetchWithRetry('/api/criteria')
+            ]);
+
+            // Read responses immediately to avoid "body stream already read" errors
+            let settingsData: any = null;
+            let criteriaData: any = null;
+            
+            if (settingsRes.ok) {
+                try {
+                    settingsData = await settingsRes.json();
+                } catch (err) {
+                    console.warn('Failed to parse settings:', err);
+                }
+            }
+            
+            if (criteriaRes.ok) {
+                try {
+                    criteriaData = await criteriaRes.json();
+                } catch (err) {
+                    console.warn('Failed to parse criteria:', err);
+                }
+            }
+
+            // Priority 2: Database queries (not rate limited) - can run in parallel with API calls
+            const [matrixQuery, launchStagesQuery] = await Promise.all([
                 supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -153,16 +167,35 @@ export default function EpicDetailPage() {
                 supabase
                     .from('launch_stages')
                     .select('id, name, sort_order, duration_days')
-                    .order('sort_order', { ascending: true }),
-                // Release schedule will be fetched conditionally after we get epic data
-                Promise.resolve({ data: null, error: null }),
-                // Fetch watch status in parallel
-                user?.email && id ? fetchWithRetry(`/api/epics/${id}/watch`).catch(() => Promise.resolve({ ok: false, json: async () => ({ isWatching: false }) })) : Promise.resolve({ ok: false, json: async () => ({ isWatching: false }) }),
-                // Fetch success config in parallel
-                fetchWithRetry(`/api/epics/${id}/success/config`).catch(() => Promise.resolve({ ok: false, json: async () => null })),
-                // Fetch success metrics in parallel
-                fetchWithRetry(`/api/epics/${id}/success/metrics`).catch(() => Promise.resolve({ ok: false, json: async () => [] }))
+                    .order('sort_order', { ascending: true })
             ]);
+
+            // Priority 3: Secondary data (batch fetch with delays) - non-critical
+            const secondaryUrls = [
+                user?.email && id ? `/api/epics/${id}/watch` : null,
+                `/api/epics/${id}/success/config`,
+                `/api/epics/${id}/success/metrics`
+            ].filter(Boolean) as string[];
+
+            const secondaryResults = await batchFetchWithRateLimit(secondaryUrls, {
+                batchSize: 2,
+                batchDelay: 200,
+                maxRetries: 1
+            });
+
+            // Map results back to expected format - handle null responses
+            const watchResult = user?.email && id 
+                ? secondaryResults.find(r => r.url === `/api/epics/${id}/watch`)
+                : null;
+            const watchRes = watchResult?.response || { ok: false, json: async () => ({ isWatching: false }) };
+            
+            const successConfigResult = secondaryResults.find(r => r.url === `/api/epics/${id}/success/config`);
+            const successConfigRes = successConfigResult?.response || { ok: false, json: async () => null };
+            
+            const successMetricsResult = secondaryResults.find(r => r.url === `/api/epics/${id}/success/metrics`);
+            const successMetricsRes = successMetricsResult?.response || { ok: false, json: async () => [] };
+            
+            const releaseScheduleQuery = { data: null, error: null }; // Will be fetched conditionally
 
             // Process epic data
             if (!epicRes.ok) {
@@ -219,10 +252,10 @@ export default function EpicDetailPage() {
             }
 
             // Process settings once (used for both threshold and pod mapping)
-            // Check cache first, then fetch if needed
+            // Check cache first, then use fetched data if needed
             let settings: any = epicDetailCache.getSettings();
-            if (!settings && settingsRes.ok) {
-                settings = await settingsRes.json();
+            if (!settings && settingsData) {
+                settings = settingsData;
                 epicDetailCache.setSettings(settings);
             }
             
@@ -255,8 +288,7 @@ export default function EpicDetailPage() {
 
             // Process criteria - check cache first
             let allActiveCriteria: any[] = epicDetailCache.getCriteria() || [];
-            if (allActiveCriteria.length === 0 && criteriaRes.ok) {
-                const criteriaData = await criteriaRes.json();
+            if (allActiveCriteria.length === 0 && criteriaData) {
                 allActiveCriteria = (criteriaData.items || []).filter((c: any) => c.is_active === true);
                 epicDetailCache.setCriteria(allActiveCriteria);
             }

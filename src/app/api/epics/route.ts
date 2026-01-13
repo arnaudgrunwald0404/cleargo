@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEpic, getEpics } from '@/lib/epics';
 import { createClient } from '@/lib/supabase/server';
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     try {
         // AUTH DISABLED: Skip auth check, just fetch epics
         const epics = await getEpics();
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
         }, { status: 500 });
     }
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.default);
 
 export async function POST(req: NextRequest) {
     // Manual epic creation is disabled - epics should only be created via Aha! integration

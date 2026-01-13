@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sortPodsByOrder } from '@/lib/pod-utils';
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
     const supabase = createClient();
     // Fetch distinct pod values from epic table
     const { data, error } = await supabase
@@ -25,3 +26,5 @@ export async function GET(req: NextRequest) {
     
     return NextResponse.json({ pods: sortedPods });
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.light);

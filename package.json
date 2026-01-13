@@ -48,6 +48,7 @@
     "tailwindcss": "^4.1.17",
     "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.4.5",
     "whatwg-fetch": "^3.6.20"
   }

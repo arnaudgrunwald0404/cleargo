@@ -2,6 +2,7 @@ import { getCustomFields } from './client';
 import { loadAhaConfig } from './mapping';
 import { writeFileSync } from 'fs';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 
 /**
  * Utility to discover Aha custom field keys and populate aha-custom-fields.json
@@ -43,8 +44,9 @@ export async function discoverCustomFields(): Promise<void> {
     console.log(`Config saved to: ${configPath}`);
 }
 
-// CLI usage: node -r ts-node/register src/lib/aha/discover.ts
-if (require.main === module) {
+// CLI usage: npx tsx src/lib/aha/discover.ts
+const __filename = fileURLToPath(import.meta.url);
+if (process.argv[1] === __filename) {
     discoverCustomFields()
         .then(() => process.exit(0))
         .catch((error) => {

@@ -7,6 +7,7 @@ import { resolveRole } from "@/lib/roles";
 const dataSourceSchema = z.object({
   type: z.enum(["aha_field", "aha_description_part", "url"]),
   value: z.string(), // Allow empty strings (especially for URL type where value is entered per-epic)
+  label: z.string().optional(), // Optional label for URL sources (e.g., "Figma designs", "PRD")
 });
 
 const updateSchema = z.object({

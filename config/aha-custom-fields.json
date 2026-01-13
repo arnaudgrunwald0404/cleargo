@@ -100,6 +100,14 @@
     "launch_console_url": {
       "label": "Launch Console URL",
       "key": ""
+    },
+    "ux_needs": {
+      "label": "UX Needs",
+      "key": ""
+    },
+    "delivery_method": {
+      "label": "Delivery Method",
+      "key": ""
     }
   }
 }

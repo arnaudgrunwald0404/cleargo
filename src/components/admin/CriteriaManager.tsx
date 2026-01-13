@@ -13,6 +13,7 @@ const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 type DataSource = {
   type: "aha_field" | "aha_description_part" | "url";
   value: string;
+  label?: string; // Optional label for URL sources (e.g., "Figma designs", "PRD")
 };
 
 type Item = {
@@ -1198,9 +1199,18 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                     )}
 
                     {source.type === "url" && (
-                      <Text size="xs" c="dimmed" mt="xs">
-                        URL will be entered in the epic detail page drawer
-                      </Text>
+                      <>
+                        <TextInput
+                          label="Expected link type (optional)"
+                          value={source.label || ""}
+                          onChange={(e) => updateDataSource(index, { label: e.target.value })}
+                          placeholder="e.g., Figma designs, PRD, competitive analysis"
+                          description="Examples: figma designs, PRD, competitive analysis"
+                        />
+                        <Text size="xs" c="dimmed" mt="xs">
+                          URL will be entered in the epic detail page drawer
+                        </Text>
+                      </>
                     )}
                   </Stack>
                 </div>

@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
-export async function GET(req: NextRequest) {
+async function getHandler(req: NextRequest) {
   try {
     const supabase = createClient();
     const userEmail = await getAuthenticatedUserEmail();
@@ -72,4 +73,6 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.light);
 

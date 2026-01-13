@@ -37,7 +37,7 @@ interface CommentsModalProps {
   onCommentAdded?: () => void; // Callback when comment is added (for mandatory mode)
   onCloseWithoutComment?: () => void; // Callback when modal closes without comment (for reverting status)
   onCancel?: () => void; // Callback when user cancels (for reverting status with toast)
-  criterion?: { data_sources?: Array<{ type: string; value: string }> | null };
+  criterion?: { data_sources?: Array<{ type: string; value: string; label?: string }> | null };
   epic?: { aha_fields?: Record<string, any> | null } | null;
   initialTab?: 'content' | 'comments'; // Which tab to open initially (default: 'content')
 }
@@ -586,7 +586,7 @@ export function CommentsModal({
   };
 
   // Helper function to generate HTML for URL preview
-  const generateUrlPreviewHTML = (preview: { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null): string => {
+  const generateUrlPreviewHTML = (preview: { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string; label?: string } | null): string => {
     if (!preview || !preview.url) return '';
     
     // Extract domain from URL if not provided
@@ -600,9 +600,6 @@ export function CommentsModal({
       }
     }
     
-    // Use title if available, otherwise use domain, otherwise use URL
-    const displayTitle = preview.title || domain || preview.url;
-    
     // Format the URL for display (truncate if too long)
     const displayUrl = preview.url.length > 60 
       ? preview.url.substring(0, 57) + '...' 
@@ -610,7 +607,7 @@ export function CommentsModal({
     
     const imageHtml = preview.image 
       ? `<div style="width: 60px; height: 60px; flex-shrink: 0; overflow: hidden; border-radius: 4px; margin-right: 6px; background-color: #f0f0f0;">
-          <img src="${preview.image}" alt="${displayTitle}" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'" />
+          <img src="${preview.image}" alt="${preview.label || preview.title || domain || preview.url}" style="width: 100%; height: 100%; object-fit: cover; display: block;" onerror="this.parentElement.style.display='none'" />
         </div>`
       : '';
     
@@ -618,20 +615,20 @@ export function CommentsModal({
       ? `<img src="${preview.favicon}" alt="" style="width: 48px; height: 48px; flex-shrink: 0; object-fit: contain;" onerror="this.style.display='none'" />`
       : '';
     
-    const titleHtml = displayTitle
-      ? `<div style="font-size: 17px; font-weight: 600; margin-bottom: 4px; line-height: 1.3; color: #1c1c1e;">${displayTitle}</div>`
+    // Label (expected link type) - displayed first if present
+    const labelHtml = preview.label
+      ? `<div style="font-size: 14px; font-weight: 600; margin-bottom: 4px; line-height: 1.4; color: #374151;">${preview.label}</div>`
       : '';
     
+    // Description (asset name) - displayed second if present
     const descriptionHtml = preview.description
-      ? `<div style="font-size: 14px; color: #6e6e73; margin-top: 4px; margin-bottom: 2px; line-height: 1.5;">${preview.description}</div>`
+      ? `<div style="font-size: 14px; color: #6e6e73; margin-top: ${preview.label ? '2px' : '0'}; margin-bottom: 4px; line-height: 1.5;">${preview.description}</div>`
       : '';
     
-    // Show domain/URL below the title when available
-    const urlHtml = domain && domain !== displayTitle
-      ? `<div style="font-size: 12px; color: #6b7280; text-transform: none;">${domain}</div>`
-      : '';
+    // URL link - displayed last
+    const urlHtml = `<div style="font-size: 13px; color: #2563eb; margin-top: ${preview.description || preview.label ? '4px' : '0'}; text-decoration: underline; cursor: pointer;">${displayUrl}</div>`;
     
-    const textContentHtml = `${titleHtml}${urlHtml}${descriptionHtml}`;
+    const textContentHtml = `${labelHtml}${descriptionHtml}${urlHtml}`;
     
     if (preview.image) {
       return `<div style="border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 8px; cursor: pointer; background-color: #ffffff; transition: all 0.2s ease;" onclick="window.open('${preview.url}', '_blank', 'noopener,noreferrer')" onmouseover="this.style.backgroundColor='#f9fafb'; this.style.borderColor='#d1d5db';" onmouseout="this.style.backgroundColor='#ffffff'; this.style.borderColor='#e5e7eb';">
@@ -724,11 +721,11 @@ export function CommentsModal({
           if (urlValue) {
             // Check if we have a preview for this URL
             const preview = urlPreviews[index.toString()];
-            // Use asset name as title if provided, otherwise use preview title
-            const previewWithAssetName = preview 
-              ? { ...preview, title: assetName || preview.title }
-              : { url: urlValue, title: assetName };
-            const previewHtml = generateUrlPreviewHTML(previewWithAssetName);
+            // Build preview object with label (from source), description (asset name), and URL
+            const previewWithLabelAndDescription = preview 
+              ? { ...preview, label: source.label, description: assetName || preview.description }
+              : { url: urlValue, label: source.label, description: assetName };
+            const previewHtml = generateUrlPreviewHTML(previewWithLabelAndDescription);
             dataSourceItems.push({ content: previewHtml, type: 'url' });
           }
         }
@@ -992,6 +989,11 @@ export function CommentsModal({
                     const urlIndex = urlSources.indexOf(source) + 1;
                     return (
                       <div key={index}>
+                        {source.label && (
+                          <Text size="sm" fw={500} mb="xs">
+                            {source.label}
+                          </Text>
+                        )}
                         <TextInput
                           label={`URL ${urlIndex}`}
                           value={urlValue}
