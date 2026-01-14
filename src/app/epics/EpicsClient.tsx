@@ -49,7 +49,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         search: "",
         tier: "ALL",
         status: "ALL",
-        risk: "ALL"
+        risk: "ALL",
+        uxNeeds: "ALL"
     });
     const [showFilters, setShowFilters] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
@@ -264,6 +265,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         if (filters.tier !== "ALL" && l.tier !== filters.tier) return false;
         if (filters.status !== "ALL" && l.status !== filters.status) return false;
         if (filters.risk !== "ALL" && (l.risk_level || 'LOW') !== filters.risk) return false;
+        if (filters.uxNeeds !== "ALL") {
+            const uxNeedsValue = l.aha_fields?.custom_fields?.ux_needs;
+            const hasValue = uxNeedsValue !== null && uxNeedsValue !== undefined && uxNeedsValue !== '';
+            if (filters.uxNeeds === "HAS_VALUE" && !hasValue) return false;
+            if (filters.uxNeeds === "NO_VALUE" && hasValue) return false;
+        }
         return true;
     });
 
@@ -1150,6 +1157,19 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 { value: "LOW", label: "Low" },
                                 { value: "MEDIUM", label: "Medium" },
                                 { value: "HIGH", label: "High" },
+                            ]}
+                            clearable
+                            style={{ flex: 1 }}
+                        />
+                        <Select
+                            label="UX Needs"
+                            placeholder="All"
+                            value={filters.uxNeeds}
+                            onChange={(value) => setFilters({ ...filters, uxNeeds: value || "ALL" })}
+                            data={[
+                                { value: "ALL", label: "All" },
+                                { value: "HAS_VALUE", label: "Has Value" },
+                                { value: "NO_VALUE", label: "No Value" },
                             ]}
                             clearable
                             style={{ flex: 1 }}

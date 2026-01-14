@@ -1,7 +1,6 @@
 "use client";
-import React, { useEffect, useState, useRef } from "react";
+import React from "react";
 import type { AppSettings } from "@/lib/settings-db";
-import { MultiSelect } from "@mantine/core";
 
 type Props = {
   settings: AppSettings;
@@ -16,61 +15,9 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
   const slackNudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
   const slackNudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
   // Default to agrunwald@clearcompany.com if not set (for testing)
+  // Support multiple emails (comma or newline separated)
   const slackNotificationTestEmail = settings.slack_notification_test_email || 'agrunwald@clearcompany.com';
   const slackNotificationTestSlackHandle = settings.slack_notification_test_slack_handle || '';
-  const slackAllowedRecipients = settings.slack_allowed_recipients || [];
-
-  // Fetch users for multi-select
-  const [users, setUsers] = useState<Array<{ value: string; label: string }>>([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  useEffect(() => {
-    const fetchUsers = async () => {
-      setUsersLoading(true);
-      try {
-        const res = await fetch('/api/users', { credentials: 'include' });
-        if (res.ok) {
-          const data = await res.json();
-          const usersArray = Array.isArray(data) ? data : (data.users || []);
-          const userOptions = usersArray
-            .filter((user: any) => user.email)
-            .map((user: any) => ({
-              value: user.email,
-              label: user.name || `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email,
-            }));
-          setUsers(userOptions);
-        }
-      } catch (error) {
-        console.error('Failed to fetch users:', error);
-      } finally {
-        setUsersLoading(false);
-      }
-    };
-    fetchUsers();
-  }, []);
-
-  // Auto-save function with debouncing
-  const autoSaveAllowedRecipients = async (value: string[]) => {
-    if (autoSaveTimeoutRef.current) {
-      clearTimeout(autoSaveTimeoutRef.current);
-    }
-    autoSaveTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch('/api/settings', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ slack_allowed_recipients: value }),
-        });
-        if (!res.ok) {
-          console.error('Failed to save Slack allowed recipients');
-        }
-      } catch (error) {
-        console.error('Error saving Slack allowed recipients:', error);
-      }
-    }, 1000);
-  };
 
   return (
     <div>
@@ -91,24 +38,7 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
           <input
             type="text"
             value={slackDefaultChannel}
-                  onChange={(e) => {
-                    const updated = { ...settings, slack_default_channel: e.target.value } as any;
-                    setSettings(updated);
-                    // Auto-save after a short delay
-                    setTimeout(async () => {
-                      try {
-                        const res = await fetch('/api/settings', {
-                          method: 'PATCH',
-                          headers: { 'Content-Type': 'application/json' },
-                          credentials: 'include',
-                          body: JSON.stringify({ slack_default_channel: e.target.value }),
-                        });
-                        if (!res.ok) console.error('Failed to save Slack default channel');
-                      } catch (error) {
-                        console.error('Error saving Slack default channel:', error);
-                      }
-                    }, 1000);
-                  }}
+            onChange={(e) => setSettings({ ...settings, slack_default_channel: e.target.value } as any)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             placeholder="#launch-readiness"
           />
@@ -184,15 +114,15 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Test Email Filter (for Email & Slack Notifications)</label>
-                <input
-                  type="email"
+                <textarea
                   value={slackNotificationTestEmail}
                   onChange={(e) => setSettings({ ...settings, slack_notification_test_email: e.target.value } as any)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="agrunwald@clearcompany.com"
+                  placeholder="agrunwald@clearcompany.com&#10;another@clearcompany.com"
+                  rows={3}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  All notifications are logged, but only this email address receives actual email and Slack notifications. Default: agrunwald@clearcompany.com
+                  All notifications are logged, but only these email addresses receive actual email and Slack notifications. Enter multiple emails separated by commas or new lines. Default: agrunwald@clearcompany.com
                 </p>
               </div>
               <div>
@@ -206,36 +136,6 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
                 />
                 <p className="text-xs text-gray-500 mt-1">
                   Optional: If set, only send Slack notifications to this Slack user ID (e.g., U12345678). If empty, uses the email filter above. Leave empty to use email filter for Slack too.
-                </p>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Allowed Slack Recipients
-                </label>
-                <MultiSelect
-                  data={users}
-                  value={slackAllowedRecipients}
-                  onChange={(value) => {
-                    const updated = { ...settings, slack_allowed_recipients: value } as any;
-                    setSettings(updated);
-                    autoSaveAllowedRecipients(value);
-                  }}
-                  placeholder="Select users who can receive Slack messages"
-                  searchable
-                  clearable
-                  loading={usersLoading}
-                  className="w-full"
-                  styles={{
-                    input: {
-                      border: '1px solid #d1d5db',
-                      borderRadius: '0.5rem',
-                    },
-                  }}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Select users who can receive Slack messages. If no users are selected, all users can receive messages. Only existing users with email addresses are shown.
                 </p>
               </div>
             </div>
