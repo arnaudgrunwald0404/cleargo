@@ -1095,7 +1095,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 style={{ flex: 1, maxWidth: 400 }}
                             />
                         </Group>
-                        {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.search) && (
+                        {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.uxNeeds !== "ALL" || filters.search) && (
                             <Badge
                                 variant="light"
                                 color="indigo"
@@ -1106,13 +1106,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         color="indigo"
                                         radius="xl"
                                         variant="transparent"
-                                        onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" })}
+                                        onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL", uxNeeds: "ALL" })}
                                     >
                                         <IconX size={12} />
                                     </ActionIcon>
                                 }
                             >
-                                {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk].filter(Boolean).length} active
+                                {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk, filters.uxNeeds !== "ALL" && (filters.uxNeeds === "HAS_VALUE" ? "Has UX Needs" : "No UX Needs")].filter(Boolean).length} active
                             </Badge>
                         )}
                     </Group>

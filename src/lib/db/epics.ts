@@ -482,11 +482,23 @@ export async function sendCriteriaAssignmentNotifications(
     // Get test filters from settings
     // We filter by email address for both email and Slack notifications
     // All notifications are logged, but only matching emails receive actual notifications
+    // Support multiple emails (comma or newline separated)
     const settings = await getSettings();
-    const testEmail = settings.slack_notification_test_email?.trim() || 'agrunwald@clearcompany.com';
+    const testEmailRaw = settings.slack_notification_test_email?.trim() || 'agrunwald@clearcompany.com';
+    const testEmails = testEmailRaw
+        .split(/[,\n]/)
+        .map(email => email.trim())
+        .filter(email => email.length > 0)
+        .map(email => email.toLowerCase());
     const testSlackHandle = settings.slack_notification_test_slack_handle?.trim() || null;
-    const useTestEmailFilter = testEmail && testEmail.length > 0;
+    const useTestEmailFilter = testEmails.length > 0;
     const useTestSlackFilter = testSlackHandle && testSlackHandle.length > 0;
+    
+    // Helper function to check if an email matches the filter
+    const isEmailInFilter = (email: string): boolean => {
+        if (!useTestEmailFilter) return true;
+        return testEmails.includes(email.toLowerCase());
+    };
 
     // Query newly created criteria with decision owner and epic info
     const { data: criteriaStatuses, error: queryError } = await sb
@@ -559,7 +571,7 @@ export async function sendCriteriaAssignmentNotifications(
     if (useTestSlackFilter) {
         console.log(`   Test Slack handle filter: ${testSlackHandle} (only matching Slack handles will receive notifications)`);
     } else {
-        console.log(`   Test email filter: ${useTestEmailFilter ? testEmail : 'DISABLED (sending to all)'}`);
+        console.log(`   Test email filter: ${useTestEmailFilter ? testEmails.join(', ') : 'DISABLED (sending to all)'}`);
     }
     console.log('   Breakdown by assignee (all will be logged, only filtered users will receive notifications):');
     for (const [email, criteria] of notificationsByEmail.entries()) {
@@ -578,7 +590,7 @@ export async function sendCriteriaAssignmentNotifications(
         if (useTestSlackFilter) {
             willSend = slackHandle && slackHandle === testSlackHandle;
         } else if (useTestEmailFilter) {
-            willSend = email.toLowerCase() === testEmail.toLowerCase();
+            willSend = isEmailInFilter(email);
         } else {
             willSend = true; // No filter, send to all
         }
@@ -609,14 +621,14 @@ export async function sendCriteriaAssignmentNotifications(
               if (useTestSlackFilter) {
                   return slackHandle && slackHandle === testSlackHandle;
               } else if (useTestEmailFilter) {
-                  return ownerEmail === testEmail.toLowerCase();
+                  return isEmailInFilter(ownerEmail || '');
               }
               return false;
           })
         : criteriaStatuses;
 
     if (filteredCriteria.length === 0) {
-        console.log(`⏭️  No criteria match test email filter: ${testEmail} (but all notifications were logged above)`);
+        console.log(`⏭️  No criteria match test email filter: ${testEmails.join(', ')} (but all notifications were logged above)`);
         return;
     }
 
