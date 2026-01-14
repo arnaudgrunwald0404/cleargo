@@ -128,22 +128,22 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
 
             case 'go_no_go_decision':
                 if (!payload.metadata) throw new Error('Missing metadata for go_no_go_decision');
-                message = buildGoNoGoDecisionMessage(payload.metadata as any);
+                message = buildGoNoGoDecisionMessage(payload.metadata as any, theme);
                 break;
 
             case 'leadership_digest':
                 if (!payload.metadata) throw new Error('Missing metadata for leadership_digest');
-                message = buildLeadershipDigestMessage(payload.metadata as any);
+                message = buildLeadershipDigestMessage(payload.metadata as any, theme);
                 break;
 
             case 'launch_status_change':
                 if (!payload.metadata) throw new Error('Missing metadata for launch_status_change');
-                message = buildLaunchStatusChangeMessage(payload.metadata as any);
+                message = buildLaunchStatusChangeMessage(payload.metadata as any, theme);
                 break;
 
             case 'delegation':
                 if (!payload.metadata) throw new Error('Missing metadata for delegation');
-                message = buildDelegationMessage(payload.metadata as any);
+                message = buildDelegationMessage(payload.metadata as any, theme);
                 break;
 
             case 'criteria_assignment':
@@ -159,7 +159,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                     assignee_slack_handle: payload.recipient!.slack_handle,
                     criteria: payload.metadata.criteria || [],
                 };
-                message = buildCriteriaAssignmentMessage(groupedCriteria as any);
+                message = buildCriteriaAssignmentMessage(groupedCriteria as any, theme);
                 break;
 
             case 'retro_reminder':
@@ -194,12 +194,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                     assignee_slack_handle: payload.recipient!.slack_handle,
                     criteria: payload.metadata.criteria || [],
                 };
-                message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type);
+                message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type, theme);
                 break;
 
             case 'criterion_comment_or_attachment':
                 if (!payload.metadata) throw new Error('Missing metadata for criterion_comment_or_attachment');
-                message = buildCriterionCommentOrAttachmentMessage(payload.metadata as any);
+                message = buildCriterionCommentOrAttachmentMessage(payload.metadata as any, theme);
                 break;
 
             default:

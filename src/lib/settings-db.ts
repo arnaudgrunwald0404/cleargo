@@ -37,6 +37,7 @@ export interface AppSettings {
     slack_nudge_daily_after_due?: boolean;
     slack_notification_test_email?: string; // For email notifications
     slack_notification_test_slack_handle?: string; // For Slack notifications (Slack user ID, e.g., U12345678)
+    slack_theme?: import('./slack/theme').SlackThemeConfig; // Slack notification theme customization
 }
 
 export async function getSettings(): Promise<AppSettings> {

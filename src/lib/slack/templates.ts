@@ -291,7 +291,8 @@ export function buildGoNoGoDecisionMessage(
 /**
  * Leadership Digest
  */
-export function buildLeadershipDigestMessage(data: {
+export function buildLeadershipDigestMessage(
+    data: {
     week_of: string;
     high_risk_launches: Array<{
         name: string;
@@ -308,13 +309,15 @@ export function buildLeadershipDigestMessage(data: {
         target_release_date: string;
     }>;
     total_active: number;
-}): { text: string; blocks: SlackBlock[] } {
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     const blocks: SlackBlock[] = [
         {
             type: 'header',
             text: {
                 type: 'plain_text',
-                text: '📊 Weekly Launch Readiness Digest',
+                text: `${theme.emojis.digest} Weekly Launch Readiness Digest`,
                 emoji: true,
             },
         },
@@ -413,14 +416,17 @@ export function buildLeadershipDigestMessage(data: {
 /**
  * Launch Status Change
  */
-export function buildLaunchStatusChangeMessage(data: {
+export function buildLaunchStatusChangeMessage(
+    data: {
     launch_name: string;
     launch_id: string;
     old_status: string;
     new_status: string;
     changed_by: string;
     reason?: string;
-}): { text: string; blocks: SlackBlock[] } {
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     return {
         text: `Launch status changed: ${data.launch_name} is now ${data.new_status}`,
         blocks: [
@@ -480,7 +486,8 @@ export function buildLaunchStatusChangeMessage(data: {
 /**
  * Delegation Notification
  */
-export function buildDelegationMessage(data: {
+export function buildDelegationMessage(
+    data: {
     epic_name: string;
     epic_id: string;
     task_label: string;
@@ -488,7 +495,9 @@ export function buildDelegationMessage(data: {
     delegation_type: string;
     delegated_by: string;
     epic_url?: string;
-}): { text: string; blocks: SlackBlock[] } {
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     const delegationTypeLabels: Record<string, string> = {
         'SINGLE_TASK': 'This task only',
         'CATEGORY_EXCLUDING_GATES': `All ${data.category} tasks (excluding GATE)`,
@@ -605,7 +614,10 @@ export function buildLaunchUnfurl(data: {
 /**
  * Criteria Assignment Notification (grouped by epic and assignee)
  */
-export function buildCriteriaAssignmentMessage(groupedCriteria: GroupedCriteria): { text: string; blocks: SlackBlock[] } {
+export function buildCriteriaAssignmentMessage(
+    groupedCriteria: GroupedCriteria,
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     const criteriaList = groupedCriteria.criteria
         .map((c) => {
             const dueDateText = c.due_date ? ` (Due: ${c.due_date})` : '';
@@ -620,7 +632,7 @@ export function buildCriteriaAssignmentMessage(groupedCriteria: GroupedCriteria)
                 type: 'header',
                 text: {
                     type: 'plain_text',
-                    text: '📋 New Criteria Assigned',
+                    text: `${theme.emojis.assignment} New Criteria Assigned`,
                     emoji: true,
                 },
             },
@@ -666,7 +678,8 @@ export function buildCriteriaAssignmentMessage(groupedCriteria: GroupedCriteria)
  */
 export function buildCriteriaNudgeMessage(
     groupedCriteria: GroupedCriteria,
-    nudgeType: '1_week_before' | 'on_due_date' | 'daily_after'
+    nudgeType: '1_week_before' | 'on_due_date' | 'daily_after',
+    theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const dueDate = groupedCriteria.criteria[0]?.due_date;
     if (!dueDate) {
@@ -687,20 +700,20 @@ export function buildCriteriaNudgeMessage(
     let contextText: string;
 
     if (nudgeType === '1_week_before') {
-        headerText = '⏰ Criteria Due in 1 Week';
-        urgencyEmoji = '⏰';
+        headerText = `${theme.emojis.nudge.weekBefore} Criteria Due in 1 Week`;
+        urgencyEmoji = theme.emojis.nudge.weekBefore;
         urgencyColor = 'warning';
         contextText = `These criteria are due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''}. Please review and update their status.`;
     } else if (nudgeType === 'on_due_date') {
-        headerText = '📅 Criteria Due Today';
-        urgencyEmoji = '📅';
+        headerText = `${theme.emojis.nudge.dueToday} Criteria Due Today`;
+        urgencyEmoji = theme.emojis.nudge.dueToday;
         urgencyColor = 'warning';
         contextText = 'These criteria are due today. Please review and update their status.';
     } else {
         // daily_after
         const daysOverdue = Math.abs(daysDiff);
-        headerText = `⚠️ Overdue Criteria (${daysOverdue} day${daysOverdue !== 1 ? 's' : ''})`;
-        urgencyEmoji = '⚠️';
+        headerText = `${theme.emojis.nudge.overdue} Overdue Criteria (${daysOverdue} day${daysOverdue !== 1 ? 's' : ''})`;
+        urgencyEmoji = theme.emojis.nudge.overdue;
         urgencyColor = 'danger';
         contextText = `These criteria are ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue. Please update their status as soon as possible.`;
     }
@@ -771,7 +784,8 @@ export function buildCriteriaNudgeMessage(
 /**
  * Criterion Comment or Attachment Notification
  */
-export function buildCriterionCommentOrAttachmentMessage(data: {
+export function buildCriterionCommentOrAttachmentMessage(
+    data: {
     epic_name: string;
     epic_id: string;
     criterion_label: string;
@@ -779,7 +793,9 @@ export function buildCriterionCommentOrAttachmentMessage(data: {
     added_by_name: string;
     has_comment: boolean;
     has_attachment: boolean;
-}): { text: string; blocks: SlackBlock[] } {
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     const actionTypes: string[] = [];
     if (data.has_comment) actionTypes.push('comment');
     if (data.has_attachment) actionTypes.push('attachment');
@@ -792,7 +808,7 @@ export function buildCriterionCommentOrAttachmentMessage(data: {
                 type: 'header',
                 text: {
                     type: 'plain_text',
-                    text: '💬 New Comment or Attachment',
+                    text: `${theme.emojis.comment} New Comment or Attachment`,
                     emoji: true,
                 },
             },

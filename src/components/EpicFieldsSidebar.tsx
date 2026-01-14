@@ -33,6 +33,7 @@ const FIELD_ORDER = [
     '---', // Separator
     'tier',
     'tags',
+    'ux_needs',
     'business_priority',
     'csm_priority',
     'modified_rice',
@@ -257,6 +258,7 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
             'ga': 'GA',
             'pm': 'PM',
             'aha': 'Aha',
+            'ux': 'UX',
         };
         
         // Convert snake_case to Title Case
