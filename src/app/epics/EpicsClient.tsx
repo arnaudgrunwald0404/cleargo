@@ -4,7 +4,7 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconTrash, IconEye } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconTrash } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -21,8 +21,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const searchParams = useSearchParams();
     const { scope, isMyScope } = useEpicScope();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
-    const [watchStatuses, setWatchStatuses] = useState<Map<string, boolean>>(new Map());
-    const [watchLoading, setWatchLoading] = useState<Set<string>>(new Set());
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>([]);
@@ -135,39 +133,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             loadData();
         }
     }, [scope]);
-
-    // Fetch watch statuses when epics or user email changes (batch API call, lazy loaded)
-    useEffect(() => {
-        if (currentUserEmail && epics.length > 0) {
-            // Defer watch status loading until after initial render (non-critical data)
-            const timeoutId = setTimeout(async () => {
-                try {
-                    const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
-                    // Batch fetch all watch statuses in a single API call
-                    const epicIds = epics.map(epic => epic.id).join(',');
-                    const res = await fetchWithRateLimit(`/api/epics/watch-status?epic_ids=${encodeURIComponent(epicIds)}`, { maxRetries: 1 });
-                    if (res.ok) {
-                        const watchData: Record<string, boolean> = await res.json();
-                        const watchMap = new Map<string, boolean>();
-                        Object.entries(watchData).forEach(([epicId, isWatching]) => {
-                            watchMap.set(epicId, isWatching);
-                        });
-                        setWatchStatuses(watchMap);
-                    } else {
-                        throw new Error('Failed to fetch watch statuses');
-                    }
-                } catch (err) {
-                    console.warn('Failed to fetch watch statuses:', err);
-                    // Fallback: set all to false on error
-                    const watchMap = new Map<string, boolean>();
-                    epics.forEach(epic => watchMap.set(epic.id, false));
-                    setWatchStatuses(watchMap);
-                }
-            }, 200); // Defer by 200ms to allow initial render and other critical requests
-
-            return () => clearTimeout(timeoutId);
-        }
-    }, [epics, currentUserEmail]);
 
     async function loadData() {
         try {
@@ -758,29 +723,40 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
             console.log(`[AHA Counts] Fetching counts for ${releasesToFetch.length} releases...`);
 
-            // Fetch counts for all releases in parallel
-            const countPromises = releasesToFetch.map(async (releaseName) => {
-                try {
-                    console.log(`[AHA Counts] Fetching for ${releaseName}...`);
-                    const res = await fetch(`/api/releases/epic-count/${encodeURIComponent(releaseName)}`, {
-                        credentials: 'include'
-                    });
-                    if (res.ok) {
-                        const data = await res.json();
-                        console.log(`[AHA Counts] Fetched for ${releaseName}:`, data);
-                        return { releaseName, count: data.ahaCount };
-                    } else {
-                        const errorText = await res.text();
-                        console.warn(`[AHA Counts] Failed to fetch for ${releaseName}:`, res.status, errorText);
-                    }
-                    return { releaseName, count: null };
-                } catch (error) {
-                    console.error(`[AHA Counts] Error fetching for ${releaseName}:`, error);
-                    return { releaseName, count: null };
-                }
+            // Batch fetch counts with rate limiting
+            const { batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+            const epicCountUrls = releasesToFetch.map(releaseName => 
+                `/api/releases/epic-count/${encodeURIComponent(releaseName)}`
+            );
+
+            const batchResults = await batchFetchWithRateLimit(epicCountUrls, {
+                batchSize: 3,
+                batchDelay: 300,
+                maxRetries: 1,
+                credentials: 'include'
             });
 
-            const results = await Promise.all(countPromises);
+            // Process results - read JSON from each response
+            const results = await Promise.all(
+                batchResults.map(async (result, index) => {
+                    const releaseName = releasesToFetch[index];
+                    if (result.response?.ok) {
+                        try {
+                            const data = await result.response.json();
+                            console.log(`[AHA Counts] Fetched for ${releaseName}:`, data);
+                            return { releaseName, count: data.ahaCount };
+                        } catch (error) {
+                            console.warn(`[AHA Counts] Failed to parse response for ${releaseName}:`, error);
+                            return { releaseName, count: null };
+                        }
+                    } else {
+                        if (result.error) {
+                            console.warn(`[AHA Counts] Failed to fetch for ${releaseName}:`, result.error);
+                        }
+                        return { releaseName, count: null };
+                    }
+                })
+            );
             const newCounts = new Map(ahaEpicCounts);
             results.forEach(({ releaseName, count }) => {
                 newCounts.set(releaseName, count);
@@ -1635,90 +1611,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </td>
                                                     <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">
-                                                            {currentUserEmail && (
-                                                                <button
-                                                                    onClick={async () => {
-                                                                        if (watchLoading.has(epic.id)) return;
-                                                                        setWatchLoading(prev => {
-                                                                            const newSet = new Set(prev);
-                                                                            newSet.add(epic.id);
-                                                                            return newSet;
-                                                                        });
-                                                                        const isWatching = watchStatuses.get(epic.id) || false;
-                                                                        try {
-                                                                            const method = isWatching ? 'DELETE' : 'POST';
-                                                                            const res = await fetch(`/api/epics/${epic.id}/watch`, {
-                                                                                method,
-                                                                                credentials: 'include',
-                                                                            });
-                                                                            if (res.ok) {
-                                                                                const data = await res.json();
-                                                                                const newWatchStatus = data.isWatching !== undefined ? data.isWatching : !isWatching;
-                                                                                setWatchStatuses(prev => {
-                                                                                    const newMap = new Map(prev);
-                                                                                    newMap.set(epic.id, newWatchStatus);
-                                                                                    return newMap;
-                                                                                });
-                                                                                notifications.show({
-                                                                                    title: newWatchStatus ? 'Watching' : 'Unwatched',
-                                                                                    message: newWatchStatus 
-                                                                                        ? 'Epic added to your watch list' 
-                                                                                        : 'Epic removed from your watch list',
-                                                                                    color: 'blue',
-                                                                                });
-                                                                            } else {
-                                                                                const errorData = await res.json().catch(() => ({}));
-                                                                                throw new Error(errorData.error || 'Failed to update watch status');
-                                                                            }
-                                                                        } catch (err: any) {
-                                                                            notifications.show({
-                                                                                title: 'Error',
-                                                                                message: err?.message || 'Failed to update watch status',
-                                                                                color: 'red',
-                                                                            });
-                                                                        } finally {
-                                                                            setWatchLoading(prev => {
-                                                                                const newSet = new Set(prev);
-                                                                                newSet.delete(epic.id);
-                                                                                return newSet;
-                                                                            });
-                                                                        }
-                                                                    }}
-                                                                    disabled={watchLoading.has(epic.id)}
-                                                                    className="text-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                                                                    style={{ 
-                                                                        color: watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280",
-                                                                        fontSize: "14px",
-                                                                        background: "none",
-                                                                        border: "none",
-                                                                        cursor: "pointer",
-                                                                        padding: "4px 8px",
-                                                                        borderRadius: "4px"
-                                                                    }}
-                                                                    onMouseEnter={(e) => {
-                                                                        if (!watchLoading.has(epic.id)) {
-                                                                            e.currentTarget.style.color = "#111827";
-                                                                            e.currentTarget.style.backgroundColor = "#F3F4F6";
-                                                                        }
-                                                                    }}
-                                                                    onMouseLeave={(e) => {
-                                                                        if (!watchLoading.has(epic.id)) {
-                                                                            e.currentTarget.style.color = watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280";
-                                                                            e.currentTarget.style.backgroundColor = "transparent";
-                                                                        }
-                                                                    }}
-                                                                    title={watchStatuses.get(epic.id) ? "Unwatch epic" : "Watch epic"}
-                                                                >
-                                                                    {watchLoading.has(epic.id) ? (
-                                                                        <span className="text-xs">...</span>
-                                                                    ) : (
-                                                                        <IconEye size={16} style={{ 
-                                                                            fill: watchStatuses.get(epic.id) ? "#3B82F6" : "none",
-                                                                            stroke: watchStatuses.get(epic.id) ? "#3B82F6" : "#6B7280"
-                                                                        }} />
-                                                                    )}
-                                                                </button>
-                                                            )}
                                                             {canDeleteEpic && (
                                                                 <button
                                                                     onClick={() => handleDeleteClick(epic.id, epic.name)}

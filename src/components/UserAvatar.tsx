@@ -32,7 +32,8 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
 
             // Fetch user roles and check settings access
             try {
-                const res = await fetch('/api/me', { credentials: 'include' });
+                const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                const res = await fetchWithRateLimit('/api/me', { credentials: 'include', maxRetries: 1 });
                 if (res.ok) {
                     const data = await res.json();
                     const roles = Array.isArray(data.user?.roles) 

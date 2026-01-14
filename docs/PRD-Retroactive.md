@@ -22,8 +22,7 @@
 11. [Security & Permissions](#security--permissions)
 12. [Non-Functional Requirements](#non-functional-requirements)
 13. [Delegation](#delegation)
-14. [Epic Watching / My Scope](#epic-watching--my-scope)
-15. [Future Enhancements](#future-enhancements)
+14. [Future Enhancements](#future-enhancements)
 
 ---
 
@@ -168,12 +167,11 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 #### 1.1 Epic Portfolio View
 - **Grid/List View**: Display all epics with key metrics
 - **Filtering**: By tier (TIER_1, TIER_2, TIER_3), status, risk level, release, product, pod
-- **My Scope Filter**: Filter to epics the user is watching (epic watches)
+- **My Scope Filter**: Filter to epics where the user is the decision owner of at least one criterion
 - **Sorting**: By date, risk, readiness score, name
 - **Search**: Full-text search across epic names
 - **Release Grouping**: Group epics by release schedule
 - **Visual Indicators**: Color-coded risk levels, readiness scores, gate status
-- **Epic Watching**: Users can watch/unwatch epics to personalize their view
 
 #### 1.2 Epic Detail Page
 - **Header Information**: Name, product, tier, dates, status, readiness score, risk level
@@ -625,19 +623,6 @@ The system uses the following launch stage phases:
 - **Delegation History**: Track delegation changes
 - **Delegation Notifications**: Notify delegates of assignments
 
-### 14. Epic Watching / My Scope
-
-#### 14.1 Watch Management
-- **Watch/Unwatch Epics**: Users can watch epics to personalize their portfolio view
-- **My Scope Filter**: Filter portfolio view to show only watched epics
-- **Watch Persistence**: Watches persist across sessions
-- **Watch API**: RESTful API endpoints for managing watches (GET, POST, DELETE)
-
-#### 14.2 Watch Functionality
-- **Watch Status**: Check if user is watching a specific epic
-- **Bulk Operations**: Watch/unwatch multiple epics
-- **Watch Indicators**: Visual indicators in UI showing watched status
-
 ---
 
 ## Technical Architecture
@@ -939,13 +924,6 @@ The system uses the following launch stage phases:
 - `epic_id` (UUID, Foreign Key → epic)
 - `created_at` (Timestamp)
 
-#### Epic Watches
-- `id` (UUID, Primary Key)
-- `epic_id` (UUID, Foreign Key → epic, ON DELETE CASCADE)
-- `user_id` (UUID, Foreign Key → app_user, ON DELETE CASCADE)
-- `created_at` (Timestamp)
-- UNIQUE(epic_id, user_id)
-
 #### Adoption Benchmarks
 - `id` (UUID, Primary Key)
 - `name` (Text)
@@ -1123,15 +1101,6 @@ The system uses the following launch stage phases:
 8. User can manually link snippets to criteria
 9. Snippets appear in criterion detail view
 
-### Flow 7: Epic Watching / My Scope
-1. User navigates to Epic Portfolio View
-2. User clicks "Watch" button on an epic
-3. System creates epic_watch record linking user to epic
-4. User applies "My Scope" filter
-5. System filters epics to show only watched epics
-6. User can unwatch epics to remove from scope
-7. Watch status persists across sessions
-
 ---
 
 ## Integrations
@@ -1164,13 +1133,10 @@ The system uses the following launch stage phases:
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
 
-### Epic Watching API
+### My Scope API
 
-#### Watch Management
-- **GET** `/api/epics/[id]/watch` - Check if user is watching an epic
-- **POST** `/api/epics/[id]/watch` - Watch an epic
-- **DELETE** `/api/epics/[id]/watch` - Unwatch an epic
-- **GET** `/api/epics/my-scope` - Get all epics user is watching
+#### Scope Management
+- **GET** `/api/epics/my-scope` - Get all epics where user is decision owner of at least one criterion
 
 ### Product Manager API
 

@@ -38,7 +38,8 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
         
         // Check /api/me which supports both Supabase auth and lr_session cookie
           try {
-            const res = await fetch('/api/me', { credentials: 'include' });
+            const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+            const res = await fetchWithRateLimit('/api/me', { credentials: 'include', maxRetries: 1 });
             if (res.ok) {
               const data = await res.json();
               const profile = data.user;

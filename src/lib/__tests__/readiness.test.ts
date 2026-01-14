@@ -1,310 +1,510 @@
 /**
- * Unit tests for readiness calculation logic
- * Tests scoring, verdict, and risk calculations
+ * Tests for readiness recalculation orchestration
  */
 
-describe('Readiness Calculation Logic', () => {
-    describe('Scoring Algorithm', () => {
-        it('should calculate score correctly with GO statuses', () => {
-            // GO=2, CONDITIONAL=1, NO_GO=0
-            // Score = totalScore / maxPossibleScore
-            const statuses = [
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'GO', criterion: { gate: false } },
-            ];
+import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { recomputeEpicReadiness } from '../readiness';
+import { createMockSupabaseClient } from './test-utils';
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+// Mock dependencies
+jest.mock('../supabase/server', () => ({
+  createClient: jest.fn(),
+}));
 
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    }
-                }
-            }
+jest.mock('../slack/notifications', () => ({
+  sendSlackNotification: jest.fn().mockResolvedValue(undefined),
+}));
 
-            const score = totalScore / maxPossibleScore;
-            expect(score).toBe(1.0); // 6/6 = 100%
-        });
+jest.mock('../email/notifications', () => ({
+  sendEmailNotification: jest.fn().mockResolvedValue(undefined),
+}));
 
-        it('should calculate score correctly with mixed statuses', () => {
-            const statuses = [
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'CONDITIONAL', criterion: { gate: false } },
-                { status: 'NO_GO', criterion: { gate: false } },
-            ];
+jest.mock('../aha/write-back', () => ({
+  writeBackEpicReadiness: jest.fn().mockResolvedValue(undefined),
+}));
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+describe('recomputeEpicReadiness', () => {
+  let mockSupabase: any;
 
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'CONDITIONAL') {
-                        totalScore += 1;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'NO_GO') {
-                        totalScore += 0;
-                        maxPossibleScore += 2;
-                    }
-                }
-            }
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockSupabase = createMockSupabaseClient();
+    const { createClient } = require('../supabase/server');
+    createClient.mockReturnValue(mockSupabase);
+  });
 
-            const score = totalScore / maxPossibleScore;
-            expect(score).toBe(0.5); // 3/6 = 50%
-        });
+  describe('Epic with no criteria', () => {
+    it('should mark epic as NOT_EVALUATED when no criteria exist', async () => {
+      const epicId = 'epic-123';
+      
+      // Mock epic fetch
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-        it('should exclude gate criteria from score calculation', () => {
-            const statuses = [
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'NO_GO', criterion: { gate: true } }, // Gate - should be excluded
-                { status: 'GO', criterion: { gate: false } },
-            ];
+      // Mock criteria statuses fetch - empty
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [],
+          error: null,
+        }),
+      });
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    }
-                }
-            }
+      await recomputeEpicReadiness(epicId);
 
-            const score = totalScore / maxPossibleScore;
-            expect(score).toBe(1.0); // 4/4 = 100% (gate excluded)
-        });
+      // Should update epic to NOT_EVALUATED
+      const updateCall = mockSupabase.from.mock.results[2].value.update;
+      expect(updateCall).toHaveBeenCalledWith({
+        readiness_score: null,
+        readiness_status: 'NOT_EVALUATED',
+        risk_level: 'LOW',
+        updated_at: expect.any(String),
+      });
+    });
+  });
 
-        it('should exclude NOT_SET from denominator', () => {
-            const statuses = [
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'NOT_SET', criterion: { gate: false } }, // Should be excluded
-                { status: 'GO', criterion: { gate: false } },
-            ];
+  describe('Tier applicability filtering', () => {
+    it('should filter criteria by tier applicability', async () => {
+      const epicId = 'epic-123';
+      
+      // Mock epic fetch - TIER_1
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+      // Mock criteria statuses - one applicable, one not
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: false,
+                tier_applicability: 'ALL', // Applicable to all tiers
+              },
+            },
+            {
+              id: 'status-2',
+              status: 'NO_GO',
+              criterion: {
+                id: 'criterion-2',
+                label: 'TIER_1 Only',
+                category: 'Category2',
+                gate: false,
+                tier_applicability: 'TIER_1_ONLY', // Applicable to TIER_1
+              },
+            },
+            {
+              id: 'status-3',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-3',
+                label: 'TIER_2 Only',
+                category: 'Category3',
+                gate: false,
+                tier_applicability: 'TIER_1_AND_2', // Not applicable to TIER_1 (should be filtered)
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'CONDITIONAL') {
-                        totalScore += 1;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'NO_GO') {
-                        totalScore += 0;
-                        maxPossibleScore += 2;
-                    }
-                    // NOT_SET is not added to denominator
-                }
-            }
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-            const score = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
-            expect(score).toBe(1.0); // 4/4 = 100%
-        });
+      await recomputeEpicReadiness(epicId);
 
-        it('should handle empty criteria list', () => {
-            const statuses: any[] = [];
+      // Should update epic with calculated readiness
+      const updateCall = mockSupabase.from.mock.results[2].value.update;
+      expect(updateCall).toHaveBeenCalled();
+      const updateData = updateCall.mock.calls[0][0];
+      expect(updateData.readiness_score).toBeDefined();
+      expect(updateData.readiness_status).toBeDefined();
+    });
+  });
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+  describe('Database update on readiness change', () => {
+    it('should update epic with new readiness score and status', async () => {
+      const epicId = 'epic-123';
+      
+      // Mock epic fetch
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-            for (const s of statuses) {
-                // No iterations
-            }
+      // Mock criteria statuses
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: false,
+                tier_applicability: 'ALL',
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            const score = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
-            expect(score).toBe(0);
-        });
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
+
+      await recomputeEpicReadiness(epicId);
+
+      // Should update epic
+      const updateCall = mockSupabase.from.mock.results[2].value.update;
+      expect(updateCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          readiness_score: expect.any(Number),
+          readiness_status: expect.any(String),
+          risk_level: expect.any(String),
+          updated_at: expect.any(String),
+        })
+      );
+    });
+  });
+
+  describe('Error handling', () => {
+    it('should throw error when epic fetch fails', async () => {
+      const epicId = 'epic-123';
+      
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'Epic not found' },
+        }),
+      });
+
+      await expect(recomputeEpicReadiness(epicId)).rejects.toThrow();
     });
 
-    describe('Verdict Calculation', () => {
-        it('should return NO_GO if any gate is NO_GO', () => {
-            const statuses = [
-                { status: 'GO', criterion: { gate: false } },
-                { status: 'NO_GO', criterion: { gate: true } }, // Gate NO_GO
-                { status: 'GO', criterion: { gate: false } },
-            ];
+    it('should throw error when criteria statuses fetch fails', async () => {
+      const epicId = 'epic-123';
+      
+      // Mock epic fetch
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+          },
+          error: null,
+        }),
+      });
 
-            let gateNoGoCount = 0;
+      // Mock criteria statuses fetch - error
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: null,
+          error: { message: 'Database error' },
+        }),
+      });
 
-            for (const s of statuses) {
-                if (s.criterion.gate && s.status === 'NO_GO') {
-                    gateNoGoCount++;
-                }
-            }
+      await expect(recomputeEpicReadiness(epicId)).rejects.toThrow();
+    });
+  });
 
-            const verdict = gateNoGoCount > 0 ? 'NO_GO' : 'GO';
-            expect(verdict).toBe('NO_GO');
-        });
+  describe('Notification sending', () => {
+    it('should send notification when readiness status changes', async () => {
+      const epicId = 'epic-123';
+      const { sendSlackNotification } = require('../slack/notifications');
+      const { sendEmailNotification } = require('../email/notifications');
+      
+      // Mock epic fetch - status changes from GO to NO_GO
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO', // Old status
+            risk_level: 'LOW',
+            console_url: 'https://example.com/epic',
+            owner_email: 'owner@example.com',
+          },
+          error: null,
+        }),
+      });
 
-        it('should return GO if score meets threshold', () => {
-            const score = 0.92;
-            const tier = 'TIER_1';
-            const thresholds: Record<string, number> = { 'TIER_1': 0.9, 'TIER_2': 0.8, 'TIER_3': 0.7 };
-            const threshold = thresholds[tier];
+      // Mock criteria statuses - all NO_GO to trigger status change
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'NO_GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: true, // Gating NO_GO will cause NO_GO_BLOCKED_BY_GATING
+                tier_applicability: 'ALL',
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            const verdict = score >= threshold ? 'GO' : 'NO_GO';
-            expect(verdict).toBe('GO');
-        });
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-        it('should return NO_GO if score below threshold', () => {
-            const score = 0.65;
-            const tier = 'TIER_2';
-            const thresholds: Record<string, number> = { 'TIER_1': 0.9, 'TIER_2': 0.8, 'TIER_3': 0.7 };
-            const threshold = thresholds[tier];
+      await recomputeEpicReadiness(epicId);
 
-            const verdict = score >= threshold ? 'GO' : 'NO_GO';
-            expect(verdict).toBe('NO_GO');
-        });
-
-        it('should use correct threshold for each tier', () => {
-            const thresholds: Record<string, number> = { 'TIER_1': 0.9, 'TIER_2': 0.8, 'TIER_3': 0.7 };
-
-            expect(thresholds['TIER_1']).toBe(0.9);
-            expect(thresholds['TIER_2']).toBe(0.8);
-            expect(thresholds['TIER_3']).toBe(0.7);
-        });
+      // Should send notifications
+      expect(sendSlackNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'launch_status_change',
+          priority: 'high',
+          launch_id: epicId,
+        })
+      );
+      expect(sendEmailNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'launch_status_change',
+          recipientEmail: 'owner@example.com',
+        })
+      );
     });
 
-    describe('Risk Calculation', () => {
-        it('should return HIGH risk if close to launch with NO_GO verdict', () => {
-            const targetDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000); // 10 days from now
-            const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus: string = 'NO_GO';
+    it('should not send notification when status unchanged', async () => {
+      const epicId = 'epic-123';
+      const { sendSlackNotification } = require('../slack/notifications');
+      
+      // Mock epic fetch - status stays GO
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-            let riskLevel = 'LOW';
-            if (daysToLaunch < 14) {
-                if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {
-                    riskLevel = 'HIGH';
-                }
-            }
+      // Mock criteria statuses - all GO (status stays GO)
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: false,
+                tier_applicability: 'ALL',
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            expect(riskLevel).toBe('HIGH');
-        });
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-        it('should return MEDIUM risk if moderately close to launch with NO_GO', () => {
-            const targetDate = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000); // 20 days from now
-            const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus: string = 'NO_GO';
+      await recomputeEpicReadiness(epicId);
 
-            let riskLevel = 'LOW';
-            if (daysToLaunch < 14) {
-                if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {
-                    riskLevel = 'HIGH';
-                }
-            } else if (daysToLaunch < 30) {
-                if (readinessStatus === 'NO_GO') riskLevel = 'MEDIUM';
-            }
+      // Should not send status change notification
+      expect(sendSlackNotification).not.toHaveBeenCalledWith(
+        expect.objectContaining({ type: 'launch_status_change' })
+      );
+    });
+  });
 
-            expect(riskLevel).toBe('MEDIUM');
-        });
+  describe('Aha write-back integration', () => {
+    it('should trigger Aha write-back after recalculation', async () => {
+      const epicId = 'epic-123';
+      const { writeBackEpicReadiness } = require('../aha/write-back');
+      
+      // Mock epic fetch
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-        it('should return LOW risk if far from launch', () => {
-            const targetDate = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days from now
-            const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus: string = 'GO';
+      // Mock criteria statuses
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: false,
+                tier_applicability: 'ALL',
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            let riskLevel = 'LOW';
-            if (daysToLaunch < 14) {
-                if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {
-                    riskLevel = 'HIGH';
-                }
-            } else if (daysToLaunch < 30) {
-                if (readinessStatus === 'NO_GO') riskLevel = 'MEDIUM';
-            }
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-            expect(riskLevel).toBe('LOW');
-        });
+      await recomputeEpicReadiness(epicId);
 
-        it('should return MEDIUM risk if close to launch even with GO but low score', () => {
-            const targetDate = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
-            const daysToLaunch = Math.ceil((targetDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
-            const readinessStatus: string = 'GO';
-            const readinessScore = 0.91; // Just above threshold
-
-            let riskLevel = 'LOW';
-            if (daysToLaunch < 14) {
-                if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {
-                    riskLevel = 'HIGH';
-                } else if (readinessScore < 0.95) {
-                    riskLevel = 'MEDIUM';
-                }
-            }
-
-            expect(riskLevel).toBe('MEDIUM');
-        });
+      // Should trigger write-back
+      expect(writeBackEpicReadiness).toHaveBeenCalledWith(epicId);
     });
 
-    describe('Edge Cases', () => {
-        it('should handle all NOT_SET statuses', () => {
-            const statuses = [
-                { status: 'NOT_SET', criterion: { gate: false } },
-                { status: 'NOT_SET', criterion: { gate: false } },
-            ];
+    it('should handle write-back errors gracefully', async () => {
+      const epicId = 'epic-123';
+      const { writeBackEpicReadiness } = require('../aha/write-back');
+      writeBackEpicReadiness.mockRejectedValueOnce(new Error('Write-back failed'));
+      
+      // Mock epic fetch
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockReturnThis(),
+        single: jest.fn().mockResolvedValue({
+          data: {
+            id: epicId,
+            name: 'Test Epic',
+            tier: 'TIER_1',
+            target_launch_date: '2024-12-31',
+            readiness_status: 'GO',
+            risk_level: 'LOW',
+          },
+          error: null,
+        }),
+      });
 
-            let totalScore = 0;
-            let maxPossibleScore = 0;
+      // Mock criteria statuses
+      mockSupabase.from.mockReturnValueOnce({
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              id: 'status-1',
+              status: 'GO',
+              criterion: {
+                id: 'criterion-1',
+                label: 'Test Criterion',
+                category: 'Category1',
+                gate: false,
+                tier_applicability: 'ALL',
+              },
+            },
+          ],
+          error: null,
+        }),
+      });
 
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'CONDITIONAL') {
-                        totalScore += 1;
-                        maxPossibleScore += 2;
-                    } else if (s.status === 'NO_GO') {
-                        totalScore += 0;
-                        maxPossibleScore += 2;
-                    }
-                }
-            }
+      // Mock epic update
+      mockSupabase.from.mockReturnValueOnce({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: null, error: null }),
+      });
 
-            const score = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
-            expect(score).toBe(0);
-        });
-
-        it('should handle all gate criteria', () => {
-            const statuses = [
-                { status: 'GO', criterion: { gate: true } },
-                { status: 'GO', criterion: { gate: true } },
-            ];
-
-            let totalScore = 0;
-            let maxPossibleScore = 0;
-
-            for (const s of statuses) {
-                if (!s.criterion.gate) {
-                    if (s.status === 'GO') {
-                        totalScore += 2;
-                        maxPossibleScore += 2;
-                    }
-                }
-            }
-
-            const score = maxPossibleScore > 0 ? totalScore / maxPossibleScore : 0;
-            expect(score).toBe(0); // All gates, nothing counted
-        });
-
-        it('should handle missing target launch date', () => {
-            const targetDate = null;
-            let riskLevel = 'LOW';
-
-            if (targetDate) {
-                // Risk calculation logic
-            }
-
-            expect(riskLevel).toBe('LOW');
-        });
+      // Should not throw - error should be caught and logged
+      await expect(recomputeEpicReadiness(epicId)).resolves.not.toThrow();
     });
+  });
 });

@@ -33,22 +33,9 @@ export async function GET(req: NextRequest) {
       console.error('Error fetching epics from criteria:', criteriaError);
     }
 
-    // Get epics from watch list
-    const { data: watchedEpics, error: watchError } = await supabase
-      .from('epic_watches')
-      .select('epic_id')
-      .eq('user_id', appUser.id);
-
-    if (watchError) {
-      console.error('Error fetching watched epics:', watchError);
-    }
-
-    // Combine epic IDs (unique)
+    // Get epic IDs from criterion ownership (unique)
     const epicIds = new Set<string>();
     epicsFromCriteria?.forEach(item => {
-      if (item.epic_id) epicIds.add(item.epic_id);
-    });
-    watchedEpics?.forEach(item => {
       if (item.epic_id) epicIds.add(item.epic_id);
     });
 

@@ -8,7 +8,7 @@ import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconInfoCircle, IconUsers, IconEye, IconEyeOff } from "@tabler/icons-react";
+import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import SnapshotModal from "@/components/SnapshotModal";
 import SnapshotList from "@/components/SnapshotList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
@@ -57,8 +57,6 @@ export default function EpicDetailPage() {
     const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
-    const [isWatching, setIsWatching] = useState<boolean | null>(null);
-    const [watchLoading, setWatchLoading] = useState(false);
     
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -172,7 +170,6 @@ export default function EpicDetailPage() {
 
             // Priority 3: Secondary data (batch fetch with delays) - non-critical
             const secondaryUrls = [
-                user?.email && id ? `/api/epics/${id}/watch` : null,
                 `/api/epics/${id}/success/config`,
                 `/api/epics/${id}/success/metrics`
             ].filter(Boolean) as string[];
@@ -184,11 +181,6 @@ export default function EpicDetailPage() {
             });
 
             // Map results back to expected format - handle null responses
-            const watchResult = user?.email && id 
-                ? secondaryResults.find(r => r.url === `/api/epics/${id}/watch`)
-                : null;
-            const watchRes = watchResult?.response || { ok: false, json: async () => ({ isWatching: false }) };
-            
             const successConfigResult = secondaryResults.find(r => r.url === `/api/epics/${id}/success/config`);
             const successConfigRes = successConfigResult?.response || { ok: false, json: async () => null };
             
@@ -213,19 +205,6 @@ export default function EpicDetailPage() {
             }
             const data = await epicRes.json();
             setEpic(data);
-
-            // Process watch status (already fetched in parallel)
-            try {
-                if (watchRes && watchRes.ok) {
-                    const watchData = await watchRes.json();
-                    setIsWatching(watchData.isWatching || false);
-                } else {
-                    setIsWatching(false);
-                }
-            } catch (err) {
-                console.warn('Failed to parse watch status:', err);
-                setIsWatching(false);
-            }
 
             // Process success config and metrics (already fetched in parallel)
             try {
@@ -1254,53 +1233,6 @@ export default function EpicDetailPage() {
                             gap: 'var(--spacing-2)',
                             alignItems: 'center'
                         }}>
-                            {currentUserEmail && (
-                                <Button
-                                    size="xs"
-                                    variant={isWatching ? "filled" : "outline"}
-                                    loading={watchLoading}
-                                    onClick={async () => {
-                                        if (!id) return;
-                                        setWatchLoading(true);
-                                        try {
-                                            const method = isWatching ? 'DELETE' : 'POST';
-                                            const res = await fetch(`/api/epics/${id}/watch`, {
-                                                method,
-                                            });
-                                            if (res.ok) {
-                                                const data = await res.json();
-                                                setIsWatching(data.isWatching || !isWatching);
-                                                notifications.show({
-                                                    title: isWatching ? 'Unwatched' : 'Watching',
-                                                    message: isWatching 
-                                                        ? 'Epic removed from your watch list' 
-                                                        : 'Epic added to your watch list',
-                                                    color: 'blue',
-                                                });
-                                            } else {
-                                                throw new Error('Failed to update watch status');
-                                            }
-                                        } catch (err: any) {
-                                            notifications.show({
-                                                title: 'Error',
-                                                message: err?.message || 'Failed to update watch status',
-                                                color: 'red',
-                                            });
-                                        } finally {
-                                            setWatchLoading(false);
-                                        }
-                                    }}
-                                    leftSection={<IconEye size={14} />}
-                                    styles={{
-                                        root: {
-                                            fontFamily: 'var(--font-body)',
-                                            fontSize: 'var(--font-size-sm)'
-                                        }
-                                    }}
-                                >
-                                    {isWatching ? 'Watching' : 'Watch'}
-                                </Button>
-                            )}
                             <Button 
                                 size="xs" 
                                 variant={showFieldsSidebar ? "filled" : "outline"}
@@ -1314,6 +1246,21 @@ export default function EpicDetailPage() {
                             >
                                 {showFieldsSidebar ? 'Hide' : 'Show'} Aha! Fields
                             </Button>
+                            {epic?.aha_url && (
+                                <Button 
+                                    size="xs" 
+                                    variant="outline"
+                                    onClick={() => window.open(epic.aha_url, '_blank', 'noopener,noreferrer')}
+                                    styles={{
+                                        root: {
+                                            fontFamily: 'var(--font-body)',
+                                            fontSize: 'var(--font-size-sm)'
+                                        }
+                                    }}
+                                >
+                                    Show Epic in Aha!
+                                </Button>
+                            )}
                             <Button 
                                 size="xs" 
                                 onClick={() => setSnapshotModalOpen(true)}

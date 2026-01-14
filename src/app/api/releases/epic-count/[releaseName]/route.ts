@@ -1,10 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getAhaClient } from "@/lib/aha/client";
+import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function getHandler(
     req: NextRequest,
     { params }: { params: Promise<{ releaseName: string }> }
 ) {
@@ -217,4 +218,6 @@ export async function GET(
         );
     }
 }
+
+export const GET = withRateLimit(getHandler, RATE_LIMITS.heavy);
 

@@ -61,3 +61,10 @@ export function rateLimit(
     // #endregion
     return { allowed: true, remaining: config.maxRequests - entry.count, resetTime: entry.resetTime };
 }
+
+/**
+ * Clear all rate limit entries (useful for testing)
+ */
+export function clearRateLimitStore(): void {
+    rateLimitStore.clear();
+}

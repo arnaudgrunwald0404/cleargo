@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
-import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil } from '@tabler/icons-react';
+import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
 import { RichText } from './admin/RichText';
 
 interface Comment {
@@ -73,7 +73,7 @@ export function CommentsModal({
   const [urlPreviewLoading, setUrlPreviewLoading] = useState<Record<string, boolean>>({});
   const [savingDataSourceValues, setSavingDataSourceValues] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(initialTab);
-  const [isContentEditMode, setIsContentEditMode] = useState(false);
+  const [ahaFieldsMap, setAhaFieldsMap] = useState<Record<string, string>>({});
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
   
@@ -612,7 +612,7 @@ export function CommentsModal({
       : '';
     
     const faviconHtml = !preview.image && preview.favicon
-      ? `<img src="${preview.favicon}" alt="" style="width: 48px; height: 48px; flex-shrink: 0; object-fit: contain;" onerror="this.style.display='none'" />`
+      ? `<img src="${preview.favicon}" alt="" style="width: 16px; height: 16px; flex-shrink: 0; object-fit: contain; margin-right: 8px;" onerror="this.style.display='none'" />`
       : '';
     
     // Label (expected link type) - displayed first if present
@@ -641,7 +641,7 @@ export function CommentsModal({
       </div>`;
     } else if (faviconHtml) {
       return `<div style="border: 1px solid #e5e7eb; padding: 12px; border-radius: 8px; margin-top: 8px; cursor: pointer; background-color: #ffffff; transition: all 0.2s ease;" onclick="window.open('${preview.url}', '_blank', 'noopener,noreferrer')" onmouseover="this.style.backgroundColor='#f9fafb'; this.style.borderColor='#d1d5db';" onmouseout="this.style.backgroundColor='#ffffff'; this.style.borderColor='#e5e7eb';">
-        <div style="display: flex; gap: 12px; align-items: flex-start;">
+        <div style="display: flex; align-items: flex-start;">
           ${faviconHtml}
           <div style="flex: 1; min-width: 0;">
             ${textContentHtml}
@@ -671,26 +671,25 @@ export function CommentsModal({
       
       criterion.data_sources.forEach((source, index) => {
         if (source.type === 'aha_field' && source.value) {
+          let displayValue: string | null = null;
+          
           // Check standard fields first
           if (standardFields[source.value] !== null && standardFields[source.value] !== undefined) {
             const fieldValue = standardFields[source.value];
-            const displayValue = formatAhaFieldValue(fieldValue);
-            if (displayValue) {
-              const markdownContent = `**${source.value}**: ${displayValue}`;
-              const htmlContent = convertMarkdownToHTML(markdownContent);
-              dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
-            }
+            displayValue = formatAhaFieldValue(fieldValue);
           } 
           // Then check custom fields
           else if (customFields[source.value] !== null && customFields[source.value] !== undefined) {
             const fieldValue = customFields[source.value];
-            const displayValue = formatAhaFieldValue(fieldValue);
-            if (displayValue) {
-              const markdownContent = `**${source.value}**: ${displayValue}`;
-              const htmlContent = convertMarkdownToHTML(markdownContent);
-              dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
-            }
+            displayValue = formatAhaFieldValue(fieldValue);
           }
+          
+          // Always show the field label, with value or "N/A" on a new line
+          const fieldLabel = getFieldLabel(source.value);
+          const valueToShow = displayValue || 'N/A';
+          const markdownContent = `**${fieldLabel}**`;
+          const htmlContent = convertMarkdownToHTML(markdownContent) + '<br>' + valueToShow;
+          dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
         } else if (source.type === 'aha_description_part' && source.value) {
           // Parse description HTML table to find keyword and extract second column
           const description = standardFields.description;
@@ -705,14 +704,16 @@ export function CommentsModal({
             }
           }
           
+          let extractedValue: string | null = null;
           if (htmlContent) {
-            const extractedValue = parseDescriptionTable(htmlContent, source.value);
-            if (extractedValue) {
-              const markdownContent = `**${source.value}**: ${extractedValue}`;
-              const convertedContent = convertMarkdownToHTML(markdownContent);
-              dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
-            }
+            extractedValue = parseDescriptionTable(htmlContent, source.value);
           }
+          
+          // Always show the description part label, with value or "N/A" on a new line
+          const valueToShow = extractedValue || 'N/A';
+          const markdownContent = `**${source.value}**`;
+          const convertedContent = convertMarkdownToHTML(markdownContent) + '<br>' + valueToShow;
+          dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
         } else if (source.type === 'url') {
           // Get URL value from fetched data source values
           const dataSourceValue = fetchedDataSourceValues[index.toString()];
@@ -756,6 +757,72 @@ export function CommentsModal({
 
     return finalContent;
   };
+
+  // Helper function to get field label from alias
+  const getFieldLabel = (fieldAlias: string): string => {
+    // First check if we have it in the fetched aha fields map
+    if (ahaFieldsMap[fieldAlias]) {
+      return ahaFieldsMap[fieldAlias];
+    }
+    
+    // Fallback to standard field labels
+    const standardFieldLabels: Record<string, string> = {
+      'id': 'ID',
+      'reference_num': 'Reference Number',
+      'name': 'Name',
+      'url': 'URL',
+      'description': 'Description',
+      'workflow_status': 'Workflow Status',
+      'assigned_to_user': 'Assigned To User',
+      'tags': 'Tags',
+      'release': 'Release',
+    };
+    
+    if (standardFieldLabels[fieldAlias]) {
+      return standardFieldLabels[fieldAlias];
+    }
+    
+    // For custom fields, format the alias to a readable label
+    const acronymMap: Record<string, string> = {
+      'csm': 'CSM',
+      'wsjf': 'WSJF',
+      'gtm': 'GTM',
+      'ga': 'GA',
+      'pm': 'PM',
+      'aha': 'Aha',
+      'arr': 'ARR',
+      'ux': 'UX',
+    };
+    
+    return fieldAlias
+      .split('_')
+      .map(word => {
+        const lowerWord = word.toLowerCase();
+        if (acronymMap[lowerWord]) {
+          return acronymMap[lowerWord];
+        }
+        return word.charAt(0).toUpperCase() + word.slice(1);
+      })
+      .join(' ');
+  };
+
+  // Fetch Aha field labels
+  useEffect(() => {
+    if (opened) {
+      fetch('/api/settings/aha-fields', { credentials: 'include' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.fields && Array.isArray(data.fields)) {
+            const fieldsMap: Record<string, string> = {};
+            data.fields.forEach((field: { alias: string; label: string }) => {
+              fieldsMap[field.alias] = field.label;
+            });
+            setAhaFieldsMap(fieldsMap);
+          }
+        })
+        .catch(err => console.error('Failed to fetch Aha field labels:', err));
+    }
+  }, [opened]);
 
   // Helper function to format Aha field values for display
   const formatAhaFieldValue = (value: any): string => {
@@ -924,7 +991,6 @@ export function CommentsModal({
       fetchContent();
       setHasAddedComment(false); // Reset when drawer opens
       setActiveTab(initialTab); // Reset to initial tab when drawer opens
-      setIsContentEditMode(false); // Reset edit mode when drawer opens
     }
   }, [opened, initialTab]);
 
@@ -1023,18 +1089,6 @@ export function CommentsModal({
 
             {/* Criterion Content Section - Takes available space */}
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
-              {!contentLoading && !isContentEditMode && (
-                <Group justify="flex-end" mb="xs">
-                  <Button
-                    size="xs"
-                    variant="subtle"
-                    leftSection={<IconPencil size={14} />}
-                    onClick={() => setIsContentEditMode(true)}
-                  >
-                    Edit
-                  </Button>
-                </Group>
-              )}
               {contentLoading ? (
                 <div style={{ textAlign: 'center', padding: '20px' }}>
                   <PurpleLoader size="sm" />
@@ -1057,17 +1111,20 @@ export function CommentsModal({
                         // Note: This assumes the user is only editing the base content part,
                         // not the data sources section (which should be read-only/non-editable)
                         // Data sources are dynamically generated and appended, so they shouldn't be in the editable area
-                        if (isContentEditMode) {
-                          baseContentRef.current = newContent;
-                        }
+                        baseContentRef.current = newContent;
                       }}
                       placeholder="Add relevant content, links, and notes for this criterion..."
                       rows={12}
                       compactLists={true}
-                      readOnly={!isContentEditMode}
+                      readOnly={false}
                     />
                   </div>
                 </ScrollArea>
+              )}
+              {!contentLoading && (!criterion?.data_sources || criterion.data_sources.length === 0) && (
+                <Text size="xs" c="dimmed" mt="xs" style={{ marginTop: '8px' }}>
+                  No automated synchronization from Aha or other sources was defined for this criteria.
+                </Text>
               )}
               {savingContent && (
                 <Text size="xs" c="dimmed" mt="xs">Saving...</Text>

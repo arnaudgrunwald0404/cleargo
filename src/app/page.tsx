@@ -10,10 +10,13 @@ export const dynamic = 'force-dynamic';
 export default async function HomePage({
   searchParams,
 }: {
-  searchParams?: { code?: string; [key: string]: string | string[] | undefined };
+  searchParams?: Promise<{ code?: string; [key: string]: string | string[] | undefined }>;
 }) {
+  // Await searchParams as it's now a Promise in Next.js 15+
+  const params = await searchParams;
+  
   // Check if OAuth code is present in URL - if so, redirect to callback route
-  const code = searchParams?.code;
+  const code = params?.code;
   if (code && typeof code === 'string') {
     console.log('🔍 Root page: OAuth code detected, redirecting to callback');
     // Redirect to callback route to handle code exchange
@@ -22,14 +25,14 @@ export default async function HomePage({
   
   // Also check for other OAuth parameters that might be present
   // Sometimes Supabase redirects with different parameter names
-  const allParams = Object.keys(searchParams || {});
+  const allParams = Object.keys(params || {});
   if (allParams.length > 0) {
     console.log('🔍 Root page: Search params detected:', allParams);
     // If we have params but no code, Supabase might have redirected to Site URL
     // This happens when redirectTo doesn't match Supabase Redirect URLs configuration
     if (!code) {
       console.error('❌ Root page: Redirected without code parameter!', {
-        searchParams: Object.fromEntries(Object.entries(searchParams || {})),
+        searchParams: Object.fromEntries(Object.entries(params || {})),
         issue: 'redirectTo URL might not match Supabase Redirect URLs configuration',
         expected: 'https://cleargo.netlify.app/auth/callback',
         action: 'Verify https://cleargo.netlify.app/auth/callback is in Supabase Redirect URLs',

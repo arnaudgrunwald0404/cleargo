@@ -75,7 +75,7 @@ export async function fetchWithRateLimit(
   };
 
   // Use deduplication to prevent duplicate requests
-  return deduplicateRequest(url, async () => {
+  const response = await deduplicateRequest(url, async () => {
     // Acquire a request slot (throttling)
     await acquireSlot();
     
@@ -138,6 +138,16 @@ export async function fetchWithRateLimit(
       releaseSlot();
     }
   });
+  
+  // Clone the response so each caller can read the body independently
+  // This is necessary because deduplication may return the same Response to multiple callers
+  try {
+    return response.clone();
+  } catch (cloneError) {
+    // If cloning fails (body already consumed), return the original
+    // This should be rare, but handle it gracefully
+    return response;
+  }
 }
 
 /**

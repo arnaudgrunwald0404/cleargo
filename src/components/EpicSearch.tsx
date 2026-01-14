@@ -72,7 +72,8 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
     if (fetchEpics && providedEpics === undefined) {
       async function loadEpics() {
         try {
-          const res = await fetch('/api/epics', { credentials: 'include' });
+          const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+          const res = await fetchWithRateLimit('/api/epics', { credentials: 'include', maxRetries: 1 });
           if (res.ok) {
             const data = await res.json();
             setEpics(Array.isArray(data) ? data : []);

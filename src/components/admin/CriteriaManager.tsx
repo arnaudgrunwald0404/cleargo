@@ -277,12 +277,13 @@ export function CriteriaManager() {
   async function submitEdit(id: string, patch: Partial<Item>) {
     setError(null);
     
-    // Ensure data_sources have value field for all items
+    // Ensure data_sources have value field for all items, and preserve label
     const cleanedPatch = { ...patch };
     if (cleanedPatch.data_sources) {
       cleanedPatch.data_sources = cleanedPatch.data_sources.map(ds => ({
         type: ds.type,
         value: ds.value ?? '', // Ensure value is always a string
+        ...(ds.label !== undefined && { label: ds.label }), // Preserve label if present
       }));
     }
     

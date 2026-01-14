@@ -6,6 +6,7 @@
 import { getSlackClient } from './client';
 import { createClient } from '@/lib/supabase/server';
 import type { SlackNotificationPayload, SlackUser } from '@/types/slack';
+import { getSettings } from '@/lib/settings-db';
 import {
     buildStaleCriterionMessage,
     buildLaunchRiskAlertMessage,
@@ -65,6 +66,36 @@ async function logNotification(data: {
  * Send a notification to Slack
  */
 export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<void> {
+    // Check if recipient is allowed to receive Slack messages
+    if (payload.recipient?.email) {
+        const settings = await getSettings();
+        const allowedRecipients = settings.slack_allowed_recipients || [];
+        
+        // If allowed recipients list is set and not empty, check if recipient is in the list
+        if (allowedRecipients.length > 0) {
+            const recipientEmail = payload.recipient.email.toLowerCase();
+            const isAllowed = allowedRecipients.some(
+                (email: string) => email.toLowerCase() === recipientEmail
+            );
+            
+            if (!isAllowed) {
+                console.log(`Skipping Slack notification to ${payload.recipient.email} - not in allowed recipients list`);
+                // Log the skipped notification
+                await logNotification({
+                    user_id: payload.recipient?.id,
+                    launch_id: payload.launch_id,
+                    type: payload.type,
+                    payload: payload.metadata,
+                    delivery_channel: 'slack',
+                    status: 'failed',
+                    error: 'Recipient not in allowed recipients list',
+                });
+                return; // Skip sending the notification
+            }
+        }
+        // If allowed recipients list is empty, allow all (backward compatible)
+    }
+
     const client = getSlackClient();
     let isDirectMessage = false;
 

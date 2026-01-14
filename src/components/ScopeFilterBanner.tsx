@@ -46,7 +46,7 @@ export function ScopeFilterBanner() {
         },
       }}
     >
-      Content filtered to show epics in your scope or watch list. This includes epics where you are the owner of at least one criterion, or epics you are watching.
+      Content filtered to show epics in your scope. This includes epics where you are the owner of at least one criterion.
     </Alert>
   );
 }

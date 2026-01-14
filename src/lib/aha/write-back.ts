@@ -95,7 +95,7 @@ export async function writeBackEpicReadiness(epicId: string): Promise<void> {
     }
 
     // Build custom fields payload
-    const customFields = buildWriteBackPayload(epicData);
+    let customFields = buildWriteBackPayload(epicData);
 
     if (Object.keys(customFields).length === 0) {
         console.log(`No fields to write back for epic ${epicId}`);
@@ -113,7 +113,39 @@ export async function writeBackEpicReadiness(epicId: string): Promise<void> {
         console.log(`Successfully wrote back ${Object.keys(customFields).length} fields for epic ${epicId} (aha_id: ${epic.aha_id})`);
 
     } catch (error) {
-        console.error(`Failed to write back to Aha for epic ${epicId}:`, error);
-        throw error;
+        // Check if error is about an unknown custom field
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const unknownFieldMatch = errorMessage.match(/unknown custom field: (\w+)/);
+        
+        if (unknownFieldMatch) {
+            const unknownField = unknownFieldMatch[1];
+            console.warn(`Custom field '${unknownField}' does not exist in Aha! for epic ${epicId}, removing from payload and retrying...`);
+            
+            // Remove the problematic field and retry
+            const { [unknownField]: removed, ...remainingFields } = customFields;
+            
+            if (Object.keys(remainingFields).length === 0) {
+                console.warn(`No fields remaining after removing unknown field '${unknownField}', skipping write-back for epic ${epicId}`);
+                return;
+            }
+            
+            try {
+                // Retry with remaining fields
+                await updateEpicCustomFields(epic.aha_id, remainingFields);
+                
+                // Update cache
+                updateSyncCache(epicId, epicData);
+                
+                // Log success
+                console.log(`Successfully wrote back ${Object.keys(remainingFields).length} fields for epic ${epicId} (aha_id: ${epic.aha_id}) after removing unknown field '${unknownField}'`);
+            } catch (retryError) {
+                console.error(`Failed to write back to Aha for epic ${epicId} after removing unknown field:`, retryError);
+                throw retryError;
+            }
+        } else {
+            // Not an unknown field error, throw as normal
+            console.error(`Failed to write back to Aha for epic ${epicId}:`, error);
+            throw error;
+        }
     }
 }

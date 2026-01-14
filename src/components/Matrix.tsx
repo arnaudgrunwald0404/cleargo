@@ -1158,33 +1158,33 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     return <span className="text-gray-400">-</span>;
                                                 }
                                                 
-                                                // Filter to only show data sources that have data
-                                                const sourcesWithData = dataSources.filter((source, index) => 
-                                                    hasDataSourceData(item, source, index)
-                                                );
-                                                
-                                                if (sourcesWithData.length === 0) {
-                                                    return <span className="text-gray-400">-</span>;
-                                                }
-                                                
+                                                // Show all data sources, with empty circles for absent ones
                                                 return (
                                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                                        {sourcesWithData.map((source, idx) => {
+                                                        {dataSources.map((source, idx) => {
+                                                            const hasData = hasDataSourceData(item, source, idx);
                                                             const IconComponent = getDataSourceIcon(source.type);
                                                             const tooltipLabel = getDataSourceTooltip(source);
                                                             return (
                                                                 <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
-                                                                    <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                        {source.type === 'aha_field' ? (
-                                                                            <img 
-                                                                                src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
-                                                                                alt="Aha" 
-                                                                                className="w-3 h-3"
-                                                                            />
-                                                                        ) : (
-                                                                            <IconComponent size={16} />
-                                                                        )}
-                                                                    </div>
+                                                                    {hasData ? (
+                                                                        <div className="text-gray-600 hover:text-gray-900 transition-colors">
+                                                                            {source.type === 'aha_field' ? (
+                                                                                <img 
+                                                                                    src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
+                                                                                    alt="Aha" 
+                                                                                    className="w-3 h-3"
+                                                                                />
+                                                                            ) : (
+                                                                                <IconComponent size={16} />
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div 
+                                                                            className="w-4 h-4 rounded-full border-2 border-gray-300"
+                                                                            style={{ minWidth: '16px', minHeight: '16px' }}
+                                                                        />
+                                                                    )}
                                                                 </Tooltip>
                                                             );
                                                         })}
@@ -1528,33 +1528,33 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         return <span className="text-sm text-gray-400">-</span>;
                                                     }
                                                     
-                                                    // Filter to only show data sources that have data
-                                                    const sourcesWithData = dataSources.filter((source, index) => 
-                                                        hasDataSourceData(item, source, index)
-                                                    );
-                                                    
-                                                    if (sourcesWithData.length === 0) {
-                                                        return <span className="text-sm text-gray-400">-</span>;
-                                                    }
-                                                    
+                                                    // Show all data sources, with empty circles for absent ones
                                                     return (
                                                         <div className="flex items-center gap-2 flex-wrap">
-                                                            {sourcesWithData.map((source, idx) => {
+                                                            {dataSources.map((source, idx) => {
+                                                                const hasData = hasDataSourceData(item, source, idx);
                                                                 const IconComponent = getDataSourceIcon(source.type);
                                                                 const tooltipLabel = getDataSourceTooltip(source);
                                                                 return (
                                                                     <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
-                                                                        <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                            {source.type === 'aha_field' ? (
-                                                                                <img 
-                                                                                    src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
-                                                                                    alt="Aha" 
-                                                                                    className="w-3 h-3"
-                                                                                />
-                                                                            ) : (
-                                                                                <IconComponent size={18} />
-                                                                            )}
-                                                                        </div>
+                                                                        {hasData ? (
+                                                                            <div className="text-gray-600 hover:text-gray-900 transition-colors">
+                                                                                {source.type === 'aha_field' ? (
+                                                                                    <img 
+                                                                                        src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
+                                                                                        alt="Aha" 
+                                                                                        className="w-3 h-3"
+                                                                                    />
+                                                                                ) : (
+                                                                                    <IconComponent size={18} />
+                                                                                )}
+                                                                            </div>
+                                                                        ) : (
+                                                                            <div 
+                                                                                className="rounded-full border-2 border-gray-300"
+                                                                                style={{ width: '18px', height: '18px', minWidth: '18px', minHeight: '18px' }}
+                                                                            />
+                                                                        )}
                                                                     </Tooltip>
                                                                 );
                                                             })}

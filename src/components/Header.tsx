@@ -27,7 +27,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     useEffect(() => {
         const fetchUserRoles = async () => {
             try {
-                const res = await fetch('/api/me', { credentials: 'include' });
+                const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                const res = await fetchWithRateLimit('/api/me', { credentials: 'include', maxRetries: 1 });
                 if (res.ok) {
                     const data = await res.json();
                     const roles = Array.isArray(data.user?.roles) 

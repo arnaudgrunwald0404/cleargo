@@ -6,9 +6,9 @@ import { getAuthenticatedUserEmail } from '@/lib/api-auth';
  * Rate limit configuration for different endpoint types
  */
 export const RATE_LIMITS = {
-  default: { windowMs: 60000, maxRequests: 60 },
-  heavy: { windowMs: 60000, maxRequests: 30 }, // For expensive operations
-  light: { windowMs: 60000, maxRequests: 120 }, // For simple reads
+  default: { windowMs: 60000, maxRequests: 100 },
+  heavy: { windowMs: 60000, maxRequests: 40 }, // For expensive operations
+  light: { windowMs: 60000, maxRequests: 200 }, // For simple reads
 };
 
 /**

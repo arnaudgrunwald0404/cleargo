@@ -37,6 +37,7 @@ export interface AppSettings {
     slack_nudge_daily_after_due?: boolean;
     slack_notification_test_email?: string; // For email notifications
     slack_notification_test_slack_handle?: string; // For Slack notifications (Slack user ID, e.g., U12345678)
+    slack_allowed_recipients?: string[]; // Array of email addresses of users who can receive Slack messages
 }
 
 export async function getSettings(): Promise<AppSettings> {
@@ -77,7 +78,8 @@ export async function getSettings(): Promise<AppSettings> {
                 't_shirt_est',
                 'progress',
                 'reason_for_release_change',
-                'release_target_after_pod_planning'
+                'release_target_after_pod_planning',
+                'ux_needs'
             ],
             updated_at: new Date().toISOString(),
             permissions: {},
@@ -97,13 +99,19 @@ export async function getSettings(): Promise<AppSettings> {
             't_shirt_est',
             'progress',
             'reason_for_release_change',
-            'release_target_after_pod_planning'
+            'release_target_after_pod_planning',
+            'ux_needs'
         ];
     }
 
     // Ensure aha_tags has a default value if missing
     if (!data.aha_tags || (Array.isArray(data.aha_tags) && data.aha_tags.length === 0)) {
         data.aha_tags = ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
+    }
+
+    // Ensure slack_allowed_recipients has a default value if missing
+    if (!data.slack_allowed_recipients || !Array.isArray(data.slack_allowed_recipients)) {
+        data.slack_allowed_recipients = [];
     }
 
     return data as AppSettings;
