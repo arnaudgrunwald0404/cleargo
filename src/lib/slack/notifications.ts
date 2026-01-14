@@ -15,6 +15,7 @@ import {
     buildDelegationMessage,
     buildCriterionCommentOrAttachmentMessage,
 } from './templates';
+import { getSlackTheme } from './theme';
 
 /**
  * Check if a string is a valid Slack user ID
@@ -110,16 +111,19 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             channel = process.env.SLACK_DEFAULT_CHANNEL || '#launch-readiness-test';
         }
 
+        // Load theme configuration
+        const theme = await getSlackTheme();
+
         // Build message based on notification type
         switch (payload.type) {
             case 'stale_criterion':
                 if (!payload.metadata) throw new Error('Missing metadata for stale_criterion');
-                message = buildStaleCriterionMessage(payload.metadata as any);
+                message = buildStaleCriterionMessage(payload.metadata as any, theme);
                 break;
 
             case 'launch_risk_alert':
                 if (!payload.metadata) throw new Error('Missing metadata for launch_risk_alert');
-                message = buildLaunchRiskAlertMessage(payload.metadata as any);
+                message = buildLaunchRiskAlertMessage(payload.metadata as any, theme);
                 break;
 
             case 'go_no_go_decision':

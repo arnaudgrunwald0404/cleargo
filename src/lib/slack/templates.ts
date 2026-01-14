@@ -4,6 +4,8 @@
 
 import type { SlackBlock } from '@/types/slack';
 import type { GroupedCriteria } from './notification-groups';
+import type { SlackThemeConfig } from './theme';
+import { defaultSlackTheme } from './theme';
 export { buildRetroReminderMessage } from './templates/retro-reminders';
 export { buildScorecardAlertMessage } from './templates/scorecard-alerts';
 
@@ -12,7 +14,8 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clear
 /**
  * Stale Criterion Reminder
  */
-export function buildStaleCriterionMessage(data: {
+export function buildStaleCriterionMessage(
+    data: {
     launch_name: string;
     launch_id: string;
     criterion_label: string;
@@ -20,7 +23,9 @@ export function buildStaleCriterionMessage(data: {
     days_stale: number;
     last_updated: string;
     decision_owner_name: string;
-}): { text: string; blocks: SlackBlock[] } {
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
     return {
         text: `Reminder: "${data.criterion_label}" for ${data.launch_name} needs an update`,
         blocks: [
@@ -28,7 +33,7 @@ export function buildStaleCriterionMessage(data: {
                 type: 'header',
                 text: {
                     type: 'plain_text',
-                    text: '⏰ Stale Criterion Reminder',
+                    text: `${theme.emojis.stale} Stale Criterion Reminder`,
                     emoji: true,
                 },
             },
@@ -105,7 +110,8 @@ export function buildStaleCriterionMessage(data: {
 /**
  * Launch Risk Alert
  */
-export function buildLaunchRiskAlertMessage(data: {
+export function buildLaunchRiskAlertMessage(
+    data: {
     launch_name: string;
     launch_id: string;
     tier: string;
@@ -114,8 +120,10 @@ export function buildLaunchRiskAlertMessage(data: {
     days_to_launch: number;
     gate_blockers: number;
     owner_name: string;
-}): { text: string; blocks: SlackBlock[] } {
-    const riskEmoji = data.risk_level === 'High' ? '🔴' : data.risk_level === 'Medium' ? '🟡' : '🟢';
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
+    const riskEmoji = data.risk_level === 'High' ? theme.emojis.risk.high : data.risk_level === 'Medium' ? theme.emojis.risk.medium : theme.emojis.risk.low;
     const riskColor = data.risk_level === 'High' ? 'danger' : data.risk_level === 'Medium' ? 'warning' : 'good';
 
     return {
@@ -191,7 +199,8 @@ export function buildLaunchRiskAlertMessage(data: {
 /**
  * Go/No-Go Decision Notification
  */
-export function buildGoNoGoDecisionMessage(data: {
+export function buildGoNoGoDecisionMessage(
+    data: {
     launch_name: string;
     launch_id: string;
     verdict: 'Go' | 'Conditional Go' | 'No Go';
@@ -199,8 +208,10 @@ export function buildGoNoGoDecisionMessage(data: {
     notes: string;
     conditions_count?: number;
     decided_by: string;
-}): { text: string; blocks: SlackBlock[] } {
-    const verdictEmoji = data.verdict === 'Go' ? '✅' : data.verdict === 'No Go' ? '❌' : '⚠️';
+},
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
+    const verdictEmoji = data.verdict === 'Go' ? theme.emojis.decision.go : data.verdict === 'No Go' ? theme.emojis.decision.noGo : theme.emojis.decision.conditional;
 
     return {
         text: `${verdictEmoji} Go/No-Go Decision: ${data.launch_name} - ${data.verdict}`,
