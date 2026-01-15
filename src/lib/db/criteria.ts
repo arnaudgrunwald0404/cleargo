@@ -45,8 +45,12 @@ export async function updateCriteria(id: string, patch: UpdateCriterionInput): P
 
 export async function deleteCriteria(id: string): Promise<boolean> {
     const supabase = createClient();
-    const { error } = await supabase.from("criterion").delete().eq("id", id);
-    return !error;
+    const { error, count } = await supabase
+        .from("criterion")
+        .delete({ count: "exact" })
+        .eq("id", id);
+    if (error) throw error;
+    return (count ?? 0) > 0;
 }
 
 export async function getCriteria(id: string): Promise<Criterion | null> {

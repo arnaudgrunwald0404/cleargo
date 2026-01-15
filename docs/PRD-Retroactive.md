@@ -499,6 +499,7 @@ These defaults can be customized per epic or feature type, and additional benchm
 - **Bulk Operations**: Activate/deactivate multiple criteria
 - **Category Management**: Manage criterion categories
 - **Role Mapping**: Map decision owner roles to criteria
+- **Deletion behavior**: Deleting a criterion is restricted to admin roles (PRODUCT_OPS/CPO/SUPERADMIN) and enforced via database row-level security so deletes persist across refresh.
 
 #### 9.2 Settings Management
 - **Per-Tier Thresholds**: Configure readiness thresholds per tier

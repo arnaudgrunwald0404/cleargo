@@ -63,9 +63,16 @@ export async function DELETE(
     if (!canDelete) return forbid();
   }
 
-  const deleted = await deleteCriteria(id);
-  if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ message: "Criteria deleted successfully" });
+  try {
+    const deleted = await deleteCriteria(id);
+    if (!deleted) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    return NextResponse.json({ message: "Criteria deleted successfully" });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: "Delete failed", code: e?.code, details: e?.message || String(e) },
+      { status: 500 }
+    );
+  }
 }
 
 export async function PUT(
