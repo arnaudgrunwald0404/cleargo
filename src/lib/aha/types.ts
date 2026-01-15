@@ -19,6 +19,7 @@ export interface AhaEpic {
     name: string;
     url: string;
     description?: string;
+    integrations?: any;
     workflow_status?: {
         name: string;
     };

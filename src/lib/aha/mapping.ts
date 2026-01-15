@@ -182,6 +182,7 @@ export async function mapEpicToEpic(
         name: epic.name,
         url: epic.url,
         description: epic.description || null,
+        integrations: epic.integrations ?? null,
         workflow_status: epic.workflow_status?.name || null,
         assigned_to_user: epic.assigned_to_user ? {
             id: epic.assigned_to_user.id,

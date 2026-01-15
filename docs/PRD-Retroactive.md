@@ -1114,6 +1114,7 @@ The system uses the following launch stage phases:
   - `Launch Candidate` custom field = true OR
   - Tags contain "LaunchConsole", "cleargo", "ClearGO", or "ClearGo"
 - **Mapping**: Comprehensive field mapping from Aha! to ClearGO (see `aha-launch-console-mapping.yaml`)
+- **Standard fields captured**: Includes core epic fields plus `integrations` (available as a standard field in Aha!)
 - **Auto-Fetch**: Automatically fetches release information if not in system
 - **Idempotency**: Safe to process same epic multiple times
 

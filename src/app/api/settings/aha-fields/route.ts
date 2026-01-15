@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
             { alias: 'assigned_to_user', label: 'Assigned To User', key: null, type: 'standard' },
             { alias: 'tags', label: 'Tags', key: null, type: 'standard' },
             { alias: 'release', label: 'Release', key: null, type: 'standard' },
+            { alias: 'integrations', label: 'Integrations', key: null, type: 'standard' },
         ];
         
         // Custom fields from config
