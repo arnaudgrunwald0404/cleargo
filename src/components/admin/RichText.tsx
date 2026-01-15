@@ -10,9 +10,10 @@ interface RichTextProps {
     rows?: number;
     readOnly?: boolean;
     compactLists?: boolean;
+    autoFocus?: boolean;
 }
 
-export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false }: RichTextProps) {
+export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false }: RichTextProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const [isFocused, setIsFocused] = useState(false);
     const savedSelectionRef = useRef<Range | null>(null);
@@ -41,6 +42,26 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
 
         return () => observer.disconnect();
     }, [compactLists]);
+
+    // Auto-focus when autoFocus prop is true
+    useEffect(() => {
+        if (autoFocus && editorRef.current && !readOnly) {
+            // Small delay to ensure the element is fully rendered
+            const timer = setTimeout(() => {
+                editorRef.current?.focus();
+                // Place cursor at the end of content
+                const range = document.createRange();
+                const selection = window.getSelection();
+                if (selection && editorRef.current) {
+                    range.selectNodeContents(editorRef.current);
+                    range.collapse(false);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [autoFocus, readOnly]);
 
     const handleInput = () => {
         if (editorRef.current) {

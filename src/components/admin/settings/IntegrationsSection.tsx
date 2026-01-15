@@ -5,6 +5,7 @@ import EmailIntegrationSection from "./EmailIntegrationSection";
 import AhaIntegrationSection from "./AhaIntegrationSection";
 import SlackIntegrationSection from "./SlackIntegrationSection";
 import CalendarIntegrationSection from "./CalendarIntegrationSection";
+import JiraIntegrationSection from "./JiraIntegrationSection";
 
 type AhaField = { alias: string; label: string; key: string | null; type?: string };
 
@@ -77,6 +78,10 @@ export default function IntegrationsSection({
 
       {activeSubSection === "calendar" && (
         <CalendarIntegrationSection settings={settings} setSettings={setSettings} />
+      )}
+
+      {activeSubSection === "jira" && (
+        <JiraIntegrationSection settings={settings} setSettings={setSettings} />
       )}
     </div>
   );

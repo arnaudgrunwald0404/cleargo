@@ -100,8 +100,9 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
     // Filter out archived releases
     const activeReleases = releases.filter(r => !r.archived);
 
-    // Filter out launched epics (only show pre-launch epics)
+    // Filter out archived and launched epics (only show pre-launch epics)
     const preLaunchEpics = epics.filter(epic => 
+      epic.archived !== true &&
       epic.status !== 'LAUNCHED' && epic.status !== 'POST_LAUNCH'
     );
 

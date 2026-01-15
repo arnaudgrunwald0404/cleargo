@@ -133,6 +133,9 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
     // If scheduled_ga_dev_date exists, check if it's within last 180 days
     // Otherwise, include the epic anyway (for demo purposes)
     const postLaunchEpics = epics.filter(epic => {
+      // Exclude archived epics
+      if (epic.archived === true) return false;
+      
       // Debug: log "Hire Eligibility" epic details
       if (epic.name?.includes('Hire Eligibility')) {
         console.log('Hire Eligibility epic details:', {

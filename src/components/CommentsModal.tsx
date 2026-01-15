@@ -77,38 +77,118 @@ export function CommentsModal({
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
 
-  const extractJiraEpicKeyFromIntegrations = (integrations: any): string | null => {
-    if (!integrations) return null;
-    try {
-      const asString = typeof integrations === 'string' ? integrations : JSON.stringify(integrations);
+  const [jiraEpicKey, setJiraEpicKey] = useState<string | null>(null);
+  const [jiraDomain, setJiraDomain] = useState<string | null>(null);
+  const [jiraEpicKeyLoading, setJiraEpicKeyLoading] = useState(false);
+  const [jiraTickets, setJiraTickets] = useState<Record<number, Array<{
+    key: string;
+    summary: string;
+    status: string;
+    statusCategory: string;
+    issueType: string;
+    url: string | null;
+  }>>>({});
+  const [jiraTicketsLoading, setJiraTicketsLoading] = useState<Record<number, boolean>>({});
 
-      // Prefer canonical ISSUEKEY format (case-insensitive)
-      const keyMatch = asString.match(/[A-Z][A-Z0-9]+-\d+/i);
-      if (keyMatch?.[0]) return keyMatch[0].toUpperCase();
+  // Fetch Jira epic key and domain when modal opens and epic is available
+  useEffect(() => {
+    if (!opened || !epicId) return;
 
-      // Fallback: handle "DEV 25525" or "DEV_25525" formats
-      const spacedMatch = asString.match(/([A-Z][A-Z0-9]+)[\s_]+(\d+)/i);
-      if (spacedMatch?.[1] && spacedMatch?.[2]) {
-        return `${spacedMatch[1].toUpperCase()}-${spacedMatch[2]}`;
+    const fetchJiraEpicKey = async () => {
+      setJiraEpicKeyLoading(true);
+      try {
+        // Fetch Jira epic key from API (tries integrations first, then Jira search)
+        const response = await fetch(`/api/epics/${epicId}/jira-epic-key`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.jiraEpicKey) {
+            setJiraEpicKey(data.jiraEpicKey);
+            console.log(`✅ Jira epic key fetched: ${data.jiraEpicKey} (source: ${data.source})`);
+          } else {
+            setJiraEpicKey(null);
+          }
+        }
+
+        // Fetch Jira domain from settings
+        const settingsResponse = await fetch('/api/settings', {
+          credentials: 'include',
+        });
+        
+        if (settingsResponse.ok) {
+          const settings = await settingsResponse.json();
+          if (settings.jira_domain) {
+            setJiraDomain(settings.jira_domain);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching Jira epic key:', error);
+        setJiraEpicKey(null);
+      } finally {
+        setJiraEpicKeyLoading(false);
       }
+    };
 
-      return null;
-    } catch {
-      return null;
-    }
-  };
+    fetchJiraEpicKey();
+  }, [opened, epicId]);
 
   const buildJiraIssuesUrlForOpenEpicTickets = (source: { value: string; label?: string } | null): string | null => {
-    const ahaFieldsStruct = epic?.aha_fields as any;
-    const standardFields = ahaFieldsStruct?.standard_fields || {};
-    const jiraEpicKey = extractJiraEpicKeyFromIntegrations(standardFields.integrations);
-    if (!jiraEpicKey) return null;
+    if (!jiraEpicKey || !jiraDomain) return null;
 
     const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
     const template = (source?.value || '').trim() || defaultJql;
     const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, jiraEpicKey);
-    return `https://clearco.atlassian.net/issues?jql=${encodeURIComponent(jql)}`;
+    
+    // Remove protocol if present and construct URL
+    const cleanDomain = jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    return `https://${cleanDomain}/issues?jql=${encodeURIComponent(jql)}`;
   };
+
+  const getJqlFromSource = (source: { value: string; label?: string } | null): string | null => {
+    if (!jiraEpicKey) return null;
+
+    const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
+    const template = (source?.value || '').trim() || defaultJql;
+    return template.replace(/\{\{JIRA_EPIC\}\}/g, jiraEpicKey);
+  };
+
+  // Fetch Jira tickets when epic key is available
+  useEffect(() => {
+    if (!opened || !jiraEpicKey || !criterion?.data_sources) return;
+
+    const fetchTickets = async () => {
+      criterion.data_sources?.forEach(async (source, index) => {
+        if (source.type !== 'jira_jql') return;
+
+        const jql = getJqlFromSource(source);
+        if (!jql) return;
+
+        setJiraTicketsLoading(prev => ({ ...prev, [index]: true }));
+        try {
+          const response = await fetch(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
+            credentials: 'include',
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            setJiraTickets(prev => ({ ...prev, [index]: data.issues || [] }));
+          } else {
+            console.error('Failed to fetch Jira tickets:', await response.text());
+            setJiraTickets(prev => ({ ...prev, [index]: [] }));
+          }
+        } catch (error) {
+          console.error('Error fetching Jira tickets:', error);
+          setJiraTickets(prev => ({ ...prev, [index]: [] }));
+        } finally {
+          setJiraTicketsLoading(prev => ({ ...prev, [index]: false }));
+        }
+      });
+    };
+
+    fetchTickets();
+  }, [opened, jiraEpicKey, criterion?.data_sources]);
   
   // Expose comments count for parent component
   useEffect(() => {
@@ -1027,6 +1107,7 @@ export function CommentsModal({
     }
   }, [opened, initialTab]);
 
+
   const handleClose = () => {
     // If comment is required and no comments exist yet, prevent closing
     const hasComment = comments.length > 0 || newComment.trim().length > 0 || hasAddedComment;
@@ -1045,6 +1126,7 @@ export function CommentsModal({
     <Drawer
       opened={opened}
       onClose={handleClose}
+      withCloseButton={false}
       position="right"
       size="xl"
       padding="lg"
@@ -1068,10 +1150,6 @@ export function CommentsModal({
         },
         title: {
           width: '100%',
-        },
-        close: {
-          marginTop: 12,
-          marginRight: 12,
         },
         body: {
           display: 'flex',
@@ -1118,129 +1196,191 @@ export function CommentsModal({
         </Tabs.List>
 
         <Tabs.Panel value="content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingTop: '16px' }}>
-          <Stack gap="lg" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-            {/* URL Data Sources Section */}
-            {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'url') && (
-              <div>
+          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
+            <Stack gap="lg" style={{ paddingRight: '16px', paddingBottom: '16px' }}>
+              {/* URL Data Sources Section */}
+              {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'url') && (
+                <div>
 
-                <Stack gap="sm">
-                  {criterion.data_sources.map((source, index) => {
-                    if (source.type !== 'url') return null;
-                    const dataSourceValue = dataSourceValues[index.toString()];
-                    const urlValue = getUrlFromDataSourceValue(dataSourceValue);
-                    const assetNameValue = getAssetNameFromDataSourceValue(dataSourceValue);
-                    const urlSources = criterion.data_sources!.filter(s => s.type === 'url');
-                    const urlIndex = urlSources.indexOf(source) + 1;
-                    return (
-                      <div key={index}>
-                        {source.label && (
-                          <Text size="sm" fw={500} mb="xs">
-                            {source.label}
-                          </Text>
-                        )}
-                        <TextInput
-                          label={`URL ${urlIndex}`}
-                          value={urlValue}
-                          onChange={(e) => handleUrlDataSourceChange(index, e.target.value)}
-                          placeholder="https://figma.com/..., https://docs.google.com/..., etc."
-                          type="url"
-                        />
-                        <TextInput
-                          label="Asset name"
-                          value={assetNameValue}
-                          onChange={(e) => handleAssetNameChange(index, e.target.value)}
-                          placeholder="Optional: e.g., Design mockups, Product requirements, etc."
-                          mt="xs"
-                        />
-                        {urlPreviewLoading[index.toString()] && (
-                          <Text size="xs" c="dimmed" mt="xs">Loading preview...</Text>
-                        )}
-                      </div>
-                    );
-                  })}
-                  {savingDataSourceValues && (
-                    <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
-                  )}
-                </Stack>
-              </div>
-            )}
+                  <Stack gap="sm">
+                    {criterion.data_sources.map((source, index) => {
+                      if (source.type !== 'url') return null;
+                      const dataSourceValue = dataSourceValues[index.toString()];
+                      const urlValue = getUrlFromDataSourceValue(dataSourceValue);
+                      const assetNameValue = getAssetNameFromDataSourceValue(dataSourceValue);
+                      const urlSources = criterion.data_sources!.filter(s => s.type === 'url');
+                      const urlIndex = urlSources.indexOf(source) + 1;
+                      return (
+                        <div key={index}>
+                          {source.label && (
+                            <Text size="sm" fw={500} mb="xs">
+                              {source.label}
+                            </Text>
+                          )}
+                          <TextInput
+                            label={`URL ${urlIndex}`}
+                            value={urlValue}
+                            onChange={(e) => handleUrlDataSourceChange(index, e.target.value)}
+                            placeholder="https://figma.com/..., https://docs.google.com/..., etc."
+                            type="url"
+                          />
+                          <TextInput
+                            label="Asset name"
+                            value={assetNameValue}
+                            onChange={(e) => handleAssetNameChange(index, e.target.value)}
+                            placeholder="Optional: e.g., Design mockups, Product requirements, etc."
+                            mt="xs"
+                          />
+                          {urlPreviewLoading[index.toString()] && (
+                            <Text size="xs" c="dimmed" mt="xs">Loading preview...</Text>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {savingDataSourceValues && (
+                      <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
+                    )}
+                  </Stack>
+                </div>
+              )}
 
-            {/* Jira Data Sources Section (read-only, clickable) */}
-            {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'jira_jql') && (
-              <div>
-                <Stack gap="sm">
-                  {criterion.data_sources.map((source, index) => {
-                    if (source.type !== 'jira_jql') return null;
-                    const jiraUrl = buildJiraIssuesUrlForOpenEpicTickets(source as any);
-                    const label = (source.label || '').trim() || 'Open Jira tickets';
+              {/* Jira Data Sources Section (read-only, clickable) */}
+              {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'jira_jql') && (
+                <div>
+                  <Stack gap="sm">
+                    {criterion.data_sources.map((source, index) => {
+                      if (source.type !== 'jira_jql') return null;
+                      const jiraUrl = buildJiraIssuesUrlForOpenEpicTickets(source as any);
+                      const label = (source.label || '').trim() || 'Open Jira tickets';
 
-                    return (
-                      <div key={index}>
-                        <TextInput
-                          label={label}
-                          value={jiraUrl || ''}
-                          readOnly
-                          placeholder="No Jira epic key found in Aha integrations"
-                          description={
-                            jiraUrl
-                              ? undefined
-                              : 'No Jira epic key found in the epic Aha “Integrations” field.'
-                          }
-                        />
-                        {jiraUrl && (
-                          <Group justify="flex-end" mt="xs">
-                            <Button
-                              component="a"
-                              href={jiraUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              variant="light"
-                              size="xs"
-                            >
-                              Open in Jira
-                            </Button>
-                          </Group>
-                        )}
-                      </div>
-                    );
-                  })}
-                </Stack>
-              </div>
-            )}
+                      return (
+                        <div key={index}>
+                          <TextInput
+                            label={label}
+                            value={jiraUrl || (jiraEpicKeyLoading ? 'Searching Jira...' : '')}
+                            readOnly
+                            placeholder={jiraEpicKeyLoading ? 'Searching Jira for epic...' : 'No Jira epic key found'}
+                            description={
+                              jiraUrl
+                                ? undefined
+                                : 'No Jira epic key found. Searched Jira API by epic name, then AHA integrations field.'
+                            }
+                            rightSection={jiraEpicKeyLoading ? <PurpleLoader size="sm" /> : undefined}
+                          />
+                          {jiraUrl && (
+                            <>
+                              {/* Jira Tickets Preview */}
+                              {jiraTicketsLoading[index] ? (
+                                <Group gap="xs" mt="xs">
+                                  <PurpleLoader size="sm" />
+                                  <Text size="xs" c="dimmed">Loading tickets...</Text>
+                                </Group>
+                              ) : jiraTickets[index] && jiraTickets[index].length > 0 ? (
+                                <Card withBorder mt="xs" p="sm" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
+                                  <Text size="xs" fw={500} mb="xs">
+                                    Found {jiraTickets[index].length} ticket{jiraTickets[index].length !== 1 ? 's' : ''}:
+                                  </Text>
+                                  <Stack gap="xs">
+                                    {jiraTickets[index].slice(0, 10).map((ticket) => {
+                                      const ticketUrl = ticket.url || (jiraDomain 
+                                        ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/browse/${ticket.key}`
+                                        : null);
+                                      
+                                      const statusColor = ticket.statusCategory === 'Done' 
+                                        ? 'green' 
+                                        : ticket.statusCategory === 'In Progress' 
+                                        ? 'blue' 
+                                        : 'gray';
+                                      
+                                      return (
+                                        <Group key={ticket.key} justify="space-between" gap="xs" wrap="nowrap">
+                                          <Group gap="xs" style={{ flex: 1, minWidth: 0 }}>
+                                            {ticketUrl ? (
+                                              <Text
+                                                component="a"
+                                                href={ticketUrl}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                size="xs"
+                                                fw={500}
+                                                c="blue"
+                                                style={{ textDecoration: 'none' }}
+                                                truncate
+                                              >
+                                                {ticket.key}
+                                              </Text>
+                                            ) : (
+                                              <Text size="xs" fw={500} truncate>
+                                                {ticket.key}
+                                              </Text>
+                                            )}
+                                            <Badge size="xs" color={statusColor} variant="light">
+                                              {ticket.status}
+                                            </Badge>
+                                          </Group>
+                                          <Text size="xs" c="dimmed" truncate style={{ flex: 1, minWidth: 0 }}>
+                                            {ticket.summary}
+                                          </Text>
+                                        </Group>
+                                      );
+                                    })}
+                                    {jiraTickets[index].length > 10 && (
+                                      <Text size="xs" c="dimmed" mt="xs">
+                                        ... and {jiraTickets[index].length - 10} more
+                                      </Text>
+                                    )}
+                                  </Stack>
+                                </Card>
+                              ) : jiraTickets[index] && jiraTickets[index].length === 0 ? (
+                                <Text size="xs" c="dimmed" mt="xs">
+                                  No tickets found matching this query
+                                </Text>
+                              ) : null}
+                              
+                              <Group justify="flex-end" mt="xs">
+                                <Button
+                                  component="a"
+                                  href={jiraUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  variant="light"
+                                  size="xs"
+                                >
+                                  Open in Jira
+                                </Button>
+                              </Group>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </Stack>
+                </div>
+              )}
 
-            {/* Criterion Content Section - Takes available space */}
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' }}>
+              {/* Criterion Content Section */}
               {contentLoading ? (
                 <div style={{ textAlign: 'center', padding: '20px' }}>
                   <PurpleLoader size="sm" />
                 </div>
               ) : (
-                <ScrollArea 
-                  style={{ flex: 1, minHeight: 0 }}
-                  styles={{
-                    scrollbar: { display: 'none' },
-                    thumb: { display: 'none' },
-                    viewport: { paddingBottom: 0 },
-                  }}
-                >
-                  <div style={{ paddingBottom: 0, marginBottom: 0 }}>
-                    <RichText
-                      value={content}
-                      onChange={(newContent) => {
-                        setContent(newContent);
-                        // Update baseContentRef when user edits
-                        // Note: This assumes the user is only editing the base content part,
-                        // not the data sources section (which should be read-only/non-editable)
-                        // Data sources are dynamically generated and appended, so they shouldn't be in the editable area
-                        baseContentRef.current = newContent;
-                      }}
-                      placeholder="Add relevant content, links, and notes for this criterion..."
-                      rows={12}
-                      compactLists={true}
-                      readOnly={false}
-                    />
-                  </div>
-                </ScrollArea>
+                <div>
+                  <RichText
+                    value={content}
+                    onChange={(newContent) => {
+                      setContent(newContent);
+                      // Update baseContentRef when user edits
+                      // Note: This assumes the user is only editing the base content part,
+                      // not the data sources section (which should be read-only/non-editable)
+                      // Data sources are dynamically generated and appended, so they shouldn't be in the editable area
+                      baseContentRef.current = newContent;
+                    }}
+                    placeholder="Add relevant content, links, and notes for this criterion..."
+                    rows={12}
+                    compactLists={true}
+                    readOnly={false}
+                  />
+                </div>
               )}
               {!contentLoading && (!criterion?.data_sources || criterion.data_sources.length === 0) && (
                 <Text size="xs" c="dimmed" mt="xs" style={{ marginTop: '8px' }}>
@@ -1250,8 +1390,8 @@ export function CommentsModal({
               {savingContent && (
                 <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
               )}
-            </div>
-          </Stack>
+            </Stack>
+          </ScrollArea>
         </Tabs.Panel>
 
         <Tabs.Panel value="comments" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingTop: '16px' }}>
@@ -1355,10 +1495,12 @@ export function CommentsModal({
             >
               <div style={{ position: 'relative' }}>
                 <RichText
+                  key={`comment-input-${activeTab}`}
                   value={newComment}
                   onChange={setNewComment}
                   placeholder="Type your comment here..."
-                  rows={2}
+                  rows={6}
+                  autoFocus={activeTab === 'comments'}
                 />
                 {/* Post button inside text box at bottom right */}
                 <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10 }}>
@@ -1374,37 +1516,9 @@ export function CommentsModal({
                 </div>
               </div>
               
-              {/* File attachments */}
-              <div className="mt-2">
-                <FileButton
-                  onChange={(files) => {
-                    if (files) {
-                      const filesArray: File[] = Array.isArray(files) ? files : [files];
-                      setSelectedFiles((prev) => {
-                        const newFiles: File[] = [...prev];
-                        newFiles.push(...filesArray);
-                        return newFiles;
-                      });
-                    }
-                  }}
-                  accept="*"
-                  multiple
-                >
-                  {(props) => (
-                    <Button
-                      {...props}
-                      size="xs"
-                      variant="light"
-                      leftSection={<IconPaperclip size={14} />}
-                      disabled={submitting}
-                    >
-                      Attach File
-                    </Button>
-                  )}
-                </FileButton>
-                
-                {/* Show selected files */}
-                {selectedFiles.length > 0 && (
+              {/* Selected files (queued for upload on Post) */}
+              {selectedFiles.length > 0 && (
+                <div className="mt-2">
                   <Stack gap="xs" mt="xs">
                     {selectedFiles.map((file, index) => (
                       <Group key={index} justify="space-between" className="bg-gray-50 p-2 rounded">
@@ -1428,30 +1542,55 @@ export function CommentsModal({
                       </Group>
                     ))}
                   </Stack>
-                )}
-              </div>
+                </div>
+              )}
               
-              <Group justify="flex-start" mt="sm">
-                {requireComment && !hasComment && onCancel && (
-                  <Button 
-                    variant="outline" 
-                    color="red"
-                    onClick={() => {
-                      if (onCancel) {
-                        onCancel();
+              <Group justify="space-between" align="center" mt="sm">
+                <Group gap="sm" align="center">
+                  {requireComment && !hasComment && onCancel && (
+                    <Button
+                      variant="outline"
+                      color="red"
+                      size="sm"
+                      onClick={() => {
+                        if (onCancel) {
+                          onCancel();
+                        }
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                </Group>
+
+                <Group gap="sm" align="center">
+                  <FileButton
+                    onChange={(files) => {
+                      if (files) {
+                        const filesArray: File[] = Array.isArray(files) ? files : [files];
+                        setSelectedFiles((prev) => {
+                          const newFiles: File[] = [...prev];
+                          newFiles.push(...filesArray);
+                          return newFiles;
+                        });
                       }
                     }}
+                    accept="*"
+                    multiple
                   >
-                    Cancel
-                  </Button>
-                )}
-                <Button 
-                  variant="outline" 
-                  onClick={handleClose}
-                  disabled={requireComment && !hasComment}
-                >
-                  {requireComment && !hasComment ? 'Add Comment to Close' : 'Close'}
-                </Button>
+                    {(props) => (
+                      <Button
+                        {...props}
+                        size="sm"
+                        variant="outline"
+                        leftSection={<IconPaperclip size={14} />}
+                        disabled={submitting}
+                      >
+                        Attach File
+                      </Button>
+                    )}
+                  </FileButton>
+                </Group>
               </Group>
             </div>
           </Stack>

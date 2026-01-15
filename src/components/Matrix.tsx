@@ -435,12 +435,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         .eq('email', user.email)
                         .single();
                     
-                    console.log('Matrix: Direct DB query result:', { 
-                        appUser, 
-                        appUserType: typeof appUser,
-                        isArray: Array.isArray(appUser),
-                        error: appUserError 
-                    });
                     
                     // Handle case where appUser might be an array (shouldn't happen with .single(), but handle it)
                     const userData = Array.isArray(appUser) ? appUser[0] : appUser;
@@ -457,29 +451,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         roles = [userData.role];
                     }
                     
-                    console.log('Matrix: Extracted roles:', {
-                        userData,
-                        roles,
-                        rolesLength: roles.length,
-                        rolesType: typeof roles,
-                        isRolesArray: Array.isArray(roles)
-                    });
                     
                     if (roles.length > 0) {
                         setCurrentUserRoles(roles);
-                        const canDelegate = canRolesPerform(roles, 'criteria.delegate');
-                        console.log('Matrix: User email:', user.email);
-                        console.log('Matrix: User roles from DB:', roles);
-                        console.log('Matrix: Can delegate (criteria.delegate):', canDelegate);
-                        console.log('Matrix: Permission check details:', {
-                            roles: roles,
-                            normalizedRoles: roles.map(r => String(r).toUpperCase()),
-                            capability: 'criteria.delegate',
-                            allowedRoles: ['CPO', 'PRODUCT_OPS'],
-                            result: canDelegate
-                        });
                     } else {
-                        console.warn('Matrix: No roles found for user:', user.email, 'userData:', userData, 'error:', appUserError);
                         // Set empty array explicitly so component knows roles were checked
                         setCurrentUserRoles([]);
                     }
@@ -575,7 +550,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         setSavingItems(prev => new Set(prev).add(id));
         
         try {
-            console.log('Updating status:', { epicId, id, newStatus });
             const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -588,18 +562,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                 responseData = await res.json();
             } else {
                 const text = await res.text();
-                console.error('Non-JSON response:', text);
                 responseData = { error: text || 'Unknown error' };
             }
             
             if (!res.ok) {
-                console.error('API Error:', { 
-                    status: res.status, 
-                    statusText: res.statusText, 
-                    data: responseData,
-                    url: `/api/epics/${epicId}/criteria/${id}`,
-                    requestBody: { status: newStatus }
-                });
                 // Revert optimistic update on error
                 setOptimisticStatuses(prev => {
                     const next = { ...prev };
@@ -614,7 +580,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                 throw new Error(errorMsg);
             }
             
-            console.log('Status updated successfully:', responseData);
             // Clear optimistic update since server confirmed it
             setOptimisticStatuses(prev => {
                 const next = { ...prev };
@@ -812,14 +777,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     };
 
     const handleOpenDelegation = (item: MatrixItem) => {
-        console.log('Opening delegation modal for:', {
-            itemId: item.id,
-            criterionLabel: item.criterion.label,
-            category: item.criterion.category,
-            approverEmail: item.approverEmail,
-            currentUserRoles,
-            canDelegate: canRolesPerform(currentUserRoles, 'criteria.delegate')
-        });
         setSelectedItemForDelegation(item);
         setDelegationModalOpen(true);
     };
@@ -1045,17 +1002,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                             const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
                                                             const isApprover = currentUserEmail === item.approverEmail;
                                                             const shouldShow = hasPermission || isApprover;
-                                                            if (index === 0 && cat === categories[0]) {
-                                                                console.log('Matrix Render Debug:', {
-                                                                    currentUserRoles,
-                                                                    currentUserEmail,
-                                                                    itemApproverEmail: item.approverEmail,
-                                                                    hasPermission,
-                                                                    isApprover,
-                                                                    shouldShow,
-                                                                    criterionLabel: item.criterion.label
-                                                                });
-                                                            }
                                                             return shouldShow && (
                                                                 <Tooltip label="Delegate this task" position="top" withArrow>
                                                                     <button
@@ -1097,13 +1043,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     <span className="text-sm text-gray-500">-</span>
                                                     {(() => {
                                                         const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
-                                                        if (index === 0 && cat === categories[0]) {
-                                                            console.log('Matrix Render Debug (no approver):', {
-                                                                currentUserRoles,
-                                                                hasPermission,
-                                                                criterionLabel: item.criterion.label
-                                                            });
-                                                        }
                                                         return hasPermission && (
                                                             <Tooltip label="Delegate this task" position="top" withArrow>
                                                                 <button
@@ -1134,7 +1073,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     const dueDate = new Date(dueDateStr);
                                                     // Check if date is valid
                                                     if (isNaN(dueDate.getTime())) {
-                                                        console.warn('Invalid due date:', dueDateStr, 'for item:', item.id);
                                                         return '-';
                                                     }
                                                     
@@ -1149,7 +1087,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         </div>
                                                     );
                                                 } catch (e) {
-                                                    console.warn('Error parsing due date:', dueDateStr, e);
                                                     return '-';
                                                 }
                                             })()}
@@ -1172,7 +1109,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                                 <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                     {hasData ? (
                                                                         <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                            {source.type === 'aha_field' ? (
+                                                                            {source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                                                                 <img 
                                                                                     src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
                                                                                     alt="Aha" 
@@ -1542,7 +1479,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                                     <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                         {hasData ? (
                                                                             <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                                {source.type === 'aha_field' ? (
+                                                                                {source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                                                                     <img 
                                                                                         src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
                                                                                         alt="Aha" 

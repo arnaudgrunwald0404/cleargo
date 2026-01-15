@@ -1234,7 +1234,7 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                           label="JQL template"
                           value={source.value || "parent = {{JIRA_EPIC}} and statusCategory != Done"}
                           onChange={(e) => updateDataSource(index, { value: e.target.value })}
-                          description='Uses the epic Jira key extracted from Aha “Integrations”. Use {{JIRA_EPIC}} as placeholder.'
+                          description='Searches Jira API by epic name to find the epic key. Falls back to AHA “Integrations” field if not found. Use {{JIRA_EPIC}} as placeholder.'
                         />
                       </>
                     )}

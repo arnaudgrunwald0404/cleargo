@@ -32,6 +32,7 @@ const FIELD_ORDER = [
     'dev_backlog_pod',
     'assigned_to_user',
     'integrations',
+    'cleargo_candidate',
     '---', // Separator
     'tier',
     'tags',
@@ -326,6 +327,23 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
     };
 
     const formatFieldLabel = (key: string): string => {
+        // Special cases for field labels
+        const labelMap: Record<string, string> = {
+            'cleargo_candidate': 'ClearGO Candidate',
+            'csm': 'CSM',
+            'wsjf': 'WSJF',
+            'gtm': 'GTM',
+            'ga': 'GA',
+            'pm': 'PM',
+            'aha': 'Aha',
+            'ux': 'UX',
+        };
+        
+        // Check if there's a custom label
+        if (labelMap[key]) {
+            return labelMap[key];
+        }
+        
         // Special cases for acronyms that should stay uppercase
         const acronymMap: Record<string, string> = {
             'csm': 'CSM',
