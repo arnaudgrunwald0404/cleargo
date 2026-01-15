@@ -38,7 +38,7 @@ export async function calculateMetricResults(
 
     // Determine expected value from thresholds
     const thresholds = epicMetric.threshold_override || metric.thresholds;
-    const tierThresholds = thresholds[epic.tier as keyof MetricThresholds];
+    const tierThresholds = thresholds?.[epic.tier as keyof MetricThresholds];
     let expected: number | null = null;
 
     if (tierThresholds?.target !== undefined) {

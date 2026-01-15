@@ -333,7 +333,7 @@ export async function deleteMetric(id: string): Promise<boolean> {
 
 export interface EpicSuccessConfigWithDetails {
   epic_id: string;
-  benchmark_id: string;
+  benchmark_id: string | null;
   post_launch_owner: string; // Keep the ID for compatibility
   delegated_post_launch_owner_id?: string | null;
   locked: boolean;

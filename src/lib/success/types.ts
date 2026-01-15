@@ -76,7 +76,7 @@ export interface SuccessMetric {
   source: MetricSource;
   pendo_event_id: string | null;
   leading_or_lagging: LeadingOrLagging;
-  thresholds: MetricThresholds;
+  thresholds: MetricThresholds | null;
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +87,7 @@ export interface SuccessMetric {
 
 export interface EpicSuccessConfig {
   epic_id: string;
-  benchmark_id: string;
+  benchmark_id: string | null;
   post_launch_owner: string;
   locked: boolean;
   locked_at: string | null;
@@ -208,7 +208,7 @@ export interface CreateSuccessMetricDTO {
   source: MetricSource;
   pendo_event_id?: string | null;
   leading_or_lagging: LeadingOrLagging;
-  thresholds: MetricThresholds;
+  thresholds?: MetricThresholds | null;
 }
 
 export interface CreateEpicSuccessConfigDTO {

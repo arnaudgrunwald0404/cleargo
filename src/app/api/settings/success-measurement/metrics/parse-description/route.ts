@@ -136,11 +136,7 @@ Return ONLY the JSON object, no other text or markdown formatting.`;
       source: parsed.source || 'MANUAL',
       pendo_event_id: parsed.pendo_event_id || null,
       leading_or_lagging: parsed.leading_or_lagging || 'LAGGING',
-      thresholds: parsed.thresholds || {
-        TIER_1: {},
-        TIER_2: {},
-        TIER_3: {},
-      },
+      thresholds: parsed.thresholds || null,
     };
 
     return NextResponse.json({ metric: result });

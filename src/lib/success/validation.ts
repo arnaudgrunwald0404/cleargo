@@ -15,7 +15,7 @@ const metricThresholdsSchema = z.object({
   TIER_1: thresholdTierSchema,
   TIER_2: thresholdTierSchema,
   TIER_3: thresholdTierSchema,
-});
+}).nullable().optional();
 
 // Adoption Benchmark Schema - Base object schema
 const adoptionBenchmarkBaseSchema = z.object({
@@ -72,8 +72,8 @@ export const updateAdoptionBenchmarkSchema = adoptionBenchmarkBaseSchema.partial
   }
 );
 
-// Success Metric Schema - Base object schema
-const successMetricBaseSchema = z.object({
+// Success Metric Schema - Base object schema (without refinements)
+const successMetricBaseObjectSchema = z.object({
   name: z.string().min(1, "Name is required"),
   category: z.enum(['ADOPTION', 'REVENUE', 'RETENTION', 'ENABLEMENT', 'FRICTION']),
   description: z.string().nullable().optional(),
@@ -84,6 +84,22 @@ const successMetricBaseSchema = z.object({
   thresholds: metricThresholdsSchema,
 });
 
+// Success Metric Schema - Base object schema with threshold validation
+const successMetricBaseSchema = successMetricBaseObjectSchema.refine(
+  (data) => {
+    // If thresholds are provided, validate that at least one tier has a value
+    if (data.thresholds && typeof data.thresholds === 'object' && data.thresholds !== null) {
+      const thresholds = data.thresholds;
+      return ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
+        const tierThresholds = thresholds[tier as keyof typeof thresholds];
+        return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
+      });
+    }
+    return true; // Thresholds are optional
+  },
+  { message: "If thresholds are provided, at least one tier must have a threshold value (min, max, or target)", path: ["thresholds"] }
+);
+
 export const createSuccessMetricSchema = successMetricBaseSchema.refine(
   (data) => data.source !== 'PENDO' || data.pendo_event_id !== null,
   {
@@ -92,7 +108,7 @@ export const createSuccessMetricSchema = successMetricBaseSchema.refine(
   }
 );
 
-export const updateSuccessMetricSchema = successMetricBaseSchema.partial().refine(
+export const updateSuccessMetricSchema = successMetricBaseObjectSchema.partial().refine(
   (data) => {
     // Only validate if source is PENDO
     if (data.source === 'PENDO') {
@@ -104,6 +120,19 @@ export const updateSuccessMetricSchema = successMetricBaseSchema.partial().refin
     message: "pendo_event_id is required when source is PENDO",
     path: ["pendo_event_id"],
   }
+).refine(
+  (data) => {
+    // If thresholds are provided, validate that at least one tier has a value
+    const thresholds = data.thresholds;
+    if (thresholds && typeof thresholds === 'object' && thresholds !== null) {
+      return ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
+        const tierThresholds = thresholds[tier as keyof typeof thresholds];
+        return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
+      });
+    }
+    return true; // Thresholds are optional
+  },
+  { message: "If thresholds are provided, at least one tier must have a threshold value (min, max, or target)", path: ["thresholds"] }
 );
 
 // ============================================================================
