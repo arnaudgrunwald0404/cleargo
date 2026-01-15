@@ -29,7 +29,22 @@ export async function resolveDecisionOwnerEmail(
     const settings = await getSettings();
     const mapping = settings.pod_product_manager_mapping || {};
     
-    return mapping[pod] || null;
+    // Normalize pod name (trim whitespace)
+    const normalizedPod = pod.trim();
+    
+    // Try exact match first
+    if (mapping[normalizedPod]) {
+        return mapping[normalizedPod];
+    }
+    
+    // Try case-insensitive match
+    const podLower = normalizedPod.toLowerCase();
+    const matchingKey = Object.keys(mapping).find(key => key.toLowerCase() === podLower);
+    if (matchingKey && mapping[matchingKey]) {
+        return mapping[matchingKey];
+    }
+    
+    return null;
 }
 
 

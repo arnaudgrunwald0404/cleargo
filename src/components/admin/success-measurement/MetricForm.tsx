@@ -12,6 +12,9 @@ import {
   Text,
   Alert,
   Divider,
+  Combobox,
+  useCombobox,
+  InputBase,
 } from '@mantine/core';
 import { IconSparkles, IconInfoCircle } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
@@ -45,17 +48,24 @@ export function MetricForm({
     source: initialData?.source || 'MANUAL',
     pendo_event_id: initialData?.pendo_event_id || null,
     leading_or_lagging: initialData?.leading_or_lagging || 'LAGGING',
-    thresholds: initialData?.thresholds || {
-      TIER_1: {},
-      TIER_2: {},
-      TIER_3: {},
-    },
+    thresholds: initialData?.thresholds || null,
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [naturalLanguageDescription, setNaturalLanguageDescription] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [pendoEvents, setPendoEvents] = useState<Array<{ value: string; label: string }>>([]);
+  const [loadingPendoEvents, setLoadingPendoEvents] = useState(false);
+  const [pendoError, setPendoError] = useState<string | null>(null);
+  const [pendoSearchValue, setPendoSearchValue] = useState('');
+  const hasFetchedPendoEvents = React.useRef(false);
+  const combobox = useCombobox({
+    onDropdownClose: () => {
+      combobox.resetSelectedOption();
+      setPendoSearchValue('');
+    },
+  });
 
   const validate = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -64,17 +74,19 @@ export function MetricForm({
       newErrors.name = 'Name is required';
     }
     if (formData.source === 'PENDO' && !formData.pendo_event_id?.trim()) {
-      newErrors.pendo_event_id = 'Pendo event ID is required when source is PENDO';
+      newErrors.pendo_event_id = 'Pendo event name is required when source is PENDO';
     }
 
-    // Validate thresholds - at least one tier must have at least one value
-    const hasThresholds = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-      const tierThresholds = formData.thresholds[tier as keyof MetricThresholds];
-      return tierThresholds.min !== undefined || tierThresholds.max !== undefined || tierThresholds.target !== undefined;
-    });
+    // Validate thresholds - if provided, at least one tier must have at least one value
+    if (formData.thresholds) {
+      const hasThresholds = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
+        const tierThresholds = formData.thresholds![tier as keyof MetricThresholds];
+        return tierThresholds.min !== undefined || tierThresholds.max !== undefined || tierThresholds.target !== undefined;
+      });
 
-    if (!hasThresholds) {
-      newErrors.thresholds = 'At least one tier must have a threshold value (min, max, or target)';
+      if (!hasThresholds) {
+        newErrors.thresholds = 'If thresholds are provided, at least one tier must have a threshold value (min, max, or target)';
+      }
     }
 
     setErrors(newErrors);
@@ -88,7 +100,20 @@ export function MetricForm({
     }
 
     try {
-      await onSubmit(formData);
+      // Normalize thresholds: if all tiers are empty, set to null
+      let normalizedData = { ...formData };
+      if (normalizedData.thresholds) {
+        const hasAnyThreshold = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
+          const tierThresholds = normalizedData.thresholds![tier as keyof typeof normalizedData.thresholds];
+          return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
+        });
+        
+        if (!hasAnyThreshold) {
+          normalizedData.thresholds = null;
+        }
+      }
+
+      await onSubmit(normalizedData);
     } catch (error: any) {
       console.error('Error submitting metric:', error);
     }
@@ -99,12 +124,18 @@ export function MetricForm({
     field: 'min' | 'max' | 'target',
     value: number | undefined
   ) => {
+    const currentThresholds = formData.thresholds || {
+      TIER_1: {},
+      TIER_2: {},
+      TIER_3: {},
+    };
+    
     setFormData({
       ...formData,
       thresholds: {
-        ...formData.thresholds,
+        ...currentThresholds,
         [tier]: {
-          ...formData.thresholds[tier],
+          ...currentThresholds[tier],
           [field]: value,
         },
       },
@@ -145,11 +176,7 @@ export function MetricForm({
         source: metric.source || 'MANUAL',
         pendo_event_id: metric.pendo_event_id ?? null,
         leading_or_lagging: metric.leading_or_lagging || 'LAGGING',
-        thresholds: metric.thresholds || {
-          TIER_1: {},
-          TIER_2: {},
-          TIER_3: {},
-        },
+        thresholds: metric.thresholds || null,
       });
 
       notifications.show({
@@ -174,6 +201,83 @@ export function MetricForm({
   };
 
   const isCreating = !initialData || !initialData.name;
+
+  // Fetch Pendo events when source changes to PENDO
+  React.useEffect(() => {
+    if (formData.source === 'PENDO' && !hasFetchedPendoEvents.current) {
+      hasFetchedPendoEvents.current = true;
+      setLoadingPendoEvents(true);
+      fetch('/api/settings/success-measurement/pendo/events')
+        .then(async (res) => {
+          const data = await res.json();
+          console.log('Pendo events API response:', { status: res.status, ok: res.ok, data });
+          
+          // Handle HTTP error status codes
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 403) {
+              console.log('Unauthorized to fetch Pendo events - manual entry available');
+              setPendoEvents([]);
+              return;
+            }
+            // For other errors, log but still allow manual entry
+            console.warn('Error fetching Pendo events:', data.error || 'Unknown error');
+            setPendoEvents([]);
+            return;
+          }
+
+          // Handle case where Pendo integration is not configured (expected scenario)
+          if (data.error) {
+            // Show error message to user
+            setPendoError(data.error);
+            setPendoEvents([]);
+            return;
+          }
+
+          // Clear any previous errors
+          setPendoError(null);
+
+          // Handle successful response with events
+          if (data.events && Array.isArray(data.events)) {
+            if (data.events.length > 0) {
+              const eventOptions = data.events
+                .filter((event: { name: string; id?: string; description?: string }) => event && event.name)
+                .map((event: { name: string; id?: string; description?: string }) => ({
+                  value: event.name,
+                  label: event.name + (event.description ? ` - ${event.description}` : ''),
+                }));
+              console.log(`Setting ${eventOptions.length} Pendo event options`);
+              setPendoEvents(eventOptions);
+            } else {
+              // Empty events array
+              console.log('Pendo API returned empty events array');
+              setPendoEvents([]);
+            }
+          } else if (data.warning) {
+            // API returned a warning but empty events (e.g., API call failed)
+            console.log('Pendo events unavailable:', data.warning);
+            setPendoError(data.warning);
+            setPendoEvents([]);
+          } else {
+            // Unexpected response format
+            console.warn('Unexpected Pendo events response format:', data);
+            setPendoEvents([]);
+          }
+        })
+        .catch((error) => {
+          console.error('Error fetching Pendo events:', error);
+          setPendoError('Failed to fetch Pendo events. You can still enter event names manually.');
+          setPendoEvents([]);
+        })
+        .finally(() => {
+          setLoadingPendoEvents(false);
+        });
+    } else if (formData.source !== 'PENDO') {
+      // Reset the ref and clear events when source changes away from PENDO
+      hasFetchedPendoEvents.current = false;
+      setPendoEvents([]);
+      setPendoError(null);
+    }
+  }, [formData.source]);
 
   return (
     <form onSubmit={handleSubmit}>
@@ -273,13 +377,110 @@ export function MetricForm({
         />
 
         {formData.source === 'PENDO' && (
-          <TextInput
-            label="Pendo Event ID"
-            required
-            value={formData.pendo_event_id || ''}
-            onChange={(e) => setFormData({ ...formData, pendo_event_id: e.target.value || null })}
-            error={errors.pendo_event_id}
-          />
+          <div>
+            <Text size="sm" fw={500} mb={5}>
+              Pendo Event Name <span style={{ color: 'red' }}>*</span>
+            </Text>
+            <Combobox
+              store={combobox}
+              onOptionSubmit={(value) => {
+                setFormData({ ...formData, pendo_event_id: value || null });
+                setPendoSearchValue('');
+                combobox.closeDropdown();
+              }}
+            >
+              <Combobox.Target>
+                <InputBase
+                  component="button"
+                  type="button"
+                  pointer
+                  rightSection={<Combobox.Chevron />}
+                  rightSectionPointerEvents="none"
+                  onClick={() => combobox.toggleDropdown()}
+                  error={errors.pendo_event_id}
+                  disabled={loadingPendoEvents}
+                >
+                  {formData.pendo_event_id ? (
+                    <span>{pendoEvents.find(e => e.value === formData.pendo_event_id)?.label || formData.pendo_event_id}</span>
+                  ) : (
+                    <Text component="span" c="dimmed">
+                      {loadingPendoEvents ? 'Loading events...' : pendoEvents.length > 0 ? 'Select an event' : 'Enter or select event name'}
+                    </Text>
+                  )}
+                </InputBase>
+              </Combobox.Target>
+
+              <Combobox.Dropdown>
+                <Combobox.Search
+                  placeholder="Search events or enter custom name..."
+                  value={pendoSearchValue}
+                  onChange={(event) => {
+                    const value = event.currentTarget.value;
+                    setPendoSearchValue(value);
+                    combobox.openDropdown();
+                  }}
+                />
+                <Combobox.Options style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {pendoEvents
+                    .filter((event) => {
+                      const searchTerm = pendoSearchValue.toLowerCase();
+                      if (!searchTerm) return true;
+                      return event.label.toLowerCase().includes(searchTerm) ||
+                             event.value.toLowerCase().includes(searchTerm);
+                    })
+                    .map((event) => (
+                      <Combobox.Option value={event.value} key={event.value}>
+                        {event.label}
+                      </Combobox.Option>
+                    ))}
+                  {pendoSearchValue && 
+                   !pendoEvents.some(e => {
+                     const searchTerm = pendoSearchValue.toLowerCase();
+                     return e.value.toLowerCase() === searchTerm || 
+                            e.value.toLowerCase().includes(searchTerm) ||
+                            e.label.toLowerCase().includes(searchTerm);
+                   }) && (
+                    <Combobox.Option value={pendoSearchValue}>
+                      Use "{pendoSearchValue}" as event name
+                    </Combobox.Option>
+                  )}
+                  {pendoEvents.length === 0 && !loadingPendoEvents && !pendoSearchValue && (
+                    <Combobox.Option value="" disabled>
+                      No events found. Type an event name to use it.
+                    </Combobox.Option>
+                  )}
+                  {pendoEvents.length > 0 && pendoSearchValue && 
+                   pendoEvents.filter((event) => {
+                     const searchTerm = pendoSearchValue.toLowerCase();
+                     return event.label.toLowerCase().includes(searchTerm) ||
+                            event.value.toLowerCase().includes(searchTerm);
+                   }).length === 0 && (
+                    <Combobox.Option value={pendoSearchValue}>
+                      Use "{pendoSearchValue}" as event name
+                    </Combobox.Option>
+                  )}
+                </Combobox.Options>
+              </Combobox.Dropdown>
+            </Combobox>
+            {errors.pendo_event_id && (
+              <Text size="xs" c="red" mt={5}>{errors.pendo_event_id}</Text>
+            )}
+            {pendoError && (
+              <Text size="xs" c="orange" mt={5}>
+                {pendoError}
+              </Text>
+            )}
+            {pendoEvents.length === 0 && !loadingPendoEvents && !pendoError && (
+              <Text size="xs" c="dimmed" mt={5}>
+                No events found. You can enter an event name manually.
+              </Text>
+            )}
+            {pendoEvents.length > 0 && (
+              <Text size="xs" c="dimmed" mt={5}>
+                {pendoEvents.length} events available. You can also enter a custom event name.
+              </Text>
+            )}
+          </div>
         )}
 
         <Select
@@ -295,7 +496,7 @@ export function MetricForm({
 
         <div>
           <Text size="sm" fw={500} mb="xs">
-            Thresholds by Tier
+            Thresholds by Tier (Optional)
           </Text>
           {errors.thresholds && <Text size="xs" c="red" mb="xs">{errors.thresholds}</Text>}
           
@@ -305,19 +506,19 @@ export function MetricForm({
               <Group gap="xs">
                 <NumberInput
                   label="Min"
-                  value={formData.thresholds[tier].min}
+                  value={formData.thresholds?.[tier]?.min}
                   onChange={(value) => updateThreshold(tier, 'min', value ? Number(value) : undefined)}
                   style={{ flex: 1 }}
                 />
                 <NumberInput
                   label="Target"
-                  value={formData.thresholds[tier].target}
+                  value={formData.thresholds?.[tier]?.target}
                   onChange={(value) => updateThreshold(tier, 'target', value ? Number(value) : undefined)}
                   style={{ flex: 1 }}
                 />
                 <NumberInput
                   label="Max"
-                  value={formData.thresholds[tier].max}
+                  value={formData.thresholds?.[tier]?.max}
                   onChange={(value) => updateThreshold(tier, 'max', value ? Number(value) : undefined)}
                   style={{ flex: 1 }}
                 />

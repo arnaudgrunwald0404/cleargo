@@ -530,7 +530,7 @@ export default function EpicDetailPage() {
             // Get unique approver emails first (including delegated approvers)
             const approverEmails = new Set<string>();
             sorted.forEach((item: any) => {
-                // Priority: decision_owner_id (delegated) > criterion template email
+                // Priority: decision_owner_id (delegated) > criterion template email > pod mapping > AHA assigned user
                 let approverEmail: string | null = null;
                 
                 if (item.decision_owner?.email) {
@@ -539,23 +539,36 @@ export default function EpicDetailPage() {
                 } else {
                     // Fall back to criterion template
                     const criterionEmail = item.criterion?.decision_owner_email;
-                    approverEmail = criterionEmail;
                     
                     // If it's a placeholder, resolve using pod mapping
                     if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
                         if (pod) {
+                            // Normalize pod name (trim whitespace)
+                            const normalizedPod = pod.trim();
+                            
                             // Try exact match first
-                            if (settingsMapping[pod]) {
-                                approverEmail = settingsMapping[pod];
+                            if (settingsMapping[normalizedPod]) {
+                                approverEmail = settingsMapping[normalizedPod];
                             } else {
                                 // Try case-insensitive match
-                                const podLower = pod.toLowerCase();
+                                const podLower = normalizedPod.toLowerCase();
                                 const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
                                 if (matchingKey && settingsMapping[matchingKey]) {
                                     approverEmail = settingsMapping[matchingKey];
                                 }
                             }
                         }
+                        
+                        // If pod mapping failed, try AHA assigned user as fallback
+                        if (!approverEmail) {
+                            const assignedUser = ahaFields?.standard_fields?.assigned_to_user;
+                            if (assignedUser?.email) {
+                                approverEmail = assignedUser.email;
+                            }
+                        }
+                    } else if (criterionEmail) {
+                        // Not a placeholder, use criterion email directly
+                        approverEmail = criterionEmail;
                     }
                 }
                 
@@ -726,7 +739,7 @@ export default function EpicDetailPage() {
             }
             
             const resolvedMatrix = sorted.map((item: any) => {
-                // Priority: decision_owner_id (delegated) > criterion template email
+                // Priority: decision_owner_id (delegated) > criterion template email > pod mapping > AHA assigned user
                 let approverEmail: string | null = null;
                 let approverInfo: { first_name?: string; last_name?: string; avatar_url?: string } | null = null;
                 
@@ -741,27 +754,40 @@ export default function EpicDetailPage() {
                 } else {
                     // Fall back to criterion template
                     const criterionEmail = item.criterion?.decision_owner_email;
-                    approverEmail = criterionEmail;
                     
                     // If it's a placeholder, resolve using pod mapping
                     if (criterionEmail === "[name of pod's product manager]" || (criterionEmail && criterionEmail.toLowerCase().includes("pod"))) {
                         if (pod) {
+                            // Normalize pod name (trim whitespace)
+                            const normalizedPod = pod.trim();
+                            
                             // Try exact match first
-                            if (settingsMapping[pod]) {
-                                approverEmail = settingsMapping[pod];
+                            if (settingsMapping[normalizedPod]) {
+                                approverEmail = settingsMapping[normalizedPod];
                             } else {
                                 // Try case-insensitive match
-                                const podLower = pod.toLowerCase();
+                                const podLower = normalizedPod.toLowerCase();
                                 const matchingKey = Object.keys(settingsMapping).find(key => key.toLowerCase() === podLower);
                                 if (matchingKey && settingsMapping[matchingKey]) {
                                     approverEmail = settingsMapping[matchingKey];
                                 }
                             }
                         }
+                        
+                        // If pod mapping failed, try AHA assigned user as fallback
+                        if (!approverEmail) {
+                            const assignedUser = ahaFields?.standard_fields?.assigned_to_user;
+                            if (assignedUser?.email) {
+                                approverEmail = assignedUser.email;
+                            }
+                        }
+                    } else if (criterionEmail) {
+                        // Not a placeholder, use criterion email directly
+                        approverEmail = criterionEmail;
                     }
                     
                     // Get approver info from userInfoMap
-                    if (approverEmail && approverEmail !== "[name of pod's product manager]") {
+                    if (approverEmail && approverEmail !== "[name of pod's product manager]" && approverEmail.includes("@")) {
                         approverInfo = userInfoMap[approverEmail.toLowerCase()] || null;
                     }
                 }

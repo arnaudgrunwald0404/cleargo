@@ -20,18 +20,19 @@ export const RATE_LIMITS = {
  * @returns Wrapped handler with rate limiting applied
  */
 export function withRateLimit<T = any>(
-  handler: (req: NextRequest, context?: any) => Promise<NextResponse<T>>,
+  handler: (req: NextRequest, context?: any) => Promise<NextResponse<T> | NextResponse<any>>,
   config: RateLimitConfig = RATE_LIMITS.default,
   identifierFn?: (req: NextRequest) => Promise<string> | string
 ) {
-  return async (req: NextRequest, context?: any): Promise<NextResponse<T>> => {
+  return async (req: NextRequest, context?: any): Promise<NextResponse<any>> => {
     // Get identifier for rate limiting (user email by default)
     let identifier: string;
     if (identifierFn) {
       identifier = await Promise.resolve(identifierFn(req));
     } else {
       const userEmail = await getAuthenticatedUserEmail();
-      identifier = userEmail || req.ip || 'anonymous';
+      const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip') || 'anonymous';
+      identifier = userEmail || ip;
     }
 
     // Check rate limit
@@ -54,7 +55,7 @@ export function withRateLimit<T = any>(
           status: 429,
           headers 
         }
-      );
+      ) as NextResponse<any>;
     }
 
     // Execute the handler
@@ -73,7 +74,7 @@ export function withRateLimit<T = any>(
         { error: 'Internal Server Error' },
         { status: 500, headers }
       );
-      return errorResponse as NextResponse<T>;
+      return errorResponse as NextResponse<any>;
     }
   };
 }

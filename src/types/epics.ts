@@ -33,6 +33,7 @@ export interface Epic {
     pricing_model?: string;
     aha_fields?: Record<string, any> | null;
     archived?: boolean;
+    jira_epic_key?: string | null;
     product?: { name: string };
     owner?: { name?: string; email?: string };
     created_at: string;

@@ -46,6 +46,7 @@ export interface Epic {
     pricing_model: string | null;
     aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     archived: boolean;
+    jira_epic_key: string | null;
     created_at: string;
     updated_at: string;
 }
@@ -85,44 +86,24 @@ export async function getEpicById(id: string): Promise<Epic | null> {
  * Returns true if cleargo_candidate is "Yes" or true, false otherwise
  */
 function getClearGOCandidateValue(epicData: MappedEpicData): boolean {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:87',message:'getClearGOCandidateValue entry',data:{aha_id:epicData.aha_id,hasAhaFields:!!epicData.aha_fields,ahaFieldsType:typeof epicData.aha_fields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
     const ahaFields = epicData.aha_fields;
     if (!ahaFields || typeof ahaFields !== 'object') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:90',message:'No aha_fields found',data:{aha_id:epicData.aha_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         return false;
     }
 
     const customFields = ahaFields.custom_fields;
     if (!customFields || typeof customFields !== 'object') {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:94',message:'No custom_fields found',data:{aha_id:epicData.aha_id,ahaFieldsKeys:Object.keys(ahaFields)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         return false;
     }
 
     const cleargoCandidate = customFields.cleargo_candidate;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:98',message:'cleargo_candidate value extracted',data:{aha_id:epicData.aha_id,cleargoCandidate,cleargoCandidateType:typeof cleargoCandidate,isNull:cleargoCandidate===null,isUndefined:cleargoCandidate===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
     
     if (cleargoCandidate === null || cleargoCandidate === undefined) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:100',message:'cleargo_candidate is null/undefined',data:{aha_id:epicData.aha_id},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
         return false;
     }
 
     // Check if value is "Yes" or true
-    const result = cleargoCandidate === 'Yes' || cleargoCandidate === true;
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:104',message:'getClearGOCandidateValue exit',data:{aha_id:epicData.aha_id,result,cleargoCandidate},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    return result;
+    return cleargoCandidate === 'Yes' || cleargoCandidate === true;
 }
 
 export async function upsertEpicFromAha(
@@ -193,17 +174,9 @@ export async function upsertEpicFromAha(
     const isClearGOCandidate = getClearGOCandidateValue(epicData);
     const shouldBeArchived = !isClearGOCandidate;
     
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:172',message:'Archiving decision',data:{aha_id:epicData.aha_id,isClearGOCandidate,shouldBeArchived,existingArchived:existing?.archived,existingArchivedType:typeof existing?.archived},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
-    
     // Always set archived status (for both new and existing epics)
     // This ensures automatic archiving/unarchiving based on cleargo_candidate
     upsertData.archived = shouldBeArchived;
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:177',message:'upsertData.archived set',data:{aha_id:epicData.aha_id,upsertDataArchived:upsertData.archived},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     
     // Log when archived status changes for existing epics
     if (existing) {
@@ -214,20 +187,12 @@ export async function upsertEpicFromAha(
             );
         }
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:190',message:'Before upsert',data:{aha_id:epicData.aha_id,upsertDataArchived:upsertData.archived,hasArchivedField:'archived' in upsertData},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-    // #endregion
     
     const { data, error } = await supabase
         .from('epic')
         .upsert(upsertData, { onConflict: 'aha_id' })
         .select()
         .single();
-
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'epics.ts:196',message:'After upsert',data:{aha_id:epicData.aha_id,error:error?.message,errorCode:error?.code,dataArchived:data?.archived,dataArchivedType:typeof data?.archived,hasArchivedInData:'archived' in (data||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
 
     if (error) throw error;
 

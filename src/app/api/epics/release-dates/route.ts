@@ -7,7 +7,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 let ahaReleasesCache: { releases: any[]; timestamp: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function getHandler() {
+async function getHandler(): Promise<NextResponse<{ releases: { releaseName: string; launchDate: string | null; }[] }> | NextResponse<{ error: any }>> {
     try {
         const supabase = createClient();
         

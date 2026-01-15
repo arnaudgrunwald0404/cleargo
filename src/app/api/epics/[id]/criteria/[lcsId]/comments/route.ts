@@ -33,6 +33,8 @@ export async function GET(
         id,
         comment_text,
         created_at,
+        status_at_comment,
+        previous_status,
         created_by:app_user!criterion_comment_created_by_fkey(email, first_name, last_name)
       `)
       .eq('launch_criterion_status_id', lcsId)
@@ -79,7 +81,7 @@ export async function POST(
     }
 
     const body = await req.json();
-    const { comment_text } = body;
+    const { comment_text, status_at_comment, previous_status } = body;
 
     // Validate that comment has content (strip HTML tags for validation)
     const textContent = comment_text ? comment_text.replace(/<[^>]*>/g, '').trim() : '';
@@ -94,6 +96,8 @@ export async function POST(
         launch_criterion_status_id: lcsId,
         comment_text: comment_text, // Store HTML as-is
         created_by: appUser.id,
+        status_at_comment: status_at_comment || null,
+        previous_status: previous_status || null,
       })
       .select()
       .single();

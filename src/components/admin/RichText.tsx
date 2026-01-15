@@ -15,6 +15,7 @@ interface RichTextProps {
 
 export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false }: RichTextProps) {
     const editorRef = useRef<HTMLDivElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const [isFocused, setIsFocused] = useState(false);
     const savedSelectionRef = useRef<Range | null>(null);
 
@@ -180,10 +181,36 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
         );
     }
 
+    // Track focus on container
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+
+        const handleFocusIn = () => {
+            container.style.boxShadow = '0 0 0 2px #6366f1';
+            container.style.borderColor = 'transparent';
+        };
+        const handleFocusOut = () => {
+            container.style.boxShadow = 'none';
+            container.style.borderColor = '';
+        };
+
+        container.addEventListener('focusin', handleFocusIn);
+        container.addEventListener('focusout', handleFocusOut);
+
+        return () => {
+            container.removeEventListener('focusin', handleFocusIn);
+            container.removeEventListener('focusout', handleFocusOut);
+        };
+    }, []);
+
     return (
-        <div className="border border-gray-300 rounded-lg overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 focus-within:border-transparent">
+        <div 
+            ref={containerRef}
+            className="border border-gray-300 rounded-lg"
+        >
             {/* Toolbar */}
-            <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200">
+            <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200 rounded-t-lg">
                 <button
                     type="button"
                     onMouseDown={(e) => {
@@ -249,7 +276,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
             </div>
 
             {/* Editor */}
-            <div className="relative">
+            <div className="relative rounded-b-lg overflow-hidden">
                 <div
                     ref={editorRef}
                     contentEditable

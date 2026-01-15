@@ -35,6 +35,23 @@ export async function GET(
             return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
         }
 
+        // Check if we have a cached Jira epic key
+        console.log(`🔍 Checking for cached Jira epic key for epic ${id}`);
+        console.log(`   Epic jira_epic_key value:`, epic.jira_epic_key);
+        console.log(`   Epic jira_epic_key type:`, typeof epic.jira_epic_key);
+        console.log(`   Epic jira_epic_key truthy check:`, !!epic.jira_epic_key);
+        
+        if (epic.jira_epic_key) {
+            console.log(`✅ Using cached Jira epic key: ${epic.jira_epic_key}`);
+            return NextResponse.json({
+                jiraEpicKey: epic.jira_epic_key,
+                source: 'cached',
+                epicName: epic.name
+            });
+        } else {
+            console.log(`❌ No cached Jira epic key found, will search...`);
+        }
+
         // Check Jira integration is configured
         const settings = await getSettings();
         if (!settings.jira_domain || !settings.jira_email || !settings.jira_api_token) {
@@ -44,6 +61,10 @@ export async function GET(
                 error: 'Jira integration not configured'
             });
         }
+
+        let foundJiraEpicKey: string | null = null;
+        let source: 'jira_search' | 'integrations' | null = null;
+        let matchedSummary: string | undefined;
 
         // PRIMARY METHOD: Search Jira API by epic name
         if (epic.name) {
@@ -56,20 +77,13 @@ export async function GET(
                 
                 if (jiraEpics.length > 0) {
                     // Use the first match (exact match should return one result)
-                    const jiraEpicKey = jiraEpics[0].key;
-                    const matchedSummary = jiraEpics[0].fields.summary;
-                    console.log(`✅ Found Jira epic key via Jira API search: ${jiraEpicKey}`);
+                    foundJiraEpicKey = jiraEpics[0].key;
+                    matchedSummary = jiraEpics[0].fields.summary;
+                    source = 'jira_search';
+                    console.log(`✅ Found Jira epic key via Jira API search: ${foundJiraEpicKey}`);
                     console.log(`   Matched summary: "${matchedSummary}"`);
                     console.log(`   Original name: "${epic.name}"`);
                     console.log(`   Match count: ${jiraEpics.length}`);
-                    
-                    return NextResponse.json({
-                        jiraEpicKey,
-                        source: 'jira_search',
-                        epicName: epic.name,
-                        matchedSummary: matchedSummary,
-                        matches: jiraEpics.length
-                    });
                 } else {
                     console.log(`❌ No Jira epic found matching name: "${epic.name}"`);
                     console.log(`   This might indicate:`);
@@ -88,27 +102,64 @@ export async function GET(
         }
 
         // FALLBACK METHOD: Extract from AHA integrations field
-        const ahaFieldsStruct = epic.aha_fields as any;
-        const standardFields = ahaFieldsStruct?.standard_fields || {};
-        const integrations = standardFields.integrations;
+        if (!foundJiraEpicKey) {
+            const ahaFieldsStruct = epic.aha_fields as any;
+            const standardFields = ahaFieldsStruct?.standard_fields || {};
+            const integrations = standardFields.integrations;
 
-        if (integrations) {
-            console.log(`🔍 [FALLBACK] Trying to extract from AHA integrations field`);
-            const jiraEpicKey = extractJiraEpicKeyFromIntegrations(integrations);
-            if (jiraEpicKey) {
-                console.log(`✅ Found Jira epic key via integrations field: ${jiraEpicKey}`);
-                return NextResponse.json({
-                    jiraEpicKey,
-                    source: 'integrations',
-                    epicName: epic.name
-                });
+            if (integrations) {
+                console.log(`🔍 [FALLBACK] Trying to extract from AHA integrations field`);
+                const jiraEpicKey = extractJiraEpicKeyFromIntegrations(integrations);
+                if (jiraEpicKey) {
+                    foundJiraEpicKey = jiraEpicKey;
+                    source = 'integrations';
+                    console.log(`✅ Found Jira epic key via integrations field: ${foundJiraEpicKey}`);
+                }
+            }
+        }
+
+        // Save the found Jira epic key to the database for future use
+        if (foundJiraEpicKey) {
+            try {
+                console.log(`💾 Attempting to cache Jira epic key ${foundJiraEpicKey} for epic ${id}`);
+                const { data: updateData, error: updateError } = await supabase
+                    .from('epic')
+                    .update({ jira_epic_key: foundJiraEpicKey, updated_at: new Date().toISOString() })
+                    .eq('id', id)
+                    .select('jira_epic_key')
+                    .single();
+
+                if (updateError) {
+                    // Check if error is due to missing column (migration not run)
+                    if (updateError.message?.includes('jira_epic_key') || updateError.code === '42703') {
+                        console.warn(`⚠️ Cannot cache Jira epic key: jira_epic_key column may not exist yet. Please run migration 20260118000000_add_jira_epic_key_to_epic.sql`);
+                        console.warn(`   Error details:`, updateError);
+                    } else {
+                        console.error(`❌ Failed to cache Jira epic key:`, updateError);
+                        console.error(`   Error code:`, updateError.code);
+                        console.error(`   Error message:`, updateError.message);
+                    }
+                    // Continue anyway - we still return the key
+                } else {
+                    console.log(`✅ Successfully cached Jira epic key ${foundJiraEpicKey} for epic ${id}`);
+                    if (updateData) {
+                        console.log(`   Verified cached value:`, updateData.jira_epic_key);
+                    }
+                }
+            } catch (cacheError: any) {
+                console.error(`❌ Exception while caching Jira epic key:`, cacheError);
+                console.error(`   Error type:`, cacheError.constructor.name);
+                console.error(`   Error message:`, cacheError.message);
+                console.error(`   Error stack:`, cacheError.stack);
+                // Continue anyway - we still return the key
             }
         }
 
         return NextResponse.json({
-            jiraEpicKey: null,
-            source: null,
-            epicName: epic.name
+            jiraEpicKey: foundJiraEpicKey,
+            source: source,
+            epicName: epic.name,
+            ...(matchedSummary && { matchedSummary }),
         });
 
     } catch (error: any) {

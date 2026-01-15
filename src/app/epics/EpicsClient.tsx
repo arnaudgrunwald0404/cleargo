@@ -159,9 +159,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
             if (!epicsRes.ok) throw new Error("Failed to fetch epics");
             const epicsData = await epicsRes.json();
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:161',message:'Epics loaded from API',data:{epicCount:epicsData.length,firstEpicArchived:epicsData[0]?.archived,firstEpicArchivedType:typeof epicsData[0]?.archived,firstEpicAhaId:epicsData[0]?.aha_id,sampleEpics:epicsData.slice(0,3).map((e:any)=>({aha_id:e.aha_id,archived:e.archived,archivedType:typeof e.archived}))},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-            // #endregion
             setEpics(epicsData);
 
             // Priority 3: Supporting data (batch fetch with small delay)
@@ -267,7 +264,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         // Exclude archived epics
         // #region agent log
         if (l.aha_id && (l.archived === true || l.archived === undefined || l.archived === null)) {
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:265',message:'Epic archived check',data:{aha_id:l.aha_id,name:l.name,archived:l.archived,archivedType:typeof l.archived,archivedIsTrue:l.archived===true,willFilter:l.archived===true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // Filter archived epics
         }
         // #endregion
         if (l.archived === true) return false;
@@ -1327,9 +1324,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     });
                                                     
                                                     // Reload epics to show updated data
-                                                    // #region agent log
-                                                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'EpicsClient.tsx:1322',message:'Calling loadData after sync',data:{releaseName:group.releaseName,resultCreated:result.results.created,resultUpdated:result.results.updated},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                                                    // #endregion
                                                     loadData();
                                                 } catch (error: any) {
                                                     notifications.show({

@@ -31,6 +31,7 @@ interface Epic {
     id: string;
     name: string;
     aha_fields?: Record<string, any> | null;
+    archived?: boolean;
 }
 
 interface ReleaseGroup {

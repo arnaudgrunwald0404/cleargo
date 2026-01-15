@@ -29,16 +29,11 @@ export async function resolveRole(email: string): Promise<Role> {
       .eq("email", e)
       .single();
 
-    console.log('🔍 resolveRole - email:', e, 'user:', user, 'error:', error?.message);
-
     if (error || !user) {
-      console.log('⚠️ resolveRole - No user found');
       // Safety net: fallback product ops email gets PRODUCT_OPS if user not found
       if (e === FALLBACK_PRODUCT_OPS) {
-        console.log('⚠️ resolveRole - Using fallback PRODUCT_OPS for fallback email');
         return "PRODUCT_OPS";
       }
-      console.log('⚠️ resolveRole - Returning OTHER');
       return "OTHER";
     }
 
@@ -48,29 +43,22 @@ export async function resolveRole(email: string): Promise<Role> {
 
     // If user has roles array, return the first one (primary role)
     if (roles && roles.length > 0) {
-      console.log('✅ resolveRole - Returning role:', roles[0]);
       return roles[0] as Role;
     }
 
     // Fall back to legacy single role field
     if (legacyRole) {
-      console.log('✅ resolveRole - Returning legacy role:', legacyRole);
       return legacyRole as Role;
     }
 
-    console.log('⚠️ resolveRole - No roles found');
     // Safety net: fallback product ops email gets PRODUCT_OPS if no roles in database
     if (e === FALLBACK_PRODUCT_OPS) {
-      console.log('⚠️ resolveRole - Using fallback PRODUCT_OPS for fallback email (no roles in DB)');
       return "PRODUCT_OPS";
     }
-    console.log('⚠️ resolveRole - Returning OTHER');
     return "OTHER";
   } catch (err) {
     // If database query fails, use fallback for fallback email
-    console.log('❌ resolveRole - Error:', err);
     if (e === FALLBACK_PRODUCT_OPS) {
-      console.log('❌ resolveRole - Using fallback PRODUCT_OPS for fallback email (query failed)');
       return "PRODUCT_OPS";
     }
     return "OTHER";
