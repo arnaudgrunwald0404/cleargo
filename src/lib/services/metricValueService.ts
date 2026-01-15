@@ -3,7 +3,7 @@
  * Provides a single interface to fetch metric values from any source
  */
 
-import { fetchMetricValue as fetchPendoValue, fetchActivationData as fetchPendoActivation } from '@/lib/integrations/pendo/service';
+import { fetchMetricValue as fetchPendoValue, fetchActivationData as fetchPendoActivation, type PendoMetricOptions } from '@/lib/integrations/pendo/service';
 import { fetchMetricValue as fetchSnowflakeValue } from '@/lib/integrations/snowflake/service';
 import { getClient } from '@/lib/db';
 import type { SuccessMetric } from '@/lib/success/types';
@@ -11,11 +11,24 @@ import type { SuccessMetric } from '@/lib/success/types';
 /**
  * Get metric value from any source (Pendo, Snowflake, or Manual)
  * Manual values take precedence if they exist
+ * 
+ * @param metric - The success metric definition
+ * @param epicId - The epic ID
+ * @param snapshotDate - The snapshot date
+ * @param epicMetricConfig - Optional epic-specific configuration (pendo_event_id, snowflake_query, etc.)
  */
 export async function getMetricValue(
   metric: SuccessMetric,
   epicId: string,
-  snapshotDate: string
+  snapshotDate: string,
+  epicMetricConfig?: {
+    pendo_event_id?: string | null;
+    snowflake_query?: string | null;
+    pendo_segment_ids?: string[] | null;
+    pendo_segment_names?: string[] | null;
+    pendo_app_ids?: string[] | null;
+    pendo_app_names?: string[] | null;
+  }
 ): Promise<number | boolean | null> {
   // First, check for manual value (takes precedence)
   const manualValue = await getManualMetricValue(epicId, metric.id, snapshotDate);
@@ -24,11 +37,36 @@ export async function getMetricValue(
   }
 
   // Then fetch from automated source
+  // Use epic-specific config if provided, otherwise fall back to metric defaults
   switch (metric.source) {
-    case 'PENDO':
-      return await fetchPendoValue(metric, epicId, snapshotDate);
-    case 'SNOWFLAKE':
-      return await fetchSnowflakeValue(metric, epicId, snapshotDate);
+    case 'PENDO': {
+      // Use epic-specific pendo_event_id if provided, otherwise use metric default
+      const pendoEventId = epicMetricConfig?.pendo_event_id || metric.pendo_event_id;
+      if (!pendoEventId) {
+        console.warn(`No Pendo event ID configured for metric ${metric.id} in epic ${epicId}`);
+        return null;
+      }
+      // Create a modified metric object with epic-specific event ID
+      const epicMetric = { ...metric, pendo_event_id: pendoEventId };
+      const pendoOptions: PendoMetricOptions = {
+        pendoSegmentIds: epicMetricConfig?.pendo_segment_ids ?? undefined,
+        pendoSegmentNames: epicMetricConfig?.pendo_segment_names ?? undefined,
+        pendoAppIds: epicMetricConfig?.pendo_app_ids ?? undefined,
+        pendoAppNames: epicMetricConfig?.pendo_app_names ?? undefined,
+      };
+      return await fetchPendoValue(epicMetric, epicId, snapshotDate, pendoOptions);
+    }
+    case 'SNOWFLAKE': {
+      // Use epic-specific snowflake_query if provided
+      // Note: SuccessMetric doesn't have snowflake_query at metric level, only at epic level
+      const snowflakeQuery = epicMetricConfig?.snowflake_query;
+      if (!snowflakeQuery) {
+        console.warn(`No Snowflake query configured for metric ${metric.id} in epic ${epicId}`);
+        return null;
+      }
+      // Pass query as parameter to fetchSnowflakeValue
+      return await fetchSnowflakeValue(metric, epicId, snapshotDate, snowflakeQuery);
+    }
     case 'MANUAL':
       // For manual-only metrics, return null if no manual value exists
       return null;

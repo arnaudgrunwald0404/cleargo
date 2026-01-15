@@ -700,58 +700,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             setCommentsModalOpen(true);
         }
         return; // Don't save status yet, wait for comment
-        // Optimistically update the UI immediately
-        setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
-        setSavingItems(prev => new Set(prev).add(id));
-        
-        try {
-            const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: newStatus })
-            });
-            
-            let responseData = null;
-            const contentType = res.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-                responseData = await res.json();
-            } else {
-                const text = await res.text();
-                responseData = { error: text || 'Unknown error' };
-            }
-            
-            if (!res.ok) {
-                // Revert optimistic update on error
-                setOptimisticStatuses(prev => {
-                    const next = { ...prev };
-                    if (oldStatus) {
-                        next[id] = oldStatus;
-                    } else {
-                        delete next[id];
-                    }
-                    return next;
-                });
-                const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status} ${res.statusText}`;
-                throw new Error(errorMsg);
-            }
-            
-            // Clear optimistic update since server confirmed it
-            setOptimisticStatuses(prev => {
-                const next = { ...prev };
-                delete next[id];
-                return next;
-            });
-            onUpdate(); // Refresh parent to get latest data
-        } catch (e: any) {
-            console.error('Failed to update status:', e);
-            alert(`Failed to update status: ${e.message || e}`);
-        } finally {
-            setSavingItems(prev => {
-                const next = new Set(prev);
-                next.delete(id);
-                return next;
-            });
-        }
     }
 
     const toggleCategory = (cat: string) => {
@@ -841,13 +789,12 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const handleCancelRating = () => {
         // Revert the status change and show toast
         if (pendingStatusChange) {
-            const { itemId } = pendingStatusChange;
-            // Revert optimistic status update
+            const { itemId, previousStatus } = pendingStatusChange;
+            // Revert optimistic status update using the stored previousStatus
             setOptimisticStatuses(prev => {
                 const next = { ...prev };
-                const currentItem = items.find(item => item.id === itemId);
-                if (currentItem?.status) {
-                    next[itemId] = currentItem.status;
+                if (previousStatus) {
+                    next[itemId] = previousStatus;
                 } else {
                     delete next[itemId];
                 }
@@ -1363,9 +1310,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                                                         console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
                                                                                     }}
                                                                                 />
-                                                                            ) : (
+                                                                            ) : IconComponent ? (
                                                                                 <IconComponent size={16} />
-                                                                            )}
+                                                                            ) : null}
                                                                         </div>
                                                                     ) : (
                                                                         <div 
@@ -1792,9 +1739,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                                                             console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
                                                                                         }}
                                                                                     />
-                                                                                ) : (
+                                                                                ) : IconComponent ? (
                                                                                     <IconComponent size={18} />
-                                                                                )}
+                                                                                ) : null}
                                                                             </div>
                                                                         ) : (
                                                                             <div 

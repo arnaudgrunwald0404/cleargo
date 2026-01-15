@@ -8,8 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
-import SnapshotModal from "@/components/SnapshotModal";
-import SnapshotList from "@/components/SnapshotList";
+import DecisionList from "@/components/DecisionList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from "@/components/PurpleLoader";
@@ -33,8 +32,7 @@ export default function EpicDetailPage() {
     const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [snapshotModalOpen, setSnapshotModalOpen] = useState(false);
-    const [refreshSnapshots, setRefreshSnapshots] = useState(0);
+    const [refreshDecisions, setRefreshDecisions] = useState(0);
     const [updatingTier, setUpdatingTier] = useState(false);
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [pmOwner, setPmOwner] = useState<{name?: string; email?: string; avatar_url?: string} | null>(null);
@@ -1286,18 +1284,6 @@ export default function EpicDetailPage() {
                                     Show Epic in Aha!
                                 </Button>
                             )}
-                            <Button 
-                                size="xs" 
-                                onClick={() => setSnapshotModalOpen(true)}
-                                styles={{
-                                    root: {
-                                        fontFamily: 'var(--font-body)',
-                                        fontSize: 'var(--font-size-sm)'
-                                    }
-                                }}
-                            >
-                                Take Snapshot
-                            </Button>
                         </div>
                     </div>
                 </div>
@@ -1684,9 +1670,13 @@ export default function EpicDetailPage() {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="decisions" pt="md">
-                    {/* Lazy load snapshots only when decisions tab is active */}
+                    {/* Lazy load decisions only when decisions tab is active */}
                     {activeTab === 'decisions' && (
-                        <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
+                        <DecisionList 
+                            epicId={epic.id} 
+                            refreshTrigger={refreshDecisions}
+                            onRefresh={() => setRefreshDecisions(prev => prev + 1)}
+                        />
                     )}
                 </Tabs.Panel>
 
@@ -1721,13 +1711,6 @@ export default function EpicDetailPage() {
                     )}
                 </Tabs.Panel>
             </Tabs>
-
-            <SnapshotModal
-                epicId={epic.id}
-                opened={snapshotModalOpen}
-                onClose={() => setSnapshotModalOpen(false)}
-                onSuccess={() => setRefreshSnapshots(prev => prev + 1)}
-            />
 
             </div>
             {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} />}

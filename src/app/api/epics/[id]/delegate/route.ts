@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { sendSlackNotification } from '@/lib/slack/notifications';
+import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
 import { getEpic } from '@/lib/epics';
 import { canRolesPerform } from '@/lib/permissions';
 import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
@@ -128,6 +128,43 @@ export async function POST(
           epic_name: epic.name,
         },
       });
+
+      // Send Slack notification to the newly delegated post-launch owner
+      try {
+        // Ensure we have a Slack handle; attempt to sync if missing
+        let recipientSlackHandle = newApprover.slack_handle || null;
+        if (!recipientSlackHandle) {
+          const synced = await syncUserSlackHandle(newApprover.email);
+          if (synced) recipientSlackHandle = synced;
+        }
+
+        const recipientName = `${newApprover.first_name || ''} ${newApprover.last_name || ''}`.trim() || newApprover.email;
+        const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+        await sendSlackNotification({
+          type: 'delegation',
+          priority: 'medium',
+          recipient: {
+            id: newApproverId,
+            email: newApprover.email,
+            slack_handle: recipientSlackHandle || undefined,
+            name: recipientName,
+          },
+          launch_id: epicId,
+          metadata: {
+            epic_name: epic.name,
+            epic_id: epicId,
+            task_label: 'Post-Launch Owner',
+            category: 'Post-Launch',
+            delegation_type: delegationType,
+            delegated_by: delegatorName,
+            ...(appUrl ? { epic_url: `${appUrl}/epics/${epicId}` } : {}),
+          },
+        });
+      } catch (slackError) {
+        console.warn('Failed to send Slack notification for post-launch owner delegation:', slackError);
+        // Do not fail the request if Slack sending fails
+      }
 
       return NextResponse.json({ 
         success: true,

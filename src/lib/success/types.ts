@@ -25,46 +25,13 @@ export type LaunchTier = 'TIER_1' | 'TIER_2' | 'TIER_3';
 export type DayMarker = 30 | 60 | 90;
 
 // ============================================================================
-// Adoption Benchmark
-// ============================================================================
-
-export interface AdoptionBenchmark {
-  id: string;
-  name: string;
-  launch_tier: LaunchTier;
-  feature_type: string;
-  target_persona: string;
-  horizon_days: number[];
-  expected_activation: number[];
-  expected_usage_depth: number[] | null;
-  expected_ttfv_days: number | null;
-  segment_modifiers: Record<string, unknown> | null;
-  is_default: boolean;
-  version: number;
-  created_at: string;
-  updated_at: string;
-}
-
-// ============================================================================
-// Success Metric
+// Success Metric (threshold-based, no adoption benchmarks)
 // ============================================================================
 
 export interface MetricThresholds {
-  TIER_1: {
-    min?: number;
-    max?: number;
-    target?: number;
-  };
-  TIER_2: {
-    min?: number;
-    max?: number;
-    target?: number;
-  };
-  TIER_3: {
-    min?: number;
-    max?: number;
-    target?: number;
-  };
+  min?: number;
+  max?: number;
+  target?: number;
 }
 
 export interface SuccessMetric {
@@ -87,7 +54,6 @@ export interface SuccessMetric {
 
 export interface EpicSuccessConfig {
   epic_id: string;
-  benchmark_id: string | null;
   post_launch_owner: string;
   locked: boolean;
   locked_at: string | null;
@@ -104,7 +70,16 @@ export interface EpicSuccessMetric {
   epic_id: string;
   metric_id: string;
   threshold_override: MetricThresholds | null;
+  target: number | null;
+  pendo_event_id: string | null;
+  snowflake_query: string | null;
+  manual_label: string | null;
+  pendo_segment_ids?: string[] | null;
+  pendo_segment_names?: string[] | null;
+  pendo_app_ids?: string[] | null;
+  pendo_app_names?: string[] | null;
   created_at: string;
+  updated_at: string;
 }
 
 // ============================================================================
@@ -138,19 +113,11 @@ export interface MetricResult {
   source: MetricSource;
 }
 
-export interface BenchmarkComparison {
-  horizons: number[]; // [30, 60, 90]
-  expectedActivation: number[];
-  actualActivation: number[] | null;
-  dataMissing?: boolean;
-}
-
 export interface EpicScorecard {
   id: string;
   epic_id: string;
   snapshot_date: string; // ISO date string
   metric_results: MetricResult[];
-  benchmark_comparison: BenchmarkComparison;
   overall_status: ScorecardStatus;
   created_at: string;
 }
@@ -187,19 +154,6 @@ export interface EpicRetro {
 // DTOs (Data Transfer Objects) for API requests/responses
 // ============================================================================
 
-export interface CreateAdoptionBenchmarkDTO {
-  name: string;
-  launch_tier: LaunchTier;
-  feature_type: string;
-  target_persona: string;
-  horizon_days: number[];
-  expected_activation: number[];
-  expected_usage_depth?: number[] | null;
-  expected_ttfv_days?: number | null;
-  segment_modifiers?: Record<string, unknown> | null;
-  is_default?: boolean;
-}
-
 export interface CreateSuccessMetricDTO {
   name: string;
   category: MetricCategory;
@@ -213,7 +167,6 @@ export interface CreateSuccessMetricDTO {
 
 export interface CreateEpicSuccessConfigDTO {
   epic_id: string;
-  benchmark_id?: string; // Optional - can be set via metric selection
   post_launch_owner?: string; // Optional - will be auto-resolved to PM if not provided
 }
 
@@ -221,6 +174,38 @@ export interface CreateEpicSuccessMetricDTO {
   epic_id: string;
   metric_id: string;
   threshold_override?: MetricThresholds | null;
+  target?: number | null;
+  pendo_event_id?: string | null;
+  snowflake_query?: string | null;
+  manual_label?: string | null;
+  pendo_segment_ids?: string[] | null;
+  pendo_segment_names?: string[] | null;
+  pendo_app_ids?: string[] | null;
+  pendo_app_names?: string[] | null;
+}
+
+export type MetricHistoryChangeType = 
+  | 'METRIC_ADDED' 
+  | 'METRIC_REMOVED' 
+  | 'TARGET_SET' 
+  | 'TARGET_UPDATED' 
+  | 'EVENT_CONFIG_UPDATED';
+
+export interface EpicSuccessMetricHistory {
+  id: string;
+  epic_success_metric_id: string | null;
+  epic_id: string;
+  metric_id: string;
+  change_type: MetricHistoryChangeType;
+  changed_by: {
+    id: string;
+    email: string;
+    first_name?: string | null;
+    last_name?: string | null;
+  };
+  old_value: Record<string, any> | null;
+  new_value: Record<string, any> | null;
+  changed_at: string;
 }
 
 export interface SubmitEpicRetroDTO {

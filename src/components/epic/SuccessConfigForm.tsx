@@ -5,6 +5,7 @@ import {
   Button,
   Stack,
   Select,
+  MultiSelect,
   Group,
   Text,
   Avatar,
@@ -13,12 +14,14 @@ import {
   ActionIcon,
   Alert,
   Badge,
+  NumberInput,
+  Divider,
 } from '@mantine/core';
-import { IconArrowsRightLeft, IconPlus, IconAlertCircle } from '@tabler/icons-react';
+import { IconCalendarClock, IconPlus, IconAlertCircle, IconX } from '@tabler/icons-react';
 import { DelegationModal, DelegationType } from '../DelegationModal';
-import { MetricSelectionModal } from './MetricSelectionModal';
 import { notifications } from '@mantine/notifications';
-import type { CreateEpicSuccessConfigDTO } from '@/lib/success/types';
+import { MetricCreationForm } from './MetricCreationForm';
+import type { CreateEpicSuccessConfigDTO, SuccessMetric } from '@/lib/success/types';
 import type { EpicTier } from '@/types/epics';
 import type { EpicSuccessMetricWithDetails } from '@/lib/services/successMeasurementService';
 
@@ -38,6 +41,18 @@ interface SuccessConfigFormProps {
   metrics?: EpicSuccessMetricWithDetails[];
 }
 
+interface MetricSelection {
+  metricId: string | null;
+  target: number | null;
+  pendoEventId: string | null;
+  snowflakeQuery: string | null;
+  manualLabel: string | null;
+   pendoSegmentIds: string[] | null;
+   pendoSegmentNames: string[] | null;
+   pendoAppIds: string[] | null;
+   pendoAppNames: string[] | null;
+}
+
 export function SuccessConfigForm({
   epicId,
   epicTier,
@@ -55,8 +70,22 @@ export function SuccessConfigForm({
 }: SuccessConfigFormProps) {
   const [delegationModalOpen, setDelegationModalOpen] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
-  const [showMetricModal, setShowMetricModal] = useState(false);
-  const [submittingMetric, setSubmittingMetric] = useState(false);
+  const [availableMetrics, setAvailableMetrics] = useState<SuccessMetric[]>([]);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [pendoEvents, setPendoEvents] = useState<Array<{ value: string; label: string }>>([]);
+  const [loadingPendoEvents, setLoadingPendoEvents] = useState(false);
+  const [pendoSegments, setPendoSegments] = useState<Array<{ value: string; label: string }>>([]);
+  const [loadingPendoSegments, setLoadingPendoSegments] = useState(false);
+  const [pendoApps, setPendoApps] = useState<Array<{ value: string; label: string }>>([]);
+  const [loadingPendoApps, setLoadingPendoApps] = useState(false);
+  const [metricSelections, setMetricSelections] = useState<MetricSelection[]>([
+    { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+    { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+    { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+  ]);
+  const [savingMetrics, setSavingMetrics] = useState(false);
+  const [visibleMetricSlots, setVisibleMetricSlots] = useState(1);
+  const [showCreateMetricModal, setShowCreateMetricModal] = useState(false);
 
   // Get current user email
   useEffect(() => {
@@ -74,6 +103,139 @@ export function SuccessConfigForm({
     };
     fetchCurrentUser();
   }, []);
+
+  // Fetch available metrics
+  useEffect(() => {
+    const fetchMetrics = async () => {
+      setLoadingMetrics(true);
+      try {
+        const res = await fetch('/api/settings/success-measurement/metrics');
+        if (res.ok) {
+          const data = await res.json();
+          setAvailableMetrics(Array.isArray(data) ? data : []);
+        }
+      } catch (error) {
+        console.error('Error fetching metrics:', error);
+      } finally {
+        setLoadingMetrics(false);
+      }
+    };
+    fetchMetrics();
+  }, []);
+
+  // Fetch Pendo events
+  useEffect(() => {
+    const fetchPendoEvents = async () => {
+      setLoadingPendoEvents(true);
+      try {
+        const res = await fetch('/api/settings/success-measurement/pendo/events');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.events && Array.isArray(data.events)) {
+            const eventOptions = data.events
+              .filter((event: { name: string; id?: string; description?: string }) => event && event.name)
+              .map((event: { name: string; id?: string; description?: string }) => ({
+                value: event.name,
+                label: event.name + (event.description ? ` - ${event.description}` : ''),
+              }));
+            setPendoEvents(eventOptions);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching Pendo events:', error);
+      } finally {
+        setLoadingPendoEvents(false);
+      }
+    };
+    fetchPendoEvents();
+  }, []);
+
+  // Fetch Pendo segments
+  useEffect(() => {
+    const fetchPendoSegments = async () => {
+      setLoadingPendoSegments(true);
+      try {
+        const res = await fetch('/api/settings/success-measurement/pendo/segments');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.segments)) {
+            const options = data.segments
+              .filter((segment: { id?: string; name?: string }) => segment && (segment.id || segment.name))
+              .map((segment: { id?: string; name?: string }) => ({
+                value: segment.id || segment.name!,
+                label: segment.name || segment.id!,
+              }));
+            setPendoSegments(options);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching Pendo segments:', error);
+      } finally {
+        setLoadingPendoSegments(false);
+      }
+    };
+    fetchPendoSegments();
+  }, []);
+
+  // Fetch Pendo apps
+  useEffect(() => {
+    const fetchPendoApps = async () => {
+      setLoadingPendoApps(true);
+      try {
+        const res = await fetch('/api/settings/success-measurement/pendo/apps');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.apps)) {
+            const options = data.apps
+              .filter((app: { id?: string; name?: string }) => app && (app.id || app.name))
+              .map((app: { id?: string; name?: string }) => ({
+                value: app.id || app.name!,
+                label: app.name || app.id!,
+              }));
+            setPendoApps(options);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching Pendo apps:', error);
+      } finally {
+        setLoadingPendoApps(false);
+      }
+    };
+    fetchPendoApps();
+  }, []);
+
+  // Initialize metric selections from existing metrics
+  useEffect(() => {
+    const initialSelections: MetricSelection[] = [
+      { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+      { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+      { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
+    ];
+
+    if (metrics.length > 0) {
+      metrics.slice(0, 3).forEach((epicMetric, index) => {
+        if (index < 3) {
+          initialSelections[index] = {
+            metricId: epicMetric.metric_id,
+            target: epicMetric.target,
+            pendoEventId: epicMetric.pendo_event_id,
+            snowflakeQuery: epicMetric.snowflake_query,
+            manualLabel: epicMetric.manual_label,
+            pendoSegmentIds: (epicMetric as any).pendo_segment_ids || null,
+            pendoSegmentNames: (epicMetric as any).pendo_segment_names || null,
+            pendoAppIds: (epicMetric as any).pendo_app_ids || null,
+            pendoAppNames: (epicMetric as any).pendo_app_names || null,
+          };
+        }
+      });
+    }
+
+    setMetricSelections(initialSelections);
+
+    // Show at least 1 slot, up to the number of existing metrics (max 3)
+    const slotsFromMetrics = Math.min(3, Math.max(1, metrics.length || 1));
+    setVisibleMetricSlots(slotsFromMetrics);
+  }, [metrics]);
 
 
 
@@ -104,32 +266,342 @@ export function SuccessConfigForm({
     }
   };
 
-  const handleAddMetric = async (metricId: string) => {
-    setSubmittingMetric(true);
-    try {
-      const res = await fetch(`/api/epics/${epicId}/success/metrics`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ metric_id: metricId }),
-      });
+  const handleMetricChange = (index: number, metricId: string | null) => {
+    const newSelections = [...metricSelections];
+    const selectedMetric = availableMetrics.find(m => m.id === metricId);
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to add metric');
+    newSelections[index] = {
+      metricId,
+      target: newSelections[index].target,
+      pendoEventId: selectedMetric?.source === 'PENDO' && selectedMetric.pendo_event_id ? selectedMetric.pendo_event_id : null,
+      snowflakeQuery: null,
+      manualLabel: null,
+      pendoSegmentIds: null,
+      pendoSegmentNames: null,
+      pendoAppIds: null,
+      pendoAppNames: null,
+    };
+
+    setMetricSelections(newSelections);
+  };
+
+  const handleTargetChange = async (index: number, value: number | null) => {
+    const newSelections = [...metricSelections];
+    newSelections[index].target = value;
+    setMetricSelections(newSelections);
+
+    const metricId = newSelections[index].metricId;
+    if (!metricId) return;
+
+    setSavingMetrics(true);
+    try {
+      const existingMetric = metrics.find(m => m.metric_id === metricId);
+      const metric = availableMetrics.find(m => m.id === metricId);
+
+      if (!metric) {
+        throw new Error('Selected metric not found');
+      }
+
+      if (!existingMetric) {
+        // Frontend validation to avoid backend 400s
+        if (value === null || value === undefined) {
+          throw new Error('Target is required for this metric');
+        }
+
+        if (metric.source === 'PENDO' && !metric.pendo_event_id && !newSelections[index].pendoEventId) {
+          throw new Error('Pendo event ID is required. Please select an event for this epic before setting a target.');
+        }
+
+        if (metric.source === 'SNOWFLAKE' && !newSelections[index].snowflakeQuery) {
+          throw new Error('Snowflake query is required for Snowflake metrics. Configure the query before setting a target.');
+        }
+
+        // Create new mapping (target is required by schema)
+        const payload: any = {
+          metric_id: metricId,
+          target: value,
+        };
+
+        if (metric.source === 'PENDO' && newSelections[index].pendoEventId) {
+          payload.pendo_event_id = newSelections[index].pendoEventId;
+          if (newSelections[index].pendoSegmentIds) {
+            payload.pendo_segment_ids = newSelections[index].pendoSegmentIds;
+            payload.pendo_segment_names = newSelections[index].pendoSegmentNames;
+          }
+          if (newSelections[index].pendoAppIds) {
+            payload.pendo_app_ids = newSelections[index].pendoAppIds;
+            payload.pendo_app_names = newSelections[index].pendoAppNames;
+          }
+        } else if (metric.source === 'SNOWFLAKE' && newSelections[index].snowflakeQuery) {
+          payload.snowflake_query = newSelections[index].snowflakeQuery;
+        } else if (metric.source === 'MANUAL' && newSelections[index].manualLabel) {
+          payload.manual_label = newSelections[index].manualLabel;
+        }
+
+        const res = await fetch(`/api/epics/${epicId}/success/metrics`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          let errorMessage = 'Failed to add metric';
+          let details: any = null;
+          try {
+            details = await res.json();
+            // Prefer specific details from server when available
+            if (typeof details?.details === 'string' && details.details.trim()) {
+              errorMessage = details.details.trim();
+            } else if (typeof details?.error === 'string' && details.error.trim()) {
+              errorMessage = details.error.trim();
+            } else if (details?.details && typeof details.details === 'object') {
+              // Likely a Zod flatten object; present a concise message
+              errorMessage = 'Validation failed: please check required fields.';
+            }
+          } catch {
+            // ignore parse errors, keep default message
+          }
+
+          // If server says the metric already exists (stale local metrics), fall back to PATCH target
+          if (res.status === 400 && /already added/i.test(errorMessage)) {
+            const patchRes = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ target: value }),
+            });
+            if (!patchRes.ok) {
+              const patchErr = await patchRes.json().catch(() => null);
+              throw new Error(patchErr?.error || 'Failed to update target');
+            }
+            // PATCH succeeded; proceed as if create succeeded
+          } else {
+            throw new Error(errorMessage);
+          }
+        }
+      } else {
+        // Update existing mapping
+        const res = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ target: value }),
+        });
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => null);
+          throw new Error(errorData?.error || 'Failed to update target');
+        }
       }
 
       if (onRefresh) {
         await onRefresh();
       }
     } catch (error: any) {
-      alert(`Failed to add metric: ${error.message}`);
-      throw error;
+      console.error('Error updating target:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update target',
+        color: 'red',
+      });
     } finally {
-      setSubmittingMetric(false);
+      setSavingMetrics(false);
     }
   };
 
-  const selectedMetricIds = metrics.map((m) => m.metric_id);
+  const handlePendoEventChange = async (index: number, eventId: string | null) => {
+    const newSelections = [...metricSelections];
+    newSelections[index].pendoEventId = eventId;
+    setMetricSelections(newSelections);
+
+    const metricId = newSelections[index].metricId;
+    if (!metricId) return;
+
+    const existingMetric = metrics.find(m => m.metric_id === metricId);
+    if (!existingMetric) {
+      // If mapping doesn't exist yet, we will create it when target is set
+      return;
+    }
+
+    setSavingMetrics(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pendo_event_id: eventId }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to update Pendo event');
+      }
+
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (error: any) {
+      console.error('Error updating Pendo event:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update Pendo event',
+        color: 'red',
+      });
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
+
+  const handlePendoSegmentsChange = async (index: number, segmentIds: string[]) => {
+    const newSelections = [...metricSelections];
+    const ids = segmentIds.length > 0 ? segmentIds : null;
+    const idSet = new Set(segmentIds);
+    const names = ids
+      ? pendoSegments
+          .filter((s) => idSet.has(s.value))
+          .map((s) => s.label)
+      : null;
+    newSelections[index].pendoSegmentIds = ids;
+    newSelections[index].pendoSegmentNames = names;
+    setMetricSelections(newSelections);
+
+    const metricId = newSelections[index].metricId;
+    if (!metricId) return;
+
+    const existingMetric = metrics.find((m) => m.metric_id === metricId);
+    if (!existingMetric) {
+      // Mapping will be created when target is set
+      return;
+    }
+
+    setSavingMetrics(true);
+    try {
+      const payload: any = {
+        pendo_segment_ids: ids,
+        pendo_segment_names: names,
+      };
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to update Pendo segments');
+      }
+
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (error: any) {
+      console.error('Error updating Pendo segments:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update Pendo segments',
+        color: 'red',
+      });
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
+
+  const handlePendoAppsChange = async (index: number, appIds: string[]) => {
+    const newSelections = [...metricSelections];
+    const ids = appIds.length > 0 ? appIds : null;
+    const idSet = new Set(appIds);
+    const names = ids
+      ? pendoApps
+          .filter((a) => idSet.has(a.value))
+          .map((a) => a.label)
+      : null;
+    newSelections[index].pendoAppIds = ids;
+    newSelections[index].pendoAppNames = names;
+    setMetricSelections(newSelections);
+
+    const metricId = newSelections[index].metricId;
+    if (!metricId) return;
+
+    const existingMetric = metrics.find((m) => m.metric_id === metricId);
+    if (!existingMetric) {
+      // Mapping will be created when target is set
+      return;
+    }
+
+    setSavingMetrics(true);
+    try {
+      const payload: any = {
+        pendo_app_ids: ids,
+        pendo_app_names: names,
+      };
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${metricId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to update Pendo apps');
+      }
+
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (error: any) {
+      console.error('Error updating Pendo apps:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update Pendo apps',
+        color: 'red',
+      });
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
+
+  const handleRemoveMetric = async (index: number) => {
+    const previousMetricId = metricSelections[index]?.metricId || null;
+    const newSelections = [...metricSelections];
+    newSelections[index] = { 
+      metricId: null, 
+      target: null, 
+      pendoEventId: null, 
+      snowflakeQuery: null, 
+      manualLabel: null,
+      pendoSegmentIds: null,
+      pendoSegmentNames: null,
+      pendoAppIds: null,
+      pendoAppNames: null,
+    };
+    setMetricSelections(newSelections);
+
+    if (!previousMetricId) return;
+
+    setSavingMetrics(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/metrics/${previousMetricId}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        throw new Error(errorData?.error || 'Failed to remove metric');
+      }
+
+      if (onRefresh) {
+        await onRefresh();
+      }
+    } catch (error: any) {
+      console.error('Error removing metric:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to remove metric',
+        color: 'red',
+      });
+    } finally {
+      setSavingMetrics(false);
+    }
+  };
+
+  const selectedMetricIds = metricSelections.map(s => s.metricId).filter(Boolean) as string[];
   const canEditMetrics = !config?.locked || isAdmin;
 
   return (
@@ -147,7 +619,7 @@ export function SuccessConfigForm({
             <Group gap="xs" mb="xs" style={{ position: 'relative' }}>
               <Tooltip 
                 label={config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email) 
-                  ? "Click to delegate post-launch owner" 
+                  ? "Reschedule" 
                   : undefined}
                 position="top"
                 withArrow
@@ -158,6 +630,7 @@ export function SuccessConfigForm({
                       ? 'pointer' 
                       : 'default',
                     position: 'relative',
+                    display: 'inline-flex'
                   }}
                   onClick={() => {
                     if (config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email) && onRefresh) {
@@ -166,21 +639,52 @@ export function SuccessConfigForm({
                   }}
                   onMouseEnter={(e) => {
                     if (config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email)) {
-                      e.currentTarget.style.opacity = '0.8';
+                      const avatarEl = e.currentTarget.querySelector('[data-avatar]') as HTMLElement | null;
+                      const iconEl = e.currentTarget.querySelector('[data-reschedule-icon]') as HTMLElement | null;
+                      if (avatarEl) avatarEl.style.opacity = '0';
+                      if (iconEl) iconEl.style.opacity = '1';
                     }
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.opacity = '1';
+                    if (config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email)) {
+                      const avatarEl = e.currentTarget.querySelector('[data-avatar]') as HTMLElement | null;
+                      const iconEl = e.currentTarget.querySelector('[data-reschedule-icon]') as HTMLElement | null;
+                      if (avatarEl) avatarEl.style.opacity = '1';
+                      if (iconEl) iconEl.style.opacity = '0';
+                    }
                   }}
                 >
-                  <Avatar
-                    src={pmOwner.avatar_url}
-                    color={getAvatarColor(pmOwner.email || '')}
-                    radius="xl"
-                    size="sm"
-                  >
-                    {getInitials(pmOwner.email || '')}
-                  </Avatar>
+                  <div style={{ position: 'relative', width: 32, height: 32 }}>
+                    <Avatar
+                      data-avatar
+                      src={pmOwner.avatar_url}
+                      color={getAvatarColor(pmOwner.email || '')}
+                      radius="xl"
+                      size="sm"
+                      style={{ transition: 'opacity 0.2s' }}
+                    >
+                      {getInitials(pmOwner.email || '')}
+                    </Avatar>
+                    {config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email) && (
+                      <ActionIcon
+                        data-reschedule-icon
+                        variant="filled"
+                        color="gray"
+                        radius="xl"
+                        size={32}
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          left: 0,
+                          opacity: 0,
+                          transition: 'opacity 0.2s',
+                          pointerEvents: 'none'
+                        }}
+                      >
+                        <IconCalendarClock size={18} />
+                      </ActionIcon>
+                    )}
+                  </div>
                 </div>
               </Tooltip>
               <div style={{ flex: 1 }}>
@@ -191,17 +695,6 @@ export function SuccessConfigForm({
                   {pmOwner.email}
                 </Text>
               </div>
-              {config && !config.locked && (isAdmin || currentUserEmail === pmOwner.email) && onRefresh && (
-                <Tooltip label="Delegate post-launch owner" position="top" withArrow>
-                  <ActionIcon
-                    variant="subtle"
-                    color="gray"
-                    onClick={() => setDelegationModalOpen(true)}
-                  >
-                    <IconArrowsRightLeft size={16} />
-                  </ActionIcon>
-                </Tooltip>
-              )}
             </Group>
           ) : (
             <Text size="sm" c="dimmed" mb="xs">
@@ -214,64 +707,242 @@ export function SuccessConfigForm({
         </div>
 
         <div>
-          <Group justify="space-between" mb="xs">
-            <Text size="sm" fw={500}>
-              Success Metrics
-            </Text>
-            {canEditMetrics && metrics.length < 7 && (
-              <Button
-                size="xs"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setShowMetricModal(true)}
-              >
-                Add Metric
-              </Button>
-            )}
-          </Group>
-          <Text size="xs" c="dimmed" mb="xs">
-            {metrics.length} of 7 metrics selected
+          <Text size="sm" fw={500} mb="xs">
+            Success Metrics
           </Text>
-          {metrics.length === 0 ? (
-            <Alert icon={<IconAlertCircle size={16} />} title="No Metrics" color="yellow">
-              No success metrics have been selected for this epic. Add metrics to start tracking post-launch success.
+          <Text size="xs" c="dimmed" mb="xs">
+            {selectedMetricIds.length} metrics selected / 3 maximum. We recommend at least one leading and one lagging metric when possible.
+          </Text>
+          {canEditMetrics && selectedMetricIds.length === 0 && (
+            <Alert
+              icon={<IconAlertCircle size={16} />}
+              color="blue"
+              variant="light"
+              mb="sm"
+            >
+              No metrics selected yet. Choose at least one metric to start tracking post-launch success.
             </Alert>
-          ) : (
-            <Stack gap="xs">
-              {metrics.map((epicMetric) => {
-                const metric = epicMetric.metric;
-                if (!metric) return null;
+          )}
+          {canEditMetrics ? (
+            <Stack gap="md">
+              {metricSelections.slice(0, visibleMetricSlots).map((selection, index) => {
+                const selectedMetric = selection.metricId 
+                  ? availableMetrics.find(m => m.id === selection.metricId)
+                  : null;
+                
+                const availableOptions = availableMetrics
+                  .filter(m => !selectedMetricIds.includes(m.id) || m.id === selection.metricId)
+                  .map(m => ({ value: m.id, label: m.name }));
+                const defineNewOption = { value: '__DEFINE_NEW__', label: 'Define New Metric' };
 
                 return (
-                  <div key={epicMetric.id} style={{ 
-                    padding: '0.5rem', 
-                    border: '1px solid #e0e0e0', 
-                    borderRadius: '4px',
-                    backgroundColor: '#f9fafb'
-                  }}>
-                    <Group gap="xs">
-                      <Text size="sm" fw={500}>{metric.name}</Text>
-                      {epicMetric.threshold_override && (
-                        <Badge size="xs" color="orange">Custom Thresholds</Badge>
-                      )}
-                      <Badge variant="light" size="xs">{metric.category}</Badge>
-                      <Badge variant="outline" size="xs">{metric.measurement_type}</Badge>
-                    </Group>
-                  </div>
+                  <Card key={index}  padding="md" bg="blue.0">
+                    <Stack gap="sm">
+                      
+                      
+               
+
+                      {/* Layout: row 1 shows Select + pills inline; row 2 aligns Pendo Event (if any) with Target */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                        {/* Row 1: Select Metric + pills inline (span 2 columns) */}
+                        <div style={{ gridColumn: '1 / 3' }}>
+                          <Text size="sm" fw={500} mb={4}>
+                            Metric {index + 1}
+                          </Text>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '1fr 1fr',
+                              alignItems: 'end',
+                              columnGap: 12,
+                            }}
+                          >
+                            <Select
+                              placeholder="Choose a metric..."
+                              data={[...availableOptions, defineNewOption]}
+                              value={selection.metricId}
+                              onChange={(value) => {
+                                if (value === '__DEFINE_NEW__') {
+                                  setShowCreateMetricModal(true);
+                                  return;
+                                }
+                                handleMetricChange(index, value);
+                              }}
+                              searchable
+                              disabled={loadingMetrics}
+                            />
+
+                            {selectedMetric && (
+                              <Group gap="xs" justify="flex-center" align="center">
+                                <Badge
+                                  variant="filled"
+                                  color="blue"
+                                  size="lg"
+                                  style={{ fontSize: '12px', borderWidth: '1px' }}
+                                >
+                                  {selectedMetric.category}
+                                </Badge>
+                                <Badge
+                                  variant="filled"
+                                  color="grape"
+                                  size="lg"
+                                  style={{ fontSize: '12px', borderWidth: '1px' }}
+                                >
+                                  {selectedMetric.measurement_type}
+                                </Badge>
+                                <Badge
+                                  variant="filled"
+                                  color={
+                                    selectedMetric.source === 'PENDO'
+                                      ? 'blue'
+                                      : selectedMetric.source === 'SNOWFLAKE'
+                                        ? 'cyan'
+                                        : 'gray'
+                                  }
+                                  size="lg"
+                                  style={{ fontSize: '12px', borderWidth: '1px' }}
+                                >
+                                  {selectedMetric.source}
+                                </Badge>
+                              </Group>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Row 2: Left = Pendo Event (when applicable). Right = Target */}
+                        <div>
+                          {selectedMetric?.source === 'PENDO' && (
+                            <div>
+                              {(() => {
+                                const current = selection.pendoEventId;
+                                const eventOptions = current && !pendoEvents.some((o) => o.value === current)
+                                  ? [{ value: current, label: current }, ...pendoEvents]
+                                  : pendoEvents;
+                                return (
+                                  <Select
+                                    label="Pendo Event"
+                                    placeholder={loadingPendoEvents ? 'Loading events...' : 'Select event name'}
+                                    data={eventOptions}
+                                    value={current}
+                                    onChange={(value) => handlePendoEventChange(index, value || null)}
+                                    searchable
+                                    disabled={loadingPendoEvents}
+                                    allowDeselect
+                                  />
+                                );
+                              })()}
+                              <Text size="xs" c="dimmed">
+                                {selectedMetric.pendo_event_id
+                                  ? `Epic can override the default event "${selectedMetric.pendo_event_id}" for this metric.`
+                                  : 'Select the Pendo event that should be tracked for this epic.'}
+                              </Text>
+
+                              <MultiSelect
+                                label="Pendo Segments (optional)"
+                                placeholder={
+                                  loadingPendoSegments
+                                    ? 'Loading segments...'
+                                    : 'Filter by one or more Pendo segments'
+                                }
+                                data={pendoSegments}
+                                value={selection.pendoSegmentIds || []}
+                                onChange={(values) => handlePendoSegmentsChange(index, values)}
+                                searchable
+                                disabled={loadingPendoSegments}
+                                clearable
+                                mt="sm"
+                              />
+                              <MultiSelect
+                                label="Pendo Apps (optional)"
+                                placeholder={
+                                  loadingPendoApps ? 'Loading apps...' : 'Filter by one or more Pendo apps'
+                                }
+                                data={pendoApps}
+                                value={selection.pendoAppIds || []}
+                                onChange={(values) => handlePendoAppsChange(index, values)}
+                                searchable
+                                disabled={loadingPendoApps}
+                                clearable
+                                mt="sm"
+                              />
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          {selectedMetric && (
+                            <NumberInput
+                              label="Target Value"
+                              placeholder="Enter target"
+                              value={selection.target ?? undefined}
+                              onChange={(value) => handleTargetChange(index, typeof value === 'number' ? value : null)}
+                              decimalScale={selectedMetric.measurement_type === 'PERCENTAGE' ? 2 : 0}
+                              min={0}
+                            />
+                          )}
+                        </div>
+                      </div>
+
+
+                    </Stack>
+                  </Card>
                 );
               })}
+              {visibleMetricSlots < 3 && (
+                <Group justify="flex-start">
+                  <Button
+                    size="xs"
+                    variant="light"
+                    leftSection={<IconPlus size={14} />}
+                    onClick={() => setVisibleMetricSlots((prev) => Math.min(3, prev + 1))}
+                  >
+                    Add metric
+                  </Button>
+                </Group>
+              )}
+            </Stack>
+          ) : (
+            <Stack gap="xs">
+              {metrics.length === 0 ? (
+                <Alert icon={<IconAlertCircle size={16} />} title="No Metrics" color="yellow">
+                  No success metrics have been selected for this epic.
+                </Alert>
+              ) : (
+                metrics.map((epicMetric) => {
+                  const metric = epicMetric.metric;
+                  if (!metric) return null;
+
+                  return (
+                    <div key={epicMetric.id} style={{ 
+                      padding: '0.5rem', 
+                      border: '1px solid #e0e0e0', 
+                      borderRadius: '4px',
+                      backgroundColor: '#f9fafb'
+                    }}>
+                      <Group gap="xs">
+                        <Text size="sm" fw={500}>{metric.name}</Text>
+                        {epicMetric.target !== null && (
+                          <Badge size="xs" color="blue">Target: {epicMetric.target}</Badge>
+                        )}
+                        {epicMetric.pendo_event_id && (
+                          <Badge size="xs" color="green">Event: {epicMetric.pendo_event_id}</Badge>
+                        )}
+                        <Badge variant="light" size="xs">{metric.category}</Badge>
+                        <Badge variant="outline" size="xs">{metric.measurement_type}</Badge>
+                      </Group>
+                    </div>
+                  );
+                })
+              )}
             </Stack>
           )}
         </div>
 
-          <Group justify="flex-end" mt="md">
+        <Group justify="flex-end" mt="md">
           {onCancel && (
-            <Button variant="subtle" onClick={onCancel} disabled={isSubmitting}>
-              Cancel
+            <Button variant="subtle" onClick={onCancel} disabled={isSubmitting || savingMetrics}>
+              Close
             </Button>
           )}
-          <Button onClick={handleSubmit} loading={isSubmitting}>
-            Save
-          </Button>
         </Group>
       </Stack>
 
@@ -325,16 +996,18 @@ export function SuccessConfigForm({
         />
       )}
 
-      <MetricSelectionModal
-        opened={showMetricModal}
-        onClose={() => setShowMetricModal(false)}
-        onSelect={handleAddMetric}
-        selectedMetricIds={selectedMetricIds}
-        isSubmitting={submittingMetric}
-        epicTier={epicTier}
+      <MetricCreationForm
         epicId={epicId}
-        onBenchmarkSelected={onRefresh}
+        epicTier={epicTier}
+        opened={showCreateMetricModal}
+        onClose={() => setShowCreateMetricModal(false)}
+        onSuccess={async () => {
+          if (onRefresh) {
+            await onRefresh();
+          }
+        }}
       />
+
     </Card>
   );
 }

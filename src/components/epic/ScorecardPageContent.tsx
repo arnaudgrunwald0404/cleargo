@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Stack, Select } from '@mantine/core';
 import { ScorecardList } from './ScorecardList';
 import { ScorecardDetail } from './ScorecardDetail';
+import { ScorecardTimeSeries } from './ScorecardTimeSeries';
 import { PurpleLoader } from '../PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { EpicScorecard } from '@/lib/success/types';
@@ -18,7 +19,6 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
   const [selectedScorecard, setSelectedScorecard] = useState<EpicScorecard | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingDetail, setLoadingDetail] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPM, setIsPM] = useState(false);
 
@@ -65,42 +65,7 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       if (res.ok) {
         const data = await res.json();
         setScorecards(Array.isArray(data) ? data : []);
-        
-        // Auto-generate scorecard for today if none exists and config/metrics are set
-        const today = new Date().toISOString().split('T')[0];
-        const hasTodayScorecard = Array.isArray(data) && data.some((sc: any) => sc.snapshot_date === today);
-        
-        if (!hasTodayScorecard && (isAdmin || isPM)) {
-          try {
-            // Check if config exists before attempting generation
-            const configRes = await fetchWithRateLimit(`/api/epics/${epicId}/success/config`, {
-              maxRetries: 1,
-            });
-            if (configRes.ok) {
-              const config = await configRes.json();
-              if (config && config.benchmark_id) {
-                // Silently attempt to generate scorecard for today
-                await fetch(`/api/epics/${epicId}/success/scorecards`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ snapshot_date: today }),
-                }).catch((err) => {
-                  // Silently fail - user can manually generate if needed
-                  console.warn('Auto-generation of scorecard failed:', err);
-                });
-                
-                // Refresh scorecards after generation attempt
-                setTimeout(() => {
-                  fetchScorecards();
-                }, 1000);
-              }
-            }
-          } catch (error) {
-            // Silently fail auto-generation
-            console.warn('Error checking config for auto-generation:', error);
-          }
-        }
-        
+
         // Auto-select most recent if available
         if (data && data.length > 0 && !selectedDate) {
           setSelectedDate(data[0].snapshot_date);
@@ -133,33 +98,6 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
     }
   };
 
-  const handleGenerate = async () => {
-    if (!epicId) return;
-    setGenerating(true);
-    try {
-      const res = await fetch(`/api/epics/${epicId}/success/scorecards`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to generate scorecard');
-      }
-
-      const data = await res.json();
-      await fetchScorecards();
-      setSelectedDate(data.snapshot_date);
-    } catch (error: any) {
-      alert(`Failed to generate scorecard: ${error.message}`);
-    } finally {
-      setGenerating(false);
-    }
-  };
-
-  const canGenerate = (isAdmin || isPM) && !generating;
-
   if (loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
@@ -173,9 +111,7 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       <ScorecardList
         epicId={epicId}
         scorecards={scorecards}
-        onGenerate={handleGenerate}
         onSelect={setSelectedDate}
-        canGenerate={canGenerate}
       />
 
       {scorecards.length > 0 && (
@@ -222,6 +158,9 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
           }}
         />
       )}
+
+      {/* Time series chart from launch to +180d */}
+      <ScorecardTimeSeries epicId={epicId} />
     </Stack>
   );
 }

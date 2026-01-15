@@ -1,21 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import {
-  Modal,
-  Button,
-  Stack,
-  TextInput,
-  Select,
-  Group,
-  Text,
-  Badge,
-  ScrollArea,
-  Card,
-} from '@mantine/core';
-import { IconSearch } from '@tabler/icons-react';
+import { Modal, Button, Stack, TextInput, Select, Group, Text, Badge, ScrollArea, Card } from '@mantine/core';
 import { PurpleLoader } from '../PurpleLoader';
-import type { SuccessMetric, MetricCategory, MetricSource, LeadingOrLagging, AdoptionBenchmark } from '@/lib/success/types';
+import { IconSearch } from '@tabler/icons-react';
+import type { SuccessMetric, MetricCategory, MetricSource, LeadingOrLagging } from '@/lib/success/types';
 import type { EpicTier } from '@/types/epics';
 
 interface MetricSelectionModalProps {
@@ -26,7 +15,6 @@ interface MetricSelectionModalProps {
   isSubmitting?: boolean;
   epicTier?: EpicTier;
   epicId?: string;
-  onBenchmarkSelected?: () => Promise<void>;
 }
 
 export function MetricSelectionModal({
@@ -37,10 +25,8 @@ export function MetricSelectionModal({
   isSubmitting = false,
   epicTier,
   epicId,
-  onBenchmarkSelected,
 }: MetricSelectionModalProps) {
   const [metrics, setMetrics] = useState<SuccessMetric[]>([]);
-  const [benchmarks, setBenchmarks] = useState<AdoptionBenchmark[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -78,22 +64,6 @@ export function MetricSelectionModal({
       }
       const data = await res.json();
       setMetrics(Array.isArray(data) ? data : []);
-
-      // Also fetch benchmarks if epicTier is provided
-      if (epicTier) {
-        try {
-          const benchmarkParams = new URLSearchParams();
-          benchmarkParams.append('launch_tier', epicTier);
-          const benchmarkRes = await fetch(`/api/settings/success-measurement/benchmarks?${benchmarkParams.toString()}`);
-          if (benchmarkRes.ok) {
-            const benchmarkData = await benchmarkRes.json();
-            setBenchmarks(Array.isArray(benchmarkData) ? benchmarkData : []);
-          }
-        } catch (benchmarkError) {
-          console.warn('Failed to fetch benchmarks:', benchmarkError);
-          setBenchmarks([]);
-        }
-      }
     } catch (error: any) {
       // Better error message handling
       let errorMessage = 'Failed to fetch metrics. Please try again.';
@@ -142,55 +112,15 @@ export function MetricSelectionModal({
     return true;
   });
 
-  const filteredBenchmarks = benchmarks.filter((benchmark) => {
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      if (!benchmark.name.toLowerCase().includes(query)) {
-        return false;
-      }
-    }
-    return true;
-  });
+  // Benchmarks have been removed; this modal now only handles metric selection
 
-  const handleSelectBenchmark = async (benchmarkId: string) => {
-    if (!epicId) {
-      alert('Epic ID is required to select a benchmark');
-      return;
-    }
-    try {
-      // When a benchmark is selected, set it in the config
-      const res = await fetch(`/api/epics/${epicId}/success/config`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ benchmark_id: benchmarkId }),
-      });
+  const handleSelect = async (metric: SuccessMetric) => {
+    const isSelected = selectedMetricIds.includes(metric.id);
+    if (isSelected) return;
 
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to set benchmark');
-      }
-
-      // Refresh parent component if callback provided
-      if (onBenchmarkSelected) {
-        await onBenchmarkSelected();
-      }
-      
-      onClose();
-      setSearchQuery('');
-    } catch (error: any) {
-      console.error('Error selecting benchmark:', error);
-      alert(`Failed to select benchmark: ${error.message}`);
-    }
-  };
-
-  const handleSelect = async (metricId: string) => {
-    try {
-      await onSelect(metricId);
-      onClose();
-      setSearchQuery('');
-    } catch (error: any) {
-      console.error('Error selecting metric:', error);
-    }
+    await onSelect(metric.id);
+    onClose();
+    setSearchQuery('');
   };
 
   return (
@@ -269,55 +199,6 @@ export function MetricSelectionModal({
         ) : (
           <ScrollArea h={400}>
             <Stack gap="xs">
-              {/* Show benchmarks first if available */}
-              {filteredBenchmarks.length > 0 && (
-                <>
-                  <Text size="sm" fw={500} mt="xs">Adoption Benchmarks</Text>
-                  {filteredBenchmarks.map((benchmark) => {
-                    // Check if this benchmark is already set in config
-                    // For now, we'll treat benchmarks separately - they set benchmark_id in config
-                    return (
-                      <Card
-                        key={`benchmark-${benchmark.id}`}
-                        padding="md"
-                        withBorder
-                        style={{
-                          cursor: 'pointer',
-                          borderColor: '#6366f1',
-                        }}
-                        onClick={() => handleSelectBenchmark(benchmark.id)}
-                      >
-                        <Group justify="space-between">
-                          <div style={{ flex: 1 }}>
-                            <Group gap="xs" mb="xs">
-                              <Text fw={500}>{benchmark.name}</Text>
-                              <Badge color="purple">Benchmark</Badge>
-                              {benchmark.is_default && <Badge color="blue" variant="light">Default</Badge>}
-                            </Group>
-                            <Group gap="xs">
-                              <Badge variant="light">{benchmark.feature_type}</Badge>
-                              <Badge variant="outline">{benchmark.target_persona}</Badge>
-                              <Badge color="indigo">{benchmark.launch_tier}</Badge>
-                            </Group>
-                          </div>
-                          <Button
-                            size="xs"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSelectBenchmark(benchmark.id);
-                            }}
-                            disabled={isSubmitting}
-                          >
-                            Select
-                          </Button>
-                        </Group>
-                      </Card>
-                    );
-                  })}
-                  <Text size="sm" fw={500} mt="md">Success Metrics</Text>
-                </>
-              )}
-              
               {filteredMetrics.map((metric) => {
                 const isSelected = selectedMetricIds.includes(metric.id);
                 return (
@@ -329,7 +210,7 @@ export function MetricSelectionModal({
                       opacity: isSelected ? 0.5 : 1,
                       cursor: isSelected ? 'not-allowed' : 'pointer',
                     }}
-                    onClick={() => !isSelected && handleSelect(metric.id)}
+                    onClick={() => !isSelected && handleSelect(metric)}
                   >
                     <Group justify="space-between">
                       <div style={{ flex: 1 }}>
@@ -358,7 +239,7 @@ export function MetricSelectionModal({
                           size="xs"
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleSelect(metric.id);
+                            handleSelect(metric);
                           }}
                           disabled={isSubmitting}
                         >
@@ -370,9 +251,9 @@ export function MetricSelectionModal({
                 );
               })}
             </Stack>
-            {filteredMetrics.length === 0 && filteredBenchmarks.length === 0 && (
+            {filteredMetrics.length === 0 && (
               <Text ta="center" c="dimmed" py="xl">
-                No metrics or benchmarks found
+                No metrics found
               </Text>
             )}
           </ScrollArea>

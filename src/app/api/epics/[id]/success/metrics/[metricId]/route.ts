@@ -71,7 +71,7 @@ export async function PATCH(
       );
     }
 
-    const mapping = await updateEpicSuccessMetric(epicId, metricId, parsed.data.threshold_override || null);
+    const mapping = await updateEpicSuccessMetric(epicId, metricId, parsed.data);
 
     // Auto-generate scorecards for benchmark horizon days if epic is launched and has config
     try {
@@ -90,6 +90,9 @@ export async function PATCH(
     console.error('Error updating epic success metric:', error);
     if (error.message === 'Epic success metric mapping not found') {
       return NextResponse.json({ error: 'Metric mapping not found' }, { status: 404 });
+    }
+    if (error.message && error.message.includes('Database schema out of date')) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json(
       { error: 'Failed to update success metric', details: error.message },

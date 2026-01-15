@@ -17,17 +17,13 @@ import type { EpicScorecard, ScorecardStatus } from '@/lib/success/types';
 interface ScorecardListProps {
   epicId: string;
   scorecards: EpicScorecard[];
-  onGenerate: () => void;
   onSelect: (date: string) => void;
-  canGenerate: boolean;
 }
 
 export function ScorecardList({
   epicId,
   scorecards,
-  onGenerate,
   onSelect,
-  canGenerate,
 }: ScorecardListProps) {
   const getStatusColor = (status: ScorecardStatus): string => {
     switch (status) {
@@ -63,22 +59,14 @@ export function ScorecardList({
             Success Scorecards
           </Text>
           <Text size="sm" c="dimmed">
-            {scorecards.length} snapshot{scorecards.length !== 1 ? 's' : ''} available
+            {scorecards.length} scorecard{scorecards.length !== 1 ? 's' : ''} available
           </Text>
         </div>
-        {canGenerate && (
-          <Button
-            leftSection={<IconPlus size={16} />}
-            onClick={onGenerate}
-          >
-            Generate Scorecard
-          </Button>
-        )}
       </Group>
 
       {scorecards.length === 0 ? (
         <Alert icon={<IconAlertCircle size={16} />} title="No Scorecards" color="yellow">
-          No scorecard snapshots have been generated yet. Generate one to start tracking success metrics.
+          No scorecards are available yet. They will appear here once they have been generated.
         </Alert>
       ) : (
         <Table striped highlightOnHover>

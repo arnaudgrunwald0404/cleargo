@@ -112,18 +112,47 @@ export async function POST(
       return NextResponse.json({ error: 'Metric not found' }, { status: 404 });
     }
 
+    // Validate epic-specific config based on metric source
+    if (metric.source === 'PENDO') {
+      // If metric doesn't have a default pendo_event_id, epic must provide one
+      if (!metric.pendo_event_id && !parsed.data.pendo_event_id) {
+        return NextResponse.json(
+          { error: 'Pendo event ID is required. Either set it at the metric level or provide an epic-specific event ID.' },
+          { status: 400 }
+        );
+      }
+    } else if (metric.source === 'SNOWFLAKE') {
+      // Snowflake queries are typically epic-specific, so require it
+      if (!parsed.data.snowflake_query) {
+        return NextResponse.json(
+          { error: 'Snowflake query is required for Snowflake metrics.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const mapping = await addEpicSuccessMetric(epicId, parsed.data);
 
     // Auto-generate scorecards for benchmark horizon days if epic is launched and has config
     try {
-      const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
-        await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
-        // Log but don't fail the request if scorecard generation fails
-        console.warn('Failed to auto-generate scorecards after metric addition:', err);
+      const { generateScorecardsForBenchmarkHorizons, generateScorecardsForRange } = await import('@/lib/services/scorecardGenerationService');
+      await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
+        console.warn('Failed to generate benchmark-horizon scorecards:', err);
       });
+
+      // Also kick off backfill from launch-90 to min(launch+120, today)
+      if (epic.target_launch_date) {
+        const launch = new Date(epic.target_launch_date);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const start = new Date(launch); start.setDate(start.getDate() - 90); start.setHours(0,0,0,0);
+        const endCap = new Date(launch); endCap.setDate(endCap.getDate() + 120); endCap.setHours(0,0,0,0);
+        const end = new Date(Math.min(endCap.getTime(), today.getTime()));
+        generateScorecardsForRange(epicId, start.toISOString().split('T')[0], end.toISOString().split('T')[0])
+          .catch((err) => console.warn('Backfill after metric addition failed:', err));
+      }
     } catch (error) {
       // Ignore scorecard generation errors - metric addition should still succeed
-      console.warn('Error attempting to auto-generate scorecards:', error);
+      console.warn('Error attempting post-add generation/backfill:', error);
     }
 
     return NextResponse.json(mapping, { status: 201 });
@@ -131,6 +160,10 @@ export async function POST(
     console.error('Error adding epic success metric:', error);
     if (error.message?.includes('maximum') || error.message?.includes('already added')) {
       return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+    // Surface schema-out-of-date errors directly so the client shows them
+    if (error.message && error.message.includes('Database schema out of date')) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
     return NextResponse.json(
       { error: 'Failed to add success metric', details: error.message },

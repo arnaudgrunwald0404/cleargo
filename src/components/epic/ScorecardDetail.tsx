@@ -117,7 +117,7 @@ export function ScorecardDetail({
         <Group justify="space-between" mb="md">
           <div>
             <Text size="lg" fw={500}>
-              Scorecard Snapshot
+              Scorecard
             </Text>
             <Text size="sm" c="dimmed">
               {new Date(scorecard.snapshot_date).toLocaleDateString()}
@@ -226,68 +226,7 @@ export function ScorecardDetail({
         )}
       </Card>
 
-      <Card withBorder padding="md">
-        <Text size="md" fw={500} mb="md">
-          Benchmark Comparison
-        </Text>
-        {scorecard.benchmark_comparison.dataMissing ? (
-          <Alert icon={<IconAlertCircle size={16} />} color="yellow">
-            Actual activation data is not available yet. This will be populated when data sources are integrated.
-          </Alert>
-        ) : (
-          <Stack gap="md">
-            <div>
-              <Text size="sm" fw={500} mb="xs">
-                Expected vs Actual Activation
-              </Text>
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Horizon (Days)</Table.Th>
-                    <Table.Th>Expected</Table.Th>
-                    <Table.Th>Actual</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {scorecard.benchmark_comparison.horizons.map((horizon, index) => {
-                    const expected = scorecard.benchmark_comparison.expectedActivation[index];
-                    const actual = scorecard.benchmark_comparison.actualActivation?.[index];
-                    const isOnTrack = actual !== null && actual !== undefined && actual >= expected * 0.95;
-                    const isAtRisk = actual !== null && actual !== undefined && actual >= expected * 0.8 && actual < expected * 0.95;
-                    const isMissed = actual !== null && actual !== undefined && actual < expected * 0.8;
-
-                    let status: ScorecardStatus = 'ON_TRACK';
-                    if (isMissed) status = 'MISSED';
-                    else if (isAtRisk) status = 'AT_RISK';
-
-                    return (
-                      <Table.Tr key={horizon}>
-                        <Table.Td>{horizon}</Table.Td>
-                        <Table.Td>{(expected * 100).toFixed(1)}%</Table.Td>
-                        <Table.Td>
-                          {actual !== null && actual !== undefined
-                            ? `${(actual * 100).toFixed(1)}%`
-                            : <Text size="sm" c="dimmed">No data</Text>}
-                        </Table.Td>
-                        <Table.Td>
-                          {actual !== null && actual !== undefined ? (
-                            <Badge color={getStatusColor(status)}>
-                              {getStatusLabel(status)}
-                            </Badge>
-                          ) : (
-                            <Text size="sm" c="dimmed">—</Text>
-                          )}
-                        </Table.Td>
-                      </Table.Tr>
-                    );
-                  })}
-                </Table.Tbody>
-              </Table>
-            </div>
-          </Stack>
-        )}
-      </Card>
+      {/* Benchmark comparison has been removed; scorecards are now based solely on metric results and thresholds */}
     </Stack>
   );
 }

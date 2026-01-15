@@ -54,25 +54,39 @@ export class SnowflakeClient {
   async getMetricValue(
     metric: { pendo_event_id?: string | null; name: string; measurement_type: string },
     epicId: string,
-    snapshotDate: string
+    snapshotDate: string,
+    customQuery?: string | null
   ): Promise<number | boolean | null> {
     try {
-      // TODO: Build SQL query based on metric configuration
-      // This is a placeholder - actual SQL will depend on your data model
-      const sql = `
-        SELECT value
-        FROM metrics_table
-        WHERE metric_id = :metricId
-          AND epic_id = :epicId
-          AND snapshot_date = :snapshotDate
-        LIMIT 1
-      `;
+      // If epic-specific query is provided, use it; otherwise use default query
+      let sql: string;
+      let params: Record<string, any>;
 
-      const results = await this.executeQuery(sql, {
-        metricId: metric.pendo_event_id || metric.name,
-        epicId,
-        snapshotDate,
-      });
+      if (customQuery) {
+        // Use epic-specific query with parameter substitution
+        sql = customQuery;
+        params = {
+          epicId,
+          snapshotDate,
+        };
+      } else {
+        // Default query based on metric configuration
+        sql = `
+          SELECT value
+          FROM metrics_table
+          WHERE metric_id = :metricId
+            AND epic_id = :epicId
+            AND snapshot_date = :snapshotDate
+          LIMIT 1
+        `;
+        params = {
+          metricId: metric.pendo_event_id || metric.name,
+          epicId,
+          snapshotDate,
+        };
+      }
+
+      const results = await this.executeQuery(sql, params);
 
       if (results.length === 0) {
         return null;

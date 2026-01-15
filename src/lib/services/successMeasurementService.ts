@@ -1,12 +1,10 @@
 /**
  * Service layer for success measurement database operations
- * Handles adoption benchmarks and success metrics CRUD operations
+ * Handles success metrics, epic configs, scorecards, and retros
  */
 import { createClient } from '@/lib/supabase/server';
 import type { 
-  AdoptionBenchmark, 
   SuccessMetric, 
-  CreateAdoptionBenchmarkDTO, 
   CreateSuccessMetricDTO,
   EpicSuccessConfig,
   EpicSuccessMetric,
@@ -17,178 +15,11 @@ import type {
   EpicRetro,
   SubmitEpicRetroDTO,
   MetricResult,
-  BenchmarkComparison,
   ScorecardStatus,
-  DayMarker
+  DayMarker,
+  EpicSuccessMetricHistory,
+  MetricHistoryChangeType
 } from '@/lib/success/types';
-
-// ============================================================================
-// Adoption Benchmarks
-// ============================================================================
-
-export interface BenchmarkFilters {
-  launch_tier?: 'TIER_1' | 'TIER_2' | 'TIER_3';
-  feature_type?: string;
-  is_default?: boolean;
-}
-
-export async function getBenchmarks(filters?: BenchmarkFilters): Promise<AdoptionBenchmark[]> {
-  const supabase = createClient();
-  
-  try {
-    let query = supabase
-      .from('adoption_benchmarks')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (filters?.launch_tier) {
-      query = query.eq('launch_tier', filters.launch_tier);
-    }
-    if (filters?.feature_type) {
-      query = query.eq('feature_type', filters.feature_type);
-    }
-    if (filters?.is_default !== undefined) {
-      query = query.eq('is_default', filters.is_default);
-    }
-
-    const { data, error } = await query;
-
-    if (error) {
-      // Check if table doesn't exist (migration not applied)
-      if (error.message?.includes("Could not find the table") || 
-          error.message?.includes("does not exist") ||
-          error.code === '42P01') {
-        console.warn('Table adoption_benchmarks does not exist. Migration may not have been applied.');
-        return []; // Return empty array gracefully
-      }
-      
-      console.error('Error fetching benchmarks:', error);
-      console.error('Error code:', error.code);
-      console.error('Error details:', error.details);
-      console.error('Error hint:', error.hint);
-      throw new Error(`Failed to fetch benchmarks: ${error.message}`);
-    }
-
-    return (data || []) as AdoptionBenchmark[];
-  } catch (err: any) {
-    // Check if table doesn't exist (migration not applied)
-    if (err?.message?.includes("Could not find the table") || 
-        err?.message?.includes("does not exist") ||
-        err?.code === '42P01' ||
-        err?.message?.includes("adoption_benchmarks")) {
-      console.warn('Table adoption_benchmarks does not exist. Migration may not have been applied.');
-      return []; // Return empty array gracefully
-    }
-    
-    // Re-throw if it's already our custom error
-    if (err.message && err.message.includes('Failed to fetch benchmarks')) {
-      throw err;
-    }
-    // Wrap unexpected errors
-    console.error('Unexpected error in getBenchmarks:', err);
-    throw new Error(`Unexpected error fetching benchmarks: ${err?.message || 'Unknown error'}`);
-  }
-}
-
-export async function getBenchmarkById(id: string): Promise<AdoptionBenchmark | null> {
-  const supabase = createClient();
-  const { data, error } = await supabase
-    .from('adoption_benchmarks')
-    .select('*')
-    .eq('id', id)
-    .single();
-
-  if (error) {
-    if (error.code === 'PGRST116') {
-      return null; // Not found
-    }
-    console.error('Error fetching benchmark:', error);
-    throw new Error(`Failed to fetch benchmark: ${error.message}`);
-  }
-
-  return data as AdoptionBenchmark;
-}
-
-export async function createBenchmark(data: CreateAdoptionBenchmarkDTO): Promise<AdoptionBenchmark> {
-  const supabase = createClient();
-  const { data: benchmark, error } = await supabase
-    .from('adoption_benchmarks')
-    .insert({
-      ...data,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .select()
-    .single();
-
-  if (error) {
-    console.error('Error creating benchmark:', error);
-    throw new Error(`Failed to create benchmark: ${error.message}`);
-  }
-
-  return benchmark as AdoptionBenchmark;
-}
-
-export async function updateBenchmark(
-  id: string, 
-  data: Partial<CreateAdoptionBenchmarkDTO>
-): Promise<AdoptionBenchmark> {
-  const supabase = createClient();
-  const { data: benchmark, error } = await supabase
-    .from('adoption_benchmarks')
-    .update({
-      ...data,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) {
-    if (error.code === 'PGRST116') {
-      throw new Error('Benchmark not found');
-    }
-    console.error('Error updating benchmark:', error);
-    throw new Error(`Failed to update benchmark: ${error.message}`);
-  }
-
-  return benchmark as AdoptionBenchmark;
-}
-
-export async function deleteBenchmark(id: string): Promise<boolean> {
-  const supabase = createClient();
-  
-  // Check if benchmark is referenced by any epic_success_configs
-  const { data: configs, error: checkError } = await supabase
-    .from('epic_success_configs')
-    .select('epic_id')
-    .eq('benchmark_id', id)
-    .limit(1);
-
-  if (checkError) {
-    console.error('Error checking benchmark references:', checkError);
-    throw new Error(`Failed to check benchmark references: ${checkError.message}`);
-  }
-
-  if (configs && configs.length > 0) {
-    throw new Error('Cannot delete benchmark: it is referenced by one or more epic success configs');
-  }
-
-  const { error } = await supabase
-    .from('adoption_benchmarks')
-    .delete()
-    .eq('id', id);
-
-  if (error) {
-    if (error.code === 'PGRST116') {
-      return false; // Not found
-    }
-    console.error('Error deleting benchmark:', error);
-    throw new Error(`Failed to delete benchmark: ${error.message}`);
-  }
-
-  return true;
-}
 
 // ============================================================================
 // Success Metrics
@@ -333,14 +164,12 @@ export async function deleteMetric(id: string): Promise<boolean> {
 
 export interface EpicSuccessConfigWithDetails {
   epic_id: string;
-  benchmark_id: string | null;
   post_launch_owner: string; // Keep the ID for compatibility
   delegated_post_launch_owner_id?: string | null;
   locked: boolean;
   locked_at: string | null;
   created_at: string;
   updated_at: string;
-  benchmark?: AdoptionBenchmark;
   post_launch_owner_details?: {
     id: string;
     email: string;
@@ -478,7 +307,6 @@ export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessC
       .from('epic_success_configs')
       .select(`
         *,
-        benchmark:adoption_benchmarks(*),
         post_launch_owner_details:app_user!post_launch_owner(id, email, first_name, last_name, avatar_url),
         delegated_post_launch_owner_details:app_user!delegated_post_launch_owner_id(id, email, first_name, last_name, avatar_url)
       `)
@@ -567,23 +395,6 @@ async function getEpicSuccessConfigWithSeparateQueries(epicId: string): Promise<
       return null;
     }
 
-    // Fetch benchmark separately (non-blocking - if it fails, just don't include it)
-    let benchmark = null;
-    if (config.benchmark_id) {
-      try {
-        const { data: benchmarkData, error: benchmarkError } = await supabase
-          .from('adoption_benchmarks')
-          .select('*')
-          .eq('id', config.benchmark_id)
-          .single();
-        if (!benchmarkError && benchmarkData) {
-          benchmark = benchmarkData;
-        }
-      } catch (e) {
-        console.warn('Failed to fetch benchmark details:', e);
-      }
-    }
-
     // Fetch post-launch owner details separately (non-blocking)
     let postLaunchOwnerDetails = null;
     if (config.post_launch_owner) {
@@ -620,7 +431,6 @@ async function getEpicSuccessConfigWithSeparateQueries(epicId: string): Promise<
 
     return {
       ...config,
-      benchmark: benchmark || undefined,
       post_launch_owner_details: postLaunchOwnerDetails || undefined,
       delegated_post_launch_owner_details: delegatedPostLaunchOwnerDetails || undefined,
     } as EpicSuccessConfigWithDetails;
@@ -901,12 +711,27 @@ export async function addEpicSuccessMetric(
       epic_id: epicId,
       metric_id: data.metric_id,
       threshold_override: data.threshold_override || null,
+      target: data.target !== undefined ? data.target : null,
+      pendo_event_id: data.pendo_event_id || null,
+      snowflake_query: data.snowflake_query || null,
+      manual_label: data.manual_label || null,
+      pendo_segment_ids: data.pendo_segment_ids ?? null,
+      pendo_segment_names: data.pendo_segment_names ?? null,
+      pendo_app_ids: data.pendo_app_ids ?? null,
+      pendo_app_names: data.pendo_app_names ?? null,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     })
     .select()
     .single();
 
   if (error) {
+    // Postgres undefined_column (42703) or error text like "column ... does not exist"
+    const pgCode = (error as any)?.code;
+    const msg = (error as any)?.message || '';
+    if (pgCode === '42703' || (/does not exist/i.test(msg) && /column/i.test(msg))) {
+      throw new Error('Database schema out of date—apply 20260122000000_add_epic_metric_config.sql');
+    }
     console.error('Error adding epic success metric:', error);
     throw new Error(`Failed to add epic success metric: ${error.message}`);
   }
@@ -933,14 +758,42 @@ export async function removeEpicSuccessMetric(epicId: string, metricId: string):
 export async function updateEpicSuccessMetric(
   epicId: string,
   metricId: string,
-  thresholdOverride: MetricThresholds | null
+  data: Partial<Omit<CreateEpicSuccessMetricDTO, 'epic_id' | 'metric_id'>>
 ): Promise<EpicSuccessMetric> {
   const supabase = createClient();
+  const updateData: any = {};
+  
+  if (data.threshold_override !== undefined) {
+    updateData.threshold_override = data.threshold_override;
+  }
+  if (data.target !== undefined) {
+    updateData.target = data.target;
+  }
+  if (data.pendo_event_id !== undefined) {
+    updateData.pendo_event_id = data.pendo_event_id;
+  }
+  if (data.snowflake_query !== undefined) {
+    updateData.snowflake_query = data.snowflake_query;
+  }
+  if (data.manual_label !== undefined) {
+    updateData.manual_label = data.manual_label;
+  }
+  if (data.pendo_segment_ids !== undefined) {
+    updateData.pendo_segment_ids = data.pendo_segment_ids;
+  }
+  if (data.pendo_segment_names !== undefined) {
+    updateData.pendo_segment_names = data.pendo_segment_names;
+  }
+  if (data.pendo_app_ids !== undefined) {
+    updateData.pendo_app_ids = data.pendo_app_ids;
+  }
+  if (data.pendo_app_names !== undefined) {
+    updateData.pendo_app_names = data.pendo_app_names;
+  }
+  
   const { data: mapping, error } = await supabase
     .from('epic_success_metrics')
-    .update({
-      threshold_override: thresholdOverride,
-    })
+    .update(updateData)
     .eq('epic_id', epicId)
     .eq('metric_id', metricId)
     .select()
@@ -949,6 +802,12 @@ export async function updateEpicSuccessMetric(
   if (error) {
     if (error.code === 'PGRST116') {
       throw new Error('Epic success metric mapping not found');
+    }
+    // Handle undefined_column (42703) or similar text
+    const pgCode = (error as any)?.code;
+    const msg = (error as any)?.message || '';
+    if (pgCode === '42703' || (/does not exist/i.test(msg) && /column/i.test(msg))) {
+      throw new Error('Database schema out of date—apply 20260122000000_add_epic_metric_config.sql');
     }
     console.error('Error updating epic success metric:', error);
     throw new Error(`Failed to update epic success metric: ${error.message}`);
@@ -1007,7 +866,6 @@ export async function createEpicScorecard(
   epicId: string,
   snapshotDate: string,
   metricResults: MetricResult[],
-  benchmarkComparison: BenchmarkComparison | null,
   overallStatus: ScorecardStatus
 ): Promise<EpicScorecard> {
   const supabase = createClient();
@@ -1017,7 +875,6 @@ export async function createEpicScorecard(
       epic_id: epicId,
       snapshot_date: snapshotDate,
       metric_results: metricResults,
-      benchmark_comparison: benchmarkComparison,
       overall_status: overallStatus,
       created_at: new Date().toISOString(),
     })
@@ -1210,5 +1067,73 @@ export async function updateEpicRetro(
     }
     return retro as EpicRetro;
   }
+}
+
+export interface GetEpicSuccessMetricHistoryOptions {
+  metricId?: string;
+  changeType?: 'METRIC_ADDED' | 'METRIC_REMOVED' | 'TARGET_SET' | 'TARGET_UPDATED' | 'EVENT_CONFIG_UPDATED';
+}
+
+export async function getEpicSuccessMetricHistory(
+  epicId: string,
+  options?: GetEpicSuccessMetricHistoryOptions
+): Promise<EpicSuccessMetricHistory[]> {
+  const supabase = createClient();
+  
+  let query = supabase
+    .from('epic_success_metric_history')
+    .select(`
+      *,
+      changed_by:app_user(
+        id,
+        email,
+        first_name,
+        last_name
+      ),
+      metric:success_metrics(
+        id,
+        name
+      )
+    `)
+    .eq('epic_id', epicId)
+    .order('changed_at', { ascending: false });
+
+  if (options?.metricId) {
+    query = query.eq('metric_id', options.metricId);
+  }
+
+  if (options?.changeType) {
+    query = query.eq('change_type', options.changeType);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    console.error('Error fetching epic success metric history:', error);
+    throw new Error(`Failed to fetch metric history: ${error.message}`);
+  }
+
+  // Transform the data to match the EpicSuccessMetricHistory interface
+  return (data || []).map((item: any) => ({
+    id: item.id,
+    epic_success_metric_id: item.epic_success_metric_id,
+    epic_id: item.epic_id,
+    metric_id: item.metric_id,
+    change_type: item.change_type,
+    changed_by: item.changed_by ? {
+      id: item.changed_by.id,
+      email: item.changed_by.email,
+      first_name: item.changed_by.first_name,
+      last_name: item.changed_by.last_name,
+    } : {
+      id: '',
+      email: 'Unknown',
+      first_name: null,
+      last_name: null,
+    },
+    old_value: item.old_value,
+    new_value: item.new_value,
+    changed_at: item.changed_at,
+  })) as EpicSuccessMetricHistory[];
 }
 

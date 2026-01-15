@@ -1,76 +1,12 @@
 import { z } from 'zod';
-import type { LaunchTier, MetricCategory, MeasurementType, MetricSource, LeadingOrLagging } from './types';
+import type { MetricCategory, MeasurementType, MetricSource, LeadingOrLagging } from './types';
 
-// Threshold schema for success metrics
-const thresholdTierSchema = z.object({
+// Threshold schema for success metrics (global thresholds, no tiers)
+const metricThresholdsSchema = z.object({
   min: z.number().optional(),
   max: z.number().optional(),
   target: z.number().optional(),
-}).refine(
-  (data) => data.min !== undefined || data.max !== undefined || data.target !== undefined,
-  { message: "At least one of min, max, or target must be provided" }
-);
-
-const metricThresholdsSchema = z.object({
-  TIER_1: thresholdTierSchema,
-  TIER_2: thresholdTierSchema,
-  TIER_3: thresholdTierSchema,
 }).nullable().optional();
-
-// Adoption Benchmark Schema - Base object schema
-const adoptionBenchmarkBaseSchema = z.object({
-  name: z.string().min(1, "Name is required"),
-  launch_tier: z.enum(['TIER_1', 'TIER_2', 'TIER_3']),
-  feature_type: z.string().min(1, "Feature type is required"),
-  target_persona: z.string().min(1, "Target persona is required"),
-  horizon_days: z.array(z.number().int().positive()).min(1, "At least one horizon day is required"),
-  expected_activation: z.array(z.number().nonnegative()).min(1, "At least one expected activation value is required"),
-  expected_usage_depth: z.array(z.number().nonnegative()).nullable().optional(),
-  expected_ttfv_days: z.number().int().positive().nullable().optional(),
-  segment_modifiers: z.record(z.unknown()).nullable().optional(),
-  is_default: z.boolean().default(false),
-  version: z.number().int().positive().default(1),
-});
-
-export const createAdoptionBenchmarkSchema = adoptionBenchmarkBaseSchema.refine(
-  (data) => data.horizon_days.length === data.expected_activation.length,
-  {
-    message: "horizon_days and expected_activation arrays must have the same length",
-    path: ["expected_activation"],
-  }
-).refine(
-  (data) => !data.expected_usage_depth || data.horizon_days.length === data.expected_usage_depth.length,
-  {
-    message: "expected_usage_depth must have the same length as horizon_days",
-    path: ["expected_usage_depth"],
-  }
-);
-
-export const updateAdoptionBenchmarkSchema = adoptionBenchmarkBaseSchema.partial().refine(
-  (data) => {
-    // Only validate if both arrays are provided
-    if (data.horizon_days && data.expected_activation) {
-      return data.horizon_days.length === data.expected_activation.length;
-    }
-    return true;
-  },
-  {
-    message: "horizon_days and expected_activation arrays must have the same length",
-    path: ["expected_activation"],
-  }
-).refine(
-  (data) => {
-    // Only validate if expected_usage_depth is provided and horizon_days is provided
-    if (data.expected_usage_depth && data.horizon_days) {
-      return data.expected_usage_depth.length === data.horizon_days.length;
-    }
-    return true;
-  },
-  {
-    message: "expected_usage_depth must have the same length as horizon_days",
-    path: ["expected_usage_depth"],
-  }
-);
 
 // Success Metric Schema - Base object schema (without refinements)
 const successMetricBaseObjectSchema = z.object({
@@ -87,17 +23,14 @@ const successMetricBaseObjectSchema = z.object({
 // Success Metric Schema - Base object schema with threshold validation
 const successMetricBaseSchema = successMetricBaseObjectSchema.refine(
   (data) => {
-    // If thresholds are provided, validate that at least one tier has a value
+    // If thresholds are provided, validate that at least one of min, max, or target has a value
     if (data.thresholds && typeof data.thresholds === 'object' && data.thresholds !== null) {
-      const thresholds = data.thresholds;
-      return ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-        const tierThresholds = thresholds[tier as keyof typeof thresholds];
-        return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
-      });
+      const thresholds = data.thresholds as { min?: number; max?: number; target?: number };
+      return thresholds.min !== undefined || thresholds.max !== undefined || thresholds.target !== undefined;
     }
     return true; // Thresholds are optional
   },
-  { message: "If thresholds are provided, at least one tier must have a threshold value (min, max, or target)", path: ["thresholds"] }
+  { message: "If thresholds are provided, at least one of min, max, or target must be provided", path: ["thresholds"] }
 );
 
 export const createSuccessMetricSchema = successMetricBaseSchema.refine(
@@ -122,17 +55,14 @@ export const updateSuccessMetricSchema = successMetricBaseObjectSchema.partial()
   }
 ).refine(
   (data) => {
-    // If thresholds are provided, validate that at least one tier has a value
-    const thresholds = data.thresholds;
-    if (thresholds && typeof thresholds === 'object' && thresholds !== null) {
-      return ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-        const tierThresholds = thresholds[tier as keyof typeof thresholds];
-        return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
-      });
+    // If thresholds are provided, validate that at least one of min, max, or target has a value
+    const thresholds = data.thresholds as { min?: number; max?: number; target?: number } | null | undefined;
+    if (thresholds && typeof thresholds === 'object') {
+      return thresholds.min !== undefined || thresholds.max !== undefined || thresholds.target !== undefined;
     }
     return true; // Thresholds are optional
   },
-  { message: "If thresholds are provided, at least one tier must have a threshold value (min, max, or target)", path: ["thresholds"] }
+  { message: "If thresholds are provided, at least one of min, max, or target must be provided", path: ["thresholds"] }
 );
 
 // ============================================================================
@@ -140,7 +70,6 @@ export const updateSuccessMetricSchema = successMetricBaseObjectSchema.partial()
 // ============================================================================
 
 export const createEpicSuccessConfigSchema = z.object({
-  benchmark_id: z.string().uuid("Invalid benchmark ID").optional(),
   post_launch_owner: z.string().uuid("Invalid post-launch owner ID").optional(),
 });
 
@@ -153,10 +82,34 @@ export const updateEpicSuccessConfigSchema = createEpicSuccessConfigSchema.parti
 export const createEpicSuccessMetricSchema = z.object({
   metric_id: z.string().uuid("Invalid metric ID"),
   threshold_override: metricThresholdsSchema.nullable().optional(),
+  target: z.number().nullable().optional(),
+  pendo_event_id: z.string().nullable().optional(),
+  snowflake_query: z.string().nullable().optional(),
+  manual_label: z.string().nullable().optional(),
+  pendo_segment_ids: z.array(z.string()).nullable().optional(),
+  pendo_segment_names: z.array(z.string()).nullable().optional(),
+  pendo_app_ids: z.array(z.string()).nullable().optional(),
+  pendo_app_names: z.array(z.string()).nullable().optional(),
+}).refine(
+  (data) => {
+    // Target is required when creating a metric
+    return data.target !== null && data.target !== undefined;
+  },
+  { message: "Target is required", path: ["target"] }
+).superRefine((_data, _ctx) => {
+  // Intentionally synchronous: async validations are performed in the API handler.
 });
 
 export const updateEpicSuccessMetricSchema = z.object({
   threshold_override: metricThresholdsSchema.nullable().optional(),
+  target: z.number().nullable().optional(),
+  pendo_event_id: z.string().nullable().optional(),
+  snowflake_query: z.string().nullable().optional(),
+  manual_label: z.string().nullable().optional(),
+  pendo_segment_ids: z.array(z.string()).nullable().optional(),
+  pendo_segment_names: z.array(z.string()).nullable().optional(),
+  pendo_app_ids: z.array(z.string()).nullable().optional(),
+  pendo_app_names: z.array(z.string()).nullable().optional(),
 });
 
 // ============================================================================

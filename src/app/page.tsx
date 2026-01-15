@@ -23,22 +23,9 @@ export default async function HomePage({
     redirect(`/auth/callback?code=${encodeURIComponent(code)}`);
   }
   
-  // Also check for other OAuth parameters that might be present
-  // Sometimes Supabase redirects with different parameter names
-  const allParams = Object.keys(params || {});
-  if (allParams.length > 0) {
-    console.log('🔍 Root page: Search params detected:', allParams);
-    // If we have params but no code, Supabase might have redirected to Site URL
-    // This happens when redirectTo doesn't match Supabase Redirect URLs configuration
-    if (!code) {
-      console.error('❌ Root page: Redirected without code parameter!', {
-        searchParams: Object.fromEntries(Object.entries(params || {})),
-        issue: 'redirectTo URL might not match Supabase Redirect URLs configuration',
-        expected: 'https://cleargo.netlify.app/auth/callback',
-        action: 'Verify https://cleargo.netlify.app/auth/callback is in Supabase Redirect URLs',
-      });
-    }
-  }
+  // Avoid enumerating searchParams (which is a dynamic API).
+  // We already handle the only key we care about (code) above.
+  // If needed for debugging in development, prefer logging specific keys explicitly.
   
   const supabase = createClient();
   const { data: { user }, error } = await supabase.auth.getUser();

@@ -52,13 +52,36 @@ function decryptApiKey(encryptedKey: string): string {
   return encryptedKey; // TODO: Implement actual decryption
 }
 
+export interface PendoMetricOptions {
+  /**
+   * Optional list of Pendo segment IDs to filter by.
+   * Semantics: union – include activity from any of the segments.
+   */
+  pendoSegmentIds?: string[] | null;
+  /**
+   * Optional list of human-readable segment names (for logging/diagnostics only).
+   */
+  pendoSegmentNames?: string[] | null;
+  /**
+   * Optional list of Pendo app identifiers.
+   * For now these are passed through to filters; aggregation behaviour is
+   * handled by the consumer.
+   */
+  pendoAppIds?: string[] | null;
+  /**
+   * Optional list of app names (for logging/diagnostics only).
+   */
+  pendoAppNames?: string[] | null;
+}
+
 /**
  * Fetch metric value from Pendo for a given metric and epic
  */
 export async function fetchMetricValue(
   metric: SuccessMetric,
   epicId: string,
-  snapshotDate: string
+  snapshotDate: string,
+  options?: PendoMetricOptions
 ): Promise<number | boolean | null> {
   if (metric.source !== 'PENDO' || !metric.pendo_event_id) {
     throw new Error('Metric is not a Pendo metric or missing pendo_event_id');
@@ -86,12 +109,27 @@ export async function fetchMetricValue(
 
     let value: number | boolean | null = null;
 
+    // Build generic filters object for Pendo Aggregation API.
+    // Exact shape can be adjusted once a concrete Pendo query is implemented.
+    const filters: Record<string, any> = {
+      epicId,
+    };
+
+    if (options?.pendoSegmentIds && options.pendoSegmentIds.length > 0) {
+      filters.segmentIds = options.pendoSegmentIds;
+    }
+
+    if (options?.pendoAppIds && options.pendoAppIds.length > 0) {
+      filters.appIds = options.pendoAppIds;
+    }
+
     switch (metric.measurement_type) {
       case 'PERCENTAGE':
         value = await client.getEventPercentage({
           eventId: metric.pendo_event_id,
           startDate: startDateStr,
           endDate,
+          filters,
         });
         break;
       case 'COUNT':
@@ -99,6 +137,7 @@ export async function fetchMetricValue(
           eventId: metric.pendo_event_id,
           startDate: startDateStr,
           endDate,
+          filters,
         });
         break;
       case 'BOOLEAN':
@@ -107,6 +146,7 @@ export async function fetchMetricValue(
           eventId: metric.pendo_event_id,
           startDate: startDateStr,
           endDate,
+          filters,
         });
         value = percentage > 50;
         break;

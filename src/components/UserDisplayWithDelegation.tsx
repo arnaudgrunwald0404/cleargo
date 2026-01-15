@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ActionIcon, Tooltip, Avatar, Group, Text } from '@mantine/core';
-import { IconArrowsRightLeft } from '@tabler/icons-react';
+import { IconCalendarClock } from '@tabler/icons-react';
 import { DelegationModal, DelegationType } from './DelegationModal';
 
 interface UserDisplayWithDelegationProps {
@@ -130,7 +130,7 @@ export function UserDisplayWithDelegation({
           </Avatar>
           
           {showDelegationButton && (
-            <Tooltip label="Delegate this task" position="top" withArrow>
+            <Tooltip label="Reschedule" position="top" withArrow>
               <ActionIcon
                 variant="filled"
                 color="gray"
@@ -150,7 +150,7 @@ export function UserDisplayWithDelegation({
                   cursor: 'pointer',
                 }}
               >
-                <IconArrowsRightLeft size={iconSize} />
+                <IconCalendarClock size={iconSize} />
               </ActionIcon>
             </Tooltip>
           )}

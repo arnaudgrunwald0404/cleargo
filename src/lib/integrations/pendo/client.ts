@@ -247,6 +247,72 @@ export class PendoClient {
   }
 
   /**
+   * Get list of Pendo segments.
+   * NOTE: This uses a placeholder endpoint/shape; adjust to match your Pendo setup.
+   */
+  async getSegments(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const response = await this.request('/segments', {
+        method: 'GET',
+      });
+
+      const segments: Array<{ id: string; name: string }> = [];
+
+      const source = Array.isArray(response)
+        ? response
+        : Array.isArray((response as any)?.segments)
+          ? (response as any).segments
+          : [];
+
+      for (const item of source) {
+        if (!item) continue;
+        const id = item.id || item.guid || item.key;
+        const name = item.name || item.label || item.description;
+        if (!id || !name) continue;
+        segments.push({ id: String(id), name: String(name) });
+      }
+
+      return segments;
+    } catch (error: any) {
+      console.error('Error fetching Pendo segments:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get list of Pendo apps (products).
+   * NOTE: This uses a placeholder endpoint/shape; adjust to match your Pendo setup.
+   */
+  async getApps(): Promise<Array<{ id: string; name: string }>> {
+    try {
+      const response = await this.request('/apps', {
+        method: 'GET',
+      });
+
+      const apps: Array<{ id: string; name: string }> = [];
+
+      const source = Array.isArray(response)
+        ? response
+        : Array.isArray((response as any)?.apps)
+          ? (response as any).apps
+          : [];
+
+      for (const item of source) {
+        if (!item) continue;
+        const id = item.id || item.guid || item.key;
+        const name = item.name || item.label || item.description;
+        if (!id || !name) continue;
+        apps.push({ id: String(id), name: String(name) });
+      }
+
+      return apps;
+    } catch (error: any) {
+      console.error('Error fetching Pendo apps:', error);
+      return [];
+    }
+  }
+
+  /**
    * Test connection to Pendo API
    * Uses the aggregation API endpoint to verify connectivity
    */

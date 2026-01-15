@@ -4,6 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, jest } from '@jest/globals';
+import { createEpicSuccessMetricSchema } from '@/lib/success/validation';
 
 // Mock Supabase client
 const mockSupabaseClient = {
@@ -110,6 +111,39 @@ describe('Success Measurement Service', () => {
     it('should prevent non-PM from submitting retros', async () => {
       // This test would verify that only PMs/Admins can submit retros
       expect(true).toBe(true); // Placeholder
+    });
+  });
+
+  describe('epic_success_metric_pendo_segments_and_apps', () => {
+    it('allows optional Pendo segment and app filters on epic metrics', () => {
+      const input = {
+        metric_id: '00000000-0000-0000-0000-000000000000',
+        target: 10,
+        pendo_event_id: 'event-1',
+        pendo_segment_ids: ['seg-1', 'seg-2'],
+        pendo_segment_names: ['Segment 1', 'Segment 2'],
+        pendo_app_ids: ['app-web'],
+        pendo_app_names: ['Web App'],
+      };
+
+      const parsed = createEpicSuccessMetricSchema.parse(input);
+
+      expect(parsed.pendo_segment_ids).toEqual(['seg-1', 'seg-2']);
+      expect(parsed.pendo_segment_names).toEqual(['Segment 1', 'Segment 2']);
+      expect(parsed.pendo_app_ids).toEqual(['app-web']);
+      expect(parsed.pendo_app_names).toEqual(['Web App']);
+    });
+
+    it('treats segments and apps as optional when omitted', () => {
+      const input = {
+        metric_id: '00000000-0000-0000-0000-000000000000',
+        target: 5,
+      };
+
+      const parsed = createEpicSuccessMetricSchema.parse(input);
+
+      expect(parsed.pendo_segment_ids).toBeUndefined();
+      expect(parsed.pendo_app_ids).toBeUndefined();
     });
   });
 });

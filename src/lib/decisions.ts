@@ -9,7 +9,7 @@ if (!supabaseServiceKey) {
 }
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-export interface SnapshotData {
+export interface DecisionData {
     launch: any;
     criteria_statuses: any[];
     readiness: {
@@ -19,7 +19,7 @@ export interface SnapshotData {
     };
 }
 
-export async function createSnapshot(
+export async function createDecision(
     launchId: string,
     decisionType: string,
     verdict: string,
@@ -52,8 +52,8 @@ export async function createSnapshot(
 
     if (criteriaError) throw new Error(`Error fetching criteria: ${criteriaError.message}`);
 
-    // 3. Construct snapshot data blob
-    const snapshotData: SnapshotData = {
+    // 3. Construct decision data blob
+    const decisionData: DecisionData = {
         launch: launch,
         criteria_statuses: criteriaStatuses,
         readiness: {
@@ -63,8 +63,8 @@ export async function createSnapshot(
         },
     };
 
-    // 4. Insert into decision_snapshot
-    const { data: snapshot, error: snapshotError } = await supabase
+    // 4. Insert into decision_snapshot (table name stays the same for database compatibility)
+    const { data: decision, error: decisionError } = await supabase
         .from('decision_snapshot')
         .insert({
             epic_id: launchId,
@@ -72,17 +72,17 @@ export async function createSnapshot(
             verdict: verdict,
             notes: notes,
             created_by: userId,
-            snapshot_data: snapshotData,
+            snapshot_data: decisionData,
         })
         .select()
         .single();
 
-    if (snapshotError) throw new Error(`Error creating snapshot: ${snapshotError.message}`);
+    if (decisionError) throw new Error(`Error creating decision: ${decisionError.message}`);
 
-    return snapshot;
+    return decision;
 }
 
-export async function getSnapshots(launchId: string) {
+export async function getDecisions(launchId: string) {
     const { data, error } = await supabase
         .from('decision_snapshot')
         .select(`
@@ -98,6 +98,6 @@ export async function getSnapshots(launchId: string) {
         .eq('epic_id', launchId)
         .order('taken_at', { ascending: false });
 
-    if (error) throw new Error(`Error fetching snapshots: ${error.message}`);
+    if (error) throw new Error(`Error fetching decisions: ${error.message}`);
     return data;
 }

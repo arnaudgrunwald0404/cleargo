@@ -2,12 +2,11 @@
  * Scorecard calculation logic for success measurement
  * Calculates metric results and benchmark comparisons
  */
-import { getEpicSuccessConfig, getEpicSuccessMetrics } from './successMeasurementService';
-import { getMetricValue, getActivationData } from './metricValueService';
+import { getEpicSuccessMetrics } from './successMeasurementService';
+import { getMetricValue } from './metricValueService';
 import { getEpic } from '@/lib/epics';
 import type {
   MetricResult,
-  BenchmarkComparison,
   ScorecardStatus,
   MetricThresholds,
 } from '@/lib/success/types';
@@ -34,22 +33,41 @@ export async function calculateMetricResults(
     if (!metric) continue;
 
     // Fetch actual value from appropriate source
-    const actual = await getMetricValue(metric, epicId, snapshotDate);
+    // Use epic-specific config if available
+    const actual = await getMetricValue(
+      metric, 
+      epicId, 
+      snapshotDate,
+      {
+        pendo_event_id: epicMetric.pendo_event_id,
+        snowflake_query: epicMetric.snowflake_query,
+        pendo_segment_ids: epicMetric.pendo_segment_ids ?? null,
+        pendo_segment_names: epicMetric.pendo_segment_names ?? null,
+        pendo_app_ids: epicMetric.pendo_app_ids ?? null,
+        pendo_app_names: epicMetric.pendo_app_names ?? null,
+      }
+    );
 
-    // Determine expected value from thresholds
-    const thresholds = epicMetric.threshold_override || metric.thresholds;
-    const tierThresholds = thresholds?.[epic.tier as keyof MetricThresholds];
+    // Determine expected value - use epic-specific target first, then fall back to thresholds
     let expected: number | null = null;
 
-    if (tierThresholds?.target !== undefined) {
-      expected = tierThresholds.target;
-    } else if (tierThresholds?.min !== undefined && tierThresholds?.max !== undefined) {
-      // Use midpoint of min/max as expected
-      expected = (tierThresholds.min + tierThresholds.max) / 2;
-    } else if (tierThresholds?.min !== undefined) {
-      expected = tierThresholds.min;
-    } else if (tierThresholds?.max !== undefined) {
-      expected = tierThresholds.max;
+    // Priority 1: Epic-specific target (required)
+    if (epicMetric.target !== null && epicMetric.target !== undefined) {
+      expected = epicMetric.target;
+    } else {
+      // Priority 2: Global thresholds (no longer tier-specific)
+      const thresholds: MetricThresholds | null = epicMetric.threshold_override || metric.thresholds;
+      
+      if (thresholds?.target !== undefined) {
+        expected = thresholds.target;
+      } else if (thresholds?.min !== undefined && thresholds?.max !== undefined) {
+        // Use midpoint of min/max as expected
+        expected = (thresholds.min + thresholds.max) / 2;
+      } else if (thresholds?.min !== undefined) {
+        expected = thresholds.min;
+      } else if (thresholds?.max !== undefined) {
+        expected = thresholds.max;
+      }
     }
 
     // Determine status based on actual vs thresholds
@@ -61,15 +79,29 @@ export async function calculateMetricResults(
     } else if (typeof actual === 'boolean') {
       // For boolean metrics, true = ON_TRACK, false = MISSED
       status = actual ? 'ON_TRACK' : 'MISSED';
-    } else if (typeof actual === 'number' && tierThresholds) {
-      // Compare actual vs thresholds
-      if (tierThresholds.min !== undefined && actual < tierThresholds.min) {
-        status = 'MISSED';
-      } else if (tierThresholds.max !== undefined && actual > tierThresholds.max) {
-        // For some metrics, exceeding max might be good (e.g., adoption)
-        // For others, it might be bad (e.g., error rate)
-        // Default to ON_TRACK, but this could be configurable per metric
-        status = 'ON_TRACK';
+    } else if (typeof actual === 'number') {
+      const thresholds: MetricThresholds | null = epicMetric.threshold_override || metric.thresholds;
+
+      if (thresholds) {
+        // Compare actual vs thresholds
+        if (thresholds.min !== undefined && actual < thresholds.min) {
+          status = 'MISSED';
+        } else if (thresholds.max !== undefined && actual > thresholds.max) {
+          // For some metrics, exceeding max might be good (e.g., adoption)
+          // For others, it might be bad (e.g., error rate)
+          // Default to ON_TRACK, but this could be configurable per metric
+          status = 'ON_TRACK';
+        } else if (expected !== null) {
+          // Compare against target/expected
+          const variance = Math.abs(actual - expected) / expected;
+          if (variance > 0.2) {
+            // More than 20% variance
+            status = actual < expected ? 'MISSED' : 'ON_TRACK';
+          } else if (variance > 0.05) {
+            // 5-20% variance
+            status = actual < expected ? 'AT_RISK' : 'ON_TRACK';
+          }
+        }
       } else if (expected !== null) {
         // Compare against target/expected
         const variance = Math.abs(actual - expected) / expected;
@@ -94,50 +126,6 @@ export async function calculateMetricResults(
   }
 
   return results;
-}
-
-/**
- * Calculate benchmark comparison for a given epic and snapshot date
- * Returns null if no benchmark is configured (benchmarks are now selected as metrics)
- */
-export async function calculateBenchmarkComparison(
-  epicId: string,
-  snapshotDate: string
-): Promise<BenchmarkComparison | null> {
-  const config = await getEpicSuccessConfig(epicId);
-  const epic = await getEpic(epicId);
-
-  // Benchmark is now optional - benchmarks are selected as metrics
-  if (!config || !config.benchmark) {
-    return null;
-  }
-
-  if (!epic || !epic.target_launch_date) {
-    return null;
-  }
-
-  const benchmark = config.benchmark;
-  const launchDate = new Date(epic.target_launch_date);
-  const snapshot = new Date(snapshotDate);
-  const daysSinceLaunch = Math.floor((snapshot.getTime() - launchDate.getTime()) / (1000 * 60 * 60 * 24));
-
-  // Get expected activation for each horizon
-  const horizons = benchmark.horizon_days;
-  const expectedActivation = benchmark.expected_activation;
-
-  // Fetch actual activation from data sources
-  const actualActivation = await getActivationData(
-    epicId,
-    epic.target_launch_date,
-    horizons
-  );
-
-  return {
-    horizons,
-    expectedActivation,
-    actualActivation,
-    dataMissing: actualActivation === null,
-  };
 }
 
 /**

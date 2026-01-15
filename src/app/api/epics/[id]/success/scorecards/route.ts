@@ -7,7 +7,6 @@ import {
 } from '@/lib/services/successMeasurementService';
 import {
   calculateMetricResults,
-  calculateBenchmarkComparison,
   determineOverallStatus,
 } from '@/lib/services/scorecardCalculation';
 
@@ -95,24 +94,34 @@ export async function POST(
     const body = await req.json().catch(() => ({}));
     const snapshotDate = body.snapshot_date || new Date().toISOString().split('T')[0];
 
-    // Calculate metric results and benchmark comparison
+    // Calculate metric results
     const metricResults = await calculateMetricResults(epicId, snapshotDate);
-    const benchmarkComparison = await calculateBenchmarkComparison(epicId, snapshotDate);
     const overallStatus = determineOverallStatus(metricResults);
 
-    // Create scorecard (benchmarkComparison can be null if no benchmark configured)
+    // Create scorecard
     const scorecard = await createEpicScorecard(
       epicId,
       snapshotDate,
       metricResults,
-      benchmarkComparison || {
-        horizons: [],
-        expectedActivation: [],
-        actualActivation: null,
-        dataMissing: true,
-      },
       overallStatus
     );
+
+    // Fire-and-forget backfill from launch-90 to min(launch+120, today)
+    try {
+      if (epic.target_launch_date) {
+        const { generateScorecardsForRange } = await import('@/lib/services/scorecardGenerationService');
+        const launch = new Date(epic.target_launch_date);
+        const today = new Date(); today.setHours(0,0,0,0);
+        const start = new Date(launch); start.setDate(start.getDate() - 90); start.setHours(0,0,0,0);
+        const endCap = new Date(launch); endCap.setDate(endCap.getDate() + 120); endCap.setHours(0,0,0,0);
+        const end = new Date(Math.min(endCap.getTime(), today.getTime()));
+        // Do not await to return response faster; log errors only
+        generateScorecardsForRange(epicId, start.toISOString().split('T')[0], end.toISOString().split('T')[0])
+          .catch((err) => console.warn('Backfill after scorecard creation failed:', err));
+      }
+    } catch (e) {
+      console.warn('Error scheduling backfill after scorecard creation:', e);
+    }
 
     return NextResponse.json(scorecard, { status: 201 });
   } catch (error: any) {

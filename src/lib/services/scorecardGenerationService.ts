@@ -6,7 +6,6 @@
 import { getClient } from '@/lib/db';
 import {
   calculateMetricResults,
-  calculateBenchmarkComparison,
   determineOverallStatus,
 } from './scorecardCalculation';
 import { createEpicScorecard, getEpicScorecardByDate } from './successMeasurementService';
@@ -36,9 +35,8 @@ export async function generateScorecardForEpic(
       };
     }
 
-    // Calculate metric results and benchmark comparison
+    // Calculate metric results
     const metricResults = await calculateMetricResults(epicId, snapshotDate);
-    const benchmarkComparison = await calculateBenchmarkComparison(epicId, snapshotDate);
     const overallStatus = determineOverallStatus(metricResults);
 
     // Create scorecard
@@ -46,7 +44,6 @@ export async function generateScorecardForEpic(
       epicId,
       snapshotDate,
       metricResults,
-      benchmarkComparison,
       overallStatus
     );
 
@@ -80,8 +77,7 @@ export async function generateScorecardsForDate(
   const { data: epics, error } = await supabase
     .from('epic')
     .select('id, status, target_launch_date')
-    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
-    .lte('target_launch_date', snapshotDate);
+    .in('status', ['PLANNED', 'PRE_LAUNCH', 'LAUNCHING', 'LAUNCHED', 'POST_LAUNCH']);
 
   if (error) {
     console.error('Error fetching eligible epics:', error);
@@ -113,6 +109,66 @@ export async function generateScorecardsForDate(
 }
 
 /**
+ * Backfill scorecards for all epics currently in their active window (-90..+120), up to today.
+ * For each epic, fill [launch-90, min(launch+120, today)].
+ */
+export async function backfillActiveScorecardsToToday(): Promise<Array<{ epicId: string; results: ScorecardGenerationResult[] }>> {
+  const supabase = getClient();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  const { data: epics, error } = await supabase
+    .from('epic')
+    .select('id, status, target_launch_date')
+    .in('status', ['PLANNED', 'PRE_LAUNCH', 'LAUNCHING', 'LAUNCHED', 'POST_LAUNCH']);
+
+  if (error) {
+    console.error('Error fetching epics for backfill:', error);
+    throw new Error(`Failed to fetch epics: ${error.message}`);
+  }
+
+  if (!epics || epics.length === 0) return [];
+
+  // Keep only epics within active window as of today
+  const today = new Date(); today.setHours(0,0,0,0);
+  const activeEpics = epics.filter((e) => {
+    if (!e.target_launch_date) return false;
+    const launch = new Date(e.target_launch_date as string);
+    const days = Math.floor((today.getTime() - launch.getTime()) / 86400000);
+    return days >= -90 && days <= 120;
+  });
+
+  if (activeEpics.length === 0) return [];
+
+  // Ensure each epic has success config
+  const epicIds = activeEpics.map(e => e.id);
+  const { data: configs } = await supabase
+    .from('epic_success_configs')
+    .select('epic_id')
+    .in('epic_id', epicIds);
+  const configured = new Set((configs || []).map(c => c.epic_id));
+  const eligible = activeEpics.filter(e => configured.has(e.id));
+
+  const all: Array<{ epicId: string; results: ScorecardGenerationResult[] }> = [];
+
+  for (const epic of eligible) {
+    const launch = new Date(epic.target_launch_date as string);
+    const start = new Date(launch); start.setDate(start.getDate() - 90); start.setHours(0,0,0,0);
+    const endCap = new Date(launch); endCap.setDate(endCap.getDate() + 120); endCap.setHours(0,0,0,0);
+    const end = new Date(Math.min(endCap.getTime(), today.getTime()));
+
+    const res = await generateScorecardsForRange(
+      epic.id,
+      start.toISOString().split('T')[0],
+      end.toISOString().split('T')[0]
+    );
+
+    all.push({ epicId: epic.id, results: res });
+  }
+
+  return all;
+}
+
+/**
  * Generate scorecards for today
  */
 export async function generateScorecardsForToday(): Promise<ScorecardGenerationResult[]> {
@@ -121,63 +177,76 @@ export async function generateScorecardsForToday(): Promise<ScorecardGenerationR
 }
 
 /**
- * Generate scorecards for benchmark horizon days if epic is launched
- * This generates scorecards for the days specified in the benchmark's horizon_days array
+ * Generate scorecards for a continuous date range (inclusive)
  */
-export async function generateScorecardsForBenchmarkHorizons(
-  epicId: string
+export async function generateScorecardsForRange(
+  epicId: string,
+  startDate: string,
+  endDate: string
 ): Promise<ScorecardGenerationResult[]> {
-  try {
-    const { getEpicSuccessConfig } = await import('./successMeasurementService');
-    const { getEpic } = await import('@/lib/epics');
-    
-    const config = await getEpicSuccessConfig(epicId);
-    const epic = await getEpic(epicId);
-    
-    if (!config || !config.benchmark || !epic || !epic.target_launch_date) {
-      return [];
-    }
+  const results: ScorecardGenerationResult[] = [];
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
 
-    // Only generate for launched epics
-    if (epic.status !== 'LAUNCHED' && epic.status !== 'POST_LAUNCH') {
-      return [];
-    }
-
-    const benchmark = config.benchmark;
-    const launchDate = new Date(epic.target_launch_date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    launchDate.setHours(0, 0, 0, 0);
-
-    const results: ScorecardGenerationResult[] = [];
-
-    // Generate scorecards for each horizon day that has passed
-    for (const horizonDay of benchmark.horizon_days) {
-      const horizonDate = new Date(launchDate);
-      horizonDate.setDate(horizonDate.getDate() + horizonDay);
-      
-      // Only generate if the horizon date has passed
-      if (horizonDate <= today) {
-        const snapshotDate = horizonDate.toISOString().split('T')[0];
-        const result = await generateScorecardForEpic(epicId, snapshotDate);
-        results.push(result);
-      }
-    }
-
-    // Also generate for today if it's after launch
-    if (launchDate <= today) {
-      const todayStr = today.toISOString().split('T')[0];
-      const result = await generateScorecardForEpic(epicId, todayStr);
-      results.push(result);
-    }
-
-    return results;
-  } catch (error: any) {
-    console.error(`Error generating scorecards for benchmark horizons for epic ${epicId}:`, error);
-    return [{
-      epicId,
-      success: false,
-      error: error.message || 'Unknown error',
-    }];
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = d.toISOString().split('T')[0];
+    // Re-use per-epic generation which is idempotent due to unique constraint check
+    const r = await generateScorecardForEpic(epicId, dateStr);
+    results.push(r);
   }
+  return results;
 }
+
+/**
+ * Generate scorecards for all epics that are within their active window (launch → +180d)
+ * for a given snapshot date.
+ */
+export async function generateActiveScorecardsForDate(snapshotDate: string): Promise<ScorecardGenerationResult[]> {
+  const supabase = getClient();
+  const { data: epics, error } = await supabase
+    .from('epic')
+    .select('id, status, target_launch_date')
+    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
+    .lte('target_launch_date', snapshotDate);
+
+  if (error) {
+    console.error('Error fetching epics for active window:', error);
+    throw new Error(`Failed to fetch epics: ${error.message}`);
+  }
+
+  if (!epics || epics.length === 0) {
+    return [];
+  }
+
+  // Filter to active window (-90 .. +120 days from launch)
+  const activeEpics = epics.filter((e) => {
+    if (!e.target_launch_date) return false;
+    const launch = new Date(e.target_launch_date as string);
+    const snap = new Date(snapshotDate);
+    const days = Math.floor((snap.getTime() - launch.getTime()) / 86400000);
+    return days >= -90 && days <= 120;
+  });
+
+  if (activeEpics.length === 0) return [];
+
+  // Ensure epics have success config
+  const epicIds = activeEpics.map(e => e.id);
+  const { data: configs } = await supabase
+    .from('epic_success_configs')
+    .select('epic_id')
+    .in('epic_id', epicIds);
+
+  const configured = new Set((configs || []).map(c => c.epic_id));
+  const eligible = activeEpics.filter(e => configured.has(e.id));
+
+  const results: ScorecardGenerationResult[] = [];
+  for (const epic of eligible) {
+    const r = await generateScorecardForEpic(epic.id, snapshotDate);
+    results.push(r);
+  }
+  return results;
+}
+
+// Note: benchmark-based scorecard generation has been removed.

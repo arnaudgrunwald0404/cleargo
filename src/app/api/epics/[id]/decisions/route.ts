@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSnapshot, getSnapshots } from '@/lib/snapshots';
+import { createDecision, getDecisions } from '@/lib/decisions';
 import { createClient } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
@@ -24,7 +24,7 @@ export async function POST(
             return NextResponse.json({ error: 'Decision type and verdict are required' }, { status: 400 });
         }
 
-        const snapshot = await createSnapshot(
+        const decision = await createDecision(
             id,
             decision_type,
             verdict,
@@ -32,10 +32,10 @@ export async function POST(
             user.id
         );
 
-        return NextResponse.json(snapshot, { status: 201 });
+        return NextResponse.json(decision, { status: 201 });
     } catch (error) {
-        console.error('Error creating snapshot:', error);
-        return NextResponse.json({ error: 'Failed to create snapshot' }, { status: 500 });
+        console.error('Error creating decision:', error);
+        return NextResponse.json({ error: 'Failed to log decision' }, { status: 500 });
     }
 }
 
@@ -45,10 +45,10 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
-        const snapshots = await getSnapshots(id);
-        return NextResponse.json(snapshots);
+        const decisions = await getDecisions(id);
+        return NextResponse.json(decisions);
     } catch (error) {
-        console.error('Error fetching snapshots:', error);
-        return NextResponse.json({ error: 'Failed to fetch snapshots' }, { status: 500 });
+        console.error('Error fetching decisions:', error);
+        return NextResponse.json({ error: 'Failed to fetch decisions' }, { status: 500 });
     }
 }

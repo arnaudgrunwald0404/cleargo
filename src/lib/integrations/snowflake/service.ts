@@ -61,7 +61,8 @@ function getSnowflakeClient(): SnowflakeClient | null {
 export async function fetchMetricValue(
   metric: SuccessMetric,
   epicId: string,
-  snapshotDate: string
+  snapshotDate: string,
+  snowflakeQuery?: string | null
 ): Promise<number | boolean | null> {
   if (metric.source !== 'SNOWFLAKE') {
     throw new Error('Metric is not a Snowflake metric');
@@ -74,7 +75,8 @@ export async function fetchMetricValue(
   }
 
   try {
-    const value = await client.getMetricValue(metric, epicId, snapshotDate);
+    // If epic-specific query is provided, use it; otherwise use default metric logic
+    const value = await client.getMetricValue(metric, epicId, snapshotDate, snowflakeQuery);
     return value;
   } catch (error: any) {
     console.error('Error fetching metric value from Snowflake:', error);

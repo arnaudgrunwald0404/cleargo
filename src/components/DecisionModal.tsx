@@ -2,14 +2,14 @@ import { useState } from 'react';
 import { Button, Modal, Select, Textarea, Group } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 
-interface SnapshotModalProps {
+interface DecisionModalProps {
     epicId: string;
     opened: boolean;
     onClose: () => void;
     onSuccess: () => void;
 }
 
-export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: SnapshotModalProps) {
+export default function DecisionModal({ epicId, opened, onClose, onSuccess }: DecisionModalProps) {
     const [decisionType, setDecisionType] = useState<string | null>('GO_NO_GO_MEETING');
     const [verdict, setVerdict] = useState<string | null>('GO');
     const [notes, setNotes] = useState('');
@@ -20,7 +20,7 @@ export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: Sn
 
         setSubmitting(true);
         try {
-            const res = await fetch(`/api/epics/${epicId}/snapshots`, {
+            const res = await fetch(`/api/epics/${epicId}/decisions`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -30,11 +30,11 @@ export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: Sn
                 }),
             });
 
-            if (!res.ok) throw new Error('Failed to create snapshot');
+            if (!res.ok) throw new Error('Failed to log decision');
 
             notifications.show({
-                title: 'Snapshot created',
-                message: 'The decision snapshot has been saved.',
+                title: 'Decision logged',
+                message: 'The decision has been saved.',
                 color: 'green',
             });
             onSuccess();
@@ -45,7 +45,7 @@ export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: Sn
             console.error(error);
             notifications.show({
                 title: 'Error',
-                message: 'Failed to create snapshot',
+                message: 'Failed to log decision',
                 color: 'red',
             });
         } finally {
@@ -54,7 +54,7 @@ export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: Sn
     };
 
     return (
-        <Modal opened={opened} onClose={onClose} title="Take Decision Snapshot" size="lg">
+        <Modal opened={opened} onClose={onClose} title="Log Decision" size="lg">
             <div className="space-y-4">
                 <Select
                     label="Decision Type"
@@ -92,7 +92,7 @@ export default function SnapshotModal({ epicId, opened, onClose, onSuccess }: Sn
 
                 <Group justify="flex-end" mt="md">
                     <Button variant="default" onClick={onClose}>Cancel</Button>
-                    <Button onClick={handleSubmit} loading={submitting}>Save Snapshot</Button>
+                    <Button onClick={handleSubmit} loading={submitting}>Log Decision</Button>
                 </Group>
             </div>
         </Modal>

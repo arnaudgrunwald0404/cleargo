@@ -1,0 +1,36 @@
+name: Refresh Active Scorecards
+
+on:
+  schedule:
+    # Daily at 06:00 UTC — adjust as needed
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call refresh-active-scorecards endpoint
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BASE_URL/api/jobs/refresh-active-scorecards") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            echo "Retry $i..."; sleep 10
+          done
+          echo "Failed after retries" >&2
+          exit 1
