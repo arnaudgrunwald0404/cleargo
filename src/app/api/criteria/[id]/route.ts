@@ -5,7 +5,7 @@ import { deleteCriteria, updateCriteria } from "@/lib/db/criteria";
 import { resolveRole } from "@/lib/roles";
 
 const dataSourceSchema = z.object({
-  type: z.enum(["aha_field", "aha_description_part", "url", "jira_jql"]),
+  type: z.enum(["aha_field", "aha_description_part", "url", "jira_jql", "success_metrics_defined"]),
   value: z.string(), // Allow empty strings (especially for URL type where value is entered per-epic)
   label: z.string().optional(), // Optional label for URL sources (e.g., "Figma designs", "PRD")
 });

@@ -11,7 +11,7 @@ import { PurpleLoader } from '../PurpleLoader';
 const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 
 type DataSource = {
-  type: "aha_field" | "aha_description_part" | "url" | "jira_jql";
+  type: "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined";
   value: string;
   label?: string; // Optional label for URL sources (e.g., "Figma designs", "PRD")
 };
@@ -1171,6 +1171,11 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                               label: "Open Jira tickets",
                               value: "parent = {{JIRA_EPIC}} and statusCategory != Done",
                             });
+                          } else if (value === "success_metrics_defined") {
+                            updateDataSource(index, {
+                              type: value as DataSource["type"],
+                              value: "",
+                            });
                           } else {
                             updateDataSource(index, { type: value as DataSource["type"], value: "" });
                           }
@@ -1181,6 +1186,7 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                         { value: "aha_description_part", label: "Aha Description Part" },
                         { value: "url", label: "URL" },
                         { value: "jira_jql", label: "Jira (open tickets in epic)" },
+                        { value: "success_metrics_defined", label: "Success metrics defined" },
                       ]}
                       required
                     />
@@ -1237,6 +1243,12 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                           description='Searches Jira API by epic name to find the epic key. Falls back to AHA “Integrations” field if not found. Use {{JIRA_EPIC}} as placeholder.'
                         />
                       </>
+                    )}
+
+                    {source.type === "success_metrics_defined" && (
+                      <Text size="sm" c="dimmed">
+                        This data source automatically checks if the epic has at least one success metric defined. The icon will show a 📊 emoji when metrics are present.
+                      </Text>
                     )}
                   </Stack>
                 </div>

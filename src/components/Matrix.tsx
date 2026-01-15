@@ -202,13 +202,15 @@ type Props = {
     epicStatus?: string; // To determine if launched
     items: MatrixItem[];
     onUpdate: () => void;
-    epic?: { aha_fields?: Record<string, any> | null } | null;
+    epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
 };
 
 export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic }: Props) {
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
-        if (source.type === 'aha_field' && source.value) {
+        if (source.type === 'success_metrics_defined') {
+            return hasSuccessMetrics;
+        } else if (source.type === 'aha_field' && source.value) {
             const ahaFieldsStruct = epic?.aha_fields as any;
             const standardFields = ahaFieldsStruct?.standard_fields || {};
             const customFields = ahaFieldsStruct?.custom_fields || {};
@@ -288,8 +290,64 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             // Check if URL exists in data_source_values
             const urlValue = item.data_source_values?.[index.toString()];
             return !!(urlValue && typeof urlValue === 'string' && urlValue.trim() !== '');
+        } else if (source.type === 'jira_jql') {
+            // For Jira sources, ONLY show favicon if URL is saved in database
+            // Check if a Jira URL was saved in data_source_values
+            const savedValue = item.data_source_values?.[index.toString()];
+            if (savedValue) {
+                if (typeof savedValue === 'string') {
+                    // Check if it's a Jira URL
+                    const urlStr = savedValue.trim();
+                    if (urlStr !== '') {
+                        try {
+                            const url = new URL(urlStr);
+                            const isJiraUrl = url.hostname.includes('atlassian.net') || url.hostname.includes('jira');
+                            if (isJiraUrl) {
+                                console.log(`✅ Jira source has saved URL: ${urlStr} for item ${item.id}, source ${index}`);
+                                return true; // Show favicon when URL is saved
+                            }
+                        } catch {
+                            // If it's not a valid URL but is a non-empty string, still consider it saved
+                            console.log(`✅ Jira source has saved value (non-URL string): ${urlStr} for item ${item.id}, source ${index}`);
+                            return true;
+                        }
+                    }
+                }
+                // Could be an object with url property
+                if (typeof savedValue === 'object' && savedValue !== null && 'url' in savedValue) {
+                    const urlStr = (savedValue as any).url;
+                    if (typeof urlStr === 'string' && urlStr.trim() !== '') {
+                        try {
+                            const url = new URL(urlStr);
+                            const isJiraUrl = url.hostname.includes('atlassian.net') || url.hostname.includes('jira');
+                            if (isJiraUrl) {
+                                console.log(`✅ Jira source has saved URL object: ${urlStr} for item ${item.id}, source ${index}`);
+                                return true; // Show favicon when URL is saved
+                            }
+                        } catch {
+                            // If it's not a valid URL but is a non-empty string, still consider it saved
+                            console.log(`✅ Jira source has saved value object (non-URL string): ${urlStr} for item ${item.id}, source ${index}`);
+                            return true;
+                        }
+                    }
+                }
+            }
+            // Don't show favicon if only epic key exists but URL is not saved
+            return false;
         }
         return false;
+    };
+    
+    // Helper function to build Jira URL from epic key and JQL template
+    const buildJiraUrl = (source: { type: string; value: string }, epicKey: string | null | undefined, domain: string | null): string | null => {
+        if (source.type !== 'jira_jql' || !epicKey || !domain) return null;
+        
+        const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
+        const template = (source.value || '').trim() || defaultJql;
+        const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, epicKey);
+        
+        const cleanDomain = domain.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        return `https://${cleanDomain}/issues?jql=${encodeURIComponent(jql)}`;
     };
 
     // Helper function to get data source icons
@@ -301,6 +359,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                 return IconFileText;
             case 'url':
                 return IconLink;
+            case 'success_metrics_defined':
+                return null; // Will use emoji instead
             default:
                 return IconDatabase;
         }
@@ -349,13 +409,20 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     };
 
     // Helper function to get tooltip label for data source
-    const getDataSourceTooltip = (source: { type: string; value: string }): string => {
+    const getDataSourceTooltip = (source: { type: string; value: string }, ticketCount?: number): string => {
         if (source.type === 'aha_field') {
             return getFieldLabel(source.value);
         } else if (source.type === 'aha_description_part') {
             return source.value; // search term
         } else if (source.type === 'url') {
             return source.value; // URL
+        } else if (source.type === 'jira_jql') {
+            if (ticketCount !== undefined && ticketCount !== null) {
+                return `${ticketCount} issue${ticketCount !== 1 ? 's' : ''} open`;
+            }
+            return 'Jira tickets';
+        } else if (source.type === 'success_metrics_defined') {
+            return 'Success metrics defined';
         }
         return '';
     };
@@ -364,6 +431,95 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
     const [hoveredAvatarId, setHoveredAvatarId] = useState<string | null>(null);
+    const [jiraTicketCounts, setJiraTicketCounts] = useState<Record<string, number>>({}); // key: `${itemId}-${sourceIndex}`
+    const [jiraDomain, setJiraDomain] = useState<string | null>(null);
+    const [hasSuccessMetrics, setHasSuccessMetrics] = useState<boolean>(false);
+    const [loadingSuccessMetrics, setLoadingSuccessMetrics] = useState<boolean>(true);
+    
+    // Fetch success metrics count when epic changes
+    useEffect(() => {
+        const fetchSuccessMetrics = async () => {
+            setLoadingSuccessMetrics(true);
+            try {
+                const response = await fetch(`/api/epics/${epicId}/success/metrics`, {
+                    credentials: 'include',
+                });
+                if (response.ok) {
+                    const metrics = await response.json();
+                    const hasMetrics = Array.isArray(metrics) && metrics.length > 0;
+                    setHasSuccessMetrics(hasMetrics);
+                    if (!hasMetrics) {
+                        console.log(`No success metrics found for epic ${epicId}`);
+                    } else {
+                        console.log(`Found ${metrics.length} success metrics for epic ${epicId}`);
+                    }
+                } else {
+                    console.error(`Failed to fetch success metrics: ${response.status} ${response.statusText}`);
+                    setHasSuccessMetrics(false);
+                }
+            } catch (error) {
+                console.error('Error fetching success metrics:', error);
+                setHasSuccessMetrics(false);
+            } finally {
+                setLoadingSuccessMetrics(false);
+            }
+        };
+
+        fetchSuccessMetrics();
+    }, [epicId]);
+
+    // Fetch Jira domain and ticket counts when epic changes
+    useEffect(() => {
+        if (!epic?.jira_epic_key) return;
+
+        const fetchJiraData = async () => {
+            // Fetch Jira domain from settings
+            try {
+                const settingsResponse = await fetch('/api/settings', {
+                    credentials: 'include',
+                });
+                if (settingsResponse.ok) {
+                    const settings = await settingsResponse.json();
+                    if (settings.jira_domain) {
+                        setJiraDomain(settings.jira_domain);
+                    }
+                }
+            } catch (error) {
+                console.error('Error fetching Jira domain:', error);
+            }
+
+            // Fetch ticket counts for all Jira sources
+            const counts: Record<string, number> = {};
+            for (const item of items) {
+                if (!item.criterion.data_sources) continue;
+                item.criterion.data_sources.forEach((source, sourceIndex) => {
+                    if (source.type === 'jira_jql' && epic.jira_epic_key) {
+                        const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
+                        const template = (source.value || '').trim() || defaultJql;
+                        const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, epic.jira_epic_key);
+                        
+                        // Fetch ticket count
+                        fetch(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
+                            credentials: 'include',
+                        })
+                            .then(res => res.json())
+                            .then(data => {
+                                if (data.count !== undefined) {
+                                    counts[`${item.id}-${sourceIndex}`] = data.count;
+                                    setJiraTicketCounts(prev => ({ ...prev, [`${item.id}-${sourceIndex}`]: data.count }));
+                                }
+                            })
+                            .catch(error => {
+                                console.error(`Error fetching Jira tickets for ${item.id}-${sourceIndex}:`, error);
+                            });
+                    }
+                });
+            }
+        };
+
+        fetchJiraData();
+    }, [epic?.jira_epic_key, items.map(i => i.id).join(',')]); // Re-fetch when epic key or items change
+
     const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
         () => {
             // All categories expanded by default
@@ -415,7 +571,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const [commentsModalOpen, setCommentsModalOpen] = useState(false);
     const [selectedItemForComments, setSelectedItemForComments] = useState<MatrixItem | null>(null);
     const [commentsModalInitialTab, setCommentsModalInitialTab] = useState<'content' | 'comments'>('content');
-    const [pendingStatusChange, setPendingStatusChange] = useState<{ itemId: string; status: string } | null>(null);
+    const [pendingStatusChange, setPendingStatusChange] = useState<{ itemId: string; status: string; previousStatus: string } | null>(null);
     const [delegationModalOpen, setDelegationModalOpen] = useState(false);
     const [selectedItemForDelegation, setSelectedItemForDelegation] = useState<MatrixItem | null>(null);
 
@@ -528,23 +684,22 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         
         // Find the current status for this item
         const currentItem = items.find(item => item.id === id);
-        const oldStatus = currentItem?.status;
+        const oldStatus = currentItem?.status || 'NOT_SET'; // Default to NOT_SET if no status
         
-        // If CONDITIONAL or NO_GO, require a comment before saving
-        if (newStatus === 'CONDITIONAL' || newStatus === 'NO_GO') {
-            // Store pending status change
-            setPendingStatusChange({ itemId: id, status: newStatus });
-            // Open comments modal for this item
-            const item = items.find(item => item.id === id);
-            if (item) {
-                setSelectedItemForComments(item);
-                setCommentsModalInitialTab('comments');
-                setCommentsModalOpen(true);
-            }
-            return; // Don't save status yet, wait for comment
+        // Skip if status hasn't actually changed
+        if (oldStatus === newStatus) return;
+        
+        // Comments are required for ANY status change
+        // Store pending status change with previous status
+        setPendingStatusChange({ itemId: id, status: newStatus, previousStatus: oldStatus });
+        // Open comments modal for this item
+        const item = items.find(item => item.id === id);
+        if (item) {
+            setSelectedItemForComments(item);
+            setCommentsModalInitialTab('comments');
+            setCommentsModalOpen(true);
         }
-        
-        // For GO status, proceed with normal save
+        return; // Don't save status yet, wait for comment
         // Optimistically update the UI immediately
         setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
         setSavingItems(prev => new Set(prev).add(id));
@@ -703,7 +858,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             // Show toast explaining rating wasn't saved
             notifications.show({
                 title: 'Rating cancelled',
-                message: 'The rating change has been cancelled and was not saved. A comment is required for CONDITIONAL or NO_GO ratings.',
+                message: 'The rating change has been cancelled and was not saved. A comment is required for this status transition.',
                 color: 'orange',
                 autoClose: 5000,
             });
@@ -719,8 +874,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         if (pendingStatusChange && selectedItemForComments?.id === pendingStatusChange.itemId) {
             const id = pendingStatusChange.itemId;
             const newStatus = pendingStatusChange.status;
-            const currentItem = items.find(item => item.id === id);
-            const oldStatus = currentItem?.status;
+            const oldStatus = pendingStatusChange.previousStatus;
             
             // Optimistically update the UI
             setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
@@ -762,6 +916,68 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                     return next;
                 });
                 setPendingStatusChange(null);
+                onUpdate();
+            } catch (e: any) {
+                console.error('Failed to update status:', e);
+                alert(`Failed to update status: ${e.message || e}`);
+            } finally {
+                setSavingItems(prev => {
+                    const next = new Set(prev);
+                    next.delete(id);
+                    return next;
+                });
+            }
+        }
+    };
+
+    const handleSkipComment = async () => {
+        // Save the pending status change without requiring a comment
+        if (pendingStatusChange && selectedItemForComments?.id === pendingStatusChange.itemId) {
+            const id = pendingStatusChange.itemId;
+            const newStatus = pendingStatusChange.status;
+            const oldStatus = pendingStatusChange.previousStatus;
+            
+            // Optimistically update the UI
+            setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
+            setSavingItems(prev => new Set(prev).add(id));
+            
+            try {
+                const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ status: newStatus })
+                });
+                
+                let responseData = null;
+                const contentType = res.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await res.json();
+                } else {
+                    const text = await res.text();
+                    responseData = { error: text || 'Unknown error' };
+                }
+                
+                if (!res.ok) {
+                    setOptimisticStatuses(prev => {
+                        const next = { ...prev };
+                        if (oldStatus) {
+                            next[id] = oldStatus;
+                        } else {
+                            delete next[id];
+                        }
+                        return next;
+                    });
+                    const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                    throw new Error(errorMsg);
+                }
+                
+                setOptimisticStatuses(prev => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                });
+                setPendingStatusChange(null);
+                handleCloseComments(); // Close the modal
                 onUpdate();
             } catch (e: any) {
                 console.error('Failed to update status:', e);
@@ -1091,7 +1307,13 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 }
                                             })()}
                                         </td>
-                                        <td className="px-4 py-3 text-sm" style={{ width: '100px' }}>
+                                        <td 
+                                            className="px-4 py-3 text-sm cursor-pointer" 
+                                            style={{ width: '100px' }}
+                                            onClick={() => {
+                                                handleOpenComments(item);
+                                            }}
+                                        >
                                             {(() => {
                                                 const dataSources = item.criterion.data_sources;
                                                 if (!dataSources || dataSources.length === 0) {
@@ -1104,16 +1326,42 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         {dataSources.map((source, idx) => {
                                                             const hasData = hasDataSourceData(item, source, idx);
                                                             const IconComponent = getDataSourceIcon(source.type);
-                                                            const tooltipLabel = getDataSourceTooltip(source);
+                                                            const ticketCount = jiraTicketCounts[`${item.id}-${idx}`];
+                                                            const tooltipLabel = getDataSourceTooltip(source, ticketCount);
+                                                            
+                                                            // For Jira sources, show favicon if hasData is true (meaning we have epic key or saved URL)
+                                                            const isJiraSource = source.type === 'jira_jql';
+                                                            // Use Google's favicon service as fallback if jiraDomain not loaded yet
+                                                            const jiraFaviconUrl = jiraDomain 
+                                                                ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
+                                                                : 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                            
                                                             return (
                                                                 <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                     {hasData ? (
-                                                                        <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                            {source.type === 'aha_field' || source.type === 'aha_description_part' ? (
+                                                                        <div className="text-gray-600 hover:text-gray-900 transition-colors" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                                                            {source.type === 'success_metrics_defined' ? (
+                                                                                <span style={{ fontSize: '16px' }}>📊</span>
+                                                                            ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                                                                 <img 
                                                                                     src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
                                                                                     alt="Aha" 
                                                                                     className="w-3 h-3"
+                                                                                    style={{ display: 'block' }}
+                                                                                />
+                                                                            ) : isJiraSource ? (
+                                                                                <img 
+                                                                                    src={jiraFaviconUrl}
+                                                                                    alt="Jira" 
+                                                                                    className="w-3 h-3"
+                                                                                    style={{ display: 'block', width: '12px', height: '12px', objectFit: 'contain' }}
+                                                                                    onError={(e) => {
+                                                                                        console.log(`Favicon failed to load, using fallback. Original URL: ${jiraFaviconUrl}`);
+                                                                                        (e.target as HTMLImageElement).src = 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                                                    }}
+                                                                                    onLoad={() => {
+                                                                                        console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
+                                                                                    }}
                                                                                 />
                                                                             ) : (
                                                                                 <IconComponent size={16} />
@@ -1132,13 +1380,26 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 );
                                             })()}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700">
+                                        <td 
+                                            className="px-4 py-3 text-sm text-gray-700 cursor-pointer"
+                                            onClick={(e) => {
+                                                                // Only handle click if it's not on a button
+                                                                const target = e.target as HTMLElement;
+                                                                if (target.closest('button')) {
+                                                                    return; // Let button handle its own click
+                                                                }
+                                                                handleOpenCommentsForComments(item);
+                                                            }}
+                                        >
                                             <div className="flex items-start gap-2">
                                                 <div className="flex-1 min-w-0">
                                                     {/* Show last comment preview */}
                                                     {item.lastComment ? (
                                                         <button
-                                                            onClick={() => handleOpenComments(item)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenCommentsForComments(item);
+                                                            }}
                                                             className="text-left w-full hover:text-blue-600 transition-colors group"
                                                             title="View/add comments"
                                                         >
@@ -1175,7 +1436,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         </button>
                                                     ) : (
                                                         <button
-                                                            onClick={() => handleOpenComments(item)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenCommentsForComments(item);
+                                                            }}
                                                             className="text-left w-full hover:text-blue-600 transition-colors"
                                                             title="View/add comments"
                                                         >
@@ -1185,7 +1449,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 </div>
                                                 <div className="flex gap-1 flex-shrink-0">
                                                     <button
-                                                        onClick={() => handleOpenCommentsForComments(item)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenCommentsForComments(item);
+                                                        }}
                                                         className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative"
                                                         title="View/add comments"
                                                     >
@@ -1197,7 +1464,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         )}
                                                     </button>
                                                     <button
-                                                        onClick={() => handleOpenAttachments(item)}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleOpenAttachments(item);
+                                                        }}
                                                         className="p-1 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative"
                                                         title="Attach files"
                                                     >
@@ -1294,7 +1564,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             
                                             return (
                                                 <button
-                                                    onClick={() => handleOpenComments(item)}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleOpenCommentsForComments(item);
+                                                    }}
                                                     className="text-left w-full hover:text-blue-600 transition-colors"
                                                 >
                                                     <div className="text-xs text-gray-600 line-clamp-2 break-words">
@@ -1306,7 +1579,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                         } else {
                                             return (
                                                 <button
-                                                    onClick={() => handleOpenComments(item)}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        handleOpenCommentsForComments(item);
+                                                    }}
                                                     className="text-left w-full hover:text-blue-600 transition-colors"
                                                 >
                                                     <span className="text-gray-400 italic text-xs">Click to add comment</span>
@@ -1460,7 +1736,12 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             </div>
                                             
                                             {/* Sources Section */}
-                                            <div className="mb-3">
+                                            <div 
+                                                className="mb-3 cursor-pointer"
+                                                onClick={() => {
+                                                    handleOpenComments(item);
+                                                }}
+                                            >
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Sources</div>
                                                 {(() => {
                                                     const dataSources = item.criterion.data_sources;
@@ -1474,16 +1755,42 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                             {dataSources.map((source, idx) => {
                                                                 const hasData = hasDataSourceData(item, source, idx);
                                                                 const IconComponent = getDataSourceIcon(source.type);
-                                                                const tooltipLabel = getDataSourceTooltip(source);
+                                                                const ticketCount = jiraTicketCounts[`${item.id}-${idx}`];
+                                                                const tooltipLabel = getDataSourceTooltip(source, ticketCount);
+                                                                
+                                                                // For Jira sources, show favicon if hasData is true (meaning we have epic key or saved URL)
+                                                                const isJiraSource = source.type === 'jira_jql';
+                                                                // Use Google's favicon service as fallback if jiraDomain not loaded yet
+                                                                const jiraFaviconUrl = jiraDomain 
+                                                                    ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
+                                                                    : 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                                
                                                                 return (
                                                                     <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
                                                                         {hasData ? (
-                                                                            <div className="text-gray-600 hover:text-gray-900 transition-colors">
-                                                                                {source.type === 'aha_field' || source.type === 'aha_description_part' ? (
+                                                                            <div className="text-gray-600 hover:text-gray-900 transition-colors" style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                                                                {source.type === 'success_metrics_defined' ? (
+                                                                                    <span style={{ fontSize: '16px' }}>📊</span>
+                                                                                ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                                                                     <img 
                                                                                         src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
                                                                                         alt="Aha" 
                                                                                         className="w-3 h-3"
+                                                                                        style={{ display: 'block' }}
+                                                                                    />
+                                                                                ) : isJiraSource ? (
+                                                                                    <img 
+                                                                                        src={jiraFaviconUrl}
+                                                                                        alt="Jira" 
+                                                                                        className="w-3 h-3"
+                                                                                        style={{ display: 'block', width: '12px', height: '12px', objectFit: 'contain' }}
+                                                                                        onError={(e) => {
+                                                                                            console.log(`Favicon failed to load, using fallback. Original URL: ${jiraFaviconUrl}`);
+                                                                                            (e.target as HTMLImageElement).src = 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                                                        }}
+                                                                                        onLoad={() => {
+                                                                                            console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
+                                                                                        }}
                                                                                     />
                                                                                 ) : (
                                                                                     <IconComponent size={18} />
@@ -1504,7 +1811,17 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             </div>
                                             
                                             {/* Comments Section */}
-                                            <div>
+                                            <div
+                                                onClick={(e) => {
+                                                    // Only handle click if it's not on a button
+                                                    const target = e.target as HTMLElement;
+                                                    if (target.closest('button')) {
+                                                        return; // Let button handle its own click
+                                                    }
+                                                    handleOpenCommentsForComments(item);
+                                                }}
+                                                className="cursor-pointer"
+                                            >
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Comments</div>
                                                 <div className="flex items-start gap-2">
                                                     <div className="flex-1 min-w-0">
@@ -1512,7 +1829,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     </div>
                                                     <div className="flex gap-2 flex-shrink-0">
                                                         <button
-                                                            onClick={() => handleOpenCommentsForComments(item)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenCommentsForComments(item);
+                                                            }}
                                                             className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
                                                             title="View/add comments"
                                                         >
@@ -1524,7 +1844,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                             )}
                                                         </button>
                                                         <button
-                                                            onClick={() => handleOpenAttachments(item)}
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleOpenAttachments(item);
+                                                            }}
                                                             className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
                                                             title="Attach files"
                                                         >
@@ -1613,9 +1936,12 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                     onCommentAdded={handleCommentAdded}
                     onCloseWithoutComment={handleCloseCommentsWithoutComment}
                     onCancel={handleCancelRating}
+                    onSkipComment={handleSkipComment}
                     criterion={selectedItemForComments.criterion}
                     epic={epic}
                     initialTab={commentsModalInitialTab}
+                    statusAtComment={pendingStatusChange?.itemId === selectedItemForComments.id ? pendingStatusChange.status : null}
+                    previousStatus={pendingStatusChange?.itemId === selectedItemForComments.id ? (pendingStatusChange.previousStatus || null) : null}
                 />
             )}
 
