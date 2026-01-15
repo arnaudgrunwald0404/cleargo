@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -13,8 +13,10 @@ import {
   ActionIcon,
   Badge,
   Stack,
+  Modal,
+  Alert,
 } from '@mantine/core';
-import { IconPlus, IconPencil, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconPencil, IconTrash, IconAlertCircle } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { MetricForm } from '@/components/admin/success-measurement/MetricForm';
 import type { SuccessMetric, CreateSuccessMetricDTO, MetricCategory, MetricSource, LeadingOrLagging } from '@/lib/success/types';
@@ -27,20 +29,34 @@ export default function MetricsPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingMetric, setEditingMetric] = useState<SuccessMetric | null>(null);
   const [deletingMetric, setDeletingMetric] = useState<string | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [metricToDelete, setMetricToDelete] = useState<SuccessMetric | null>(null);
   const [filters, setFilters] = useState<{
     category?: MetricCategory;
     source?: MetricSource;
     leading_or_lagging?: LeadingOrLagging;
   }>({});
+  const fetchingRef = useRef(false);
+  const filtersRef = useRef(filters);
 
-  const fetchMetrics = async () => {
+  // Keep filtersRef in sync with filters
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
+
+  const fetchMetrics = useCallback(async () => {
+    // Prevent concurrent fetches
+    if (fetchingRef.current) return;
+    
+    fetchingRef.current = true;
     setLoading(true);
     setError(null);
     try {
+      const currentFilters = filtersRef.current;
       const params = new URLSearchParams();
-      if (filters.category) params.append('category', filters.category);
-      if (filters.source) params.append('source', filters.source);
-      if (filters.leading_or_lagging) params.append('leading_or_lagging', filters.leading_or_lagging);
+      if (currentFilters.category) params.append('category', currentFilters.category);
+      if (currentFilters.source) params.append('source', currentFilters.source);
+      if (currentFilters.leading_or_lagging) params.append('leading_or_lagging', currentFilters.leading_or_lagging);
 
       const res = await fetch(`/api/settings/success-measurement/metrics?${params.toString()}`);
       if (!res.ok) {
@@ -58,12 +74,14 @@ export default function MetricsPage() {
       });
     } finally {
       setLoading(false);
+      fetchingRef.current = false;
     }
-  };
+  }, []); // No dependencies - uses ref instead
 
   useEffect(() => {
     fetchMetrics();
-  }, [filters]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.category, filters.source, filters.leading_or_lagging]);
 
   const handleCreate = async (data: CreateSuccessMetricDTO) => {
     try {
@@ -75,7 +93,12 @@ export default function MetricsPage() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to create metric');
+        const errorMessage = errorData.error || 'Failed to create metric';
+        const details = errorData.details;
+        const fullMessage = details 
+          ? `${errorMessage}: ${JSON.stringify(details)}`
+          : errorMessage;
+        throw new Error(fullMessage);
       }
 
       notifications.show({
@@ -125,14 +148,17 @@ export default function MetricsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this metric?')) {
-      return;
-    }
+  const handleDeleteClick = (metric: SuccessMetric) => {
+    setMetricToDelete(metric);
+    setDeleteModalOpen(true);
+  };
 
-    setDeletingMetric(id);
+  const handleDeleteConfirm = async () => {
+    if (!metricToDelete) return;
+
+    setDeletingMetric(metricToDelete.id);
     try {
-      const res = await fetch(`/api/settings/success-measurement/metrics/${id}`, {
+      const res = await fetch(`/api/settings/success-measurement/metrics/${metricToDelete.id}`, {
         method: 'DELETE',
       });
 
@@ -146,6 +172,8 @@ export default function MetricsPage() {
         message: 'Metric deleted successfully',
         color: 'green',
       });
+      setDeleteModalOpen(false);
+      setMetricToDelete(null);
       fetchMetrics();
     } catch (err: any) {
       notifications.show({
@@ -226,18 +254,6 @@ export default function MetricsPage() {
                         }`}
                       >
                         Adoption Benchmarks
-                      </Link>
-                    </li>
-                    <li>
-                      <Link
-                        href="/settings/success-measurement/pendo"
-                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                          pathname === '/settings/success-measurement/pendo'
-                            ? 'bg-indigo-50 text-indigo-700 font-medium'
-                            : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        Pendo Integration
                       </Link>
                     </li>
                   </ul>
@@ -360,7 +376,7 @@ export default function MetricsPage() {
                       <ActionIcon
                         variant="light"
                         color="red"
-                        onClick={() => handleDelete(metric.id)}
+                        onClick={() => handleDeleteClick(metric)}
                         loading={deletingMetric === metric.id}
                         title="Delete"
                       >
@@ -411,6 +427,51 @@ export default function MetricsPage() {
           />
         )}
       </Drawer>
+
+      {/* Delete Confirmation Modal */}
+      <Modal
+        opened={deleteModalOpen}
+        onClose={() => {
+          setDeleteModalOpen(false);
+          setMetricToDelete(null);
+        }}
+        title={
+          <div className="flex items-center gap-2">
+            <IconTrash size={20} className="text-red-600" />
+            <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Delete Metric</span>
+          </div>
+        }
+        centered
+        size="md"
+      >
+        <div className="space-y-4">
+          <Text size="sm" c="dimmed">
+            Are you sure you want to delete <strong>"{metricToDelete?.name}"</strong>?
+          </Text>
+          <Alert icon={<IconAlertCircle size={16} />} title="Warning" color="red" variant="light">
+            This action cannot be undone. If this metric is referenced by any epics, you will need to remove those references first.
+          </Alert>
+          <Group justify="flex-end" mt="xl">
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setDeleteModalOpen(false);
+                setMetricToDelete(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              color="red"
+              onClick={handleDeleteConfirm}
+              loading={deletingMetric === metricToDelete?.id}
+              leftSection={<IconTrash size={16} />}
+            >
+              Delete Metric
+            </Button>
+          </Group>
+        </div>
+      </Modal>
     </main>
   );
 }
