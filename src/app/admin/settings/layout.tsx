@@ -241,6 +241,18 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                                         Jira
                                                     </Link>
                                                 </li>
+                                                <li>
+                                                    <Link
+                                                        href="/admin/settings/integrations/pendo"
+                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                            isActive("/admin/settings/integrations/pendo")
+                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                                : "text-gray-600 hover:bg-gray-50"
+                                                        }`}
+                                                    >
+                                                        Pendo
+                                                    </Link>
+                                                </li>
                                             </ul>
                                         )}
                                     </li>
@@ -287,18 +299,6 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                                         }`}
                                                     >
                                                         Adoption Benchmarks
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/settings/success-measurement/pendo"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/settings/success-measurement/pendo")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Pendo Integration
                                                     </Link>
                                                 </li>
                                             </ul>

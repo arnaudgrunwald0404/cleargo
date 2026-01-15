@@ -45,8 +45,16 @@ export class PendoClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Pendo API error: ${response.status} ${response.statusText} - ${errorText}`);
+      let errorText: string;
+      try {
+        const errorJson = await response.json();
+        errorText = errorJson.message || errorJson.error || JSON.stringify(errorJson);
+      } catch {
+        errorText = await response.text();
+      }
+      const error = new Error(`Pendo API error: ${response.status} ${response.statusText} - ${errorText}`);
+      (error as any).status = response.status;
+      throw error;
     }
 
     return response.json();
@@ -140,16 +148,138 @@ export class PendoClient {
   }
 
   /**
+   * Get list of all events from Pendo using the Aggregation API
+   * Returns event names (not IDs) as the primary identifier
+   */
+  async getEvents(): Promise<Array<{ name: string; id?: string; description?: string }>> {
+    try {
+      // Use Pendo Aggregation API to get all Track Events
+      // POST /api/v1/aggregation with trackTypes source set to null
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: {
+            mimeType: 'application/json',
+          },
+          request: {
+            pipeline: [
+              {
+                source: {
+                  trackTypes: null,
+                },
+              },
+            ],
+          },
+        }),
+      });
+
+      // Extract track types from the Aggregation API response
+      // The response structure may vary, so we handle multiple possible formats
+      let trackTypes: any[] = [];
+      
+      if (Array.isArray(response)) {
+        trackTypes = response;
+      } else if (response.results && Array.isArray(response.results)) {
+        trackTypes = response.results;
+      } else if (response.data && Array.isArray(response.data)) {
+        trackTypes = response.data;
+      } else if (response.trackTypes && Array.isArray(response.trackTypes)) {
+        trackTypes = response.trackTypes;
+      } else if (response.items && Array.isArray(response.items)) {
+        trackTypes = response.items;
+      } else {
+        // Try to find array in nested structure
+        const findArray = (obj: any): any[] => {
+          if (Array.isArray(obj)) return obj;
+          if (obj && typeof obj === 'object') {
+            for (const key in obj) {
+              const found = findArray(obj[key]);
+              if (found.length > 0) return found;
+            }
+          }
+          return [];
+        };
+        trackTypes = findArray(response);
+      }
+
+      // Filter out null/undefined track types and map to our format
+      const validEvents: Array<{ name: string; id?: string; description?: string }> = [];
+      
+      for (const trackType of trackTypes) {
+        if (!trackType || trackType === null || trackType === undefined) {
+          continue;
+        }
+        
+        // Extract event name - track types should have 'name' field
+        const name = trackType.name || trackType.eventName || trackType.event || trackType.value || trackType.id || trackType.eventId || trackType.key || '';
+        
+        // Only include events with a valid name
+        if (!name || name.trim() === '') {
+          continue;
+        }
+
+        validEvents.push({
+          name: name.trim(),
+          id: trackType.id || trackType.eventId || trackType.key || name.trim(),
+          description: trackType.description || trackType.eventDescription || trackType.desc || '',
+        });
+      }
+
+      console.log(`Fetched ${validEvents.length} Pendo events from ${trackTypes.length} track types`);
+      if (validEvents.length === 0 && trackTypes.length > 0) {
+        console.log('Sample track type structure:', JSON.stringify(trackTypes[0], null, 2));
+      }
+      if (validEvents.length === 0) {
+        console.log('Full Aggregation API response structure:', JSON.stringify(response, null, 2));
+      }
+      return validEvents;
+    } catch (error: any) {
+      console.error('Error fetching Pendo events via Aggregation API:', error);
+      console.error('Error details:', {
+        message: error.message,
+        status: error.status,
+        response: error.response,
+      });
+      // If the endpoint doesn't exist or fails, return empty array
+      // This allows the form to still work with manual entry
+      return [];
+    }
+  }
+
+  /**
    * Test connection to Pendo API
+   * Uses the aggregation API endpoint to verify connectivity
    */
   async testConnection(): Promise<boolean> {
     try {
-      // Simple health check endpoint
-      await this.request('/health', { method: 'GET' });
+      // Test connection by making a minimal aggregation API call
+      // This endpoint exists and will return an error if auth fails, or data if successful
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: {
+            mimeType: 'application/json',
+          },
+          request: {
+            pipeline: [
+              {
+                source: {
+                  trackTypes: null,
+                },
+              },
+            ],
+          },
+        }),
+      });
+      
+      // If we get a response (even if empty), the connection works
+      // The response structure doesn't matter for a connection test
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.error('Pendo connection test failed:', error);
-      return false;
+      // Re-throw the error so the caller can see the specific error message
+      // This allows for better error handling in the API route
+      throw error;
     }
   }
 }

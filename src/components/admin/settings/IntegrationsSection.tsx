@@ -6,6 +6,7 @@ import AhaIntegrationSection from "./AhaIntegrationSection";
 import SlackIntegrationSection from "./SlackIntegrationSection";
 import CalendarIntegrationSection from "./CalendarIntegrationSection";
 import JiraIntegrationSection from "./JiraIntegrationSection";
+import PendoIntegrationSection from "./PendoIntegrationSection";
 
 type AhaField = { alias: string; label: string; key: string | null; type?: string };
 
@@ -82,6 +83,10 @@ export default function IntegrationsSection({
 
       {activeSubSection === "jira" && (
         <JiraIntegrationSection settings={settings} setSettings={setSettings} />
+      )}
+
+      {activeSubSection === "pendo" && (
+        <PendoIntegrationSection />
       )}
     </div>
   );

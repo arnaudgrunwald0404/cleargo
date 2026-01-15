@@ -243,18 +243,6 @@ export default function BenchmarksPage() {
                         Adoption Benchmarks
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        href="/settings/success-measurement/pendo"
-                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                          pathname === '/settings/success-measurement/pendo'
-                            ? 'bg-indigo-50 text-indigo-700 font-medium'
-                            : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        Pendo Integration
-                      </Link>
-                    </li>
                   </ul>
                 </li>
               </ul>
