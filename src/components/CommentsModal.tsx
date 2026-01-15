@@ -10,6 +10,8 @@ interface Comment {
   id: string;
   comment_text: string;
   created_at: string;
+  status_at_comment?: string | null;
+  previous_status?: string | null;
   created_by?: {
     email: string;
     first_name?: string;
@@ -37,9 +39,12 @@ interface CommentsModalProps {
   onCommentAdded?: () => void; // Callback when comment is added (for mandatory mode)
   onCloseWithoutComment?: () => void; // Callback when modal closes without comment (for reverting status)
   onCancel?: () => void; // Callback when user cancels (for reverting status with toast)
+  onSkipComment?: () => void; // Callback when user chooses to skip comment requirement
   criterion?: { data_sources?: Array<{ type: string; value: string; label?: string }> | null };
-  epic?: { aha_fields?: Record<string, any> | null } | null;
+  epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
   initialTab?: 'content' | 'comments'; // Which tab to open initially (default: 'content')
+  statusAtComment?: string | null; // The status when this comment is being created (CONDITIONAL or NO_GO)
+  previousStatus?: string | null; // The previous status before the change (for transition arrows)
 }
 
 export function CommentsModal({
@@ -53,9 +58,12 @@ export function CommentsModal({
   onCommentAdded,
   onCloseWithoutComment,
   onCancel,
+  onSkipComment,
   criterion,
   epic,
   initialTab = 'content',
+  statusAtComment,
+  previousStatus,
 }: CommentsModalProps) {
   const [content, setContent] = useState('');
   const [contentLoading, setContentLoading] = useState(false);
@@ -80,6 +88,7 @@ export function CommentsModal({
   const [jiraEpicKey, setJiraEpicKey] = useState<string | null>(null);
   const [jiraDomain, setJiraDomain] = useState<string | null>(null);
   const [jiraEpicKeyLoading, setJiraEpicKeyLoading] = useState(false);
+  const [jiraEpicKeySource, setJiraEpicKeySource] = useState<'cached' | 'jira_search' | 'integrations' | null>(null);
   const [jiraTickets, setJiraTickets] = useState<Record<number, Array<{
     key: string;
     summary: string;
@@ -94,10 +103,33 @@ export function CommentsModal({
   useEffect(() => {
     if (!opened || !epicId) return;
 
+    // Check if we already have a cached Jira epic key in the epic prop
+    if (epic?.jira_epic_key) {
+      setJiraEpicKey(epic.jira_epic_key);
+      setJiraEpicKeySource('cached');
+      console.log(`✅ Using cached Jira epic key from epic prop: ${epic.jira_epic_key}`);
+      
+      // Still fetch Jira domain from settings
+      fetch('/api/settings', {
+        credentials: 'include',
+      })
+        .then(res => res.json())
+        .then(settings => {
+          if (settings.jira_domain) {
+            setJiraDomain(settings.jira_domain);
+          }
+        })
+        .catch(error => {
+          console.error('Error fetching Jira domain:', error);
+        });
+      
+      return; // Don't make API call if we have cached value
+    }
+
     const fetchJiraEpicKey = async () => {
       setJiraEpicKeyLoading(true);
       try {
-        // Fetch Jira epic key from API (tries integrations first, then Jira search)
+        // Fetch Jira epic key from API (checks cache first, then tries integrations, then Jira search)
         const response = await fetch(`/api/epics/${epicId}/jira-epic-key`, {
           credentials: 'include',
         });
@@ -106,9 +138,11 @@ export function CommentsModal({
           const data = await response.json();
           if (data.jiraEpicKey) {
             setJiraEpicKey(data.jiraEpicKey);
+            setJiraEpicKeySource(data.source || null);
             console.log(`✅ Jira epic key fetched: ${data.jiraEpicKey} (source: ${data.source})`);
           } else {
             setJiraEpicKey(null);
+            setJiraEpicKeySource(null);
           }
         }
 
@@ -132,7 +166,7 @@ export function CommentsModal({
     };
 
     fetchJiraEpicKey();
-  }, [opened, epicId]);
+  }, [opened, epicId, epic?.jira_epic_key]);
 
   const buildJiraIssuesUrlForOpenEpicTickets = (source: { value: string; label?: string } | null): string | null => {
     if (!jiraEpicKey || !jiraDomain) return null;
@@ -154,9 +188,19 @@ export function CommentsModal({
     return template.replace(/\{\{JIRA_EPIC\}\}/g, jiraEpicKey);
   };
 
-  // Fetch Jira tickets when epic key is available
+  // Track which Jira URLs we've already attempted to save (to avoid infinite loops)
+  const savedJiraUrlsRef = useRef<Set<string>>(new Set());
+  // Use a ref to track current dataSourceValues to avoid dependency issues
+  const dataSourceValuesRef = useRef(dataSourceValues);
+  
+  // Keep ref in sync with state
   useEffect(() => {
-    if (!opened || !jiraEpicKey || !criterion?.data_sources) return;
+    dataSourceValuesRef.current = dataSourceValues;
+  }, [dataSourceValues]);
+
+  // Fetch Jira tickets when epic key is available and save URL if generated
+  useEffect(() => {
+    if (!opened || !jiraEpicKey || !jiraDomain || !criterion?.data_sources || contentLoading) return;
 
     const fetchTickets = async () => {
       criterion.data_sources?.forEach(async (source, index) => {
@@ -164,6 +208,84 @@ export function CommentsModal({
 
         const jql = getJqlFromSource(source);
         if (!jql) return;
+
+        // Build Jira URL
+        const jiraUrl = buildJiraIssuesUrlForOpenEpicTickets(source);
+        
+        // Check if URL is already saved in current state (use ref to get latest value)
+        const currentSavedUrl = dataSourceValuesRef.current[index.toString()];
+        let savedUrlString = '';
+        if (typeof currentSavedUrl === 'string') {
+          savedUrlString = currentSavedUrl.trim();
+        } else if (currentSavedUrl && typeof currentSavedUrl === 'object' && 'url' in currentSavedUrl) {
+          savedUrlString = (currentSavedUrl as any).url?.trim() || '';
+        }
+        
+        // Check if the saved URL matches the generated URL (allowing for URL encoding differences)
+        const normalizedSavedUrl = savedUrlString ? savedUrlString.replace(/%20/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        const normalizedGeneratedUrl = jiraUrl ? jiraUrl.replace(/%20/g, ' ').replace(/\s+/g, ' ').trim() : '';
+        const isUrlSaved = savedUrlString !== '' && !!jiraUrl && (
+          savedUrlString === jiraUrl || 
+          normalizedSavedUrl === normalizedGeneratedUrl ||
+          (jiraEpicKey && savedUrlString.includes(jiraEpicKey)) // If saved URL contains the epic key, consider it saved
+        );
+
+        console.log(`🔍 Checking Jira URL save status for source ${index}:`, {
+          jiraUrl,
+          currentSavedUrl,
+          savedUrlString,
+          normalizedSavedUrl,
+          normalizedGeneratedUrl,
+          isUrlSaved,
+          jiraEpicKey,
+          dataSourceValuesKeys: Object.keys(dataSourceValuesRef.current),
+          urlKey: `${taskId}-${index}-${jiraUrl}`,
+          alreadyAttempted: savedJiraUrlsRef.current.has(`${taskId}-${index}-${jiraUrl}`)
+        });
+
+        // Save the generated URL if it's not already saved and we haven't tried to save it yet
+        const urlKey = `${taskId}-${index}-${jiraUrl}`;
+        if (jiraUrl && !isUrlSaved && !savedJiraUrlsRef.current.has(urlKey)) {
+          console.log(`💾 Auto-saving generated Jira URL for source ${index}: ${jiraUrl}`);
+          savedJiraUrlsRef.current.add(urlKey);
+          setDataSourceValues(prev => {
+            // Only update if the value is actually different to prevent infinite loops
+            const currentValue = prev[index.toString()];
+            const currentUrl = typeof currentValue === 'string' ? currentValue : (currentValue as any)?.url;
+            if (currentUrl === jiraUrl) {
+              return prev; // No change needed
+            }
+            return { ...prev, [index.toString()]: jiraUrl };
+          });
+          // Save to database
+          try {
+            const updatedValues = { ...dataSourceValuesRef.current, [index.toString()]: jiraUrl };
+            console.log(`📤 Sending PATCH request to save Jira URL:`, {
+              url: `/api/epics/${epicId}/criteria/${taskId}`,
+              data_source_values: updatedValues
+            });
+            const res = await fetch(`/api/epics/${epicId}/criteria/${taskId}`, {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              credentials: 'include',
+              body: JSON.stringify({ data_source_values: updatedValues }),
+            });
+            if (!res.ok) {
+              const errorText = await res.text();
+              console.error(`❌ Failed to save Jira URL. Status: ${res.status}, Response:`, errorText);
+              throw new Error(`Failed to save Jira URL: ${res.status} ${errorText}`);
+            }
+            const savedData = await res.json();
+            console.log(`✅ Successfully saved Jira URL to database for source ${index}:`, savedData?.data_source_values);
+          } catch (error) {
+            console.error('❌ Failed to auto-save Jira URL:', error);
+            savedJiraUrlsRef.current.delete(urlKey); // Allow retry on error
+          }
+        } else if (jiraUrl && isUrlSaved) {
+          console.log(`ℹ️ Jira URL already saved for source ${index}, skipping save`);
+        } else if (jiraUrl && savedJiraUrlsRef.current.has(urlKey)) {
+          console.log(`ℹ️ Already attempted to save Jira URL for source ${index}, skipping duplicate save`);
+        }
 
         setJiraTicketsLoading(prev => ({ ...prev, [index]: true }));
         try {
@@ -188,7 +310,7 @@ export function CommentsModal({
     };
 
     fetchTickets();
-  }, [opened, jiraEpicKey, criterion?.data_sources]);
+  }, [opened, jiraEpicKey, jiraDomain, criterion?.data_sources, taskId, epicId, contentLoading]);
   
   // Expose comments count for parent component
   useEffect(() => {
@@ -260,7 +382,11 @@ export function CommentsModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ comment_text: newComment || '' }), // Send HTML as-is
+        body: JSON.stringify({ 
+          comment_text: newComment || '',
+          status_at_comment: statusAtComment ?? null,
+          previous_status: previousStatus ?? null,
+        }), // Send HTML as-is
       });
 
       if (!commentRes.ok) {
@@ -357,6 +483,30 @@ export function CommentsModal({
     if (first_name) return first_name;
     if (last_name) return last_name;
     return email;
+  };
+
+  // Helper function to get status color
+  const getStatusColor = (status: string | null | undefined): string | null => {
+    if (!status) return null;
+    switch (status) {
+      case 'GO': return '#10b981'; // green
+      case 'CONDITIONAL': return '#f59e0b'; // yellow
+      case 'NO_GO': return '#ef4444'; // red
+      case 'NOT_SET': return '#9ca3af'; // gray
+      default: return null;
+    }
+  };
+
+  // Helper function to get status label
+  const getStatusLabel = (status: string | null | undefined): string => {
+    if (!status) return 'Unknown';
+    switch (status) {
+      case 'GO': return 'GO (green)';
+      case 'CONDITIONAL': return 'CONDITIONAL (yellow)';
+      case 'NO_GO': return 'NO_GO (red)';
+      case 'NOT_SET': return 'NOT_SET (gray)';
+      default: return status;
+    }
   };
 
   // Helper functions to extract URL and asset name from data source values (supports both string and object formats)
@@ -1173,7 +1323,7 @@ export function CommentsModal({
                 Comment required
               </Text>
               <Text c="white" fw={700} size="sm" mt={6} lh={1.25}>
-                A comment is required for CONDITIONAL or NO_GO ratings. Please add a comment before closing.
+                A comment is required for this status transition. Please add a comment before closing.
               </Text>
             </div>
           )}
@@ -1253,6 +1403,24 @@ export function CommentsModal({
                       const jiraUrl = buildJiraIssuesUrlForOpenEpicTickets(source as any);
                       const label = (source.label || '').trim() || 'Open Jira tickets';
 
+                      // Check if Jira URL is saved in database
+                      const savedJiraUrl = dataSourceValues[index.toString()];
+                      const isUrlSaved = savedJiraUrl && typeof savedJiraUrl === 'string' && savedJiraUrl.trim() !== '';
+                      const isUrlSavedObject = savedJiraUrl && typeof savedJiraUrl === 'object' && 'url' in savedJiraUrl && (savedJiraUrl as any).url;
+                      const hasSavedUrl = isUrlSaved || isUrlSavedObject;
+                      
+                      // Determine link source
+                      const linkSource = hasSavedUrl ? 'saved' : (jiraUrl ? 'generated' : 'none');
+                      const linkSourceText = hasSavedUrl 
+                        ? 'Saved in database' 
+                        : (jiraUrl ? 'Generated from epic key' : 'Not available');
+
+                      // Show Jira favicon when we have a Jira URL and the source is from Jira (not integrations)
+                      const showJiraIcon = jiraUrl && jiraEpicKeySource && (jiraEpicKeySource === 'cached' || jiraEpicKeySource === 'jira_search');
+                      const jiraFaviconUrl = jiraDomain 
+                        ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
+                        : 'https://www.atlassian.com/favicon.ico';
+
                       return (
                         <div key={index}>
                           <TextInput
@@ -1265,8 +1433,38 @@ export function CommentsModal({
                                 ? undefined
                                 : 'No Jira epic key found. Searched Jira API by epic name, then AHA integrations field.'
                             }
-                            rightSection={jiraEpicKeyLoading ? <PurpleLoader size="sm" /> : undefined}
+                            rightSection={
+                              jiraEpicKeyLoading ? (
+                                <PurpleLoader size="sm" />
+                              ) : showJiraIcon ? (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20 }}>
+                                  <img
+                                    src={jiraFaviconUrl}
+                                    alt="Jira"
+                                    style={{ width: 16, height: 16, objectFit: 'contain' }}
+                                    onError={(e) => {
+                                      // Fallback to Atlassian favicon if domain favicon fails
+                                      (e.target as HTMLImageElement).src = 'https://www.atlassian.com/favicon.ico';
+                                    }}
+                                  />
+                                </div>
+                              ) : undefined
+                            }
                           />
+                          {jiraUrl && hasSavedUrl && (
+                            <Group gap="xs" mt={4}>
+                              <Badge 
+                                size="xs" 
+                                color="green"
+                                variant="light"
+                              >
+                                ✓ Saved
+                              </Badge>
+                              <Text size="xs" c="dimmed">
+                                Saved in database
+                              </Text>
+                            </Group>
+                          )}
                           {jiraUrl && (
                             <>
                               {/* Jira Tickets Preview */}
@@ -1332,8 +1530,8 @@ export function CommentsModal({
                                   </Stack>
                                 </Card>
                               ) : jiraTickets[index] && jiraTickets[index].length === 0 ? (
-                                <Text size="xs" c="dimmed" mt="xs">
-                                  No tickets found matching this query
+                                <Text size="sm" fw={600} mt="xs" ta="center">
+                                  🎉 No open tickets left - great job completing and cleaning the epic!  
                                 </Text>
                               ) : null}
                               
@@ -1426,13 +1624,60 @@ export function CommentsModal({
                       }}
                     >
                       <Group justify="space-between" gap="xs" mb={4}>
-                        <div>
-                          <Text size="xs" fw={600}>
-                            {getUserDisplay(comment)}
-                          </Text>
-                          <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
-                            {formatTimestamp(comment.created_at)}
-                          </Text>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                          {/* Status indicator dots showing before → after */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+                            {/* Show previous status dot (before) */}
+                            {comment.previous_status && getStatusColor(comment.previous_status) && (
+                              <div
+                                style={{
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  backgroundColor: getStatusColor(comment.previous_status)!,
+                                }}
+                                title={`Previous status: ${getStatusLabel(comment.previous_status)}`}
+                              />
+                            )}
+                            {/* Show arrow if there's a status change */}
+                            {comment.previous_status && comment.status_at_comment && comment.previous_status !== comment.status_at_comment && (
+                              <>
+                                <span style={{ fontSize: '12px', color: '#6b7280' }}>→</span>
+                                {/* Show new status dot (after) */}
+                                {getStatusColor(comment.status_at_comment) && (
+                                  <div
+                                    style={{
+                                      width: '10px',
+                                      height: '10px',
+                                      borderRadius: '50%',
+                                      backgroundColor: getStatusColor(comment.status_at_comment)!,
+                                    }}
+                                    title={`New status: ${getStatusLabel(comment.status_at_comment)}`}
+                                  />
+                                )}
+                              </>
+                            )}
+                            {/* If no previous status but there's a status_at_comment, just show the new status */}
+                            {!comment.previous_status && comment.status_at_comment && getStatusColor(comment.status_at_comment) && (
+                              <div
+                                style={{
+                                  width: '10px',
+                                  height: '10px',
+                                  borderRadius: '50%',
+                                  backgroundColor: getStatusColor(comment.status_at_comment)!,
+                                }}
+                                title={`Status: ${getStatusLabel(comment.status_at_comment)}`}
+                              />
+                            )}
+                          </div>
+                          <div>
+                            <Text size="xs" fw={600}>
+                              {getUserDisplay(comment)}
+                            </Text>
+                            <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
+                              {formatTimestamp(comment.created_at)}
+                            </Text>
+                          </div>
                         </div>
                         {comment.created_by?.email === currentUserEmail && (
                           <ActionIcon
@@ -1489,11 +1734,13 @@ export function CommentsModal({
                 marginTop: 'auto',
                 paddingTop: '16px',
                 paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+                paddingLeft: '4px',
+                paddingRight: '4px',
                 borderTop: '1px solid #e0e0e0',
                 background: 'var(--mantine-color-body)',
               }}
             >
-              <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative', padding: '2px' }}>
                 <RichText
                   key={`comment-input-${activeTab}`}
                   value={newComment}
@@ -1502,8 +1749,23 @@ export function CommentsModal({
                   rows={6}
                   autoFocus={activeTab === 'comments'}
                 />
-                {/* Post button inside text box at bottom right */}
-                <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10 }}>
+                {/* Post button and No comment button inside text box at bottom right */}
+                <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {requireComment && onSkipComment && (
+                    <Button
+                      onClick={() => {
+                        if (onSkipComment) {
+                          onSkipComment();
+                        }
+                      }}
+                      disabled={submitting || uploadingFiles}
+                      size="xs"
+                      variant="outline"
+                      color="gray"
+                    >
+                      No comment
+                    </Button>
+                  )}
                   <Button
                     leftSection={<IconSend size={14} />}
                     onClick={handleSubmitComment}
