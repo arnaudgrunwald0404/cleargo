@@ -1277,10 +1277,18 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 
                                                 setSyncingReleaseName(group.releaseName);
                                                 try {
+                                                    const existingAhaIds = group.epics
+                                                        .map(e => e.aha_id)
+                                                        .filter((id): id is string => Boolean(id));
+
                                                     const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
                                                         method: "POST",
                                                         credentials: "include",
                                                         headers: { "Content-Type": "application/json" },
+                                                        body: JSON.stringify({
+                                                            releaseName: group.releaseName,
+                                                            existingAhaIds,
+                                                        }),
                                                     });
                                                     
                                                     if (!res.ok) {
@@ -1295,6 +1303,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     }
                                                     if (result.results.skipped_release_not_synced > 0) {
                                                         skipDetails.push(`${result.results.skipped_release_not_synced} with unsynced release`);
+                                                    }
+                                                    if (result.results.removed_from_release > 0) {
+                                                        skipDetails.push(`${result.results.removed_from_release} removed from release`);
                                                     }
                                                     const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
                                                     

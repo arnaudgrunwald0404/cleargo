@@ -25,6 +25,10 @@ export const dynamic = 'force-dynamic';
  * - page: (optional) Page number for pagination (default: 1) - ignored if sync_all=true
  * - force: (optional) If "true", process all epics regardless of filter criteria
  * - sync_all: (optional) If "true", sync all pages of epics (complements webhook system)
+ * - release: (optional) If provided, sync epics for this release name efficiently (no full epic scan)
+ *
+ * Body (optional, JSON):
+ * - existingAhaIds: string[] (Aha epic reference numbers currently shown for this release; used for revalidation)
  */
 export async function POST(req: NextRequest) {
     try {
@@ -49,11 +53,216 @@ export async function POST(req: NextRequest) {
         const syncAll = searchParams.get('sync_all') === 'true';
         const releaseName = searchParams.get('release') || undefined;
 
-        console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, user: user.email });
+        // Optional JSON body for UI-driven refreshes (safe if absent)
+        let body: any = null;
+        try {
+            body = await req.json();
+        } catch {
+            body = null;
+        }
+
+        const existingAhaIdsInput = Array.isArray(body?.existingAhaIds) ? body.existingAhaIds : [];
+        const existingAhaIds = existingAhaIdsInput
+            .filter((id: any) => typeof id === 'string')
+            .map((id: string) => id.trim())
+            .filter(Boolean);
+        const existingAhaIdsSet = new Set(existingAhaIds);
+
+        console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, releaseName, user: user.email });
 
         const client = getAhaClient();
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];
+
+        // Fetch all synced release names from release_schedule table
+        const { data: syncedReleases, error: releasesError } = await supabase
+            .from('release_schedule')
+            .select('release_name');
+        
+        if (releasesError) {
+            console.warn('⚠️ Failed to fetch synced releases:', releasesError);
+        }
+        
+        const syncedReleaseNames = new Set<string>(
+            (syncedReleases || []).map((r: any) => r.release_name)
+        );
+        
+        console.log(`📋 Found ${syncedReleaseNames.size} synced releases in system`);
+
+        const resolveOwnerId = async (ownerEmail: string | null): Promise<string | null> => {
+            if (ownerEmail) {
+                const ownerUser = await getUserByEmail(ownerEmail);
+                if (ownerUser) return ownerUser.id;
+                return await getFallbackProductOpsUser();
+            }
+            return await getFallbackProductOpsUser();
+        };
+
+        // If a release is provided, use an efficient release-based sync (no full epic scan)
+        if (releaseName) {
+            const results = {
+                total: 0,
+                processed: 0,
+                created: 0,
+                updated: 0,
+                skipped: 0,
+                skipped_no_release: 0,
+                skipped_release_not_synced: 0,
+                removed_from_release: 0,
+                errors: [] as string[],
+            };
+
+            // 1) Resolve Aha release id by name (exact, then case-insensitive)
+            let matchedRelease: any | null = null;
+            let releasePage = 1;
+            const releasesPerPage = 50;
+            let hasMoreReleases = true;
+
+            while (hasMoreReleases && !matchedRelease) {
+                const resp: any = await client.getReleases({ per_page: releasesPerPage, page: releasePage });
+                const releases: any[] = resp?.releases || [];
+
+                matchedRelease = releases.find((r: any) => r?.name === releaseName) ||
+                    releases.find((r: any) => typeof r?.name === 'string' && r.name.toLowerCase() === releaseName.toLowerCase()) ||
+                    null;
+
+                hasMoreReleases = releases.length === releasesPerPage;
+                releasePage++;
+            }
+
+            if (!matchedRelease?.id) {
+                return NextResponse.json(
+                    { error: `Release "${releaseName}" not found in Aha`, details: 'Release lookup failed' },
+                    { status: 404 }
+                );
+            }
+
+            // 2) Fetch all epics for this release (paginated)
+            const releaseEpicSummaries: any[] = [];
+            let epicPage = 1;
+            let hasMoreEpics = true;
+            while (hasMoreEpics) {
+                const resp: any = await client.getReleaseEpics(matchedRelease.id, { per_page: perPage, page: epicPage });
+
+                let epics: any[] = [];
+                if (Array.isArray(resp)) {
+                    epics = resp;
+                } else if (resp?.epics && Array.isArray(resp.epics)) {
+                    epics = resp.epics;
+                } else if (resp?.data && Array.isArray(resp.data)) {
+                    epics = resp.data;
+                }
+
+                releaseEpicSummaries.push(...epics);
+                hasMoreEpics = epics.length === perPage;
+                epicPage++;
+            }
+
+            const releaseAhaIds = new Set<string>(
+                releaseEpicSummaries
+                    .map((e: any) => e?.reference_num || e?.id)
+                    .filter((id: any) => typeof id === 'string' && id.trim())
+                    .map((id: string) => id.trim())
+            );
+
+            results.total = releaseAhaIds.size;
+
+            // 3) Revalidate previously-shown epics that are no longer in this release
+            for (const ahaId of existingAhaIds) {
+                if (releaseAhaIds.has(ahaId)) continue;
+
+                try {
+                    const fullEpic = await client.getEpic(ahaId);
+                    const epicData = await mapEpicToEpic(fullEpic, fieldsToLoad);
+
+                    const existingEpic = await getEpicByAhaId(epicData.aha_id);
+                    const isNewEpic = !existingEpic;
+
+                    const ownerId = await resolveOwnerId(epicData.owner_email);
+                    const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+
+                    if (isNewEpic) {
+                        await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+                        results.created++;
+                    } else {
+                        results.updated++;
+                    }
+
+                    results.processed++;
+                    results.removed_from_release++;
+                } catch (epicError) {
+                    const errorMsg = `Error revalidating epic ${ahaId}: ${(epicError as Error).message}`;
+                    console.error(errorMsg);
+                    results.errors.push(errorMsg);
+                }
+            }
+
+            // 4) Sync all epics currently in the release
+            for (const summary of releaseEpicSummaries) {
+                const ahaId = (summary?.reference_num || summary?.id) as string | undefined;
+                if (!ahaId) continue;
+
+                try {
+                    const fullEpic = await client.getEpic(ahaId);
+                    if (!force && !(await shouldProcessEpic(fullEpic))) {
+                        results.skipped++;
+                        continue;
+                    }
+
+                    const epicData = await mapEpicToEpic(fullEpic, fieldsToLoad);
+
+                    const epicRelease = epicData.aha_release_name;
+                    if (!epicRelease) {
+                        results.skipped_no_release++;
+                        results.skipped++;
+                        continue;
+                    }
+
+                    // Auto-fetch release from Aha API if it doesn't exist in system
+                    if (!syncedReleaseNames.has(epicRelease)) {
+                        try {
+                            const fetchedDate = await fetchAndUpsertReleaseFromAha(epicRelease);
+                            syncedReleaseNames.add(epicRelease);
+
+                            if (fetchedDate === null) {
+                                console.log(`⚠️ Release "${epicRelease}" not found in Aha or has no date, continuing with epic sync`);
+                            }
+                        } catch (fetchError) {
+                            console.error(`Failed to auto-fetch release "${epicRelease}" from Aha:`, fetchError);
+                            const errorMsg = `Failed to auto-fetch release "${epicRelease}": ${(fetchError as Error).message}`;
+                            results.errors.push(errorMsg);
+                        }
+                    }
+
+                    const existingEpic = await getEpicByAhaId(epicData.aha_id);
+                    const isNewEpic = !existingEpic;
+
+                    const ownerId = await resolveOwnerId(epicData.owner_email);
+                    const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+
+                    if (isNewEpic) {
+                        await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+                        results.created++;
+                    } else {
+                        results.updated++;
+                    }
+
+                    results.processed++;
+                } catch (epicError) {
+                    const errorMsg = `Error processing epic ${ahaId}: ${(epicError as Error).message}`;
+                    console.error(errorMsg);
+                    results.errors.push(errorMsg);
+                }
+            }
+
+            console.log('✅ Manual Aha release sync completed', results);
+
+            return NextResponse.json({
+                success: true,
+                message: `Release sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
+                results,
+            });
+        }
 
         // Fetch all epics from Aha (paginated if sync_all=true)
         let allEpics: any[] = [];
@@ -118,21 +327,6 @@ export async function POST(req: NextRequest) {
             
             console.log(`📥 Fetched ${allEpics.length} epics from Aha (page ${page})`);
         }
-
-        // Fetch all synced release names from release_schedule table
-        const { data: syncedReleases, error: releasesError } = await supabase
-            .from('release_schedule')
-            .select('release_name');
-        
-        if (releasesError) {
-            console.warn('⚠️ Failed to fetch synced releases:', releasesError);
-        }
-        
-        const syncedReleaseNames = new Set<string>(
-            (syncedReleases || []).map((r: any) => r.release_name)
-        );
-        
-        console.log(`📋 Found ${syncedReleaseNames.size} synced releases in system`);
 
         const results = {
             total: allEpics.length,

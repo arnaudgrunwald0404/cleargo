@@ -52,11 +52,14 @@ jest.mock('@/lib/roles', () => ({
 const mockGetEpics = jest.fn();
 const mockGetEpic = jest.fn();
 const mockGetReleases = jest.fn();
+const mockGetReleaseEpics = jest.fn();
 
 jest.mock('@/lib/aha/client', () => ({
     getAhaClient: jest.fn(() => ({
         getEpics: (...args: any[]) => mockGetEpics(...args),
         getEpic: (...args: any[]) => mockGetEpic(...args),
+        getReleases: (...args: any[]) => mockGetReleases(...args),
+        getReleaseEpics: (...args: any[]) => mockGetReleaseEpics(...args),
     })),
     getReleases: (...args: any[]) => mockGetReleases(...args),
 }));
@@ -81,13 +84,13 @@ jest.mock('@/lib/db/epics', () => ({
 // Mock mapping
 jest.mock('@/lib/aha/mapping', () => ({
     shouldProcessEpic: jest.fn().mockResolvedValue(true),
-    mapEpicToEpic: jest.fn().mockResolvedValue({
-        aha_id: 'E-123',
-        name: 'Test Epic',
+    mapEpicToEpic: jest.fn().mockImplementation(async (epic: any) => ({
+        aha_id: epic?.reference_num || epic?.id || 'E-123',
+        name: epic?.name || 'Test Epic',
         tier: 'TIER_1',
-        aha_release_name: 'Release 2025.10',
+        aha_release_name: epic?.release?.name || 'Release 2025.10',
         owner_email: 'owner@example.com',
-    }),
+    })),
 }));
 
 // Mock settings
@@ -107,38 +110,9 @@ describe('Epic Sync Auto-Fetch Release', () => {
             error: null,
         });
         
-        // Default user roles mock
-        mockSupabase.from.mockReturnValue({
-            select: jest.fn().mockReturnValue({
-                eq: jest.fn().mockReturnValue({
-                    single: jest.fn().mockResolvedValue({
-                        data: { roles: ['PRODUCT_OPS'] },
-                        error: null,
-                    }),
-                }),
-            }),
-        });
-        
         // Default release schedule mock (empty - no releases synced)
-        // First call: user roles check
-        // Second call: release schedule query
-        let callCount = 0;
-        mockSupabase.from.mockImplementation(() => {
-            callCount++;
-            if (callCount === 1) {
-                // User roles query
-                return {
-                    select: jest.fn().mockReturnValue({
-                        eq: jest.fn().mockReturnValue({
-                            single: jest.fn().mockResolvedValue({
-                                data: { roles: ['PRODUCT_OPS'] },
-                                error: null,
-                            }),
-                        }),
-                    }),
-                };
-            } else {
-                // Release schedule query
+        mockSupabase.from.mockImplementation((table: string) => {
+            if (table === 'release_schedule') {
                 return {
                     select: jest.fn().mockResolvedValue({
                         data: [], // No releases synced
@@ -146,6 +120,7 @@ describe('Epic Sync Auto-Fetch Release', () => {
                     }),
                 };
             }
+            return mockSupabase;
         });
         
         // Default epic mocks
@@ -224,7 +199,8 @@ describe('Epic Sync Auto-Fetch Release', () => {
         
         expect(res.status).toBe(200);
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-            expect.stringContaining('Failed to auto-fetch release')
+            expect.stringContaining('Failed to auto-fetch release'),
+            expect.any(Error)
         );
         expect(body.results.errors.length).toBeGreaterThan(0);
         // Epic should still be processed
@@ -235,20 +211,16 @@ describe('Epic Sync Auto-Fetch Release', () => {
 
     it('should not fetch release if it already exists in system', async () => {
         // Mock that release already exists
-        mockSupabase.from.mockReturnValueOnce({
-            select: jest.fn().mockReturnValue({
-                eq: jest.fn().mockReturnValue({
-                    single: jest.fn().mockResolvedValue({
-                        data: { roles: ['PRODUCT_OPS'] },
+        mockSupabase.from.mockImplementation((table: string) => {
+            if (table === 'release_schedule') {
+                return {
+                    select: jest.fn().mockResolvedValue({
+                        data: [{ release_name: 'Release 2025.10' }], // Release already synced
                         error: null,
                     }),
-                }),
-            }),
-        }).mockReturnValueOnce({
-            select: jest.fn().mockResolvedValue({
-                data: [{ release_name: 'Release 2025.10' }], // Release already synced
-                error: null,
-            }),
+                };
+            }
+            return mockSupabase;
         });
         
         const mockReq = {
@@ -316,6 +288,57 @@ describe('Epic Sync Auto-Fetch Release', () => {
         // Should only fetch once, even though two epics have the same release
         expect(mockFetchAndUpsertReleaseFromAha).toHaveBeenCalledTimes(1);
         expect(body.results.processed).toBe(2);
+    });
+
+    it('should use release epics endpoint when release param provided and revalidate removals', async () => {
+        // Aha release lookup
+        mockGetReleases.mockResolvedValueOnce({
+            releases: [{ id: 'r1', name: 'Release 2025.10', start_date: '2025-10-01', end_date: '2025-10-10' }],
+        });
+
+        // Epics in release: E-123
+        mockGetReleaseEpics.mockResolvedValueOnce({
+            epics: [{ id: 'E-123', reference_num: 'E-123', name: 'Epic In Release', tags: ['LaunchConsole'] }],
+        });
+
+        // Full epic fetch
+        mockGetEpic.mockImplementation(async (id: string) => ({
+            id,
+            reference_num: id,
+            name: `Epic ${id}`,
+            tags: ['LaunchConsole'],
+            release: { name: id === 'E-999' ? 'Other Release' : 'Release 2025.10' },
+        }));
+
+        // E-999 exists (will be revalidated as removed), E-123 is new
+        mockGetEpicByAhaId.mockImplementation(async (ahaId: string) => {
+            if (ahaId === 'E-123') return null;
+            return { id: 'existing-epic', aha_id: ahaId, name: `Existing ${ahaId}`, tier: 'TIER_1' };
+        });
+
+        mockUpsertEpicFromAha.mockImplementation(async (epicData: any) => ({
+            id: `db-${epicData.aha_id}`,
+            aha_id: epicData.aha_id,
+            name: epicData.name,
+            tier: epicData.tier,
+        }));
+
+        const req = {
+            url: 'http://localhost/api/integrations/aha/sync?release=Release%202025.10',
+            json: jest.fn().mockResolvedValue({ existingAhaIds: ['E-999'] }),
+        } as unknown as NextRequest;
+
+        const res = await POST(req);
+        const body = await res.json();
+
+        expect(res.status).toBe(200);
+        expect(mockGetEpics).not.toHaveBeenCalled();
+        expect(mockGetReleaseEpics).toHaveBeenCalled();
+        expect(mockGetEpic).toHaveBeenCalledWith('E-999');
+        expect(mockGetEpic).toHaveBeenCalledWith('E-123');
+        expect(body.results.removed_from_release).toBe(1);
+        expect(body.results.created).toBe(1);
+        expect(body.results.updated).toBe(1);
     });
 });
 

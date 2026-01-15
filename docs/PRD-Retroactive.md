@@ -1143,6 +1143,7 @@ The system uses the following launch stage phases:
 - **Manual Sync**: `/api/integrations/aha/sync` - Sync all or filtered epics
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
+- **Release Refresh Optimization**: When a `release` query param is provided, the sync endpoint fetches epics directly from Aha! for that release and revalidates only the epics currently shown (via `existingAhaIds`), avoiding a full epic list scan.
 
 ### My Scope API
 
