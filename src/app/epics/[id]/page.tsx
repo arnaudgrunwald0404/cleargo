@@ -4,7 +4,6 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Matrix from "@/components/Matrix";
-import { FeedbackSection } from "@/components/FeedbackSection";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -1483,7 +1482,6 @@ export default function EpicDetailPage() {
                     <Tabs.List style={{ display: 'none' }}>
                         <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
                         <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
-                        <Tabs.Tab value="feedback">Feedback</Tabs.Tab>
                         <Tabs.Tab value="adoption">Success Config</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
@@ -1663,13 +1661,6 @@ export default function EpicDetailPage() {
                     {/* Lazy load snapshots only when decisions tab is active */}
                     {activeTab === 'decisions' && (
                         <SnapshotList epicId={epic.id} refreshTrigger={refreshSnapshots} />
-                    )}
-                </Tabs.Panel>
-
-                <Tabs.Panel value="feedback" pt="md">
-                    {/* Lazy load feedback only when feedback tab is active */}
-                    {activeTab === 'feedback' && (
-                        <FeedbackSection epicId={epic.id} currentUserEmail={currentUserEmail} />
                     )}
                 </Tabs.Panel>
 

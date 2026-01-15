@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
-import { Button, Textarea, Group, Text, ActionIcon } from '@mantine/core';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { Button, Textarea, Group, Text, ActionIcon, Select, Badge } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend } from '@tabler/icons-react';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
@@ -9,7 +9,9 @@ import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 interface FeedbackItem {
   id: string;
   feedback_text: string;
+  feedback_type?: 'EPIC' | 'PROCESS' | 'TOOL' | string;
   created_at: string;
+  epic?: { id: string; name: string } | { id: string; name: string }[] | null;
   created_by?: {
     email: string;
     first_name?: string;
@@ -18,7 +20,7 @@ interface FeedbackItem {
 }
 
 interface FeedbackSectionProps {
-  epicId: string;
+  epicId?: string;
   currentUserEmail: string;
 }
 
@@ -26,6 +28,10 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
   const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [newFeedback, setNewFeedback] = useState('');
+  const [feedbackType, setFeedbackType] = useState<'EPIC' | 'PROCESS' | 'TOOL'>(epicId ? 'EPIC' : 'TOOL');
+  const [epicOptionsLoading, setEpicOptionsLoading] = useState(false);
+  const [epicOptions, setEpicOptions] = useState<Array<{ value: string; label: string }>>([]);
+  const [selectedEpicId, setSelectedEpicId] = useState<string | null>(epicId || null);
   const [submitting, setSubmitting] = useState(false);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<number>(0);
@@ -54,11 +60,54 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
     };
   }, [epicId]);
 
+  const getEndpointBase = () => {
+    return epicId ? `/api/epics/${epicId}/feedback` : `/api/feedback`;
+  };
+
+  useEffect(() => {
+    // When used on a specific epic, lock behavior to that epic + EPIC type.
+    if (epicId) {
+      setFeedbackType('EPIC');
+      setSelectedEpicId(epicId);
+    }
+  }, [epicId]);
+
+  useEffect(() => {
+    // Only needed for the global feedback form when user wants to tag feedback to an epic.
+    if (epicId) return;
+    if (feedbackType !== 'EPIC') return;
+    if (epicOptions.length > 0) return;
+
+    const loadEpics = async () => {
+      setEpicOptionsLoading(true);
+      try {
+        const res = await fetchWithRateLimit('/api/epics', { credentials: 'include', maxRetries: 1 });
+        if (res.ok) {
+          const data = await res.json();
+          const options =
+            Array.isArray(data)
+              ? data
+                  .filter((e: any) => e && typeof e.id === 'string' && typeof e.name === 'string')
+                  .map((e: any) => ({ value: e.id, label: e.name }))
+                  .sort((a: any, b: any) => a.label.localeCompare(b.label))
+              : [];
+          setEpicOptions(options);
+        }
+      } catch (e) {
+        console.warn('Failed to load epics for feedback:', e);
+      } finally {
+        setEpicOptionsLoading(false);
+      }
+    };
+
+    loadEpics();
+  }, [epicId, feedbackType, epicOptions.length]);
+
   const fetchFeedbacks = async () => {
     lastFetchRef.current = Date.now();
     setLoading(true);
     try {
-      const res = await fetchWithRateLimit(`/api/epics/${epicId}/feedback`, {
+      const res = await fetchWithRateLimit(getEndpointBase(), {
         maxRetries: 1,
       });
       if (res.ok) {
@@ -72,16 +121,49 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
     }
   };
 
+  const resolvedEpicName = (feedback: FeedbackItem): string | null => {
+    const epicVal: any = (feedback as any).epic;
+    if (!epicVal) return null;
+    const candidate = Array.isArray(epicVal) ? epicVal[0] : epicVal;
+    if (!candidate || typeof candidate !== 'object') return null;
+    if (typeof candidate.name === 'string' && candidate.name.trim()) return candidate.name.trim();
+    return null;
+  };
+
+  const feedbackTypeLabel = (type?: string): string => {
+    const t = (type || '').toUpperCase();
+    if (t === 'EPIC') return 'Epic';
+    if (t === 'PROCESS') return 'Process';
+    if (t === 'TOOL') return 'Tool';
+    return 'Feedback';
+  };
+
+  const feedbackTypeColor = (type?: string) => {
+    const t = (type || '').toUpperCase();
+    if (t === 'EPIC') return 'blue';
+    if (t === 'PROCESS') return 'teal';
+    if (t === 'TOOL') return 'grape';
+    return 'gray';
+  };
+
   const handleSubmitFeedback = async () => {
     if (!newFeedback.trim()) return;
 
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/epics/${epicId}/feedback`, {
+      const payload: any = { feedback_text: newFeedback.trim() };
+      if (!epicId) {
+        payload.feedback_type = feedbackType;
+        if (feedbackType === 'EPIC' && selectedEpicId) {
+          payload.epic_id = selectedEpicId;
+        }
+      }
+
+      const res = await fetch(getEndpointBase(), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ feedback_text: newFeedback.trim() }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
@@ -90,6 +172,9 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
       }
 
       setNewFeedback('');
+      if (!epicId && feedbackType !== 'EPIC') {
+        setSelectedEpicId(null);
+      }
       await fetchFeedbacks();
     } catch (error: any) {
       alert(`Failed to post feedback: ${error.message}`);
@@ -102,7 +187,8 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
     if (!confirm('Are you sure you want to delete this feedback?')) return;
 
     try {
-      const res = await fetch(`/api/epics/${epicId}/feedback/${feedbackId}`, {
+      const base = epicId ? `/api/epics/${epicId}/feedback` : `/api/feedback`;
+      const res = await fetch(`${base}/${feedbackId}`, {
         method: 'DELETE',
         credentials: 'include',
       });
@@ -138,9 +224,35 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
       
       {/* Add Feedback Form */}
       <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-        <Text size="sm" fw={600} mb="xs">Add Feedback</Text>
+        {!epicId && (
+          <Group gap="sm" mb="sm" align="flex-end">
+            <Select
+              label="Type"
+              value={feedbackType}
+              onChange={(value) => setFeedbackType((value as any) || 'TOOL')}
+              data={[
+                { value: 'EPIC', label: 'Feedback on Epics' },
+                { value: 'PROCESS', label: 'Feedback on the process' },
+                { value: 'TOOL', label: 'Feedback on the tool' },
+              ]}
+              w={260}
+            />
+            {feedbackType === 'EPIC' && (
+              <Select
+                label="Epic (optional)"
+                placeholder={epicOptionsLoading ? 'Loading epics...' : 'Select an epic'}
+                searchable
+                clearable
+                value={selectedEpicId}
+                onChange={setSelectedEpicId}
+                data={epicOptions}
+                w={420}
+              />
+            )}
+          </Group>
+        )}
         <Textarea
-          placeholder="Enter your feedback about this launch..."
+          placeholder="Share feedback on an epic, the process, or the tool…"
           value={newFeedback}
           onChange={(e) => setNewFeedback(e.currentTarget.value)}
           minRows={3}
@@ -185,9 +297,19 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
             >
               <Group justify="space-between" mb="sm">
                 <div>
-                  <Text size="sm" fw={600}>
-                    {getUserDisplay(feedback)}
-                  </Text>
+                  <Group gap="xs">
+                    <Text size="sm" fw={600}>
+                      {getUserDisplay(feedback)}
+                    </Text>
+                    <Badge size="sm" variant="light" color={feedbackTypeColor(feedback.feedback_type)}>
+                      {feedbackTypeLabel(feedback.feedback_type)}
+                    </Badge>
+                    {resolvedEpicName(feedback) && (
+                      <Badge size="sm" variant="light" color="blue">
+                        {resolvedEpicName(feedback)}
+                      </Badge>
+                    )}
+                  </Group>
                   <Text size="xs" c="dimmed">
                     {formatTimestamp(feedback.created_at)}
                   </Text>

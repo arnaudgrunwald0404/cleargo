@@ -72,6 +72,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const primaryTabs = [
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Releases' },
+        { link: '/feedback', label: 'Feedback' },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];

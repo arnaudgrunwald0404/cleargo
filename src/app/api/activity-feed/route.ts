@@ -263,7 +263,7 @@ export async function GET(req: NextRequest) {
         // Add feedback activities
         for (const feedback of feedbackItems || []) {
             const epic = firstItem(feedback.epic);
-            const epicName = epic?.name || 'Unknown Epic';
+            const epicName = epic?.name || 'Product';
             const epicId = epic?.id;
             const truncatedFeedback = feedback.feedback_text.length > 100 
                 ? feedback.feedback_text.substring(0, 100) + '...'

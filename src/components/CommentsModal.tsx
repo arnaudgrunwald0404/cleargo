@@ -1029,17 +1029,12 @@ export function CommentsModal({
 
   const handleClose = () => {
     // If comment is required and no comments exist yet, prevent closing
-    const hasComment = comments.length > 0 || newComment.trim().length > 0;
+    const hasComment = comments.length > 0 || newComment.trim().length > 0 || hasAddedComment;
     if (requireComment && !hasComment) {
-      alert('Please add a comment before closing. A comment is required for CONDITIONAL or NO_GO ratings.');
+      setActiveTab('comments');
       return;
     }
-    
-    // If closing without comment when required, notify parent to revert status
-    if (requireComment && !hasComment && onCloseWithoutComment) {
-      onCloseWithoutComment();
-    }
-    
+
     onClose();
   };
 
@@ -1053,22 +1048,62 @@ export function CommentsModal({
       position="right"
       size="xl"
       padding="lg"
+      zIndex={5000}
       styles={{
-        body: {
-          height: '100%',
+        inner: {
+          top: 'var(--nav-height, 64px)',
+          height: 'calc(100dvh - var(--nav-height, 64px))',
+        },
+        overlay: {
+          top: 'var(--nav-height, 64px)',
+          height: 'calc(100dvh - var(--nav-height, 64px))',
+        },
+        content: {
+          height: 'calc(100dvh - var(--nav-height, 64px))',
           display: 'flex',
           flexDirection: 'column',
+        },
+        header: {
+          padding: 0,
+        },
+        title: {
+          width: '100%',
+        },
+        close: {
+          marginTop: 12,
+          marginRight: 12,
+        },
+        body: {
+          display: 'flex',
+          flexDirection: 'column',
+          flex: 1,
           minHeight: 0,
+          overflow: 'hidden',
         },
       }}
       title={
-        <div>
-          <Text fw={600} size="lg">{taskLabel}</Text>
+        <div style={{ width: '100%' }}>
           {requireComment && !hasComment && (
-            <Text size="xs" c="red" mt={4}>
-              A comment is required for CONDITIONAL or NO_GO ratings. Please add a comment before closing.
-            </Text>
+            <div
+              style={{
+                background: 'var(--mantine-color-red-7)',
+                padding: '12px 16px',
+                color: 'var(--mantine-color-white)',
+              }}
+            >
+              <Text c="white" fw={800} size="lg" lh={1.15}>
+                Comment required
+              </Text>
+              <Text c="white" fw={700} size="sm" mt={6} lh={1.25}>
+                A comment is required for CONDITIONAL or NO_GO ratings. Please add a comment before closing.
+              </Text>
+            </div>
           )}
+          <div style={{ padding: '12px 16px' }}>
+            <Text fw={600} size="lg">
+              {taskLabel}
+            </Text>
+          </div>
         </div>
       }
     >
@@ -1222,88 +1257,102 @@ export function CommentsModal({
         <Tabs.Panel value="comments" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingTop: '16px' }}>
           <Stack gap="md" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
             {/* Comments List */}
-            {(comments.length > 0 || standaloneAttachments.length > 0) && (
-              <ScrollArea 
-                style={{ flex: 1, minHeight: 0 }} 
-                type="auto"
-                styles={{
-                  scrollbar: { display: 'none' },
-                  thumb: { display: 'none' },
-                }}
-              >
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '20px' }}>
-                    <PurpleLoader size="sm" />
-                  </div>
-                ) : (
-                  <Stack gap="xs">
-                    {comments.map((comment) => (
-                      <div
-                        key={comment.id}
-                        style={{
-                          padding: '8px',
-                          border: '1px solid #e0e0e0',
-                          borderRadius: '6px',
-                          backgroundColor: '#fafafa',
-                        }}
-                      >
-                        <Group justify="space-between" gap="xs" mb={4}>
-                          <div>
-                            <Text size="xs" fw={600}>
-                              {getUserDisplay(comment)}
-                            </Text>
-                            <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
-                              {formatTimestamp(comment.created_at)}
-                            </Text>
-                          </div>
-                          {comment.created_by?.email === currentUserEmail && (
-                            <ActionIcon
-                              variant="subtle"
-                              color="red"
-                              size="sm"
-                              onClick={() => handleDeleteComment(comment.id)}
-                              title="Delete comment"
-                            >
-                              <IconTrash size={14} />
-                            </ActionIcon>
-                          )}
-                        </Group>
-                        <div 
-                          className="text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
-                          dangerouslySetInnerHTML={{ __html: comment.comment_text }}
-                          style={{
-                            whiteSpace: "pre-wrap",
-                            wordBreak: "break-word",
-                            lineHeight: 1.4,
-                          }}
-                        />
-                        {/* Show attachments if any */}
-                        {comment.attachments && comment.attachments.length > 0 && (
-                          <Group gap="xs" mt="xs">
-                            {comment.attachments.map((attachment) => (
-                              <Badge
-                                key={attachment.id}
-                                variant="light"
-                                leftSection={<IconPaperclip size={12} />}
-                                style={{ cursor: 'pointer' }}
-                                onClick={() => {
-                                  window.open(`/api/epics/${epicId}/criteria/${taskId}/attachments/${attachment.id}`, '_blank');
-                                }}
-                              >
-                                {attachment.file_name}
-                              </Badge>
-                            ))}
-                          </Group>
+            <ScrollArea 
+              style={{ flex: 1, minHeight: 0 }} 
+              type="auto"
+              styles={{
+                scrollbar: { display: 'none' },
+                thumb: { display: 'none' },
+              }}
+            >
+              {loading ? (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <PurpleLoader size="sm" />
+                </div>
+              ) : comments.length === 0 ? (
+                <Text size="sm" c="dimmed" style={{ padding: '12px 4px' }}>
+                  No comments yet.
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {comments.map((comment) => (
+                    <div
+                      key={comment.id}
+                      style={{
+                        padding: '8px',
+                        border: '1px solid #e0e0e0',
+                        borderRadius: '6px',
+                        backgroundColor: '#fafafa',
+                      }}
+                    >
+                      <Group justify="space-between" gap="xs" mb={4}>
+                        <div>
+                          <Text size="xs" fw={600}>
+                            {getUserDisplay(comment)}
+                          </Text>
+                          <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
+                            {formatTimestamp(comment.created_at)}
+                          </Text>
+                        </div>
+                        {comment.created_by?.email === currentUserEmail && (
+                          <ActionIcon
+                            variant="subtle"
+                            color="red"
+                            size="sm"
+                            onClick={() => handleDeleteComment(comment.id)}
+                            title="Delete comment"
+                          >
+                            <IconTrash size={14} />
+                          </ActionIcon>
                         )}
-                      </div>
-                    ))}
-                  </Stack>
-                )}
-              </ScrollArea>
-            )}
+                      </Group>
+                      <div 
+                        className="text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                        dangerouslySetInnerHTML={{ __html: comment.comment_text }}
+                        style={{
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          lineHeight: 1.4,
+                        }}
+                      />
+                      {/* Show attachments if any */}
+                      {comment.attachments && comment.attachments.length > 0 && (
+                        <Group gap="xs" mt="xs">
+                          {comment.attachments.map((attachment) => (
+                            <Badge
+                              key={attachment.id}
+                              variant="light"
+                              leftSection={<IconPaperclip size={12} />}
+                              style={{ cursor: 'pointer' }}
+                              onClick={() => {
+                                window.open(`/api/epics/${epicId}/criteria/${taskId}/attachments/${attachment.id}`, '_blank');
+                              }}
+                            >
+                              {attachment.file_name}
+                            </Badge>
+                          ))}
+                        </Group>
+                      )}
+                    </div>
+                  ))}
+                </Stack>
+              )}
+            </ScrollArea>
 
             {/* New Comment Input - Always visible at bottom */}
-            <div style={{ flexShrink: 0, marginTop: 'auto', paddingTop: '16px', borderTop: '1px solid #e0e0e0' }}>
+            <div
+              style={{
+                flexShrink: 0,
+                position: 'sticky',
+                bottom: 0,
+                zIndex: 1,
+                marginTop: 'auto',
+                paddingTop: '16px',
+                paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+                borderTop: '1px solid #e0e0e0',
+                background: 'var(--mantine-color-body)',
+              }}
+            >
               <div style={{ position: 'relative' }}>
                 <RichText
                   value={newComment}

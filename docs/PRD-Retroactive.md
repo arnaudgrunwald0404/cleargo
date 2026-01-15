@@ -181,7 +181,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Owner Information**: Epic owner, decision owners per criterion
 - **Aha! Integration**: Link to Aha! epic, sync status
 - **Comments & Attachments**: Per-criterion discussion and file attachments
-- **Feedback Section**: Post-launch feedback collection
+- **Feedback**: Accessible via the global Feedback page; feedback can optionally be linked to a specific epic
 - **Activity History**: Timeline of all changes
 
 #### 1.3 Epic Creation & Editing
@@ -219,6 +219,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Notes & Context**: Rich text notes per criterion status
 - **Delegation**: Delegate criterion ownership to other users
 - **Comments**: Threaded comments per criterion
+- **Comment Requirement**: When a criterion is rated **CONDITIONAL** or **NO_GO**, the UI enforces adding a comment before closing the criterion drawer (prominent warning banner)
 - **File Attachments**: Attach files to criteria for evidence
 - **Snippets**: Link meeting transcript snippets to criteria
 
@@ -401,7 +402,11 @@ The system includes default adoption benchmarks for each launch tier based on in
 These defaults can be customized per epic or feature type, and additional benchmarks can be created for specific use cases.
 
 #### 4.2 Feedback Collection
-- **Feedback Entry**: Manual feedback entry per epic
+- **Feedback Entry**: Manual feedback entry from a global Feedback page, with optional epic linking
+- **Feedback Types**:
+  - EPIC: Feedback tied to a specific epic (or “Product” when no epic name is available for display)
+  - PROCESS: Feedback about workflows/process
+  - TOOL: Feedback about internal tools (including ClearGO itself)
 - **Feedback Attribution**: Track who provided feedback
 - **Feedback Source**: Track source (manual, Slack, email, meeting, Aha!)
 - **Feedback Display**: Chronological list of all feedback
@@ -520,6 +525,7 @@ These defaults can be customized per epic or feature type, and additional benchm
   - App ID
   - Default channel
   - Notification settings
+  - Slack allowed recipients (optional allowlist of email addresses permitted to receive Slack messages)
 - **Email Templates**: Configure email templates for notifications
 - **Activity Feed**: Enable/disable activity feed
 
@@ -787,8 +793,9 @@ The system uses the following launch stage phases:
 
 #### Feedback
 - `id` (UUID, Primary Key)
-- `epic_id` (UUID, Foreign Key → epic)
+- `epic_id` (UUID, Foreign Key → epic, Nullable) - Allows product-wide feedback not tied to a specific epic
 - `feedback_text` (Text)
+- `feedback_type` (Enum: EPIC, PROCESS, TOOL)
 - `source` (Enum: manual, slack, email, meeting, aha)
 - `attributed_to_id` (UUID, Foreign Key → app_user)
 - `attributed_to_name` (Text)

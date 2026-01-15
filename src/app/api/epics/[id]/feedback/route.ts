@@ -84,6 +84,7 @@ export async function POST(
       .insert({
         epic_id: epicId,
         feedback_text: feedback_text.trim(),
+        feedback_type: 'EPIC',
         created_by_id: appUser.id,
         source: 'manual',
       })

@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { IconPencil } from "@tabler/icons-react";
+import { Accordion, Code, Divider, ScrollArea, Stack, Text } from "@mantine/core";
 import { UserDisplay } from "./UserDisplay";
 
 type EpicFieldsSidebarProps = {
@@ -30,6 +31,7 @@ const FIELD_ORDER = [
     'reference_num',
     'dev_backlog_pod',
     'assigned_to_user',
+    'integrations',
     '---', // Separator
     'tier',
     'tags',
@@ -59,6 +61,48 @@ const FIELD_ORDER = [
     'activation_process',
     'new_org_setup',
     'existing_org_setup',
+];
+
+const AHA_STANDARD_KEYS = [
+    'id',
+    'reference_num',
+    'name',
+    'url',
+    'description',
+    'integrations',
+    'workflow_status',
+    'assigned_to_user',
+    'tags',
+    'release',
+    'aha_release_name',
+];
+
+const DB_SYNCED_KEYS = [
+    // Aha -> DB columns (plus the write-back columns we persist)
+    'aha_id',
+    'aha_url',
+    'name',
+    'tier',
+    'target_launch_date',
+    'scheduled_ga_dev_date',
+    'owner_email',
+    'product_component',
+    'pod',
+    'business_priority',
+    'csm_priority',
+    'tags',
+    'modified_rice_score',
+    'wsjf_score',
+    'gtm_link',
+    'activation_process',
+    'new_org_setup',
+    'existing_org_setup',
+    'pricing_model',
+    'readiness_status',
+    'readiness_score',
+    'risk_level',
+    'last_go_no_go_decision_date',
+    'console_url',
 ];
 
 export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
@@ -181,11 +225,43 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
         return '-';
     };
 
+    const truncateText = (text: string, maxChars: number): string => {
+        if (text.length <= maxChars) return text;
+        return `${text.slice(0, maxChars)}… (truncated)`;
+    };
+
+    const safePrettyJson = (value: any, maxChars = 4000): string => {
+        try {
+            const json = JSON.stringify(value, null, 2);
+            if (!json) return "-";
+            return truncateText(json, maxChars);
+        } catch {
+            try {
+                return truncateText(String(value), maxChars);
+            } catch {
+                return "-";
+            }
+        }
+    };
+
     const formatValue = (value: any, fieldKey?: string): string | React.ReactNode => {
         if (value === null || value === undefined) {
             return '-';
         }
         
+        if (fieldKey === 'integrations') {
+            const text =
+                typeof value === 'string'
+                    ? value
+                    : safePrettyJson(value, 6000);
+
+            return (
+                <div className="max-h-32 overflow-auto text-left">
+                    <Code block>{text || '-'}</Code>
+                </div>
+            );
+        }
+
         // Handle readiness_score as percentage
         if (fieldKey === 'readiness_score' && typeof value === 'number') {
             return `${Math.round(value * 100)}%`;
@@ -275,6 +351,81 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
             .join(' ');
     };
 
+    const renderRawValue = (value: any): React.ReactNode => {
+        if (value === null || value === undefined) {
+            return (
+                <Text size="sm" c="dimmed">
+                    -
+                </Text>
+            );
+        }
+
+        if (typeof value === "string") {
+            if (value.startsWith("http://") || value.startsWith("https://")) {
+                return (
+                    <a
+                        href={value}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-800 hover:underline break-words"
+                    >
+                        {value}
+                    </a>
+                );
+            }
+            return <Text size="sm" className="break-words">{value}</Text>;
+        }
+
+        if (typeof value === "number" || typeof value === "boolean") {
+            return <Text size="sm">{String(value)}</Text>;
+        }
+
+        const json = safePrettyJson(value, 12000);
+        return (
+            <ScrollArea h={180} type="auto">
+                <Code block>{json}</Code>
+            </ScrollArea>
+        );
+    };
+
+    const renderRawFieldRow = (key: string, value: any): React.ReactNode => {
+        return (
+            <div key={key} className="py-1">
+                <Text size="xs" fw={600} c="dimmed">
+                    {formatFieldLabel(key)}
+                </Text>
+                <div className="mt-1">{renderRawValue(value)}</div>
+            </div>
+        );
+    };
+
+    const buildAhaCustomKeys = (): string[] => {
+        const ahaStandardKeySet = new Set(AHA_STANDARD_KEYS);
+        const dbKeySet = new Set(DB_SYNCED_KEYS);
+
+        const orderedCandidateKeys = FIELD_ORDER.filter((k) => k !== "---");
+        const customKeySet = new Set<string>();
+
+        for (const k of orderedCandidateKeys) {
+            if (ahaStandardKeySet.has(k)) continue;
+            if (dbKeySet.has(k)) continue;
+            customKeySet.add(k);
+        }
+
+        for (const k of Object.keys(customFields || {})) {
+            if (ahaStandardKeySet.has(k)) continue;
+            if (dbKeySet.has(k)) continue;
+            customKeySet.add(k);
+        }
+
+        const orderedFromFieldOrder = orderedCandidateKeys.filter((k) => customKeySet.has(k));
+        const extras = Array.from(customKeySet)
+            .filter((k) => !orderedFromFieldOrder.includes(k))
+            .sort((a, b) => a.localeCompare(b));
+
+        return [...orderedFromFieldOrder, ...extras];
+    };
+
     return (
         <div className="w-80 mr-8 sticky mt-36">
             <div className="bg-gray-50 rounded-xl shadow-sm border border-gray-200 p-6">
@@ -321,6 +472,43 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
                         );
                     })}
                 </div>
+
+                <Accordion variant="separated" className="mt-6">
+                    <Accordion.Item value="synced-fields">
+                        <Accordion.Control>
+                            <Text size="sm" fw={600}>
+                                Synced fields (raw)
+                            </Text>
+                        </Accordion.Control>
+                        <Accordion.Panel>
+                            <Stack gap="sm">
+                                <div>
+                                    <Text size="xs" fw={700} c="dimmed">
+                                        DB fields
+                                    </Text>
+                                    <Divider my="xs" />
+                                    {DB_SYNCED_KEYS.map((k) => renderRawFieldRow(k, epic?.[k]))}
+                                </div>
+
+                                <div>
+                                    <Text size="xs" fw={700} c="dimmed">
+                                        Aha standard snapshot
+                                    </Text>
+                                    <Divider my="xs" />
+                                    {AHA_STANDARD_KEYS.map((k) => renderRawFieldRow(k, getFieldValue(k)))}
+                                </div>
+
+                                <div>
+                                    <Text size="xs" fw={700} c="dimmed">
+                                        Aha custom snapshot
+                                    </Text>
+                                    <Divider my="xs" />
+                                    {buildAhaCustomKeys().map((k) => renderRawFieldRow(k, getFieldValue(k)))}
+                                </div>
+                            </Stack>
+                        </Accordion.Panel>
+                    </Accordion.Item>
+                </Accordion>
             </div>
         </div>
     );
