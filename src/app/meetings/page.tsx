@@ -319,11 +319,14 @@ export default function MeetingsPage() {
             }
         });
 
-        // Group epics by release
+        // Group epics by release (exclude archived epics)
         const releaseGroupsMap = new Map<string, Epic[]>();
         const ungroupedEpics: Epic[] = [];
 
         epics.forEach(epic => {
+            // Skip archived epics
+            if (epic.archived === true) return;
+            
             const releaseName = getReleaseName(epic);
             if (releaseName) {
                 if (!releaseGroupsMap.has(releaseName)) {

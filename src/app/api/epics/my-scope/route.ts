@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
         // PostgREST in() filter
         const idsFilter = epicIdsArray.map(id => `"${id}"`).join(',');
         const response = await fetch(
-          `${supabaseUrl}/rest/v1/epic?select=*&id=in.(${idsFilter})&order=created_at.desc`,
+          `${supabaseUrl}/rest/v1/epic?select=*&id=in.(${idsFilter})&archived=eq.false&order=created_at.desc`,
           {
             method: 'GET',
             headers: {
@@ -69,7 +69,8 @@ export async function GET(req: NextRequest) {
         if (response.ok) {
           const directData = await response.json();
           if (directData && Array.isArray(directData)) {
-            return NextResponse.json(directData);
+            // Filter out archived epics (in case archived field doesn't exist in old schema)
+            return NextResponse.json(directData.filter((epic: any) => epic.archived !== true));
           }
         }
       } catch (directError: any) {
@@ -78,10 +79,12 @@ export async function GET(req: NextRequest) {
     }
 
     // Fallback to Supabase client if direct request fails
+    // Exclude archived epics
     const { data: epics, error: epicsError } = await supabase
       .from('epic')
       .select('*')
       .in('id', Array.from(epicIds))
+      .eq('archived', false)
       .order('created_at', { ascending: false });
 
     if (epicsError) {
