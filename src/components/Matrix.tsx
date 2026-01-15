@@ -119,7 +119,10 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
                         }}
                     >
                         <button
-                            onClick={() => !disabled && onStatusChange(light.value)}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (!disabled) onStatusChange(light.value);
+                            }}
                             disabled={disabled}
                             style={{
                                 width: buttonSize,
