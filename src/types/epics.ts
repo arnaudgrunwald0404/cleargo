@@ -32,6 +32,7 @@ export interface Epic {
     existing_org_setup?: string;
     pricing_model?: string;
     aha_fields?: Record<string, any> | null;
+    archived?: boolean;
     product?: { name: string };
     owner?: { name?: string; email?: string };
     created_at: string;

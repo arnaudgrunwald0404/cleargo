@@ -143,9 +143,11 @@ export async function getEpics() {
         }
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
+        // Exclude archived epics from the main list
         let { data, error } = await supabase
             .from('epic')
             .select('*')
+            .eq('archived', false)
             .order('created_at', { ascending: false });
         
         // If epic table doesn't exist, try launch table
