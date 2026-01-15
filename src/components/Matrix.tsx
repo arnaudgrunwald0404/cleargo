@@ -119,10 +119,7 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
                         }}
                     >
                         <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (!disabled) onStatusChange(light.value);
-                            }}
+                            onClick={() => !disabled && onStatusChange(light.value)}
                             disabled={disabled}
                             style={{
                                 width: buttonSize,
@@ -206,34 +203,6 @@ type Props = {
 };
 
 export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic }: Props) {
-    const extractJiraEpicKeyFromIntegrations = (integrations: any): string | null => {
-        if (!integrations) return null;
-        try {
-            const asString = typeof integrations === 'string' ? integrations : JSON.stringify(integrations);
-            const keyMatch = asString.match(/[A-Z][A-Z0-9]+-\d+/i);
-            if (keyMatch?.[0]) return keyMatch[0].toUpperCase();
-            const spacedMatch = asString.match(/([A-Z][A-Z0-9]+)[\s_]+(\d+)/i);
-            if (spacedMatch?.[1] && spacedMatch?.[2]) {
-                return `${spacedMatch[1].toUpperCase()}-${spacedMatch[2]}`;
-            }
-            return null;
-        } catch {
-            return null;
-        }
-    };
-
-    const buildJiraIssuesUrlForOpenEpicTickets = (source: { value: string; label?: string } | null): string | null => {
-        const ahaFieldsStruct = epic?.aha_fields as any;
-        const standardFields = ahaFieldsStruct?.standard_fields || {};
-        const jiraEpicKey = extractJiraEpicKeyFromIntegrations(standardFields.integrations);
-        if (!jiraEpicKey) return null;
-
-        const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
-        const template = (source?.value || '').trim() || defaultJql;
-        const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, jiraEpicKey);
-
-        return `https://clearco.atlassian.net/issues?jql=${encodeURIComponent(jql)}`;
-    };
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
         if (source.type === 'aha_field' && source.value) {
@@ -316,8 +285,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             // Check if URL exists in data_source_values
             const urlValue = item.data_source_values?.[index.toString()];
             return !!(urlValue && typeof urlValue === 'string' && urlValue.trim() !== '');
-        } else if (source.type === 'jira_jql') {
-            return !!buildJiraIssuesUrlForOpenEpicTickets(source);
         }
         return false;
     };
@@ -330,8 +297,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             case 'aha_description_part':
                 return IconFileText;
             case 'url':
-                return IconLink;
-            case 'jira_jql':
                 return IconLink;
             default:
                 return IconDatabase;
@@ -388,8 +353,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             return source.value; // search term
         } else if (source.type === 'url') {
             return source.value; // URL
-        } else if (source.type === 'jira_jql') {
-            return 'Jira: open tickets in epic (not Done)';
         }
         return '';
     };
