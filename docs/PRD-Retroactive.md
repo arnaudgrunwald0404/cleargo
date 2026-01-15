@@ -180,9 +180,19 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Timeline View**: T-based milestones (T-90, T-30, T+30, T+90)
 - **Owner Information**: Epic owner, decision owners per criterion
 - **Aha! Integration**: Link to Aha! epic, sync status
+- **Jira Integration**: Jira epic key linking and ticket tracking
+- **Archived Status**: Epics are automatically archived/unarchived based on ClearGO candidate status
 - **Comments & Attachments**: Per-criterion discussion and file attachments
 - **Feedback**: Accessible via the global Feedback page; feedback can optionally be linked to a specific epic
 - **Activity History**: Timeline of all changes
+
+#### 1.4 Epic Archiving
+- **Automatic Archiving**: Epics are automatically archived when the `cleargo_candidate` custom field in Aha! is not "Yes"
+- **Automatic Unarchiving**: Epics are automatically unarchived when `cleargo_candidate` becomes "Yes"
+- **Archived Filter**: Archived epics are filtered out from the main epic list view by default
+- **Database Field**: `archived` (Boolean, default: false) - tracks whether an epic is archived
+- **Index**: Indexed for efficient filtering of archived epics
+- **Sync Behavior**: Archiving status is updated during Aha! sync operations
 
 #### 1.3 Epic Creation & Editing
 - **Manual Creation**: Create epics directly in ClearGO
@@ -519,6 +529,11 @@ These defaults can be customized per epic or feature type, and additional benchm
   - Fields to load
   - Tags filter
   - Webhook URL
+- **Jira Configuration**:
+  - Jira domain (e.g., clearco.atlassian.net)
+  - Jira email (email associated with API token)
+  - Jira API token (for Basic Auth)
+  - Jira Cloud ID (fetched automatically)
 - **Slack Configuration**:
   - Bot token
   - Signing secret
@@ -708,6 +723,8 @@ The system uses the following launch stage phases:
 - `modified_rice_score` (JSONB)
 - `wsjf_score` (JSONB)
 - `aha_fields` (JSONB) - Full Aha! field mapping (includes `standard_fields.integrations` for external links like Jira)
+- `archived` (Boolean, Default: false) - Whether the epic is archived. Epics are automatically archived when cleargo_candidate is not "Yes" and unarchived when it becomes "Yes" again.
+- `jira_epic_key` (Text, Nullable) - Cached Jira epic key for linking to Jira tickets
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -876,6 +893,10 @@ The system uses the following launch stage phases:
 - `aha_webhook_url` (Text)
 - `aha_fields_to_load` (Text Array)
 - `aha_tags` (Text Array, Default: ["LaunchConsole", "cleargo", "ClearGO", "ClearGo"])
+- `jira_domain` (Text, Nullable) - Jira domain (e.g., clearco.atlassian.net)
+- `jira_email` (Text, Nullable) - Email associated with Jira API token (required for Basic Auth)
+- `jira_api_token` (Text, Nullable) - Jira API token for authentication
+- `jira_cloud_id` (Text, Nullable) - Jira Cloud ID (required for API calls, fetched automatically)
 - `email_sender` (Text, Default: "noreply@tacticalsync.com")
 - `slack_bot_token` (Text)
 - `slack_signing_secret` (Text)
@@ -1155,6 +1176,23 @@ The system uses the following launch stage phases:
 #### Product Manager Resolution
 - **GET** `/api/epics/[id]/product-manager` - Get product manager user ID for an epic (resolves from epic owner and pod mapping)
 
+### Jira Integration
+
+#### Epic Key Discovery
+- **Primary Method**: Search Jira API by epic name to find matching Jira epics
+- **Fallback Method**: Extract Jira epic key from Aha! integrations field
+- **Caching**: Discovered epic keys are cached in the `jira_epic_key` field for performance
+- **API Endpoint**: `GET /api/epics/[id]/jira-epic-key` - Returns Jira epic key with source information
+- **Usage**: Enables Jira JQL data sources in criteria to link to Jira tickets
+- **Configuration**: Requires Jira domain, email, and API token in Settings > Integrations > Jira
+- **Documentation**: See `docs/jira-epic-key-methodology.md` for detailed methodology
+
+#### Jira JQL Data Sources
+- Criteria can use `jira_jql` data source type to link to Jira tickets
+- JQL templates support `{{JIRA_EPIC}}` placeholder that gets replaced with the epic key
+- Example: `parent = {{JIRA_EPIC}} and statusCategory != Done`
+- Links are displayed in the CommentsModal for easy access to Jira tickets
+
 ### Slack Integration
 
 #### Slash Commands
@@ -1329,7 +1367,11 @@ The system uses the following launch stage phases:
 10. **Advanced Filtering**: Saved filters, filter presets
 
 ### Integration Enhancements
-1. **Jira Integration**: Sync with Jira for engineering tracking
+1. **Jira Integration**: ✅ **IMPLEMENTED** - Jira epic key discovery and ticket tracking
+   - Epic key discovery via Jira API search and Aha! integrations field fallback
+   - Jira JQL data source support for criteria
+   - Cached epic keys for performance
+   - See `docs/jira-epic-key-methodology.md` for details
 2. **Salesforce Integration**: Sync with Salesforce for GTM tracking
 3. **Confluence Integration**: Link to Confluence documentation
 4. **GitHub Integration**: Link to GitHub repositories
