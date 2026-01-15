@@ -24,7 +24,7 @@ export type DecisionOwnerRole =
   | "PRODUCT_OPS"
   | "OTHER";
 
-export type DataSourceType = "aha_field" | "aha_description_part" | "url";
+export type DataSourceType = "aha_field" | "aha_description_part" | "url" | "jira_jql";
 
 export type DataSource = {
   type: DataSourceType;

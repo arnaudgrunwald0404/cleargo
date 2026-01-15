@@ -11,7 +11,7 @@ import { PurpleLoader } from '../PurpleLoader';
 const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 
 type DataSource = {
-  type: "aha_field" | "aha_description_part" | "url";
+  type: "aha_field" | "aha_description_part" | "url" | "jira_jql";
   value: string;
   label?: string; // Optional label for URL sources (e.g., "Figma designs", "PRD")
 };
@@ -1165,13 +1165,22 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                       value={source.type}
                       onChange={(value) => {
                         if (value) {
-                          updateDataSource(index, { type: value as DataSource["type"], value: "" });
+                          if (value === "jira_jql") {
+                            updateDataSource(index, {
+                              type: value as DataSource["type"],
+                              label: "Open Jira tickets",
+                              value: "parent = {{JIRA_EPIC}} and statusCategory != Done",
+                            });
+                          } else {
+                            updateDataSource(index, { type: value as DataSource["type"], value: "" });
+                          }
                         }
                       }}
                       data={[
                         { value: "aha_field", label: "Aha Field" },
                         { value: "aha_description_part", label: "Aha Description Part" },
                         { value: "url", label: "URL" },
+                        { value: "jira_jql", label: "Jira (open tickets in epic)" },
                       ]}
                       required
                     />
@@ -1211,6 +1220,22 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                         <Text size="xs" c="dimmed" mt="xs">
                           URL will be entered in the epic detail page drawer
                         </Text>
+                      </>
+                    )}
+
+                    {source.type === "jira_jql" && (
+                      <>
+                        <TextInput
+                          label="Link label"
+                          value={source.label || "Open Jira tickets"}
+                          onChange={(e) => updateDataSource(index, { label: e.target.value })}
+                        />
+                        <TextInput
+                          label="JQL template"
+                          value={source.value || "parent = {{JIRA_EPIC}} and statusCategory != Done"}
+                          onChange={(e) => updateDataSource(index, { value: e.target.value })}
+                          description='Uses the epic Jira key extracted from Aha “Integrations”. Use {{JIRA_EPIC}} as placeholder.'
+                        />
                       </>
                     )}
                   </Stack>

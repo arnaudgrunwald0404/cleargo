@@ -701,7 +701,7 @@ The system uses the following launch stage phases:
 - `pricing_model` (Text)
 - `modified_rice_score` (JSONB)
 - `wsjf_score` (JSONB)
-- `aha_fields` (JSONB) - Full Aha! field mapping
+- `aha_fields` (JSONB) - Full Aha! field mapping (includes `standard_fields.integrations` for external links like Jira)
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -720,6 +720,7 @@ The system uses the following launch stage phases:
 - `sort_order` (Integer)
 - `is_active` (Boolean)
 - `rating_timing` (Integer, Foreign Key → launch_stage)
+- `data_sources` (JSONB, Nullable) - Optional list of data sources used to surface evidence (Aha fields, Aha description extraction, URLs, Jira JQL links)
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -737,6 +738,7 @@ The system uses the following launch stage phases:
 - `last_updated_at` (Timestamp)
 - `last_updated_by` (UUID, Foreign Key → app_user)
 - `score_value` (Integer) - Calculated score (2, 1, 0, null)
+- `data_source_values` (JSONB, Nullable) - Per-epic values for data sources that require input (e.g., URL links)
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 

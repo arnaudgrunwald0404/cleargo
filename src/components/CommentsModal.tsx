@@ -76,6 +76,39 @@ export function CommentsModal({
   const [ahaFieldsMap, setAhaFieldsMap] = useState<Record<string, string>>({});
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
+
+  const extractJiraEpicKeyFromIntegrations = (integrations: any): string | null => {
+    if (!integrations) return null;
+    try {
+      const asString = typeof integrations === 'string' ? integrations : JSON.stringify(integrations);
+
+      // Prefer canonical ISSUEKEY format (case-insensitive)
+      const keyMatch = asString.match(/[A-Z][A-Z0-9]+-\d+/i);
+      if (keyMatch?.[0]) return keyMatch[0].toUpperCase();
+
+      // Fallback: handle "DEV 25525" or "DEV_25525" formats
+      const spacedMatch = asString.match(/([A-Z][A-Z0-9]+)[\s_]+(\d+)/i);
+      if (spacedMatch?.[1] && spacedMatch?.[2]) {
+        return `${spacedMatch[1].toUpperCase()}-${spacedMatch[2]}`;
+      }
+
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const buildJiraIssuesUrlForOpenEpicTickets = (source: { value: string; label?: string } | null): string | null => {
+    const ahaFieldsStruct = epic?.aha_fields as any;
+    const standardFields = ahaFieldsStruct?.standard_fields || {};
+    const jiraEpicKey = extractJiraEpicKeyFromIntegrations(standardFields.integrations);
+    if (!jiraEpicKey) return null;
+
+    const defaultJql = 'parent = {{JIRA_EPIC}} and statusCategory != Done';
+    const template = (source?.value || '').trim() || defaultJql;
+    const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, jiraEpicKey);
+    return `https://clearco.atlassian.net/issues?jql=${encodeURIComponent(jql)}`;
+  };
   
   // Expose comments count for parent component
   useEffect(() => {
@@ -1020,6 +1053,14 @@ export function CommentsModal({
       position="right"
       size="xl"
       padding="lg"
+      styles={{
+        body: {
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+        },
+      }}
       title={
         <div>
           <Text fw={600} size="lg">{taskLabel}</Text>
@@ -1031,9 +1072,11 @@ export function CommentsModal({
         </div>
       }
     >
-      <Text size="lg" fw={600} mb="md">{taskLabel}</Text>
-      
-      <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'content')} style={{ height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column' }}>
+      <Tabs
+        value={activeTab}
+        onChange={(value) => setActiveTab(value || 'content')}
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      >
         <Tabs.List>
           <Tabs.Tab value="content">Content</Tabs.Tab>
           <Tabs.Tab value="comments">Comments & Attachments</Tabs.Tab>
@@ -1083,6 +1126,49 @@ export function CommentsModal({
                   {savingDataSourceValues && (
                     <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
                   )}
+                </Stack>
+              </div>
+            )}
+
+            {/* Jira Data Sources Section (read-only, clickable) */}
+            {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'jira_jql') && (
+              <div>
+                <Stack gap="sm">
+                  {criterion.data_sources.map((source, index) => {
+                    if (source.type !== 'jira_jql') return null;
+                    const jiraUrl = buildJiraIssuesUrlForOpenEpicTickets(source as any);
+                    const label = (source.label || '').trim() || 'Open Jira tickets';
+
+                    return (
+                      <div key={index}>
+                        <TextInput
+                          label={label}
+                          value={jiraUrl || ''}
+                          readOnly
+                          placeholder="No Jira epic key found in Aha integrations"
+                          description={
+                            jiraUrl
+                              ? undefined
+                              : 'No Jira epic key found in the epic Aha “Integrations” field.'
+                          }
+                        />
+                        {jiraUrl && (
+                          <Group justify="flex-end" mt="xs">
+                            <Button
+                              component="a"
+                              href={jiraUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              variant="light"
+                              size="xs"
+                            >
+                              Open in Jira
+                            </Button>
+                          </Group>
+                        )}
+                      </div>
+                    );
+                  })}
                 </Stack>
               </div>
             )}
