@@ -176,6 +176,26 @@ export async function mapEpicToEpic(
     fieldsToLoad?: string[]
 ): Promise<MappedEpicData> {
     // Standard fields from AHA epic
+    // Log integrations field structure for debugging - MAKE IT OBVIOUS!
+    if (epic.integrations !== null && epic.integrations !== undefined) {
+        console.log('\n' + '='.repeat(80));
+        console.log('🔗🔗🔗 INTEGRATIONS FIELD IN MAPPING 🔗🔗🔗');
+        console.log('='.repeat(80));
+        console.log(`📋 Epic ID: ${epic.reference_num || epic.id}`);
+        console.log(`📦 Raw integrations value:`, epic.integrations);
+        console.log(`🔤 Type: ${typeof epic.integrations}`);
+        console.log(`📝 Stringified (first 500 chars):`, JSON.stringify(epic.integrations).substring(0, 500));
+        console.log(`🎯 Full integrations object:`, JSON.stringify(epic.integrations, null, 2));
+        console.log('='.repeat(80) + '\n');
+    } else {
+        console.log('\n' + '⚠️'.repeat(40));
+        console.log('⚠️⚠️⚠️ WARNING: INTEGRATIONS FIELD IS NULL/UNDEFINED ⚠️⚠️⚠️');
+        console.log('⚠️'.repeat(40));
+        console.log(`📋 Epic ID: ${epic.reference_num || epic.id}`);
+        console.log(`❌ integrations value: ${epic.integrations}`);
+        console.log('⚠️'.repeat(40) + '\n');
+    }
+    
     const standardFields: Record<string, any> = {
         id: epic.id,
         reference_num: epic.reference_num || epic.id,

@@ -12,6 +12,7 @@ import {
     fetchAndUpsertReleaseFromAha,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,17 @@ export async function POST(req: NextRequest) {
     try {
         // Auth check - require admin role
         const supabase = createClient();
+        const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        
+        if (!supabaseUrl) {
+            throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set');
+        }
+        
+        const supabaseAdmin = supabaseServiceKey ? createSupabaseClient(
+            supabaseUrl,
+            supabaseServiceKey
+        ) : supabase;
         const { data: { user }, error: getUserError } = await supabase.auth.getUser();
         
         if (!user?.email) {
@@ -173,7 +185,66 @@ export async function POST(req: NextRequest) {
 
                 try {
                     const fullEpic = await client.getEpic(ahaId);
+                    const shouldProcess = force || (await shouldProcessEpic(fullEpic));
+                    
+                    if (!shouldProcess) {
+                        // Epic doesn't match filter criteria, but we still need to check if it exists
+                        // and archive it if cleargo_candidate is empty
+                        try {
+                            const existingEpic = await getEpicByAhaId(ahaId);
+                            if (existingEpic) {
+                                // Check cleargo_candidate value from Aha epic
+                                const cleargoCandidate = Array.isArray(fullEpic.custom_fields)
+                                    ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')?.value
+                                    : null;
+                                const cleargoCandidateValue = cleargoCandidate?.name || cleargoCandidate;
+                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                                
+                                // Archive if cleargo_candidate is not "Yes"
+                                // Check if archived field exists (migration may not have run yet)
+                                const currentArchived = (existingEpic as any).archived;
+                                if (!isClearGOCandidate && currentArchived !== true) {
+                                    try {
+                                        if (!supabaseAdmin) {
+                                            console.error(`Cannot archive epic ${ahaId}: supabaseAdmin is not available`);
+                                        } else {
+                                            const { error: archiveError } = await supabaseAdmin
+                                                .from('epic')
+                                                .update({ archived: true, updated_at: new Date().toISOString() })
+                                                .eq('id', existingEpic.id);
+                                            
+                                            if (archiveError) {
+                                                // Check if error is due to missing column
+                                                if (archiveError.message?.includes('archived') || archiveError.code === '42703') {
+                                                    console.warn(`Cannot archive epic ${ahaId}: archived column may not exist yet. Please run migration 20260117000000_add_archived_to_epic.sql`);
+                                                } else {
+                                                    console.error(`Failed to archive epic ${ahaId}:`, archiveError);
+                                                }
+                                            } else {
+                                                console.log(`📦 Archived epic ${ahaId} (${existingEpic.name}) - cleargo_candidate is empty/not "Yes"`);
+                                            }
+                                        }
+                                    } catch (archiveErr: any) {
+                                        console.error(`Error archiving epic ${ahaId}:`, archiveErr);
+                                    }
+                                }
+                            }
+                        } catch (checkErr: any) {
+                            console.error(`Error checking existing epic ${ahaId} for archiving:`, checkErr);
+                        }
+                        results.skipped++;
+                        continue;
+                    }
+
                     const epicData = await mapEpicToEpic(fullEpic, fieldsToLoad);
+
+                    // Apply same release validation as main sync loop
+                    const epicRelease = epicData.aha_release_name;
+                    if (!epicRelease) {
+                        results.skipped_no_release++;
+                        results.skipped++;
+                        continue;
+                    }
 
                     const existingEpic = await getEpicByAhaId(epicData.aha_id);
                     const isNewEpic = !existingEpic;
@@ -204,7 +275,53 @@ export async function POST(req: NextRequest) {
 
                 try {
                     const fullEpic = await client.getEpic(ahaId);
-                    if (!force && !(await shouldProcessEpic(fullEpic))) {
+                    const shouldProcess = force || (await shouldProcessEpic(fullEpic));
+                    
+                    if (!shouldProcess) {
+                        // Epic doesn't match filter criteria, but we still need to check if it exists
+                        // and archive it if cleargo_candidate is empty
+                        try {
+                            const existingEpic = await getEpicByAhaId(ahaId);
+                            if (existingEpic) {
+                                // Check cleargo_candidate value from Aha epic
+                                const cleargoCandidate = Array.isArray(fullEpic.custom_fields)
+                                    ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')?.value
+                                    : null;
+                                const cleargoCandidateValue = cleargoCandidate?.name || cleargoCandidate;
+                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                                
+                                // Archive if cleargo_candidate is not "Yes"
+                                // Check if archived field exists (migration may not have run yet)
+                                const currentArchived = (existingEpic as any).archived;
+                                if (!isClearGOCandidate && currentArchived !== true) {
+                                    try {
+                                        if (!supabaseAdmin) {
+                                            console.error(`Cannot archive epic ${ahaId}: supabaseAdmin is not available`);
+                                        } else {
+                                            const { error: archiveError } = await supabaseAdmin
+                                                .from('epic')
+                                                .update({ archived: true, updated_at: new Date().toISOString() })
+                                                .eq('id', existingEpic.id);
+                                            
+                                            if (archiveError) {
+                                                // Check if error is due to missing column
+                                                if (archiveError.message?.includes('archived') || archiveError.code === '42703') {
+                                                    console.warn(`Cannot archive epic ${ahaId}: archived column may not exist yet. Please run migration 20260117000000_add_archived_to_epic.sql`);
+                                                } else {
+                                                    console.error(`Failed to archive epic ${ahaId}:`, archiveError);
+                                                }
+                                            } else {
+                                                console.log(`📦 Archived epic ${ahaId} (${existingEpic.name}) - cleargo_candidate is empty/not "Yes"`);
+                                            }
+                                        }
+                                    } catch (archiveErr: any) {
+                                        console.error(`Error archiving epic ${ahaId}:`, archiveErr);
+                                    }
+                                }
+                            }
+                        } catch (checkErr: any) {
+                            console.error(`Error checking existing epic ${ahaId} for archiving:`, checkErr);
+                        }
                         results.skipped++;
                         continue;
                     }
@@ -453,6 +570,7 @@ export async function POST(req: NextRequest) {
 
     } catch (error) {
         console.error('Manual Aha sync error:', error);
+        console.error('Error stack:', (error as Error).stack);
         return NextResponse.json(
             { error: 'Sync failed', details: (error as Error).message },
             { status: 500 }
