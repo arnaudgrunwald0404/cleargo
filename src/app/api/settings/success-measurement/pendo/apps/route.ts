@@ -45,9 +45,24 @@ export async function GET(req: NextRequest) {
 
       const apps = await client.getApps();
 
+      // Load configurable app name overrides from app_settings, if available
+      const { data: settingsRow } = await supabase
+        .from('app_settings')
+        .select('pendo_app_names')
+        .eq('id', 1)
+        .maybeSingle();
+
+      const appNameOverrides =
+        (settingsRow?.pendo_app_names as Record<string, string> | null) || {};
+
+      const appsWithNames = apps.map((app) => ({
+        ...app,
+        name: appNameOverrides[app.id] || app.name,
+      }));
+
       return NextResponse.json({
-        apps,
-        count: apps.length,
+        apps: appsWithNames,
+        count: appsWithNames.length,
       });
     } catch (error: any) {
       console.error('Error fetching Pendo apps:', error);

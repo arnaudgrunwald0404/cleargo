@@ -12,9 +12,11 @@ import {
   Divider,
   List,
   Anchor,
+  Table,
 } from "@mantine/core";
 import { IconCheck, IconX, IconAlertCircle, IconInfoCircle, IconExternalLink } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
+import { useSettings } from "@/contexts/SettingsContext";
 
 interface PendoIntegration {
   id: string;
@@ -35,10 +37,37 @@ export default function PendoIntegrationSection() {
   const [testResult, setTestResult] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fetchingRef = useRef(false);
+  const { settings, autoSaveSettings } = useSettings();
+  const [appNameOverrides, setAppNameOverrides] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetchIntegration();
   }, []);
+
+  // Initialize local app name overrides from settings when available
+  useEffect(() => {
+    if (settings?.pendo_app_names) {
+      setAppNameOverrides(settings.pendo_app_names);
+    }
+  }, [settings]);
+
+  const handleAppNameChange = (appId: string, name: string) => {
+    const updated = {
+      ...appNameOverrides,
+      [appId]: name,
+    };
+
+    // Update local UI state immediately
+    setAppNameOverrides(updated);
+
+    // Persist to global settings via context (outside of render phase)
+    if (settings) {
+      autoSaveSettings({
+        ...settings,
+        pendo_app_names: updated,
+      });
+    }
+  };
 
   const fetchIntegration = async () => {
     // Prevent concurrent fetches
@@ -229,6 +258,36 @@ export default function PendoIntegrationSection() {
               Once configured, you can select Pendo events when creating metrics, and the system will 
               automatically pull event data for scorecard calculations.
             </Text>
+            <Text size="sm" c="dimmed">
+              For this subscription, Pendo application identifiers map to products. You can configure the names used in dropdowns below.
+            </Text>
+            {appNameOverrides && Object.keys(appNameOverrides).length > 0 && (
+              <Table striped withTableBorder withColumnBorders miw={400}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th>App ID</Table.Th>
+                    <Table.Th>Display Name</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {Object.entries(appNameOverrides).map(([appId, name]) => (
+                    <Table.Tr key={appId}>
+                      <Table.Td>
+                        <code>{appId}</code>
+                      </Table.Td>
+                      <Table.Td>
+                        <TextInput
+                          value={name}
+                          onChange={(e) => handleAppNameChange(appId, e.currentTarget.value)}
+                          placeholder={`Name for app ${appId}`}
+                          size="xs"
+                        />
+                      </Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            )}
             <Divider />
             <div>
               <Text fw={500} size="sm" mb="xs">How to get your Pendo API Key:</Text>

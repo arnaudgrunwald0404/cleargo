@@ -248,11 +248,12 @@ export class PendoClient {
 
   /**
    * Get list of Pendo segments.
-   * NOTE: This uses a placeholder endpoint/shape; adjust to match your Pendo setup.
+   * Uses the documented segment listing endpoint.
    */
   async getSegments(): Promise<Array<{ id: string; name: string }>> {
     try {
-      const response = await this.request('/segments', {
+      // Per Pendo docs, segments are listed via /segment
+      const response = await this.request('/segment', {
         method: 'GET',
       });
 
@@ -272,6 +273,15 @@ export class PendoClient {
         segments.push({ id: String(id), name: String(name) });
       }
 
+      console.log(
+        '[PendoClient] getSegments: rawCount=%d filteredCount=%d',
+        Array.isArray(source) ? source.length : 0,
+        segments.length
+      );
+      if (segments.length > 0) {
+        console.log('[PendoClient] getSegments: sampleSegment=%o', segments[0]);
+      }
+
       return segments;
     } catch (error: any) {
       console.error('Error fetching Pendo segments:', error);
@@ -281,28 +291,45 @@ export class PendoClient {
 
   /**
    * Get list of Pendo apps (products).
-   * NOTE: This uses a placeholder endpoint/shape; adjust to match your Pendo setup.
+   *
+   * Pendo does not expose a first-class "apps" listing endpoint in v1.
+   * Instead, we infer the set of applications by expanding features across
+   * all apps and aggregating distinct appIds.
    */
   async getApps(): Promise<Array<{ id: string; name: string }>> {
     try {
-      const response = await this.request('/apps', {
+      // Use ?expand=* to get features across all applications
+      const response = await this.request('/feature?expand=*', {
         method: 'GET',
       });
 
-      const apps: Array<{ id: string; name: string }> = [];
+      const source: any[] = Array.isArray(response) ? response : [];
 
-      const source = Array.isArray(response)
-        ? response
-        : Array.isArray((response as any)?.apps)
-          ? (response as any).apps
-          : [];
+      const appMap = new Map<string, string>();
 
       for (const item of source) {
         if (!item) continue;
-        const id = item.id || item.guid || item.key;
-        const name = item.name || item.label || item.description;
-        if (!id || !name) continue;
-        apps.push({ id: String(id), name: String(name) });
+        const appId = item.appId || item.applicationId;
+        if (!appId) continue;
+
+        const key = String(appId);
+        if (!appMap.has(key)) {
+          // Default label is a generic name; API route can override from settings
+          appMap.set(key, `App ${key}`);
+        }
+      }
+
+      const apps: Array<{ id: string; name: string }> = Array.from(appMap.entries()).map(
+        ([id, name]) => ({ id, name })
+      );
+
+      console.log(
+        '[PendoClient] getApps: featureCount=%d appCount=%d',
+        source.length,
+        apps.length
+      );
+      if (apps.length > 0) {
+        console.log('[PendoClient] getApps: sampleApp=%o', apps[0]);
       }
 
       return apps;
