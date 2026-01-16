@@ -218,10 +218,11 @@ export function SuccessConfigForm({
         const data = await res.json();
         if (Array.isArray(data.apps)) {
           const options = data.apps
-            .filter((app: { id?: string; name?: string }) => app && (app.id || app.name))
-            .map((app: { id?: string; name?: string }) => ({
-              value: app.id || app.name!,
-              label: app.name || app.id!,
+            .filter((app: { id?: string; name?: string }) => app && app.id)
+            .map((app: { id: string; name?: string }) => ({
+              value: app.id,
+              // Use the display name from API (which includes overrides), fallback to app ID if name is missing
+              label: app.name && app.name.trim() ? app.name : app.id,
             }));
           setPendoApps(options);
           if (options.length === 0) {

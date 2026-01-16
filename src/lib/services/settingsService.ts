@@ -55,7 +55,14 @@ export async function patchSettings(payload: any) {
     });
     throw new Error(errorMessage);
   }
-  return res.json();
+  const result = await res.json();
+  console.log('[settingsService] patchSettings response:', {
+    hasResult: !!result,
+    hasPendoAppNames: !!(result?.pendo_app_names),
+    pendoAppNames: result?.pendo_app_names,
+    allKeys: result ? Object.keys(result) : []
+  });
+  return result;
 }
 
 export async function getUsers() {

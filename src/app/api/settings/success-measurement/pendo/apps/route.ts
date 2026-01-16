@@ -55,10 +55,18 @@ export async function GET(req: NextRequest) {
       const appNameOverrides =
         (settingsRow?.pendo_app_names as Record<string, string> | null) || {};
 
-      const appsWithNames = apps.map((app) => ({
-        ...app,
-        name: appNameOverrides[app.id] || app.name,
-      }));
+      const appsWithNames = apps.map((app) => {
+        // Ensure app.id is a string for consistent key matching
+        const appIdKey = String(app.id);
+        // Get override, trying both the string key and original key format
+        const override = appNameOverrides[appIdKey] || appNameOverrides[app.id];
+        // Use override if available, otherwise use the default name from Pendo client
+        const displayName = override || app.name;
+        return {
+          ...app,
+          name: displayName,
+        };
+      });
 
       return NextResponse.json({
         apps: appsWithNames,

@@ -27,6 +27,11 @@ interface PendoIntegration {
   updated_at: string;
 }
 
+interface PendoApp {
+  id: string;
+  name: string;
+}
+
 export default function PendoIntegrationSection() {
   const [integration, setIntegration] = useState<PendoIntegration | null>(null);
   const [apiKey, setApiKey] = useState('');
@@ -39,19 +44,107 @@ export default function PendoIntegrationSection() {
   const fetchingRef = useRef(false);
   const { settings, autoSaveSettings } = useSettings();
   const [appNameOverrides, setAppNameOverrides] = useState<Record<string, string>>({});
+  const [pendoApps, setPendoApps] = useState<PendoApp[]>([]);
+  const [appsLoading, setAppsLoading] = useState(false);
+  const isSavingRef = useRef(false);
+  const hasInitializedRef = useRef(false);
+  const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchIntegration();
+    
+    // Cleanup: clear save timer on unmount
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
   }, []);
 
-  // Initialize local app name overrides from settings when available
+  // Fetch Pendo apps when integration is available
   useEffect(() => {
-    if (settings?.pendo_app_names) {
-      setAppNameOverrides(settings.pendo_app_names);
+    if (integration && integration.status === 'connected') {
+      fetchPendoApps();
     }
-  }, [settings]);
+  }, [integration]);
 
-  const handleAppNameChange = (appId: string, name: string) => {
+  // Initialize and merge app name overrides from settings with fetched apps
+  // Re-initialize when either apps or settings change (but not during active saves)
+  useEffect(() => {
+    // Don't overwrite if we're currently saving
+    if (isSavingRef.current) {
+      return;
+    }
+
+    const savedOverrides = settings?.pendo_app_names || {};
+    
+    // If we have apps, merge saved overrides with app defaults
+    if (pendoApps.length > 0) {
+      const merged: Record<string, string> = {};
+      pendoApps.forEach(app => {
+        const appIdKey = String(app.id);
+        // Try both string key and original key format for compatibility
+        const savedName = savedOverrides[appIdKey] || savedOverrides[app.id] || savedOverrides[String(app.id)];
+        // Use saved override if it exists, otherwise use the app's default name
+        merged[appIdKey] = savedName || app.name;
+      });
+      
+      // Only update if the merged result is different from current state
+      // This prevents unnecessary re-renders and preserves user edits
+      const currentKeys = Object.keys(appNameOverrides).sort().join(',');
+      const mergedKeys = Object.keys(merged).sort().join(',');
+      const hasChanges = currentKeys !== mergedKeys || 
+        Object.keys(merged).some(key => {
+          const currentValue = appNameOverrides[key] || '';
+          const mergedValue = merged[key] || '';
+          return currentValue !== mergedValue;
+        });
+      
+      if (hasChanges) {
+        console.log('[PendoIntegrationSection] Loading saved app names from settings:', merged);
+        console.log('[PendoIntegrationSection] Current app names:', appNameOverrides);
+        setAppNameOverrides(merged);
+        hasInitializedRef.current = true;
+      }
+    } else if (Object.keys(savedOverrides).length > 0) {
+      // If no apps fetched yet but we have saved overrides, use them
+      // Normalize keys to strings for consistency
+      const normalized: Record<string, string> = {};
+      Object.entries(savedOverrides).forEach(([key, value]) => {
+        normalized[String(key)] = value;
+      });
+      
+      // Only update if different from current state
+      const currentKeys = Object.keys(appNameOverrides).sort().join(',');
+      const normalizedKeys = Object.keys(normalized).sort().join(',');
+      const hasChanges = currentKeys !== normalizedKeys ||
+        Object.keys(normalized).some(key => normalized[key] !== (appNameOverrides[key] || ''));
+      
+      if (hasChanges) {
+        console.log('[PendoIntegrationSection] Loading saved app names (no apps yet):', normalized);
+        setAppNameOverrides(normalized);
+        hasInitializedRef.current = true;
+      }
+    }
+  }, [pendoApps, settings?.pendo_app_names]);
+
+  const fetchPendoApps = async () => {
+    setAppsLoading(true);
+    try {
+      const res = await fetch('/api/settings/success-measurement/pendo/apps');
+      if (res.ok) {
+        const data = await res.json();
+        setPendoApps(data.apps || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch Pendo apps:', error);
+    } finally {
+      setAppsLoading(false);
+    }
+  };
+
+  const handleAppNameChange = async (appId: string, name: string) => {
+    const previousOverrides = { ...appNameOverrides };
     const updated = {
       ...appNameOverrides,
       [appId]: name,
@@ -60,13 +153,50 @@ export default function PendoIntegrationSection() {
     // Update local UI state immediately
     setAppNameOverrides(updated);
 
-    // Persist to global settings via context (outside of render phase)
-    if (settings) {
-      autoSaveSettings({
-        ...settings,
-        pendo_app_names: updated,
-      });
+    // Clear any existing save timer
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
     }
+
+    // Debounce the save operation (wait 1 second after user stops typing)
+    saveTimerRef.current = setTimeout(async () => {
+      // Persist to global settings via context
+      if (settings) {
+        isSavingRef.current = true;
+        try {
+          console.log('[PendoIntegrationSection] Saving app names:', updated);
+          const saved = await autoSaveSettings({
+            ...settings,
+            pendo_app_names: updated,
+          });
+          console.log('[PendoIntegrationSection] Save successful, returned settings:', saved?.pendo_app_names);
+          
+          // Update local state with the saved values to ensure consistency
+          if (saved?.pendo_app_names) {
+            setAppNameOverrides(saved.pendo_app_names);
+          }
+          
+          // Show success notification (only once, not on every keystroke)
+          notifications.show({
+            title: 'Saved',
+            message: 'Display name saved successfully',
+            color: 'green',
+          });
+        } catch (error: any) {
+          console.error('[PendoIntegrationSection] Failed to save app name:', error);
+          const errorMessage = error?.message || 'Failed to save display name. Please try again.';
+          notifications.show({
+            title: 'Save Failed',
+            message: errorMessage,
+            color: 'red',
+          });
+          // Revert on error
+          setAppNameOverrides(previousOverrides);
+        } finally {
+          isSavingRef.current = false;
+        }
+      }
+    }, 1000);
   };
 
   const fetchIntegration = async () => {
@@ -170,6 +300,7 @@ export default function PendoIntegrationSection() {
       }
 
       await fetchIntegration();
+      await fetchPendoApps();
       setApiKey('');
       setTestResult(null);
       notifications.show({
@@ -261,32 +392,40 @@ export default function PendoIntegrationSection() {
             <Text size="sm" c="dimmed">
               For this subscription, Pendo application identifiers map to products. You can configure the names used in dropdowns below.
             </Text>
-            {appNameOverrides && Object.keys(appNameOverrides).length > 0 && (
-              <Table striped withTableBorder withColumnBorders miw={400}>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>App ID</Table.Th>
-                    <Table.Th>Display Name</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {Object.entries(appNameOverrides).map(([appId, name]) => (
-                    <Table.Tr key={appId}>
-                      <Table.Td>
-                        <code>{appId}</code>
-                      </Table.Td>
-                      <Table.Td>
-                        <TextInput
-                          value={name}
-                          onChange={(e) => handleAppNameChange(appId, e.currentTarget.value)}
-                          placeholder={`Name for app ${appId}`}
-                          size="xs"
-                        />
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
+            {integration && integration.status === 'connected' && (
+              <>
+                {appsLoading ? (
+                  <Text size="sm" c="dimmed">Loading apps...</Text>
+                ) : appNameOverrides && Object.keys(appNameOverrides).length > 0 ? (
+                  <Table striped withTableBorder withColumnBorders miw={400}>
+                    <Table.Thead>
+                      <Table.Tr>
+                        <Table.Th>App ID</Table.Th>
+                        <Table.Th>Display Name</Table.Th>
+                      </Table.Tr>
+                    </Table.Thead>
+                    <Table.Tbody>
+                      {Object.entries(appNameOverrides).map(([appId, name]) => (
+                        <Table.Tr key={appId}>
+                          <Table.Td>
+                            <code>{appId}</code>
+                          </Table.Td>
+                          <Table.Td>
+                            <TextInput
+                              value={name}
+                              onChange={(e) => handleAppNameChange(appId, e.currentTarget.value)}
+                              placeholder={`Name for app ${appId}`}
+                              size="xs"
+                            />
+                          </Table.Td>
+                        </Table.Tr>
+                      ))}
+                    </Table.Tbody>
+                  </Table>
+                ) : (
+                  <Text size="sm" c="dimmed">No Pendo apps found. Please test the connection first.</Text>
+                )}
+              </>
             )}
             <Divider />
             <div>

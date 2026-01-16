@@ -165,6 +165,11 @@ export async function updateSettings(
         updated_at: new Date().toISOString()
     };
     
+    // Log pendo_app_names specifically for debugging
+    if ('pendo_app_names' in updateData) {
+        console.log('[settings-db] Updating pendo_app_names:', JSON.stringify(updateData.pendo_app_names));
+    }
+    
     // Only include webhook URL in regular update if RPC didn't work
     if (aha_webhook_url !== undefined && !webhookUrlUpdatedViaRpc) {
         updateData.aha_webhook_url = aha_webhook_url;
@@ -204,6 +209,11 @@ export async function updateSettings(
         }
 
         if (data) {
+            // Ensure pendo_app_names has defaults if missing
+            if (!data.pendo_app_names || Object.keys(data.pendo_app_names).length === 0) {
+                data.pendo_app_names = { ...DEFAULT_PENDO_APP_NAMES };
+            }
+            console.log('[settings-db] updateSettings returning data with pendo_app_names:', data.pendo_app_names);
             return data as AppSettings;
         }
     }
@@ -243,8 +253,17 @@ export async function updateSettings(
             throw new Error(`Failed to insert settings: ${insertError.message}`);
         }
 
+        // Ensure pendo_app_names has defaults if missing
+        if (!inserted.pendo_app_names || Object.keys(inserted.pendo_app_names).length === 0) {
+            inserted.pendo_app_names = { ...DEFAULT_PENDO_APP_NAMES };
+        }
         return inserted as AppSettings;
     }
 
+    // Ensure pendo_app_names has defaults if missing
+    if (!currentSettings.pendo_app_names || Object.keys(currentSettings.pendo_app_names).length === 0) {
+        currentSettings.pendo_app_names = { ...DEFAULT_PENDO_APP_NAMES };
+    }
+    console.log('[settings-db] updateSettings returning currentSettings with pendo_app_names:', currentSettings.pendo_app_names);
     return currentSettings as AppSettings;
 }

@@ -166,9 +166,11 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         try {
             const saved = await patchSettings(updatedSettings);
             setSettings(saved);
+            return saved; // Return saved settings so callers can use them
         } catch (error: any) {
             console.error("Failed to auto-save settings:", error);
             setError("Failed to save changes. Please refresh and try again.");
+            throw error; // Re-throw so callers can handle errors
         } finally {
             setSaving(false);
         }
