@@ -42,7 +42,14 @@ export interface AppSettings {
     jira_api_token?: string | null; // Jira API token for authentication
     jira_email?: string | null; // Jira email associated with the API token (required for Basic Auth)
     jira_cloud_id?: string | null; // Jira Cloud ID (required for API calls, fetched automatically)
+  // Mapping of Pendo appId -> human-friendly application name
+  pendo_app_names?: Record<string, string>;
 }
+
+const DEFAULT_PENDO_APP_NAMES: Record<string, string> = {
+    "-323232": "ClearCompany",
+    "6212546329378816": "ClearCompany Learning",
+};
 
 export async function getSettings(): Promise<AppSettings> {
     const supabase = await createClient();
@@ -90,6 +97,7 @@ export async function getSettings(): Promise<AppSettings> {
             permissions: {},
             aha_tags: ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'],
             enable_activity_feed: true,
+            pendo_app_names: { ...DEFAULT_PENDO_APP_NAMES },
         };
     }
 
@@ -113,6 +121,11 @@ export async function getSettings(): Promise<AppSettings> {
     // Ensure aha_tags has a default value if missing
     if (!data.aha_tags || (Array.isArray(data.aha_tags) && data.aha_tags.length === 0)) {
         data.aha_tags = ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
+    }
+
+    // Ensure Pendo app names mapping has sensible defaults if missing
+    if (!data.pendo_app_names || Object.keys(data.pendo_app_names).length === 0) {
+        data.pendo_app_names = { ...DEFAULT_PENDO_APP_NAMES };
     }
 
     return data as AppSettings;

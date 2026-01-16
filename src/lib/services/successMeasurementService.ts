@@ -31,6 +31,24 @@ export interface MetricFilters {
   leading_or_lagging?: 'LEADING' | 'LAGGING';
 }
 
+function normalizeThresholdsFromDb(thresholds: any): MetricThresholds | null {
+  if (!thresholds) {
+    return null;
+  }
+
+  // Backwards compatibility: collapse tiered thresholds to global using TIER_1
+  if (thresholds.TIER_1 || thresholds.TIER_2 || thresholds.TIER_3) {
+    const t1 = thresholds.TIER_1 || {};
+    return {
+      min: t1.min,
+      max: t1.max,
+      target: t1.target,
+    };
+  }
+
+  return thresholds as MetricThresholds;
+}
+
 export async function getMetrics(filters?: MetricFilters): Promise<SuccessMetric[]> {
   const supabase = createClient();
   let query = supabase
@@ -55,7 +73,10 @@ export async function getMetrics(filters?: MetricFilters): Promise<SuccessMetric
     throw new Error(`Failed to fetch metrics: ${error.message}`);
   }
 
-  return (data || []) as SuccessMetric[];
+  return (data || []).map((row: any) => ({
+    ...row,
+    thresholds: normalizeThresholdsFromDb(row.thresholds),
+  })) as SuccessMetric[];
 }
 
 export async function getMetricById(id: string): Promise<SuccessMetric | null> {
@@ -74,7 +95,14 @@ export async function getMetricById(id: string): Promise<SuccessMetric | null> {
     throw new Error(`Failed to fetch metric: ${error.message}`);
   }
 
-  return data as SuccessMetric;
+  if (!data) {
+    return null;
+  }
+
+  return {
+    ...data,
+    thresholds: normalizeThresholdsFromDb((data as any).thresholds),
+  } as SuccessMetric;
 }
 
 export async function createMetric(data: CreateSuccessMetricDTO): Promise<SuccessMetric> {
@@ -630,11 +658,20 @@ export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccess
       }
 
       // Create a map of metric_id -> metric for quick lookup
-      const metricsMap = new Map((successMetricsData || []).map((m: any) => [m.id, m]));
+      const metricsMap = new Map(
+        (successMetricsData || []).map((m: any) => [
+          m.id,
+          {
+            ...m,
+            thresholds: normalizeThresholdsFromDb(m.thresholds),
+          },
+        ])
+      );
 
       // Combine the data
       return metricsData.map((item: any) => ({
         ...item,
+        threshold_override: normalizeThresholdsFromDb(item.threshold_override),
         metric: metricsMap.get(item.metric_id) || null,
       })) as EpicSuccessMetricWithDetails[];
     }
@@ -643,7 +680,13 @@ export async function getEpicSuccessMetrics(epicId: string): Promise<EpicSuccess
     // Supabase returns the relationship under the alias name
     return (data || []).map((item: any) => ({
       ...item,
-      metric: item.metric || null,
+      threshold_override: normalizeThresholdsFromDb(item.threshold_override),
+      metric: item.metric
+        ? {
+            ...item.metric,
+            thresholds: normalizeThresholdsFromDb(item.metric.thresholds),
+          }
+        : null,
     })) as EpicSuccessMetricWithDetails[];
   } catch (err: any) {
     // Check if table doesn't exist (migration not applied)
