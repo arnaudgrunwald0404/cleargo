@@ -77,15 +77,15 @@ export function MetricForm({
       newErrors.pendo_event_id = 'Pendo event name is required when source is PENDO';
     }
 
-    // Validate thresholds - if provided, at least one tier must have at least one value
+    // Validate thresholds - if provided, at least one value must have a value
     if (formData.thresholds) {
-      const hasThresholds = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-        const tierThresholds = formData.thresholds![tier as keyof MetricThresholds];
-        return tierThresholds.min !== undefined || tierThresholds.max !== undefined || tierThresholds.target !== undefined;
-      });
+      const t = formData.thresholds as MetricThresholds;
+      const hasThresholds =
+        t.min !== undefined || t.max !== undefined || t.target !== undefined;
 
       if (!hasThresholds) {
-        newErrors.thresholds = 'If thresholds are provided, at least one tier must have a threshold value (min, max, or target)';
+        newErrors.thresholds =
+          'If thresholds are provided, at least one of min, max, or target must be set';
       }
     }
 
@@ -100,14 +100,13 @@ export function MetricForm({
     }
 
     try {
-      // Normalize thresholds: if all tiers are empty, set to null
+      // Normalize thresholds: if all values are empty, set to null
       let normalizedData = { ...formData };
       if (normalizedData.thresholds) {
-        const hasAnyThreshold = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-          const tierThresholds = normalizedData.thresholds![tier as keyof typeof normalizedData.thresholds];
-          return tierThresholds?.min !== undefined || tierThresholds?.max !== undefined || tierThresholds?.target !== undefined;
-        });
-        
+        const t = normalizedData.thresholds as MetricThresholds;
+        const hasAnyThreshold =
+          t.min !== undefined || t.max !== undefined || t.target !== undefined;
+
         if (!hasAnyThreshold) {
           normalizedData.thresholds = null;
         }
@@ -120,24 +119,14 @@ export function MetricForm({
   };
 
   const updateThreshold = (
-    tier: 'TIER_1' | 'TIER_2' | 'TIER_3',
     field: 'min' | 'max' | 'target',
     value: number | undefined
   ) => {
-    const currentThresholds = formData.thresholds || {
-      TIER_1: {},
-      TIER_2: {},
-      TIER_3: {},
-    };
-    
     setFormData({
       ...formData,
       thresholds: {
-        ...currentThresholds,
-        [tier]: {
-          ...currentThresholds[tier],
-          [field]: value,
-        },
+        ...(formData.thresholds || {}),
+        [field]: value,
       },
     });
   };
@@ -496,35 +485,40 @@ export function MetricForm({
 
         <div>
           <Text size="sm" fw={500} mb="xs">
-            Thresholds by Tier (Optional)
+            Thresholds (Optional)
           </Text>
-          {errors.thresholds && <Text size="xs" c="red" mb="xs">{errors.thresholds}</Text>}
-          
-          {(['TIER_1', 'TIER_2', 'TIER_3'] as const).map((tier) => (
-            <div key={tier} style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px' }}>
-              <Text size="sm" fw={500} mb="xs">{tier.replace('_', ' ')}</Text>
-              <Group gap="xs">
-                <NumberInput
-                  label="Min"
-                  value={formData.thresholds?.[tier]?.min}
-                  onChange={(value) => updateThreshold(tier, 'min', value ? Number(value) : undefined)}
-                  style={{ flex: 1 }}
-                />
-                <NumberInput
-                  label="Target"
-                  value={formData.thresholds?.[tier]?.target}
-                  onChange={(value) => updateThreshold(tier, 'target', value ? Number(value) : undefined)}
-                  style={{ flex: 1 }}
-                />
-                <NumberInput
-                  label="Max"
-                  value={formData.thresholds?.[tier]?.max}
-                  onChange={(value) => updateThreshold(tier, 'max', value ? Number(value) : undefined)}
-                  style={{ flex: 1 }}
-                />
-              </Group>
-            </div>
-          ))}
+          {errors.thresholds && (
+            <Text size="xs" c="red" mb="xs">
+              {errors.thresholds}
+            </Text>
+          )}
+
+          <Group gap="xs">
+            <NumberInput
+              label="Min"
+              value={formData.thresholds?.min}
+              onChange={(value) =>
+                updateThreshold('min', value ? Number(value) : undefined)
+              }
+              style={{ flex: 1 }}
+            />
+            <NumberInput
+              label="Target"
+              value={formData.thresholds?.target}
+              onChange={(value) =>
+                updateThreshold('target', value ? Number(value) : undefined)
+              }
+              style={{ flex: 1 }}
+            />
+            <NumberInput
+              label="Max"
+              value={formData.thresholds?.max}
+              onChange={(value) =>
+                updateThreshold('max', value ? Number(value) : undefined)
+              }
+              style={{ flex: 1 }}
+            />
+          </Group>
         </div>
 
         <Group justify="flex-end" mt="md">

@@ -110,18 +110,7 @@ export default function ScorecardsPage() {
                         Metrics
                       </Link>
                     </li>
-                    <li>
-                      <Link
-                        href="/settings/success-measurement/benchmarks"
-                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                          pathname === '/settings/success-measurement/benchmarks'
-                            ? 'bg-indigo-50 text-indigo-700 font-medium'
-                            : 'text-gray-600 hover:bg-gray-50'
-                        }`}
-                      >
-                        Adoption Benchmarks
-                      </Link>
-                    </li>
+                    {/* Benchmarks page has been removed */}
                     <li>
                       <Link
                         href="/settings/success-measurement/scorecards"
