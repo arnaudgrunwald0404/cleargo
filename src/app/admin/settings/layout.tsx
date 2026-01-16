@@ -16,7 +16,9 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     
     const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
     const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
-    const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement") || pathname?.startsWith("/settings/success-measurement");
+    const isSuccessMeasurementExpanded =
+        pathname?.startsWith("/admin/settings/success-measurement") ||
+        pathname?.startsWith("/settings/success-measurement");
     
     return (
         <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
@@ -162,6 +164,61 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                     </li>
                                     <li>
                                         <Link
+                                            href="/settings/success-measurement/metrics"
+                                            className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
+                                                isSuccessMeasurementExpanded
+                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                    : "text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                        >
+                                            <span>Success measurement</span>
+                                            <svg
+                                                className={`w-4 h-4 transition-transform ${
+                                                    isSuccessMeasurementExpanded ? "rotate-90" : ""
+                                                }`}
+                                                fill="none"
+                                                stroke="currentColor"
+                                                viewBox="0 0 24 24"
+                                            >
+                                                <path
+                                                    strokeLinecap="round"
+                                                    strokeLinejoin="round"
+                                                    strokeWidth={2}
+                                                    d="M9 5l7 7-7 7"
+                                                />
+                                            </svg>
+                                        </Link>
+                                        {isSuccessMeasurementExpanded && (
+                                            <ul className="ml-4 mt-1 space-y-1">
+                                                <li>
+                                                    <Link
+                                                        href="/settings/success-measurement/metrics"
+                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                            isActive("/settings/success-measurement/metrics")
+                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                                : "text-gray-600 hover:bg-gray-50"
+                                                        }`}
+                                                    >
+                                                        Metrics
+                                                    </Link>
+                                                </li>
+                                                <li>
+                                                    <Link
+                                                        href="/settings/success-measurement/dashboards"
+                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                            isActive("/settings/success-measurement/dashboards")
+                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                                : "text-gray-600 hover:bg-gray-50"
+                                                        }`}
+                                                    >
+                                                        Dashboards
+                                                    </Link>
+                                                </li>
+                                            </ul>
+                                        )}
+                                    </li>
+                                    <li>
+                                        <Link
                                             href="/admin/settings/integrations/aha"
                                             className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
                                                 isIntegrationsExpanded
@@ -251,18 +308,6 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                                         }`}
                                                     >
                                                         Pendo
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/settings/success-measurement/metrics"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/settings/success-measurement/metrics")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Success Measurement
                                                     </Link>
                                                 </li>
                                             </ul>

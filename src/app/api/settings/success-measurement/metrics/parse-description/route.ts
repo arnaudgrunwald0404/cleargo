@@ -116,7 +116,7 @@ Return ONLY the JSON object, no other text or markdown formatting.`;
     }
 
     // Parse JSON response
-    let parsed: Partial<CreateSuccessMetricDTO>;
+    let parsed: any;
     try {
       parsed = JSON.parse(content);
     } catch (parseError) {
@@ -125,6 +125,22 @@ Return ONLY the JSON object, no other text or markdown formatting.`;
         { error: 'Failed to parse AI response' },
         { status: 500 }
       );
+    }
+
+    // Normalize thresholds: support both old tiered shape and new global shape
+    let normalizedThresholds: CreateSuccessMetricDTO['thresholds'] = null;
+    if (parsed.thresholds) {
+      const t = parsed.thresholds;
+      if (t.TIER_1 || t.TIER_2 || t.TIER_3) {
+        const tier1 = t.TIER_1 || {};
+        normalizedThresholds = {
+          min: tier1.min,
+          max: tier1.max,
+          target: tier1.target,
+        };
+      } else {
+        normalizedThresholds = t;
+      }
     }
 
     // Validate and normalize the response
@@ -136,7 +152,7 @@ Return ONLY the JSON object, no other text or markdown formatting.`;
       source: parsed.source || 'MANUAL',
       pendo_event_id: parsed.pendo_event_id || null,
       leading_or_lagging: parsed.leading_or_lagging || 'LAGGING',
-      thresholds: parsed.thresholds || null,
+      thresholds: normalizedThresholds,
     };
 
     return NextResponse.json({ metric: result });
