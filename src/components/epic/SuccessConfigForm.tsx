@@ -78,6 +78,8 @@ export function SuccessConfigForm({
   const [loadingPendoSegments, setLoadingPendoSegments] = useState(false);
   const [pendoApps, setPendoApps] = useState<Array<{ value: string; label: string }>>([]);
   const [loadingPendoApps, setLoadingPendoApps] = useState(false);
+  const [pendoSegmentsWarning, setPendoSegmentsWarning] = useState<string | null>(null);
+  const [pendoAppsWarning, setPendoAppsWarning] = useState<string | null>(null);
   const [metricSelections, setMetricSelections] = useState<MetricSelection[]>([
     { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
     { metricId: null, target: null, pendoEventId: null, snowflakeQuery: null, manualLabel: null, pendoSegmentIds: null, pendoSegmentNames: null, pendoAppIds: null, pendoAppNames: null },
@@ -156,20 +158,39 @@ export function SuccessConfigForm({
       setLoadingPendoSegments(true);
       try {
         const res = await fetch('/api/settings/success-measurement/pendo/segments');
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.segments)) {
-            const options = data.segments
-              .filter((segment: { id?: string; name?: string }) => segment && (segment.id || segment.name))
-              .map((segment: { id?: string; name?: string }) => ({
-                value: segment.id || segment.name!,
-                label: segment.name || segment.id!,
-              }));
-            setPendoSegments(options);
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            setPendoSegmentsWarning(
+              'You do not have permission to load Pendo segments. Only SUPERADMIN / PRODUCT_OPS / CPO can access them.'
+            );
+          } else {
+            setPendoSegmentsWarning('Failed to load Pendo segments from the server.');
           }
+          return;
+        }
+
+        const data = await res.json();
+        if (Array.isArray(data.segments)) {
+          const options = data.segments
+            .filter((segment: { id?: string; name?: string }) => segment && (segment.id || segment.name))
+            .map((segment: { id?: string; name?: string }) => ({
+              value: segment.id || segment.name!,
+              label: segment.name || segment.id!,
+            }));
+          setPendoSegments(options);
+          if (options.length === 0) {
+            setPendoSegmentsWarning(
+              'No Pendo segments were returned. Check the Pendo integration configuration or your Pendo account.'
+            );
+          } else {
+            setPendoSegmentsWarning(null);
+          }
+        } else if (data.warning) {
+          setPendoSegmentsWarning(data.warning);
         }
       } catch (error) {
         console.error('Error fetching Pendo segments:', error);
+        setPendoSegmentsWarning('Unexpected error while loading Pendo segments.');
       } finally {
         setLoadingPendoSegments(false);
       }
@@ -183,20 +204,39 @@ export function SuccessConfigForm({
       setLoadingPendoApps(true);
       try {
         const res = await fetch('/api/settings/success-measurement/pendo/apps');
-        if (res.ok) {
-          const data = await res.json();
-          if (Array.isArray(data.apps)) {
-            const options = data.apps
-              .filter((app: { id?: string; name?: string }) => app && (app.id || app.name))
-              .map((app: { id?: string; name?: string }) => ({
-                value: app.id || app.name!,
-                label: app.name || app.id!,
-              }));
-            setPendoApps(options);
+        if (!res.ok) {
+          if (res.status === 401 || res.status === 403) {
+            setPendoAppsWarning(
+              'You do not have permission to load Pendo apps. Only SUPERADMIN / PRODUCT_OPS / CPO can access them.'
+            );
+          } else {
+            setPendoAppsWarning('Failed to load Pendo apps from the server.');
           }
+          return;
+        }
+
+        const data = await res.json();
+        if (Array.isArray(data.apps)) {
+          const options = data.apps
+            .filter((app: { id?: string; name?: string }) => app && (app.id || app.name))
+            .map((app: { id?: string; name?: string }) => ({
+              value: app.id || app.name!,
+              label: app.name || app.id!,
+            }));
+          setPendoApps(options);
+          if (options.length === 0) {
+            setPendoAppsWarning(
+              'No Pendo apps were returned. Check the Pendo integration configuration or your Pendo account.'
+            );
+          } else {
+            setPendoAppsWarning(null);
+          }
+        } else if (data.warning) {
+          setPendoAppsWarning(data.warning);
         }
       } catch (error) {
         console.error('Error fetching Pendo apps:', error);
+        setPendoAppsWarning('Unexpected error while loading Pendo apps.');
       } finally {
         setLoadingPendoApps(false);
       }
@@ -852,6 +892,11 @@ export function SuccessConfigForm({
                                 clearable
                                 mt="sm"
                               />
+                              {pendoSegmentsWarning && (
+                                <Text size="xs" c="dimmed" mt={4}>
+                                  {pendoSegmentsWarning}
+                                </Text>
+                              )}
                               <MultiSelect
                                 label="Pendo Apps (optional)"
                                 placeholder={
@@ -865,6 +910,11 @@ export function SuccessConfigForm({
                                 clearable
                                 mt="sm"
                               />
+                              {pendoAppsWarning && (
+                                <Text size="xs" c="dimmed" mt={4}>
+                                  {pendoAppsWarning}
+                                </Text>
+                              )}
                             </div>
                           )}
                         </div>

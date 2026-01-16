@@ -26,40 +26,28 @@ export function ThresholdOverrideEditor({
   onSubmit,
   isSubmitting = false,
 }: ThresholdOverrideEditorProps) {
-  const [thresholds, setThresholds] = useState<MetricThresholds>({
-    TIER_1: initialThresholds?.TIER_1 || {},
-    TIER_2: initialThresholds?.TIER_2 || {},
-    TIER_3: initialThresholds?.TIER_3 || {},
-  });
+  const [thresholds, setThresholds] = useState<MetricThresholds>(
+    initialThresholds || {}
+  );
 
   const updateThreshold = (
-    tier: 'TIER_1' | 'TIER_2' | 'TIER_3',
     field: 'min' | 'max' | 'target',
     value: number | undefined
   ) => {
     setThresholds({
       ...thresholds,
-      [tier]: {
-        ...thresholds[tier],
-        [field]: value,
-      },
+      [field]: value,
     });
   };
 
   const handleSubmit = async () => {
-    // Check if at least one tier has at least one value
-    const hasAnyValue = ['TIER_1', 'TIER_2', 'TIER_3'].some((tier) => {
-      const tierThresholds = thresholds[tier as keyof MetricThresholds];
-      return tierThresholds.min !== undefined || tierThresholds.max !== undefined || tierThresholds.target !== undefined;
-    });
-
-    if (!hasAnyValue) {
-      alert('At least one tier must have a threshold value (min, max, or target)');
-      return;
-    }
+    const hasAnyValue =
+      thresholds.min !== undefined ||
+      thresholds.max !== undefined ||
+      thresholds.target !== undefined;
 
     try {
-      await onSubmit(thresholds);
+      await onSubmit(hasAnyValue ? thresholds : null);
       onClose();
     } catch (error: any) {
       console.error('Error submitting thresholds:', error);
@@ -67,11 +55,7 @@ export function ThresholdOverrideEditor({
   };
 
   const handleClear = () => {
-    setThresholds({
-      TIER_1: {},
-      TIER_2: {},
-      TIER_3: {},
-    });
+    setThresholds({});
   };
 
   return (
@@ -83,34 +67,36 @@ export function ThresholdOverrideEditor({
     >
       <Stack gap="md">
         <Text size="sm" c="dimmed">
-          Override default thresholds for this metric. Leave fields empty to use default thresholds.
+          Override default thresholds for this metric. Leave all fields empty to
+          use default thresholds.
         </Text>
 
-        {(['TIER_1', 'TIER_2', 'TIER_3'] as const).map((tier) => (
-          <div key={tier} style={{ padding: '1rem', border: '1px solid #e0e0e0', borderRadius: '8px' }}>
-            <Text size="sm" fw={500} mb="xs">{tier.replace('_', ' ')}</Text>
-            <Group gap="xs">
-              <NumberInput
-                label="Min"
-                value={thresholds[tier].min}
-                onChange={(value) => updateThreshold(tier, 'min', value ? Number(value) : undefined)}
-                style={{ flex: 1 }}
-              />
-              <NumberInput
-                label="Target"
-                value={thresholds[tier].target}
-                onChange={(value) => updateThreshold(tier, 'target', value ? Number(value) : undefined)}
-                style={{ flex: 1 }}
-              />
-              <NumberInput
-                label="Max"
-                value={thresholds[tier].max}
-                onChange={(value) => updateThreshold(tier, 'max', value ? Number(value) : undefined)}
-                style={{ flex: 1 }}
-              />
-            </Group>
-          </div>
-        ))}
+        <Group gap="xs">
+          <NumberInput
+            label="Min"
+            value={thresholds.min}
+            onChange={(value) =>
+              updateThreshold('min', value ? Number(value) : undefined)
+            }
+            style={{ flex: 1 }}
+          />
+          <NumberInput
+            label="Target"
+            value={thresholds.target}
+            onChange={(value) =>
+              updateThreshold('target', value ? Number(value) : undefined)
+            }
+            style={{ flex: 1 }}
+          />
+          <NumberInput
+            label="Max"
+            value={thresholds.max}
+            onChange={(value) =>
+              updateThreshold('max', value ? Number(value) : undefined)
+            }
+            style={{ flex: 1 }}
+          />
+        </Group>
 
         <Group justify="space-between" mt="md">
           <Button variant="subtle" color="red" onClick={handleClear} disabled={isSubmitting}>
