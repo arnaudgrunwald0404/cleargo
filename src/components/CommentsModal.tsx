@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
 import { RichText } from './admin/RichText';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 interface Comment {
   id: string;
@@ -36,10 +38,10 @@ interface CommentsModalProps {
   taskLabel: string;
   currentUserEmail: string;
   requireComment?: boolean; // If true, user must add a comment before closing
-  onCommentAdded?: () => void; // Callback when comment is added (for mandatory mode)
+  onCommentAdded?: (comment?: Comment) => void; // Callback when comment is added (for mandatory mode), optionally with comment data
   onCloseWithoutComment?: () => void; // Callback when modal closes without comment (for reverting status)
   onCancel?: () => void; // Callback when user cancels (for reverting status with toast)
-  onSkipComment?: () => void; // Callback when user chooses to skip comment requirement
+  onSkipComment?: () => void | Promise<void>; // Callback when user chooses to skip comment requirement
   criterion?: { data_sources?: Array<{ type: string; value: string; label?: string }> | null };
   epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
   initialTab?: 'content' | 'comments'; // Which tab to open initially (default: 'content')
@@ -76,6 +78,7 @@ export function CommentsModal({
   const [hasAddedComment, setHasAddedComment] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  const [skippingComment, setSkippingComment] = useState(false);
   const [dataSourceValues, setDataSourceValues] = useState<Record<string, string | { url: string; assetName?: string }>>({});
   const [urlPreviews, setUrlPreviews] = useState<Record<string, { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null>>({});
   const [urlPreviewLoading, setUrlPreviewLoading] = useState<Record<string, boolean>>({});
@@ -130,7 +133,7 @@ export function CommentsModal({
       setJiraEpicKeyLoading(true);
       try {
         // Fetch Jira epic key from API (checks cache first, then tries integrations, then Jira search)
-        const response = await fetch(`/api/epics/${epicId}/jira-epic-key`, {
+        const response = await fetchWithRateLimit(`/api/epics/${epicId}/jira-epic-key`, {
           credentials: 'include',
         });
         
@@ -147,7 +150,7 @@ export function CommentsModal({
         }
 
         // Fetch Jira domain from settings
-        const settingsResponse = await fetch('/api/settings', {
+        const settingsResponse = await fetchWithRateLimit('/api/settings', {
           credentials: 'include',
         });
         
@@ -289,7 +292,7 @@ export function CommentsModal({
 
         setJiraTicketsLoading(prev => ({ ...prev, [index]: true }));
         try {
-          const response = await fetch(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
+          const response = await fetchWithRateLimit(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
             credentials: 'include',
           });
 
@@ -353,7 +356,73 @@ export function CommentsModal({
             return { ...comment, attachments: [] };
           })
         );
-        setComments(commentsWithAttachments);
+        
+        // Merge with existing optimistic comments smoothly
+        // Match optimistic comments to real ones by content, user, and timestamp
+        setComments(prev => {
+          const optimisticComments = prev.filter(c => c.id.startsWith('temp-'));
+          const realComments = commentsWithAttachments;
+          
+          if (optimisticComments.length === 0) {
+            // No optimistic comments, just return real ones
+            return realComments;
+          }
+          
+          // Create a map of real comments for matching
+          // Key: normalized content + user email
+          const realCommentsMap = new Map<string, Comment>();
+          realComments.forEach(comment => {
+            const normalizedContent = comment.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+            const userEmail = comment.created_by?.email?.toLowerCase() || '';
+            const key = `${normalizedContent}|${userEmail}`;
+            // Keep the most recent comment if there are duplicates
+            if (!realCommentsMap.has(key)) {
+              realCommentsMap.set(key, comment);
+            } else {
+              const existing = realCommentsMap.get(key)!;
+              if (new Date(comment.created_at) > new Date(existing.created_at)) {
+                realCommentsMap.set(key, comment);
+              }
+            }
+          });
+          
+          // Match optimistic comments to real ones
+          const matchedOptimisticIds = new Set<string>();
+          const matchedRealIds = new Set<string>();
+          
+          optimisticComments.forEach(optimistic => {
+            const normalizedContent = optimistic.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+            const userEmail = optimistic.created_by?.email?.toLowerCase() || currentUserEmail.toLowerCase();
+            const key = `${normalizedContent}|${userEmail}`;
+            const matched = realCommentsMap.get(key);
+            
+            if (matched) {
+              // Check if timestamps are close (within 60 seconds to account for network delay)
+              const optimisticTime = new Date(optimistic.created_at).getTime();
+              const realTime = new Date(matched.created_at).getTime();
+              const timeDiff = Math.abs(optimisticTime - realTime);
+              
+              // Match if timestamp is close OR if it's a recent comment (within last 2 minutes)
+              const isRecent = timeDiff < 120000; // 2 minutes
+              if (isRecent) {
+                matchedOptimisticIds.add(optimistic.id);
+                matchedRealIds.add(matched.id);
+              }
+            }
+          });
+          
+          // Keep unmatched optimistic comments (they'll be replaced when real comments arrive)
+          const unmatchedOptimistic = optimisticComments.filter(c => !matchedOptimisticIds.has(c.id));
+          
+          // All real comments should be included (matched ones replace optimistic, unmatched ones are new)
+          // Combine: all real comments + unmatched optimistic comments
+          // Sort by timestamp to maintain order
+          const merged = [...realComments, ...unmatchedOptimistic].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+          
+          return merged;
+        });
       }
 
       // Fetch standalone attachments (not attached to comments)
@@ -374,69 +443,152 @@ export function CommentsModal({
     const textContent = newComment.replace(/<[^>]*>/g, '').trim();
     if (!textContent && selectedFiles.length === 0) return;
 
-    setSubmitting(true);
-    setUploadingFiles(true);
-    try {
-      // First, create the comment
-      const commentRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/comments`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ 
-          comment_text: newComment || '',
-          status_at_comment: statusAtComment ?? null,
-          previous_status: previousStatus ?? null,
-        }), // Send HTML as-is
-      });
+    // Create optimistic comment immediately
+    const tempCommentId = `temp-${Date.now()}`;
+    const optimisticComment: Comment = {
+      id: tempCommentId,
+      comment_text: newComment || '',
+      created_at: new Date().toISOString(),
+      status_at_comment: statusAtComment ?? null,
+      previous_status: previousStatus ?? null,
+      created_by: {
+        email: currentUserEmail,
+      },
+      attachments: selectedFiles.map((file, index) => ({
+        id: `temp-attachment-${Date.now()}-${index}`,
+        file_name: file.name,
+        file_size: file.size,
+        file_type: file.type,
+        uploaded_at: new Date().toISOString(),
+      })),
+    };
 
-      if (!commentRes.ok) {
-        const error = await commentRes.json();
-        throw new Error(error.error || 'Failed to post comment');
-      }
-
-      const comment = await commentRes.json();
-      const commentId = comment.id;
-
-      // Then, upload attachments if any
-      if (selectedFiles.length > 0) {
-        const uploadPromises = selectedFiles.map(async (file) => {
-          const formData = new FormData();
-          formData.append('file', file);
-          formData.append('comment_id', commentId);
-
-          const uploadRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/attachments`, {
-            method: 'POST',
-            credentials: 'include',
-            body: formData,
-          });
-
-          if (!uploadRes.ok) {
-            const error = await uploadRes.json();
-            throw new Error(error.error || `Failed to upload ${file.name}`);
-          }
+    // Add optimistic comment to UI immediately
+    setComments(prev => [...prev, optimisticComment]);
+    setNewComment('');
+    const filesToUpload = [...selectedFiles];
+    setSelectedFiles([]);
+    setHasAddedComment(true);
+    
+    // Notify parent immediately with optimistic comment data for Matrix updates
+    if (onCommentAdded) {
+      onCommentAdded(optimisticComment);
+    }
+    
+    // Close the drawer immediately (don't wait for API call)
+    onClose();
+    
+    // Save in the background
+    (async () => {
+      setSubmitting(true);
+      setUploadingFiles(true);
+      
+      try {
+        // Create the comment via API
+        const commentRes = await fetchWithRateLimit(`/api/epics/${epicId}/criteria/${taskId}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ 
+            comment_text: optimisticComment.comment_text,
+            status_at_comment: statusAtComment ?? null,
+            previous_status: previousStatus ?? null,
+          }),
         });
 
-        await Promise.all(uploadPromises);
-      }
+        if (!commentRes.ok) {
+          const error = await commentRes.json();
+          // Remove optimistic comment on error
+          setComments(prev => prev.filter(c => c.id !== tempCommentId));
+          throw new Error(error.error || 'Failed to post comment');
+        }
 
-      setNewComment('');
-      setSelectedFiles([]);
-      await fetchComments(); // This will also fetch attachments
-      setHasAddedComment(true); // Mark that a comment was added
-      
-      // Always notify parent when comment is added (for refresh)
-      if (onCommentAdded) {
-        onCommentAdded();
+        const comment = await commentRes.json();
+        const commentId = comment.id;
+
+        // Upload attachments if any
+        let attachmentError: string | null = null;
+        if (filesToUpload.length > 0) {
+          try {
+            const uploadPromises = filesToUpload.map(async (file) => {
+              const formData = new FormData();
+              formData.append('file', file);
+              formData.append('comment_id', commentId);
+
+              const uploadRes = await fetch(`/api/epics/${epicId}/criteria/${taskId}/attachments`, {
+                method: 'POST',
+                credentials: 'include',
+                body: formData,
+              });
+
+              if (!uploadRes.ok) {
+                const error = await uploadRes.json();
+                throw new Error(error.error || `Failed to upload ${file.name}`);
+              }
+            });
+
+            await Promise.all(uploadPromises);
+          } catch (uploadError: any) {
+            // Comment was created successfully, but attachment upload failed
+            attachmentError = uploadError.message;
+          }
+        }
+
+        // Fetch attachments for the comment
+        let commentAttachments: Attachment[] = [];
+        try {
+          const attRes = await fetchWithRateLimit(`/api/epics/${epicId}/criteria/${taskId}/comments/${commentId}/attachments`, {
+            credentials: 'include',
+          });
+          if (attRes.ok) {
+            commentAttachments = await attRes.json();
+          }
+        } catch (e) {
+          console.warn('Failed to fetch attachments for comment:', e);
+        }
+
+        // Smoothly replace optimistic comment with real comment from server
+        // This prevents flickering by directly replacing instead of refetching all comments
+        setComments(prev => {
+          // Find and remove the optimistic comment
+          const withoutOptimistic = prev.filter(c => c.id !== tempCommentId);
+          // Add the real comment with attachments
+          const realComment: Comment = {
+            ...comment,
+            attachments: commentAttachments,
+          };
+          // Insert in the correct position (sorted by timestamp)
+          const merged = [...withoutOptimistic, realComment].sort((a, b) => 
+            new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+          );
+          return merged;
+        });
+        
+        // Show warning if attachment upload failed but comment was created
+        if (attachmentError) {
+          // Use a notification instead of alert since drawer is already closed
+          notifications.show({
+            title: 'Attachment upload failed',
+            message: `Comment posted successfully, but failed to upload attachment: ${attachmentError}`,
+            color: 'orange',
+            autoClose: 5000,
+          });
+        }
+      } catch (error: any) {
+        // Comment creation failed - remove optimistic comment
+        setComments(prev => prev.filter(c => c.id !== tempCommentId));
+        // Show error notification since drawer is already closed
+        notifications.show({
+          title: 'Failed to post comment',
+          message: error.message || 'An error occurred while posting the comment',
+          color: 'red',
+          autoClose: 5000,
+        });
+      } finally {
+        setSubmitting(false);
+        setUploadingFiles(false);
       }
-      
-      // Close the modal after adding comment
-      onClose();
-    } catch (error: any) {
-      alert(`Failed to post comment: ${error.message}`);
-    } finally {
-      setSubmitting(false);
-      setUploadingFiles(false);
-    }
+    })();
   };
 
   // Delete comment
@@ -551,7 +703,7 @@ export function CommentsModal({
 
     setUrlPreviewLoading(prev => ({ ...prev, [dataSourceIndex]: true }));
     try {
-      const res = await fetch(`/api/url-preview?url=${encodeURIComponent(url)}`);
+      const res = await fetchWithRateLimit(`/api/url-preview?url=${encodeURIComponent(url)}`);
       if (res.ok) {
         const data = await res.json();
         setUrlPreviews(prev => ({ ...prev, [dataSourceIndex]: data }));
@@ -1311,7 +1463,7 @@ export function CommentsModal({
       }}
       title={
         <div style={{ width: '100%' }}>
-          {requireComment && !hasComment && (
+          {requireComment && (
             <div
               style={{
                 background: 'var(--mantine-color-red-7)',
@@ -1613,7 +1765,9 @@ export function CommentsModal({
                 </Text>
               ) : (
                 <Stack gap="xs">
-                  {comments.map((comment) => (
+                  {comments.map((comment) => {
+                    const isOptimistic = comment.id.startsWith('temp-');
+                    return (
                     <div
                       key={comment.id}
                       style={{
@@ -1621,6 +1775,7 @@ export function CommentsModal({
                         border: '1px solid #e0e0e0',
                         borderRadius: '6px',
                         backgroundColor: '#fafafa',
+                        opacity: isOptimistic ? 0.7 : 1,
                       }}
                     >
                       <Group justify="space-between" gap="xs" mb={4}>
@@ -1671,15 +1826,22 @@ export function CommentsModal({
                             )}
                           </div>
                           <div>
-                            <Text size="xs" fw={600}>
-                              {getUserDisplay(comment)}
-                            </Text>
+                            <Group gap="xs" align="center">
+                              <Text size="xs" fw={600}>
+                                {getUserDisplay(comment)}
+                              </Text>
+                              {isOptimistic && (
+                                <Badge size="xs" variant="light" color="blue">
+                                  Saving...
+                                </Badge>
+                              )}
+                            </Group>
                             <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
                               {formatTimestamp(comment.created_at)}
                             </Text>
                           </div>
                         </div>
-                        {comment.created_by?.email === currentUserEmail && (
+                        {comment.created_by?.email === currentUserEmail && !isOptimistic && (
                           <ActionIcon
                             variant="subtle"
                             color="red"
@@ -1719,7 +1881,8 @@ export function CommentsModal({
                         </Group>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </Stack>
               )}
             </ScrollArea>
@@ -1753,12 +1916,20 @@ export function CommentsModal({
                 <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {requireComment && onSkipComment && (
                     <Button
-                      onClick={() => {
-                        if (onSkipComment) {
-                          onSkipComment();
+                      onClick={async () => {
+                        if (onSkipComment && !skippingComment) {
+                          setSkippingComment(true);
+                          try {
+                            await onSkipComment();
+                          } catch (error) {
+                            console.error('Failed to skip comment:', error);
+                          } finally {
+                            setSkippingComment(false);
+                          }
                         }
                       }}
-                      disabled={submitting || uploadingFiles}
+                      disabled={submitting || uploadingFiles || skippingComment}
+                      loading={skippingComment}
                       size="xs"
                       variant="outline"
                       color="gray"
@@ -1809,7 +1980,7 @@ export function CommentsModal({
               
               <Group justify="space-between" align="center" mt="sm">
                 <Group gap="sm" align="center">
-                  {requireComment && !hasComment && onCancel && (
+                  {requireComment && onCancel && (
                     <Button
                       variant="outline"
                       color="red"

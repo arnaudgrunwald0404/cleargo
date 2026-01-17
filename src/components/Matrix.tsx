@@ -10,6 +10,8 @@ import { CommentsModal } from "./CommentsModal";
 import { DelegationModal, DelegationType } from "./DelegationModal";
 import { createClient } from "@/lib/supabase/client";
 import { canRolesPerform } from "@/lib/permissions";
+import { getCachedUsers } from "@/lib/cache/usersCache";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 type MatrixItem = {
     id: string;
@@ -430,6 +432,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const [editingId, setEditingId] = useState<string | null>(null);
     const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
     const [optimisticStatuses, setOptimisticStatuses] = useState<Record<string, string>>({});
+    const [optimisticComments, setOptimisticComments] = useState<Record<string, { comment_text: string; created_at: string; created_by?: { email: string; first_name?: string; last_name?: string } }>>({});
+    const [optimisticApprovers, setOptimisticApprovers] = useState<Record<string, { email: string; first_name?: string; last_name?: string; avatar_url?: string }>>({});
     const [hoveredAvatarId, setHoveredAvatarId] = useState<string | null>(null);
     const [jiraTicketCounts, setJiraTicketCounts] = useState<Record<string, number>>({}); // key: `${itemId}-${sourceIndex}`
     const [jiraDomain, setJiraDomain] = useState<string | null>(null);
@@ -475,7 +479,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         const fetchJiraData = async () => {
             // Fetch Jira domain from settings
             try {
-                const settingsResponse = await fetch('/api/settings', {
+                const settingsResponse = await fetchWithRateLimit('/api/settings', {
                     credentials: 'include',
                 });
                 if (settingsResponse.ok) {
@@ -622,11 +626,161 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         fetchCurrentUser();
     }, []);
 
+    // Auto-clear optimistic approvers when real data matches
+    useEffect(() => {
+        if (Object.keys(optimisticApprovers).length === 0) return;
+        
+        // Check each optimistic approver against real data
+        const toClear: string[] = [];
+        Object.entries(optimisticApprovers).forEach(([itemId, optimisticApprover]) => {
+            const realItem = items.find(item => item.id === itemId);
+            if (realItem && realItem.approverEmail?.toLowerCase() === optimisticApprover.email.toLowerCase()) {
+                // Real data matches optimistic - safe to clear
+                toClear.push(itemId);
+            }
+        });
+        
+        if (toClear.length > 0) {
+            setOptimisticApprovers(prev => {
+                const next = { ...prev };
+                toClear.forEach(itemId => delete next[itemId]);
+                return next;
+            });
+        }
+    }, [items, optimisticApprovers]);
+
+    // Auto-clear optimistic statuses when real data matches
+    useEffect(() => {
+        if (Object.keys(optimisticStatuses).length === 0) return;
+        
+        // Check each optimistic status against real data
+        const toClear: string[] = [];
+        Object.entries(optimisticStatuses).forEach(([itemId, optimisticStatus]) => {
+            const realItem = items.find(item => item.id === itemId);
+            if (realItem && realItem.status === optimisticStatus) {
+                // Real data matches optimistic - safe to clear
+                toClear.push(itemId);
+            }
+        });
+        
+        if (toClear.length > 0) {
+            setOptimisticStatuses(prev => {
+                const next = { ...prev };
+                toClear.forEach(itemId => delete next[itemId]);
+                return next;
+            });
+        }
+    }, [items, optimisticStatuses]);
+
+    // Auto-clear optimistic comments when real data matches
+    useEffect(() => {
+        if (Object.keys(optimisticComments).length === 0) return;
+        
+        // Check each optimistic comment against real data
+        const toClear: string[] = [];
+        Object.entries(optimisticComments).forEach(([itemId, optimisticComment]) => {
+            const realItem = items.find(item => item.id === itemId);
+            if (realItem && realItem.lastComment) {
+                // Check if real comment matches optimistic (by content and approximate time)
+                const realCommentText = realItem.lastComment.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+                const optimisticCommentText = optimisticComment.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+                const realTime = new Date(realItem.lastComment.created_at).getTime();
+                const optimisticTime = new Date(optimisticComment.created_at).getTime();
+                const timeDiff = Math.abs(realTime - optimisticTime);
+                
+                if (realCommentText === optimisticCommentText && timeDiff < 60000) {
+                    // Real data matches optimistic - safe to clear
+                    toClear.push(itemId);
+                }
+            }
+        });
+        
+        if (toClear.length > 0) {
+            setOptimisticComments(prev => {
+                const next = { ...prev };
+                toClear.forEach(itemId => delete next[itemId]);
+                return next;
+            });
+        }
+    }, [items, optimisticComments]);
+
     // Merge optimistic updates with actual items
-    const itemsWithOptimistic = items.map(item => ({
-        ...item,
-        status: optimisticStatuses[item.id] ?? item.status
-    }));
+    const itemsWithOptimistic = items.map(item => {
+        const optimisticComment = optimisticComments[item.id];
+        const optimisticApprover = optimisticApprovers[item.id];
+        const optimisticStatus = optimisticStatuses[item.id];
+        
+        // Only use optimistic status if real data doesn't match yet
+        let finalStatus = item.status;
+        if (optimisticStatus) {
+            if (item.status === optimisticStatus) {
+                // Real data matches - use real data (optimistic will be cleared by useEffect)
+                finalStatus = item.status;
+            } else {
+                // Real data doesn't match yet - use optimistic
+                finalStatus = optimisticStatus;
+            }
+        }
+        
+        // Only use optimistic approver if real data doesn't match yet
+        let finalApproverEmail = item.approverEmail;
+        let finalApproverInfo = item.approverInfo;
+        if (optimisticApprover) {
+            if (item.approverEmail?.toLowerCase() === optimisticApprover.email.toLowerCase()) {
+                // Real data matches - use real data
+                finalApproverEmail = item.approverEmail;
+                finalApproverInfo = item.approverInfo;
+            } else {
+                // Real data doesn't match yet - use optimistic
+                finalApproverEmail = optimisticApprover.email;
+                finalApproverInfo = {
+                    first_name: optimisticApprover.first_name,
+                    last_name: optimisticApprover.last_name,
+                    avatar_url: optimisticApprover.avatar_url,
+                };
+            }
+        }
+        
+        // Only use optimistic comment if real data doesn't match yet
+        let finalLastComment = item.lastComment;
+        if (optimisticComment) {
+            if (item.lastComment) {
+                // Check if real comment matches optimistic
+                const realCommentText = item.lastComment.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+                const optimisticCommentText = optimisticComment.comment_text.replace(/<[^>]*>/g, '').trim().toLowerCase();
+                const realTime = new Date(item.lastComment.created_at).getTime();
+                const optimisticTime = new Date(optimisticComment.created_at).getTime();
+                const timeDiff = Math.abs(realTime - optimisticTime);
+                
+                if (realCommentText === optimisticCommentText && timeDiff < 60000) {
+                    // Real data matches - use real data
+                    finalLastComment = item.lastComment;
+                } else {
+                    // Real data doesn't match yet - use optimistic
+                    finalLastComment = {
+                        comment_text: optimisticComment.comment_text,
+                        created_at: optimisticComment.created_at,
+                        created_by: optimisticComment.created_by,
+                    };
+                }
+            } else {
+                // No real comment yet - use optimistic
+                finalLastComment = {
+                    comment_text: optimisticComment.comment_text,
+                    created_at: optimisticComment.created_at,
+                    created_by: optimisticComment.created_by,
+                };
+            }
+        }
+        
+        return {
+            ...item,
+            status: finalStatus,
+            approverEmail: finalApproverEmail,
+            approverInfo: finalApproverInfo,
+            lastComment: finalLastComment
+        };
+    });
 
     // First, sort all items by sort_order (as defined in settings)
     const sortedItems = [...itemsWithOptimistic].sort((a, b) => {
@@ -688,6 +842,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         
         // Skip if status hasn't actually changed
         if (oldStatus === newStatus) return;
+        
+        // Optimistically update the status immediately
+        setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
         
         // Comments are required for ANY status change
         // Store pending status change with previous status
@@ -781,6 +938,12 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                 }
                 return next;
             });
+            // Clear any optimistic comments for this item
+            setOptimisticComments(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
             setPendingStatusChange(null);
         }
         handleCloseComments();
@@ -800,6 +963,12 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                 }
                 return next;
             });
+            // Clear any optimistic comments for this item
+            setOptimisticComments(prev => {
+                const next = { ...prev };
+                delete next[itemId];
+                return next;
+            });
             setPendingStatusChange(null);
             
             // Show toast explaining rating wasn't saved
@@ -813,9 +982,28 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         handleCloseComments();
     };
 
-    const handleCommentAdded = async () => {
-        // Refresh the matrix to update comment counts
-        onUpdate();
+    const handleCommentAdded = async (comment?: { id: string; comment_text: string; created_at: string; created_by?: { email: string; first_name?: string; last_name?: string } }) => {
+        // Check if this is an optimistic comment (temp ID)
+        const isOptimistic = comment?.id?.startsWith('temp-');
+        
+        // If comment data is provided, update optimistic comments immediately
+        if (comment && selectedItemForComments) {
+            const itemId = selectedItemForComments.id;
+            setOptimisticComments(prev => ({
+                ...prev,
+                [itemId]: {
+                    comment_text: comment.comment_text,
+                    created_at: comment.created_at,
+                    created_by: comment.created_by,
+                }
+            }));
+        }
+        
+        // Only refresh immediately if not optimistic (real comment from server)
+        // For optimistic comments, we'll refresh after the save completes
+        if (!isOptimistic) {
+            onUpdate();
+        }
         
         // After comment is added, save the pending status change
         if (pendingStatusChange && selectedItemForComments?.id === pendingStatusChange.itemId) {
@@ -823,27 +1011,59 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             const newStatus = pendingStatusChange.status;
             const oldStatus = pendingStatusChange.previousStatus;
             
-            // Optimistically update the UI
-            setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
+            // Status is already optimistically updated, just mark as saving
             setSavingItems(prev => new Set(prev).add(id));
             
-            try {
-                const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newStatus })
-                });
-                
-                let responseData = null;
-                const contentType = res.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    responseData = await res.json();
-                } else {
-                    const text = await res.text();
-                    responseData = { error: text || 'Unknown error' };
-                }
-                
-                if (!res.ok) {
+            // Save in the background (don't await, let it happen async)
+            (async () => {
+                try {
+                    const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    
+                    let responseData = null;
+                    const contentType = res.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        responseData = await res.json();
+                    } else {
+                        const text = await res.text();
+                        responseData = { error: text || 'Unknown error' };
+                    }
+                    
+                    if (!res.ok) {
+                        // Revert optimistic status and comment on error
+                        setOptimisticStatuses(prev => {
+                            const next = { ...prev };
+                            if (oldStatus) {
+                                next[id] = oldStatus;
+                            } else {
+                                delete next[id];
+                            }
+                            return next;
+                        });
+                        setOptimisticComments(prev => {
+                            const next = { ...prev };
+                            delete next[id];
+                            return next;
+                        });
+                        const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                        notifications.show({
+                            title: 'Failed to save status',
+                            message: errorMsg,
+                            color: 'red',
+                            autoClose: 5000,
+                        });
+                    } else {
+                        // Don't clear optimistic updates manually - useEffect will clear when real data matches
+                        setPendingStatusChange(null);
+                        // onUpdate will fetch real data, and useEffect will clear optimistic when it matches
+                        onUpdate();
+                    }
+                } catch (e: any) {
+                    console.error('Failed to update status:', e);
+                    // Revert optimistic updates on error
                     setOptimisticStatuses(prev => {
                         const next = { ...prev };
                         if (oldStatus) {
@@ -853,27 +1073,28 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         }
                         return next;
                     });
-                    const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
-                    throw new Error(errorMsg);
+                    setOptimisticComments(prev => {
+                        const next = { ...prev };
+                        delete next[id];
+                        return next;
+                    });
+                    notifications.show({
+                        title: 'Failed to save status',
+                        message: e.message || 'An error occurred while saving the status',
+                        color: 'red',
+                        autoClose: 5000,
+                    });
+                } finally {
+                    setSavingItems(prev => {
+                        const next = new Set(prev);
+                        next.delete(id);
+                        return next;
+                    });
                 }
-                
-                setOptimisticStatuses(prev => {
-                    const next = { ...prev };
-                    delete next[id];
-                    return next;
-                });
-                setPendingStatusChange(null);
-                onUpdate();
-            } catch (e: any) {
-                console.error('Failed to update status:', e);
-                alert(`Failed to update status: ${e.message || e}`);
-            } finally {
-                setSavingItems(prev => {
-                    const next = new Set(prev);
-                    next.delete(id);
-                    return next;
-                });
-            }
+            })();
+        } else if (!isOptimistic) {
+            // If no pending status change but comment is real (not optimistic), refresh
+            onUpdate();
         }
     };
 
@@ -884,27 +1105,58 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             const newStatus = pendingStatusChange.status;
             const oldStatus = pendingStatusChange.previousStatus;
             
-            // Optimistically update the UI
+            // Optimistically update the UI immediately
             setOptimisticStatuses(prev => ({ ...prev, [id]: newStatus }));
             setSavingItems(prev => new Set(prev).add(id));
+            setPendingStatusChange(null);
             
-            try {
-                const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ status: newStatus })
-                });
-                
-                let responseData = null;
-                const contentType = res.headers.get('content-type');
-                if (contentType && contentType.includes('application/json')) {
-                    responseData = await res.json();
-                } else {
-                    const text = await res.text();
-                    responseData = { error: text || 'Unknown error' };
-                }
-                
-                if (!res.ok) {
+            // Close the drawer immediately (don't wait for API call)
+            handleCloseComments();
+            
+            // Save in the background
+            (async () => {
+                try {
+                    const res = await fetch(`/api/epics/${epicId}/criteria/${id}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    
+                    let responseData = null;
+                    const contentType = res.headers.get('content-type');
+                    if (contentType && contentType.includes('application/json')) {
+                        responseData = await res.json();
+                    } else {
+                        const text = await res.text();
+                        responseData = { error: text || 'Unknown error' };
+                    }
+                    
+                    if (!res.ok) {
+                        // Revert optimistic update on error
+                        setOptimisticStatuses(prev => {
+                            const next = { ...prev };
+                            if (oldStatus) {
+                                next[id] = oldStatus;
+                            } else {
+                                delete next[id];
+                            }
+                            return next;
+                        });
+                        const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                        notifications.show({
+                            title: 'Failed to save status',
+                            message: errorMsg,
+                            color: 'red',
+                            autoClose: 5000,
+                        });
+                    } else {
+                        // Don't clear optimistic update manually - useEffect will clear when real data matches
+                        // onUpdate will fetch real data, and useEffect will clear optimistic when it matches
+                        onUpdate();
+                    }
+                } catch (e: any) {
+                    console.error('Failed to update status:', e);
+                    // Revert optimistic update on error
                     setOptimisticStatuses(prev => {
                         const next = { ...prev };
                         if (oldStatus) {
@@ -914,28 +1166,20 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         }
                         return next;
                     });
-                    const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
-                    throw new Error(errorMsg);
+                    notifications.show({
+                        title: 'Failed to save status',
+                        message: e.message || 'An error occurred while saving the status',
+                        color: 'red',
+                        autoClose: 5000,
+                    });
+                } finally {
+                    setSavingItems(prev => {
+                        const next = new Set(prev);
+                        next.delete(id);
+                        return next;
+                    });
                 }
-                
-                setOptimisticStatuses(prev => {
-                    const next = { ...prev };
-                    delete next[id];
-                    return next;
-                });
-                setPendingStatusChange(null);
-                handleCloseComments(); // Close the modal
-                onUpdate();
-            } catch (e: any) {
-                console.error('Failed to update status:', e);
-                alert(`Failed to update status: ${e.message || e}`);
-            } finally {
-                setSavingItems(prev => {
-                    const next = new Set(prev);
-                    next.delete(id);
-                    return next;
-                });
-            }
+            })();
         }
     };
 
@@ -952,48 +1196,113 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const handleDelegate = async (delegationType: DelegationType, newApproverEmail: string) => {
         if (!selectedItemForDelegation) return;
         
-        try {
-            const res = await fetch(`/api/epics/${epicId}/delegate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    delegationType,
-                    newApproverEmail,
-                    taskId: selectedItemForDelegation.id,
-                    category: selectedItemForDelegation.criterion.category,
-                    isGate: selectedItemForDelegation.criterion.gate,
-                    taskLabel: selectedItemForDelegation.criterion.label,
-                }),
-            });
-
-            if (!res.ok) {
-                const error = await res.json();
-                throw new Error(error.error || 'Failed to delegate');
-            }
-
-            handleCloseDelegation();
-            
-            // Show success toast with Slack message info
-            notifications.show({
-                title: 'Delegation successful',
-                message: `Task has been delegated to ${newApproverEmail}. A Slack notification has been sent to notify them.`,
-                color: 'green',
-                autoClose: 5000,
-            });
-            
-            // Force refresh to update approver info
-            onUpdate();
-        } catch (error) {
-            console.error('Delegation error:', error);
-            notifications.show({
-                title: 'Delegation failed',
-                message: error instanceof Error ? error.message : 'Failed to delegate task',
-                color: 'red',
-                autoClose: 5000,
-            });
-            throw error;
+        // Get user info from cache for optimistic update (synchronous)
+        const cachedUsers = getCachedUsers();
+        let newApprover = cachedUsers?.find(u => u.email.toLowerCase() === newApproverEmail.toLowerCase());
+        
+        // If not in cache, try to fetch quickly (but don't wait - show email immediately)
+        if (!newApprover) {
+            // Fetch user info in background, but update optimistically with email first
+            fetch(`/api/users/by-email?emails=${encodeURIComponent(newApproverEmail)}`)
+                .then(res => res.json())
+                .then(userMap => {
+                    const userInfo = userMap[newApproverEmail.toLowerCase()];
+                    if (userInfo) {
+                        // Update optimistic approver with fetched info
+                        setOptimisticApprovers(prev => ({
+                            ...prev,
+                            [selectedItemForDelegation.id]: {
+                                email: newApproverEmail,
+                                first_name: userInfo.first_name,
+                                last_name: userInfo.last_name,
+                                avatar_url: userInfo.avatar_url,
+                            }
+                        }));
+                    }
+                })
+                .catch(err => console.warn('Failed to fetch user info:', err));
         }
+        
+        // Determine which items to update optimistically based on delegation type
+        const itemsToUpdate: string[] = [];
+        if (delegationType === 'SINGLE_TASK') {
+            itemsToUpdate.push(selectedItemForDelegation.id);
+        } else {
+            // For other types, we'll update all matching items optimistically
+            // The backend will handle the actual delegation logic
+            itemsToUpdate.push(selectedItemForDelegation.id);
+        }
+        
+        // Optimistically update approver info immediately (synchronous state update)
+        // Show email immediately, name/avatar will come from cache or background fetch
+        itemsToUpdate.forEach(itemId => {
+            setOptimisticApprovers(prev => ({
+                ...prev,
+                [itemId]: {
+                    email: newApproverEmail,
+                    first_name: newApprover?.first_name,
+                    last_name: newApprover?.last_name,
+                    avatar_url: newApprover?.avatar_url,
+                }
+            }));
+        });
+        
+        // Close modal immediately
+        handleCloseDelegation();
+        
+        // Save in background
+        (async () => {
+            try {
+                const res = await fetchWithRateLimit(`/api/epics/${epicId}/delegate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        delegationType,
+                        newApproverEmail,
+                        taskId: selectedItemForDelegation.id,
+                        category: selectedItemForDelegation.criterion.category,
+                        isGate: selectedItemForDelegation.criterion.gate,
+                        taskLabel: selectedItemForDelegation.criterion.label,
+                    }),
+                });
+
+                if (!res.ok) {
+                    const error = await res.json();
+                    throw new Error(error.error || 'Failed to delegate');
+                }
+
+                // Show success toast with Slack message info
+                notifications.show({
+                    title: 'Delegation successful',
+                    message: `Task has been delegated to ${newApproverEmail}. A Slack notification has been sent to notify them.`,
+                    color: 'green',
+                    autoClose: 5000,
+                });
+                
+                // Force refresh to update approver info
+                // Don't clear optimistic approver manually - the useEffect will clear it when real data matches
+                onUpdate();
+            } catch (error) {
+                console.error('Delegation error:', error);
+                
+                // Revert optimistic updates on error
+                itemsToUpdate.forEach(itemId => {
+                    setOptimisticApprovers(prev => {
+                        const next = { ...prev };
+                        delete next[itemId];
+                        return next;
+                    });
+                });
+                
+                notifications.show({
+                    title: 'Delegation failed',
+                    message: error instanceof Error ? error.message : 'Failed to delegate task',
+                    color: 'red',
+                    autoClose: 5000,
+                });
+            }
+        })();
     };
 
     const isCollapsed = (cat: string) => collapsedCategories.has(cat);
@@ -1350,20 +1659,26 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                             className="text-left w-full hover:text-blue-600 transition-colors group"
                                                             title="View/add comments"
                                                         >
-                                                            <div 
-                                                                className="text-xs text-gray-600 line-clamp-2"
-                                                                style={{
-                                                                    wordBreak: "break-word",
-                                                                }}
-                                                            >
-                                                                {(() => {
-                                                                    // Strip HTML tags and get plain text preview
-                                                                    const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
-                                                                    const preview = textContent.length > 100 
-                                                                        ? textContent.substring(0, 100) + '...'
-                                                                        : textContent;
-                                                                    return preview;
-                                                                })()}
+                                                            <div className="flex items-center gap-1.5">
+                                                                <div 
+                                                                    className="text-xs text-gray-600 line-clamp-2 flex-1"
+                                                                    style={{
+                                                                        wordBreak: "break-word",
+                                                                        opacity: optimisticComments[item.id] ? 0.7 : 1,
+                                                                    }}
+                                                                >
+                                                                    {(() => {
+                                                                        // Strip HTML tags and get plain text preview
+                                                                        const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
+                                                                        const preview = textContent.length > 100 
+                                                                            ? textContent.substring(0, 100) + '...'
+                                                                            : textContent;
+                                                                        return preview;
+                                                                    })()}
+                                                                </div>
+                                                                {optimisticComments[item.id] && (
+                                                                    <span className="text-xs text-blue-500 font-medium flex-shrink-0">Saving...</span>
+                                                                )}
                                                             </div>
                                                             <div className="text-xs text-gray-400 mt-1">
                                                                 {(() => {
@@ -1405,7 +1720,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     >
                                                         <IconMessageCircle className="w-4 h-4" />
                                                         {(item.commentCount || 0) > 0 && (
-                                                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-semibold">
                                                                 {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
                                                             </span>
                                                         )}
@@ -1509,6 +1824,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             else if (diffDays < 7) timeAgo = `${diffDays}d ago`;
                                             else timeAgo = date.toLocaleDateString();
                                             
+                                            const isOptimistic = optimisticComments[item.id];
+                                            
                                             return (
                                                 <button
                                                     onClick={(e) => {
@@ -1517,8 +1834,16 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     }}
                                                     className="text-left w-full hover:text-blue-600 transition-colors"
                                                 >
-                                                    <div className="text-xs text-gray-600 line-clamp-2 break-words">
-                                                        {preview}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div 
+                                                            className="text-xs text-gray-600 line-clamp-2 break-words flex-1"
+                                                            style={{ opacity: isOptimistic ? 0.7 : 1 }}
+                                                        >
+                                                            {preview}
+                                                        </div>
+                                                        {isOptimistic && (
+                                                            <span className="text-xs text-blue-500 font-medium flex-shrink-0">Saving...</span>
+                                                        )}
                                                     </div>
                                                     <div className="text-xs text-gray-400 mt-1">{timeAgo}</div>
                                                 </button>
@@ -1785,7 +2110,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         >
                                                             <IconMessageCircle className="w-5 h-5" />
                                                             {(item.commentCount || 0) > 0 && (
-                                                                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
+                                                                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-semibold">
                                                                     {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
                                                                 </span>
                                                             )}

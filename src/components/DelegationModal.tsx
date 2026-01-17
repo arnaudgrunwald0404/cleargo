@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Group, Radio, Stack, Text, TextInput, Avatar, ScrollArea } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
 import { IconSearch } from '@tabler/icons-react';
+import { getCachedUsers, setCachedUsers } from '@/lib/cache/usersCache';
 
 export type DelegationType =
   | 'SINGLE_TASK'
@@ -57,30 +58,61 @@ export function DelegationModal({
   const [submitting, setSubmitting] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-  // Fetch users when modal opens
+  // Load users from cache immediately, then refresh in background
   useEffect(() => {
     if (opened) {
-      fetchUsers();
+      // Load from cache immediately for instant display
+      const cachedUsers = getCachedUsers();
+      if (cachedUsers && cachedUsers.length > 0) {
+        setUsers(cachedUsers);
+        setLoadingUsers(false);
+        // Still fetch fresh data in background to update cache
+        fetchUsers();
+      } else {
+        // No cache, show loading and fetch
+        setLoadingUsers(true);
+        fetchUsers();
+      }
+    } else {
+      // Reset when modal closes
+      setSearchQuery('');
+      setSelectedUser(null);
     }
   }, [opened]);
 
   const fetchUsers = async () => {
-    setLoadingUsers(true);
+    // Don't show loading if we already have users from cache
+    const hadCachedUsers = users.length > 0;
+    
     try {
       const res = await fetch('/api/users', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         // API returns { users: [...] }, extract the users array
         const usersArray = Array.isArray(data) ? data : (data.users || []);
-        setUsers(Array.isArray(usersArray) ? usersArray : []);
+        const usersList = Array.isArray(usersArray) ? usersArray : [];
+        setUsers(usersList);
+        // Cache the users for future use
+        setCachedUsers(usersList);
       } else {
-        setUsers([]);
+        // If fetch fails but we have cached users, keep using them
+        const cachedUsers = getCachedUsers();
+        if (!cachedUsers || cachedUsers.length === 0) {
+          setUsers([]);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch users:', error);
-      setUsers([]); // Ensure users is always an array
+      // If fetch fails but we have cached users, keep using them
+      const cachedUsers = getCachedUsers();
+      if (!cachedUsers || cachedUsers.length === 0) {
+        setUsers([]);
+      }
     } finally {
-      setLoadingUsers(false);
+      // Only set loading to false if we weren't already showing cached users
+      if (!hadCachedUsers) {
+        setLoadingUsers(false);
+      }
     }
   };
 
@@ -100,20 +132,35 @@ export function DelegationModal({
       return;
     }
 
-    setSubmitting(true);
-    try {
-      await onDelegate(delegationType, selectedUser.email);
-      onClose();
-      // Reset state
-      setDelegationType('SINGLE_TASK');
-      setSelectedUser(null);
-      setSearchQuery('');
-      setNewApproverEmail('');
-    } catch (error: any) {
-      alert(`Failed to delegate: ${error.message || error}`);
-    } finally {
-      setSubmitting(false);
-    }
+    // Close modal immediately (optimistic)
+    const userToDelegate = selectedUser;
+    const typeToDelegate = delegationType;
+    onClose();
+    
+    // Reset state
+    setDelegationType('SINGLE_TASK');
+    setSelectedUser(null);
+    setSearchQuery('');
+    setNewApproverEmail('');
+    
+    // Save in background
+    (async () => {
+      setSubmitting(true);
+      try {
+        await onDelegate(typeToDelegate, userToDelegate.email);
+      } catch (error: any) {
+        // Show error notification since modal is already closed
+        const { notifications } = await import('@mantine/notifications');
+        notifications.show({
+          title: 'Delegation failed',
+          message: error.message || 'Failed to delegate task',
+          color: 'red',
+          autoClose: 5000,
+        });
+      } finally {
+        setSubmitting(false);
+      }
+    })();
   };
 
   const getDelegationDescription = (type: DelegationType): string => {

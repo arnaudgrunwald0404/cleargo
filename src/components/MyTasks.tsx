@@ -6,6 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { createClient } from "@/lib/supabase/client";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 type MyItem = {
     id: string;
@@ -47,6 +48,7 @@ function StatusTrafficLight({
     isSaving: boolean;
 }) {
     const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
+    const [isUpdating, setIsUpdating] = useState(false);
     
     const lights = [
         { 
@@ -73,8 +75,9 @@ function StatusTrafficLight({
     ];
 
     const handleStatusChange = async (newStatus: string) => {
-        if (newStatus === status) return;
+        if (newStatus === status || isUpdating) return;
         
+        setIsUpdating(true);
         setOptimisticStatus(newStatus);
         
         try {
@@ -86,6 +89,59 @@ function StatusTrafficLight({
             
             if (!res.ok) {
                 const errorData = await res.json().catch(() => ({}));
+                
+                // Handle rate limiting (429) with retry logic
+                if (res.status === 429) {
+                    const resetHeader = res.headers.get('X-RateLimit-Reset');
+                    let retryAfter = 5000; // Default 5 seconds
+                    
+                    if (resetHeader) {
+                        try {
+                            const resetTime = new Date(resetHeader).getTime();
+                            const now = Date.now();
+                            const timeUntilReset = resetTime - now;
+                            if (timeUntilReset > 0 && timeUntilReset < 60000) {
+                                retryAfter = timeUntilReset + 500; // Add 500ms buffer
+                            }
+                        } catch (e) {
+                            console.warn('Failed to parse X-RateLimit-Reset header:', e);
+                        }
+                    }
+                    
+                    // Show notification and retry after delay
+                    notifications.show({
+                        title: 'Rate limit exceeded',
+                        message: `Too many requests. Retrying in ${Math.ceil(retryAfter / 1000)} seconds...`,
+                        color: 'yellow',
+                        autoClose: retryAfter,
+                    });
+                    
+                    // Wait and retry
+                    await new Promise(resolve => setTimeout(resolve, retryAfter));
+                    
+                    // Retry the request
+                    const retryRes = await fetchWithRateLimit(`/api/epics/${epicId}/criteria/${itemId}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ status: newStatus })
+                    });
+                    
+                    if (!retryRes.ok) {
+                        const retryErrorData = await retryRes.json().catch(() => ({}));
+                        throw new Error(retryErrorData.error || 'Failed to update status after retry');
+                    }
+                    
+                    // Success after retry
+                    setOptimisticStatus(null);
+                    if (typeof window !== 'undefined') {
+                        localStorage.removeItem(getCacheKey(false));
+                        localStorage.removeItem(getCacheKey(true));
+                    }
+                    onStatusUpdate();
+                    return;
+                }
+                
+                // For other errors, throw normally
                 throw new Error(errorData.error || 'Failed to update status');
             }
             
@@ -99,8 +155,15 @@ function StatusTrafficLight({
             onStatusUpdate();
         } catch (error: any) {
             console.error('Failed to update status:', error);
-            alert(`Failed to update status: ${error.message}`);
+            notifications.show({
+                title: 'Update failed',
+                message: error.message || 'Failed to update status. Please try again.',
+                color: 'red',
+                autoClose: 5000,
+            });
             setOptimisticStatus(null);
+        } finally {
+            setIsUpdating(false);
         }
     };
 
@@ -131,28 +194,28 @@ function StatusTrafficLight({
                         }}
                     >
                         <button
-                            onClick={() => !isSaving && handleStatusChange(light.value)}
-                            disabled={isSaving}
+                            onClick={() => !isSaving && !isUpdating && handleStatusChange(light.value)}
+                            disabled={isSaving || isUpdating}
                             style={{
                                 width: 24,
                                 height: 24,
                                 borderRadius: '50%',
                                 border: isSelected ? `3px solid ${light.color}` : '2px solid #e5e7eb',
                                 backgroundColor: isSelected ? light.color : light.greyColor,
-                                cursor: isSaving ? 'not-allowed' : 'pointer',
+                                cursor: (isSaving || isUpdating) ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.2s ease',
-                                opacity: isSaving ? 0.5 : 1,
+                                opacity: (isSaving || isUpdating) ? 0.5 : 1,
                                 boxShadow: isSelected ? `0 0 8px ${light.color}66` : 'none',
                                 transform: isSelected ? 'scale(1.1)' : 'scale(1)',
                             }}
                             onMouseEnter={(e) => {
-                                if (!isSaving && !isSelected) {
+                                if (!isSaving && !isUpdating && !isSelected) {
                                     e.currentTarget.style.backgroundColor = `${light.color}40`;
                                     e.currentTarget.style.transform = 'scale(1.05)';
                                 }
                             }}
                             onMouseLeave={(e) => {
-                                if (!isSaving && !isSelected) {
+                                if (!isSaving && !isUpdating && !isSelected) {
                                     e.currentTarget.style.backgroundColor = light.greyColor;
                                     e.currentTarget.style.transform = 'scale(1)';
                                 }
@@ -454,7 +517,7 @@ export function MyTasks() {
 
     async function fetchReleaseSchedule() {
         try {
-            const res = await fetch("/api/releases", { credentials: 'include' });
+            const res = await fetchWithRateLimit("/api/releases", { credentials: 'include' });
             if (res.ok) {
                 const data = await res.json();
                 const schedule = data || [];
@@ -691,7 +754,7 @@ export function MyTasks() {
         if (!selectedItemForDelegation) return;
         
         try {
-            const res = await fetch(`/api/epics/${selectedItemForDelegation.launch.id}/delegate`, {
+            const res = await fetchWithRateLimit(`/api/epics/${selectedItemForDelegation.launch.id}/delegate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
