@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import {
   Button,
   Stack,
@@ -111,7 +112,7 @@ export function SuccessConfigForm({
     const fetchMetrics = async () => {
       setLoadingMetrics(true);
       try {
-        const res = await fetch('/api/settings/success-measurement/metrics');
+        const res = await fetchWithRateLimit('/api/settings/success-measurement/metrics');
         if (res.ok) {
           const data = await res.json();
           setAvailableMetrics(Array.isArray(data) ? data : []);
@@ -157,7 +158,7 @@ export function SuccessConfigForm({
     const fetchPendoSegments = async () => {
       setLoadingPendoSegments(true);
       try {
-        const res = await fetch('/api/settings/success-measurement/pendo/segments');
+        const res = await fetchWithRateLimit('/api/settings/success-measurement/pendo/segments');
         if (!res.ok) {
           if (res.status === 401 || res.status === 403) {
             setPendoSegmentsWarning(
@@ -379,7 +380,7 @@ export function SuccessConfigForm({
           payload.manual_label = newSelections[index].manualLabel;
         }
 
-        const res = await fetch(`/api/epics/${epicId}/success/metrics`, {
+        const res = await fetchWithRateLimit(`/api/epics/${epicId}/success/metrics`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -1010,7 +1011,7 @@ export function SuccessConfigForm({
           currentApproverEmail={pmOwner.email || ''}
           onDelegate={async (delegationType: DelegationType, newApproverEmail: string) => {
             try {
-              const res = await fetch(`/api/epics/${epicId}/delegate`, {
+              const res = await fetchWithRateLimit(`/api/epics/${epicId}/delegate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

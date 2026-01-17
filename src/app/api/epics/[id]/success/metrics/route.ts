@@ -135,10 +135,8 @@ export async function POST(
 
     // Auto-generate scorecards for benchmark horizon days if epic is launched and has config
     try {
-      const { generateScorecardsForBenchmarkHorizons, generateScorecardsForRange } = await import('@/lib/services/scorecardGenerationService');
-      await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
-        console.warn('Failed to generate benchmark-horizon scorecards:', err);
-      });
+      const { generateScorecardsForRange } = await import('@/lib/services/scorecardGenerationService');
+      // Note: Benchmark-based scorecard generation has been removed
 
       // Also kick off backfill from launch-90 to min(launch+120, today)
       if (epic.target_launch_date) {

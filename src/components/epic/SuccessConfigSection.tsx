@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from 'react';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import {
   Card,
   Group,
@@ -114,7 +115,7 @@ export function SuccessConfigSection({
     }
 
     try {
-      const res = await fetch(`/api/epics/${epicId}/success/config/lock`, {
+      const res = await fetchWithRateLimit(`/api/epics/${epicId}/success/config/lock`, {
         method: 'POST',
       });
 
@@ -148,7 +149,6 @@ export function SuccessConfigSection({
         epicId={epicId}
         epicTier={epicTier}
         initialData={config ? {
-          benchmark_id: config.benchmark_id ?? undefined,
           post_launch_owner: config.post_launch_owner,
         } : undefined}
         onSubmit={handleSubmit}
@@ -603,7 +603,7 @@ export function SuccessConfigSection({
           currentApproverEmail={config.delegated_post_launch_owner_details?.email || config.post_launch_owner_details?.email || ''}
           onDelegate={async (delegationType: DelegationType, newApproverEmail: string) => {
             try {
-              const res = await fetch(`/api/epics/${epicId}/delegate`, {
+              const res = await fetchWithRateLimit(`/api/epics/${epicId}/delegate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -654,7 +654,6 @@ export function SuccessConfigSection({
         isSubmitting={submitting}
         epicTier={epicTier}
         epicId={epicId}
-        onBenchmarkSelected={onRefresh}
       />
 
       <ThresholdOverrideEditor

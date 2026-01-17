@@ -115,20 +115,7 @@ export async function POST(
       );
     }
 
-    // Validate benchmark exists and matches epic tier if provided
-    if (parsed.data.benchmark_id) {
-      const { getBenchmarkById } = await import('@/lib/services/successMeasurementService');
-      const benchmark = await getBenchmarkById(parsed.data.benchmark_id);
-      if (!benchmark) {
-        return NextResponse.json({ error: 'Benchmark not found' }, { status: 404 });
-      }
-      if (benchmark.launch_tier !== epic.tier) {
-        return NextResponse.json(
-          { error: `Benchmark tier (${benchmark.launch_tier}) does not match epic tier (${epic.tier})` },
-          { status: 400 }
-        );
-      }
-    }
+    // Note: Benchmark validation removed as benchmarks are no longer used
 
     // Validate post-launch owner exists if provided (otherwise will be auto-resolved to PM)
     if (parsed.data.post_launch_owner) {
@@ -154,17 +141,7 @@ export async function POST(
       ...(parsed.data.post_launch_owner ? { post_launch_owner: parsed.data.post_launch_owner } : {}),
     });
 
-    // Auto-generate scorecards for benchmark horizon days if epic is launched
-    try {
-      const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
-      await generateScorecardsForBenchmarkHorizons(epicId).catch((err) => {
-        // Log but don't fail the request if scorecard generation fails
-        console.warn('Failed to auto-generate scorecards after config creation:', err);
-      });
-    } catch (error) {
-      // Ignore scorecard generation errors - config creation should still succeed
-      console.warn('Error attempting to auto-generate scorecards:', error);
-    }
+    // Note: Benchmark-based scorecard generation has been removed
 
     return NextResponse.json(config, { status: 201 });
   } catch (error: any) {
@@ -239,20 +216,7 @@ export async function PATCH(
       );
     }
 
-    // Validate benchmark if provided
-    if (parsed.data.benchmark_id) {
-      const { getBenchmarkById } = await import('@/lib/services/successMeasurementService');
-      const benchmark = await getBenchmarkById(parsed.data.benchmark_id);
-      if (!benchmark) {
-        return NextResponse.json({ error: 'Benchmark not found' }, { status: 404 });
-      }
-      if (benchmark.launch_tier !== epic.tier) {
-        return NextResponse.json(
-          { error: `Benchmark tier (${benchmark.launch_tier}) does not match epic tier (${epic.tier})` },
-          { status: 400 }
-        );
-      }
-    }
+    // Note: Benchmark validation removed as benchmarks are no longer used
 
     // Validate post-launch owner if provided
     if (parsed.data.post_launch_owner) {
@@ -269,19 +233,7 @@ export async function PATCH(
 
     const config = await updateEpicSuccessConfig(epicId, parsed.data);
 
-    // Auto-generate scorecards for benchmark horizon days if benchmark was updated and epic is launched
-    if (parsed.data.benchmark_id) {
-      try {
-        const { generateScorecardsForBenchmarkHorizons } = await import('@/lib/services/scorecardGenerationService');
-        await generateScorecardsForBenchmarkHorizons(epicId).catch((err: any) => {
-          // Log but don't fail the request if scorecard generation fails
-          console.warn('Failed to auto-generate scorecards after config update:', err);
-        });
-      } catch (error) {
-        // Ignore scorecard generation errors - config update should still succeed
-        console.warn('Error attempting to auto-generate scorecards:', error);
-      }
-    }
+    // Note: Benchmark-based scorecard generation has been removed
 
     return NextResponse.json(config);
   } catch (error: any) {
