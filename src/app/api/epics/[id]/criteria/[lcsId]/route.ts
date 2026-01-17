@@ -103,7 +103,7 @@ export async function PATCH(
         // #endregion
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
-        await recomputeEpicReadiness(id);
+        await recomputeEpicReadiness(id, appUser.id);
 
         return NextResponse.json(data);
     } catch (error: any) {

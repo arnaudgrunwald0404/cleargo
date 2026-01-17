@@ -136,34 +136,38 @@ export async function POST(
         const epic = criterionStatus.epic as any;
         const criterion = criterionStatus.criterion as any;
 
-        // Get current user's display name
-        const currentUserName = appUser.name || 
-          (appUser.first_name && appUser.last_name ? `${appUser.first_name} ${appUser.last_name}` : 
-           appUser.first_name || appUser.last_name || userEmail);
+        // Only send notification if the commenter is not the decision owner
+        const isOwner = decisionOwner.email?.toLowerCase() === userEmail.toLowerCase();
+        if (!isOwner) {
+          // Get current user's display name
+          const currentUserName = appUser.name || 
+            (appUser.first_name && appUser.last_name ? `${appUser.first_name} ${appUser.last_name}` : 
+             appUser.first_name || appUser.last_name || userEmail);
 
-        // Send notification (even if the approver is the one who added the comment)
-        await sendSlackNotification({
-          type: 'criterion_comment_or_attachment',
-          priority: 'medium',
-          recipient: {
-            id: decisionOwner.id,
-            email: decisionOwner.email,
-            slack_handle: decisionOwner.slack_handle || undefined,
-            name: decisionOwner.name || 
-              (decisionOwner.first_name && decisionOwner.last_name ? `${decisionOwner.first_name} ${decisionOwner.last_name}` : 
-               decisionOwner.first_name || decisionOwner.last_name || decisionOwner.email),
-          },
-          launch_id: epicId,
-          metadata: {
-            epic_name: epic.name,
-            epic_id: epic.id,
-            criterion_label: criterion.label,
-            criterion_status_id: lcsId,
-            added_by_name: currentUserName,
-            has_comment: true,
-            has_attachment: false,
-          },
-        });
+          // Send notification to the decision owner
+          await sendSlackNotification({
+            type: 'criterion_comment_or_attachment',
+            priority: 'medium',
+            recipient: {
+              id: decisionOwner.id,
+              email: decisionOwner.email,
+              slack_handle: decisionOwner.slack_handle || undefined,
+              name: decisionOwner.name || 
+                (decisionOwner.first_name && decisionOwner.last_name ? `${decisionOwner.first_name} ${decisionOwner.last_name}` : 
+                 decisionOwner.first_name || decisionOwner.last_name || decisionOwner.email),
+            },
+            launch_id: epicId,
+            metadata: {
+              epic_name: epic.name,
+              epic_id: epic.id,
+              criterion_label: criterion.label,
+              criterion_status_id: lcsId,
+              added_by_name: currentUserName,
+              has_comment: true,
+              has_attachment: false,
+            },
+          });
+        }
       }
     } catch (notificationError: any) {
       // Log error but don't fail the comment creation
