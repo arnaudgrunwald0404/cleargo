@@ -219,6 +219,18 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                     </li>
                                     <li>
                                         <Link
+                                            href="/admin/settings/performance"
+                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
+                                                isActive("/admin/settings/performance")
+                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                    : "text-gray-700 hover:bg-gray-50"
+                                            }`}
+                                        >
+                                            Performance
+                                        </Link>
+                                    </li>
+                                    <li>
+                                        <Link
                                             href="/admin/settings/integrations/aha"
                                             className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
                                                 isIntegrationsExpanded

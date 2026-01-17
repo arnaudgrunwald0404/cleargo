@@ -169,11 +169,11 @@ export default function PendoIntegrationSection() {
             ...settings,
             pendo_app_names: updated,
           });
-          console.log('[PendoIntegrationSection] Save successful, returned settings:', saved?.pendo_app_names);
+          console.log('[PendoIntegrationSection] Save successful, returned settings:', (saved as any)?.pendo_app_names);
           
           // Update local state with the saved values to ensure consistency
-          if (saved?.pendo_app_names) {
-            setAppNameOverrides(saved.pendo_app_names);
+          if ((saved as any)?.pendo_app_names) {
+            setAppNameOverrides((saved as any).pendo_app_names);
           }
           
           // Show success notification (only once, not on every keystroke)
