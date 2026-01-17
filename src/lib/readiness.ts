@@ -10,7 +10,7 @@ import {
     type CriterionInput 
 } from '@/lib/readiness-scoring';
 
-export async function recomputeEpicReadiness(epicId: string) {
+export async function recomputeEpicReadiness(epicId: string, excludeUserId?: string) {
     const supabase = createClient();
 
     // 1. Fetch epic data and criteria statuses
@@ -112,7 +112,7 @@ export async function recomputeEpicReadiness(epicId: string) {
             readinessStatus = 'NO_GO';
             break;
         case 'AT_RISK':
-            readinessStatus = 'CONDITIONAL_GO'; // Map AT_RISK to CONDITIONAL_GO for now
+            readinessStatus = 'NO_GO'; // Map AT_RISK to NO_GO (readiness < 70%)
             break;
         case 'NOT_EVALUATED':
         default:
@@ -148,6 +148,33 @@ export async function recomputeEpicReadiness(epicId: string) {
         })
         .eq('id', epicId);
 
+    // Helper function to get epic owner recipient (if not excluded)
+    const getOwnerRecipient = async (ownerEmail: string | null | undefined) => {
+        if (!ownerEmail) return undefined;
+        
+        const { syncUserSlackHandle } = await import('@/lib/slack/notifications');
+        await syncUserSlackHandle(ownerEmail).catch(console.error);
+        
+        const { data: ownerUser } = await supabase
+            .from('app_user')
+            .select('id, email, slack_handle, first_name, last_name, name')
+            .eq('email', ownerEmail)
+            .single();
+
+        if (!ownerUser || ownerUser.id === excludeUserId) {
+            return undefined;
+        }
+
+        return {
+            id: ownerUser.id,
+            email: ownerUser.email,
+            slack_handle: ownerUser.slack_handle || undefined,
+            name: ownerUser.name || 
+                (ownerUser.first_name && ownerUser.last_name ? `${ownerUser.first_name} ${ownerUser.last_name}` : 
+                 ownerUser.first_name || ownerUser.last_name || ownerUser.email),
+        };
+    };
+
     // 6. Send Notifications if changed
     if (epic.readiness_status && epic.readiness_status !== readinessStatus) {
         const metadata = {
@@ -157,14 +184,21 @@ export async function recomputeEpicReadiness(epicId: string) {
             epicUrl: epic.console_url || `http://localhost:3000/epics/${epic.id}`
         };
 
-        await sendSlackNotification({
-            type: 'launch_status_change',
-            priority: 'high',
-            launch_id: epic.id,
-            metadata
-        }).catch(console.error);
+        const ownerRecipient = await getOwnerRecipient(epic.owner_email);
 
-        if (epic.owner_email) {
+        // Send Slack notification to epic owner (if not the person who made the change)
+        if (ownerRecipient) {
+            await sendSlackNotification({
+                type: 'launch_status_change',
+                priority: 'high',
+                recipient: ownerRecipient,
+                launch_id: epic.id,
+                metadata
+            }).catch(console.error);
+        }
+
+        // Send email notification to epic owner (only if they're not the person who made the change)
+        if (epic.owner_email && ownerRecipient) {
             await sendEmailNotification({
                 type: 'launch_status_change',
                 recipientEmail: epic.owner_email,
@@ -181,14 +215,21 @@ export async function recomputeEpicReadiness(epicId: string) {
             reason: "Readiness score dropped or launch date approaching with unresolved items."
         };
 
-        await sendSlackNotification({
-            type: 'launch_risk_alert',
-            priority: 'high',
-            launch_id: epic.id,
-            metadata
-        }).catch(console.error);
+        const ownerRecipient = await getOwnerRecipient(epic.owner_email);
 
-        if (epic.owner_email) {
+        // Send Slack notification to epic owner (if not the person who made the change)
+        if (ownerRecipient) {
+            await sendSlackNotification({
+                type: 'launch_risk_alert',
+                priority: 'high',
+                recipient: ownerRecipient,
+                launch_id: epic.id,
+                metadata
+            }).catch(console.error);
+        }
+
+        // Send email notification to epic owner (only if they're not the person who made the change)
+        if (epic.owner_email && ownerRecipient) {
             await sendEmailNotification({
                 type: 'launch_risk_alert',
                 recipientEmail: epic.owner_email,

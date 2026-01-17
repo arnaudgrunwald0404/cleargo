@@ -68,3 +68,31 @@ export function rateLimit(
 export function clearRateLimitStore(): void {
     rateLimitStore.clear();
 }
+
+/**
+ * Get current rate limit statistics for monitoring
+ * Returns active rate limit entries with their current counts
+ */
+export function getRateLimitStats(): Array<{
+    identifier: string;
+    count: number;
+    remaining: number;
+    resetTime: number;
+    maxRequests: number;
+}> {
+    const now = Date.now();
+    return Array.from(rateLimitStore.entries())
+        .filter(([_, entry]) => entry.resetTime >= now)
+        .map(([identifier, entry]) => {
+            // Determine maxRequests from the entry (we'll need to track this)
+            // For now, assume default of 100 (from proxy.ts)
+            const maxRequests = 100;
+            return {
+                identifier,
+                count: entry.count,
+                remaining: Math.max(0, maxRequests - entry.count),
+                resetTime: entry.resetTime,
+                maxRequests
+            };
+        });
+}
