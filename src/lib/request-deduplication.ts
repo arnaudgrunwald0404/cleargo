@@ -6,6 +6,7 @@
 interface PendingRequest {
   promise: Promise<Response>;
   timestamp: number;
+  isCompleted: boolean;
 }
 
 const pendingRequests = new Map<string, PendingRequest>();
@@ -35,20 +36,25 @@ export function deduplicateRequest(
   const now = Date.now();
   const existing = pendingRequests.get(url);
   
-  // If there's an existing request that's still fresh, return it
+  // If there's an existing request that's still fresh, return a cloned response
   if (existing && (now - existing.timestamp) < CACHE_TTL_MS) {
-    return existing.promise;
+    // Clone the response so multiple callers can read it independently
+    return existing.promise.then(response => response.clone());
   }
   
-  // Create new request
-  const promise = fetchFn().finally(() => {
-    // Remove from cache after request completes (with a small delay to allow immediate retries)
-    setTimeout(() => {
-      pendingRequests.delete(url);
-    }, 100);
-  });
+  // Create new request - clone response so multiple callers can read it
+  const promise = fetchFn()
+    .then(response => {
+      // Mark as completed
+      const entry = pendingRequests.get(url);
+      if (entry) {
+        entry.isCompleted = true;
+      }
+      // Clone response so it can be read multiple times
+      return response.clone();
+    });
   
-  pendingRequests.set(url, { promise, timestamp: now });
+  pendingRequests.set(url, { promise, timestamp: now, isCompleted: false });
   return promise;
 }
 
