@@ -36,12 +36,14 @@ export async function GET(req: NextRequest) {
         const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.read');
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-        // Clear cache to ensure we get fresh config
-        clearAhaConfigCache();
-        
+        // Always read config file directly (don't use cache) to ensure fresh data
+        // This is important in dev mode where file changes should be reflected immediately
         const configPath = join(process.cwd(), 'config', 'aha-custom-fields.json');
         const configData = readFileSync(configPath, 'utf-8');
         const config = JSON.parse(configData);
+        
+        // Clear cache after reading to keep it in sync
+        clearAhaConfigCache();
         
         // Standard fields from AhaEpic
         const standardFields = [
@@ -111,14 +113,17 @@ export async function POST(req: NextRequest) {
 
         // Fetch custom field definitions from Aha! API
         const customFieldsResponse = await getCustomFields();
+        
+        // Clear cache and reload config to ensure we have the latest
+        clearAhaConfigCache();
         const config = loadAhaConfig();
 
         // Map custom fields by label
         // Aha! API returns custom_field_definitions array
         const fieldsByLabel = new Map<string, any>();
-        const customFields = customFieldsResponse.custom_field_definitions || customFieldsResponse.custom_fields || [];
+        const ahaCustomFields = customFieldsResponse.custom_field_definitions || customFieldsResponse.custom_fields || [];
         
-        for (const field of customFields) {
+        for (const field of ahaCustomFields) {
             fieldsByLabel.set(field.name, field);
         }
 

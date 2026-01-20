@@ -670,7 +670,20 @@ export function CriteriaManager() {
                       {index + 1}
                     </td>
                     <td className="px-4 py-4 text-sm cursor-pointer">
-                      <div className="font-medium text-gray-900">{c.label}</div>
+                      <div className="font-medium text-gray-900 flex items-center gap-2">
+                        {c.label}
+                        {c.data_sources && c.data_sources.length > 0 && (
+                          <span 
+                            className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-700"
+                            title={`${c.data_sources.length} data source${c.data_sources.length !== 1 ? 's' : ''} configured`}
+                          >
+                            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                            </svg>
+                            {c.data_sources.length}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-gray-500 text-xs mt-0.5">{c.category}</div>
                       {c.description && <div className="text-gray-400 text-xs mt-1">{c.description}</div>}
                     </td>
