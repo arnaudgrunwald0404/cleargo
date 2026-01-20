@@ -15,12 +15,12 @@ export async function discoverCustomFields(): Promise<void> {
     const config = loadAhaConfig();
 
     // Map custom fields by label
+    // Aha! API returns custom_field_definitions array
     const fieldsByLabel = new Map<string, any>();
+    const customFields = customFieldsResponse.custom_field_definitions || customFieldsResponse.custom_fields || [];
 
-    if (customFieldsResponse.custom_fields) {
-        for (const field of customFieldsResponse.custom_fields) {
-            fieldsByLabel.set(field.name, field);
-        }
+    for (const field of customFields) {
+        fieldsByLabel.set(field.name, field);
     }
 
     // Update config with discovered keys

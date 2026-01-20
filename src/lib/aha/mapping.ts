@@ -20,6 +20,10 @@ export function loadAhaConfig(): AhaConfig {
     return cachedConfig!;
 }
 
+export function clearAhaConfigCache(): void {
+    cachedConfig = null;
+}
+
 export function getCustomFieldKey(fieldAlias: string): string {
     const config = loadAhaConfig();
     const field = config.fields[fieldAlias];
