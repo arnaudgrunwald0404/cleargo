@@ -12,6 +12,12 @@ export async function GET(req: NextRequest) {
   
   if (!token) return NextResponse.json({ error: "Missing token" }, { status: 400 });
   
+  // Basic validation - JWT tokens have 3 parts separated by dots
+  if (token.split('.').length !== 3) {
+    console.error("[Verify] Token does not have expected JWT format (expected 3 parts separated by dots)");
+    return NextResponse.json({ error: "Invalid token format" }, { status: 400 });
+  }
+  
   try {
     const payload = await verifyToken<{ email: string; jti: string; t: string; exp?: number }>(token);
     
@@ -135,6 +141,24 @@ export async function GET(req: NextRequest) {
     return await processingPromise;
   } catch (e: any) {
     console.error("[Verify] Error:", e);
-    return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 });
+    console.error("[Verify] Error details:", {
+      message: e?.message,
+      name: e?.name,
+      code: e?.code,
+      cause: e?.cause,
+      stack: e?.stack,
+    });
+    
+    // Provide more specific error messages
+    let errorMessage = "Invalid or expired token";
+    if (e?.code === "ERR_JWT_EXPIRED" || e?.message?.includes("expired")) {
+      errorMessage = "This invitation link has expired. Please request a new invitation.";
+    } else if (e?.code === "ERR_JWT_INVALID" || e?.message?.includes("invalid")) {
+      errorMessage = "This invitation link is invalid. Please request a new invitation.";
+    } else if (e?.message?.includes("Wrong token type")) {
+      errorMessage = "Invalid token type. Please use a valid invitation link.";
+    }
+    
+    return NextResponse.json({ error: errorMessage }, { status: 400 });
   }
 }

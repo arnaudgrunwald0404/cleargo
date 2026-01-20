@@ -5,7 +5,7 @@ import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
 import { randomUUID } from "crypto";
 import { createToken } from "@/lib/jwt";
-import { canSendEmail } from "@/lib/tokenStore";
+import { canSendEmail, markTokenSent } from "@/lib/tokenStore";
 import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail, getRemindEmail } from "@/lib/email/templates";
 import { getSettings } from "@/lib/settings-db";
@@ -159,10 +159,17 @@ export async function POST(
 
     // Generate magic link
     const jti = randomUUID();
+    const expiresIn = "30m";
     const token = await createToken(
       { email: targetUser.email, jti, t: "magic" },
-      "30m"
+      expiresIn
     );
+
+    // Calculate expiration date (30 minutes from now)
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+    // Mark token as sent in database before sending email
+    await markTokenSent(jti, targetUser.email, expiresAt);
 
     const baseUrl =
       process.env.NEXT_PUBLIC_APP_URL ||
