@@ -43,6 +43,9 @@ const FIELD_ORDER = [
     'wsjf',
     'primary_goal',
     'modernization_effort',
+    'revenue_risk_analysis',
+    'feature_walkthrough_demo',
+    'setup_or_migration_process',
     '---', // Separator
     't_shirt_est',
     'release',
@@ -263,6 +266,15 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
             );
         }
 
+        // Handle note fields (like revenue_risk_analysis, setup_or_migration_process) that may contain long text
+        if ((fieldKey === 'revenue_risk_analysis' || fieldKey === 'setup_or_migration_process') && typeof value === 'string' && value.length > 200) {
+            return (
+                <div className="max-h-48 overflow-auto text-left">
+                    <Text size="sm" className="whitespace-pre-wrap break-words">{value}</Text>
+                </div>
+            );
+        }
+
         // Handle readiness_score as percentage
         if (fieldKey === 'readiness_score' && typeof value === 'number') {
             return `${Math.round(value * 100)}%`;
@@ -330,6 +342,9 @@ export default function EpicFieldsSidebar({ epic }: EpicFieldsSidebarProps) {
         // Special cases for field labels
         const labelMap: Record<string, string> = {
             'cleargo_candidate': 'ClearGO Candidate',
+            'revenue_risk_analysis': 'Revenue & Risk Analysis',
+            'feature_walkthrough_demo': 'Feature Walkthrough/Demo',
+            'setup_or_migration_process': 'Setup or Migration Process',
             'csm': 'CSM',
             'wsjf': 'WSJF',
             'gtm': 'GTM',

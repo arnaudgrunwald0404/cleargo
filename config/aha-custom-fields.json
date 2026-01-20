@@ -103,15 +103,27 @@
     },
     "ux_needs": {
       "label": "UX Needs",
-      "key": ""
+      "key": "ux_needs"
     },
     "delivery_method": {
       "label": "Delivery Method",
-      "key": ""
+      "key": "delivery_method"
     },
     "cleargo_candidate": {
       "label": "ClearGO Candidate",
       "key": "cleargo_candidate"
+    },
+    "revenue_risk_analysis": {
+      "label": "Revenue & Risk Analysis",
+      "key": "revenue_risk_analysis"
+    },
+    "feature_walkthrough_demo": {
+      "label": "Feature Walkthrough/Demo",
+      "key": "feature_walkthroughdemo"
+    },
+    "setup_or_migration_process": {
+      "label": "Setup or Migration Process",
+      "key": "setup_or_migration_process"
     }
   }
 }
