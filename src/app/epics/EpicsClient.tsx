@@ -3,8 +3,8 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconTrash } from '@tabler/icons-react';
+import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip } from '@mantine/core';
+import { IconSearch, IconX, IconAlertCircle, IconTrash, IconInfoCircle } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -1457,14 +1457,50 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Readiness</th>
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            Readiness
+                                                            <Tooltip
+                                                                label={
+                                                                    <div style={{ maxWidth: '250px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
+                                                                        <div style={{ fontSize: '12px' }}>
+                                                                            Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                                withArrow
+                                                                multiline
+                                                            >
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                            </Tooltip>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Risk</th>
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            Risk
+                                                            <Tooltip
+                                                                label={
+                                                                    <div style={{ maxWidth: '250px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
+                                                                        <div style={{ fontSize: '12px' }}>
+                                                                            Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                                withArrow
+                                                                multiline
+                                                            >
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                            </Tooltip>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-right w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
@@ -1563,14 +1599,50 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Readiness</th>
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            Readiness
+                                                            <Tooltip
+                                                                label={
+                                                                    <div style={{ maxWidth: '250px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
+                                                                        <div style={{ fontSize: '12px' }}>
+                                                                            Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                                withArrow
+                                                                multiline
+                                                            >
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                            </Tooltip>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Risk</th>
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            Risk
+                                                            <Tooltip
+                                                                label={
+                                                                    <div style={{ maxWidth: '250px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
+                                                                        <div style={{ fontSize: '12px' }}>
+                                                                            Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
+                                                                        </div>
+                                                                    </div>
+                                                                }
+                                                                withArrow
+                                                                multiline
+                                                            >
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                            </Tooltip>
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-right w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
@@ -1635,8 +1707,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             {epic.status}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 font-mono whitespace-nowrap w-24" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {epic.readiness_score ? `${Math.round(epic.readiness_score * 100)}%` : '-'}
+                                                    <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                        <div className="flex flex-col gap-1 items-center">
+                                                            {epic.readiness_status ? (
+                                                                <span className={`px-2 py-1 rounded text-xs font-medium text-center inline-block ${
+                                                                    epic.readiness_status === 'GO' ? 'bg-green-100 text-green-800' :
+                                                                    epic.readiness_status === 'NO_GO' ? 'bg-red-100 text-red-800' :
+                                                                    epic.readiness_status === 'CONDITIONAL_GO' ? 'bg-orange-100 text-orange-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                    {epic.readiness_status === 'GO' ? 'GO' : 
+                                                                     epic.readiness_status === 'NO_GO' ? 'NO GO' : 
+                                                                     epic.readiness_status === 'CONDITIONAL_GO' ? 'Cond. GO' : 
+                                                                     epic.readiness_status}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="text-xs font-medium" style={{ color: "#6B7280" }}>-</span>
+                                                            )}
+                                                            <span className="font-mono text-xs" style={{ color: "#6B7280" }}>
+                                                                {epic.readiness_score !== null && epic.readiness_score !== undefined ? `${Math.round(epic.readiness_score * 100)}%` : '0%'}
+                                                            </span>
+                                                        </div>
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap w-24">
                                                         {epic.risk_level && (

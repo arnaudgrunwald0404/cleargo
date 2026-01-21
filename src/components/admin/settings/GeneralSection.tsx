@@ -1,6 +1,7 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import type { AppSettings } from "@/lib/settings-db";
+import { notifications } from "@mantine/notifications";
 
 type Props = {
   settings: AppSettings;
@@ -9,6 +10,54 @@ type Props = {
 };
 
 export default function GeneralSection({ settings, setSettings, currentUserRoles }: Props) {
+  const [recalculating, setRecalculating] = useState(false);
+
+  const handleRecalculateReadiness = async () => {
+    if (recalculating) return;
+
+    setRecalculating(true);
+    notifications.show({
+      id: 'recalculate-readiness',
+      title: 'Recalculating Readiness',
+      message: 'Processing all epics... This may take a few moments.',
+      loading: true,
+      autoClose: false,
+    });
+
+    try {
+      const response = await fetch('/api/admin/recalculate-readiness', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to recalculate readiness');
+      }
+
+      notifications.update({
+        id: 'recalculate-readiness',
+        title: 'Recalculation Complete',
+        message: data.hasErrors
+          ? `Processed ${data.processed} of ${data.total} epics. ${data.errors.length} error(s) occurred.`
+          : `Successfully recalculated readiness for ${data.processed} epic(s).`,
+        color: data.hasErrors ? 'yellow' : 'green',
+        autoClose: 5000,
+      });
+    } catch (error: any) {
+      notifications.update({
+        id: 'recalculate-readiness',
+        title: 'Recalculation Failed',
+        message: error.message || 'An error occurred while recalculating readiness',
+        color: 'red',
+        autoClose: 5000,
+      });
+    } finally {
+      setRecalculating(false);
+    }
+  };
+
   return (
     <>
       {/* Readiness Thresholds */}
@@ -154,6 +203,50 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
               </label>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Epic Recalculation */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h2 className="text-lg font-semibold text-gray-900">Recalculate Epic Readiness</h2>
+            <p className="text-sm text-gray-500">
+              Recalculate readiness scores, readiness labels, and risk levels for all epics
+            </p>
+          </div>
+        </div>
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={handleRecalculateReadiness}
+            disabled={recalculating}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              recalculating
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2'
+            }`}
+          >
+            {recalculating ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Recalculating...
+              </span>
+            ) : (
+              'Recalculate All Epics'
+            )}
+          </button>
+          <p className="text-xs text-gray-500 mt-2">
+            This will process all non-archived epics and update their readiness scores, status labels, and risk levels based on current criteria.
+          </p>
         </div>
       </div>
     </>

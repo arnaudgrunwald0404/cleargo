@@ -16,6 +16,7 @@ export interface AppSettings {
     fallback_user_email: string;
     aha_webhook_secret: string | null;
     aha_webhook_url?: string | null; // Custom webhook URL, if null uses computed URL
+    aha_webhook_environment?: 'development' | 'production' | null; // Environment mode for webhook URL
     email_sender: string;
     pod_product_manager_mapping?: Record<string, string>; // pod_name -> email
     pod_order?: string[]; // Ordered list of pod names for consistent display

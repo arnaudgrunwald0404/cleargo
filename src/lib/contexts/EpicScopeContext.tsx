@@ -56,4 +56,3 @@ export function useEpicScope() {
   }
   return context;
 }
-

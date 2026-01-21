@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import type { AppSettings } from "@/lib/settings-db";
-import { TagsInput, TextInput } from "@mantine/core";
+import { TagsInput, TextInput, Select } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { canRolesPerform } from "@/lib/permissions";
 import AhaFieldsSection from "./AhaFieldsSection";
 import { patchSettings } from "@/lib/services/settingsService";
@@ -63,14 +64,73 @@ export default function AhaIntegrationSection({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [syncingEpics, setSyncingEpics] = useState(false);
+  const [webhookEnvironment, setWebhookEnvironment] = useState<'development' | 'production'>(
+    (settings.aha_webhook_environment === 'development' || settings.aha_webhook_environment === 'production') 
+      ? settings.aha_webhook_environment 
+      : 'development'
+  );
+  const [productionWebhookUrl, setProductionWebhookUrl] = useState<string | null>(null);
   const webhookTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const tagsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const environmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setCanViewWebhookUrl(canRolesPerform(currentUserRoles, "settings.webhookUrl.read"));
     setCanUpdateWebhookUrl(canRolesPerform(currentUserRoles, "settings.webhookUrl.update"));
     setCanEditAhaTags(canRolesPerform(currentUserRoles, "settings.ahaTags.update"));
   }, [currentUserRoles]);
+
+  useEffect(() => {
+    // Sync environment from settings when settings change
+    if (settings.aha_webhook_environment === 'development' || settings.aha_webhook_environment === 'production') {
+      setWebhookEnvironment(settings.aha_webhook_environment);
+    }
+  }, [settings.aha_webhook_environment]);
+
+  // Fetch production webhook URL from server
+  useEffect(() => {
+    if (webhookEnvironment === 'production') {
+      setProductionWebhookUrl(null); // Reset while fetching
+      fetch('/api/settings/webhook-url')
+        .then(res => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data.webhookUrl && !data.webhookUrl.includes('localhost') && !data.webhookUrl.includes('127.0.0.1')) {
+            console.log('Fetched production webhook URL:', data.webhookUrl, 'source:', data.source);
+            setProductionWebhookUrl(data.webhookUrl);
+          } else {
+            console.warn('No valid production webhook URL in API response:', data);
+            if (data.warning) {
+              setSaveError(data.warning);
+              setTimeout(() => setSaveError(null), 10000);
+            }
+            setProductionWebhookUrl(null);
+          }
+        })
+        .catch(error => {
+          console.error('Failed to fetch production webhook URL:', error);
+          setProductionWebhookUrl(null);
+        });
+    } else {
+      setProductionWebhookUrl(null);
+    }
+  }, [webhookEnvironment]);
+
+  const getProductionWebhookUrl = () => {
+    // Prioritize NEXT_PUBLIC_APP_URL environment variable
+    if (process.env.NEXT_PUBLIC_APP_URL) {
+      return `${process.env.NEXT_PUBLIC_APP_URL}/api/integrations/aha/webhook`;
+    }
+    // Fallback to window.location.origin if env var not set
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}/api/integrations/aha/webhook`;
+    }
+    return '/api/integrations/aha/webhook';
+  };
 
   const autoSaveWebhookUrl = async (webhookUrl: string) => {
     if (!canUpdateWebhookUrl) {
@@ -81,9 +141,30 @@ export default function AhaIntegrationSection({
     }
     
     // Get the computed default URL
-    const computedDefault = typeof window !== 'undefined' 
-      ? `${window.location.origin}/api/integrations/aha/webhook` 
-      : '/api/integrations/aha/webhook';
+    const computedDefault = getProductionWebhookUrl();
+    
+    // In production mode, if the value matches the computed default, save as null (use auto-detect)
+    if (webhookEnvironment === 'production' && webhookUrl === computedDefault) {
+      const valueToSave = null;
+      if (valueToSave === settings.aha_webhook_url) {
+        return; // Already set to null
+      }
+      try {
+        setSaving(true);
+        setSaveError(null);
+        const saved = await patchSettings({ aha_webhook_url: valueToSave });
+        setSettings(saved);
+        console.log("Successfully saved webhook URL:", saved);
+      } catch (error: any) {
+        console.error("Failed to auto-save webhook URL:", error);
+        const errorMessage = error.message || "Failed to save webhook URL";
+        setSaveError(errorMessage);
+        setTimeout(() => setSaveError(null), 5000);
+      } finally {
+        setSaving(false);
+      }
+      return;
+    }
     
     // If the value matches the computed default and there's no saved value, don't save
     // (let it use the computed default)
@@ -256,37 +337,135 @@ export default function AhaIntegrationSection({
         {canViewWebhookUrl ? (
           <div className="space-y-4">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Environment</label>
+              <Select
+                value={webhookEnvironment}
+                onChange={(value) => {
+                  if (value === 'development' || value === 'production') {
+                    setWebhookEnvironment(value);
+                    setSettings({ ...settings, aha_webhook_environment: value });
+                    if (canUpdateWebhookUrl) {
+                      if (environmentTimeoutRef.current) {
+                        clearTimeout(environmentTimeoutRef.current);
+                      }
+                      environmentTimeoutRef.current = setTimeout(async () => {
+                        try {
+                          await patchSettings({ aha_webhook_environment: value });
+                        } catch (error: any) {
+                          console.error('Failed to save environment:', error);
+                          setSaveError(error.message || 'Failed to save environment. The database column may not exist yet - please apply the migration first.');
+                          setTimeout(() => setSaveError(null), 5000);
+                          // Revert the state on error
+                          setWebhookEnvironment(settings.aha_webhook_environment === 'development' || settings.aha_webhook_environment === 'production' 
+                            ? settings.aha_webhook_environment 
+                            : 'development');
+                        }
+                      }, 500);
+                    }
+                  }
+                }}
+                data={[
+                  { value: 'development', label: 'Development' },
+                  { value: 'production', label: 'Production' }
+                ]}
+                disabled={!canUpdateWebhookUrl}
+                className="mb-4"
+              />
               <label className="block text-sm font-medium text-gray-700 mb-2">Webhook URL</label>
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-gray-500 mb-1">
                 Configure this URL in your Aha! workspace webhook settings (under Integrations → HTTP Webhook):
               </p>
               <div className="mt-2 space-y-1 mb-3">
                 <ul className="text-xs text-gray-500 list-disc list-inside space-y-0.5">
-                  <li>Hook URL: Copy the URL above</li>
+                  <li>Hook URL: Copy the URL below</li>
                   <li>Events: Epic created, Epic updated</li>
                   <li>Aha! does not use webhook secrets - just configure the URL.</li>
+                  {webhookEnvironment === 'development' && (
+                    <li className="text-amber-600">Development mode: Use ngrok or other tunneling service for local testing</li>
+                  )}
+                  {webhookEnvironment === 'production' && (
+                    <li className="text-green-600">Production mode: Uses your production domain URL</li>
+                  )}
                 </ul>
               </div>
-              <TextInput
-                value={settings.aha_webhook_url ?? ''}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  setSettings({ ...settings, aha_webhook_url: newValue || null });
-                  if (canUpdateWebhookUrl) {
-                    if (webhookTimeoutRef.current) {
-                      clearTimeout(webhookTimeoutRef.current);
+              {webhookEnvironment === 'development' ? (
+                <TextInput
+                  value={settings.aha_webhook_url ?? ''}
+                  onChange={(e) => {
+                    const newValue = e.target.value;
+                    setSettings({ ...settings, aha_webhook_url: newValue || null });
+                    if (canUpdateWebhookUrl) {
+                      if (webhookTimeoutRef.current) {
+                        clearTimeout(webhookTimeoutRef.current);
+                      }
+                      webhookTimeoutRef.current = setTimeout(() => {
+                        autoSaveWebhookUrl(newValue);
+                      }, 1000);
                     }
-                    webhookTimeoutRef.current = setTimeout(() => {
-                      autoSaveWebhookUrl(newValue);
-                    }, 1000);
-                  }
-                }}
-                placeholder={typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/aha/webhook` : '/api/integrations/aha/webhook'}
-                disabled={!canUpdateWebhookUrl}
-                classNames={{
-                  input: "font-mono text-sm"
-                }}
-              />
+                  }}
+                  placeholder="https://your-ngrok-url.ngrok-free.dev/api/integrations/aha/webhook"
+                  disabled={!canUpdateWebhookUrl}
+                  classNames={{
+                    input: "font-mono text-sm"
+                  }}
+                />
+              ) : (
+                <>
+                  <div className="relative">
+                    <TextInput
+                      value={productionWebhookUrl || 'Loading production URL...'}
+                      readOnly
+                      disabled={!productionWebhookUrl}
+                      classNames={{
+                        input: `font-mono text-sm bg-gray-50 pr-20 ${!productionWebhookUrl ? 'opacity-50' : ''}`
+                      }}
+                    />
+                    {productionWebhookUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(productionWebhookUrl).then(() => {
+                            notifications.show({
+                              title: 'Copied!',
+                              message: 'Webhook URL copied to clipboard',
+                              color: 'green',
+                              autoClose: 2000,
+                            });
+                          }).catch(() => {
+                            // Fallback: select the text
+                            const input = document.querySelector('input[value*="/api/integrations/aha/webhook"]') as HTMLInputElement;
+                            if (input) {
+                              input.select();
+                              document.execCommand('copy');
+                            }
+                          });
+                        }}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50 rounded border border-indigo-200 transition-colors"
+                      >
+                        Copy
+                      </button>
+                    )}
+                  </div>
+                  {!productionWebhookUrl && (
+                    <p className="text-xs text-amber-600 mt-1">
+                      ⚠️ Unable to fetch production URL. Make sure NEXT_PUBLIC_APP_URL is set in your environment variables.
+                    </p>
+                  )}
+                  {productionWebhookUrl && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      This is your production webhook URL. Copy it and paste it into Aha! webhook settings.
+                    </p>
+                  )}
+                  {settings.aha_webhook_url && settings.aha_webhook_url.includes('ngrok') && productionWebhookUrl && (
+                    <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Note: A development (ngrok) URL is stored but not shown in production mode. The URL above is what you should use in Aha!.
+                    </p>
+                  )}
+                </>
+              )}
               {saveError && (
                 <p className="text-xs text-red-600 mt-1">{saveError}</p>
               )}

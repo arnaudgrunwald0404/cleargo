@@ -150,14 +150,14 @@ export async function POST(req: NextRequest) {
       try {
         // Generate new token
         const newJti = randomUUID();
-        const expiresIn = "30m";
+        const expiresIn = "12h";
         const newToken = await createToken(
           { email: token.email, jti: newJti, t: "magic" },
           expiresIn
         );
 
-        // Calculate new expiration date
-        const newExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+        // Calculate new expiration date (12 hours from now)
+        const newExpiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
 
         // Mark old token as used (so it can't be used anymore)
         const { error: markOldError } = await adminClient

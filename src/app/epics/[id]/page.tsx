@@ -1402,8 +1402,34 @@ export default function EpicDetailPage() {
                                         color: 'var(--color-gray-500)',
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>Readiness Status</div>
+                                        fontFamily: 'var(--font-body)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        gap: 'var(--spacing-1)'
+                                    }}>
+                                        Readiness Status
+                                        <Tooltip
+                                            label={
+                                                <div style={{ maxWidth: '250px' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
+                                                    <div style={{ fontSize: '12px' }}>
+                                                        Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                    </div>
+                                                </div>
+                                            }
+                                            withArrow
+                                            multiline
+                                        >
+                                            <IconInfoCircle 
+                                                size={14} 
+                                                style={{
+                                                    color: 'var(--color-gray-400)',
+                                                    cursor: 'help'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </div>
                                     <div style={{
                                         fontSize: '17px',
                                         fontWeight: 'var(--font-weight-bold)',
@@ -1434,21 +1460,15 @@ export default function EpicDetailPage() {
                                         Risk Level
                                         <Tooltip
                                             label={
-                                                <div className="text-xs">
-                                                    <div className="font-semibold mb-2">Risk Level Algorithm:</div>
-                                                    <div className="space-y-1">
-                                                        <div><strong>Default:</strong> LOW</div>
-                                                        <div><strong>&lt; 14 days to launch:</strong></div>
-                                                        <div className="pl-2">• HIGH if status is NO_GO or CONDITIONAL_GO</div>
-                                                        <div className="pl-2">• MEDIUM if status is GO but score &lt; 95%</div>
-                                                        <div><strong>14-30 days to launch:</strong></div>
-                                                        <div className="pl-2">• MEDIUM if status is NO_GO</div>
+                                                <div style={{ maxWidth: '250px' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
+                                                    <div style={{ fontSize: '12px' }}>
+                                                        Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
                                                     </div>
                                                 </div>
                                             }
-                                            multiline
-                                            maw={300}
                                             withArrow
+                                            multiline
                                         >
                                             <IconInfoCircle 
                                                 size={14} 

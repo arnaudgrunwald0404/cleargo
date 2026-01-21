@@ -409,7 +409,98 @@ export function MyTasks() {
         loadData();
         fetchCurrentUser();
         fetchReleaseSchedule();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Set up real-time subscriptions to refresh when epics are deleted or archived
+    useEffect(() => {
+        const supabase = createClient();
+        
+        // Channel for epic deletions
+        const deleteChannel = supabase
+            .channel('epic-deletes')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'epic'
+                },
+                (payload) => {
+                    console.log('Epic deleted, refreshing My Tasks:', payload.old);
+                    // Clear cache for both showAll states and reload data
+                    if (typeof window !== 'undefined') {
+                        localStorage.removeItem(getCacheKey(false));
+                        localStorage.removeItem(getCacheKey(true));
+                    }
+                    // Reload data without using cache - use current showAllItems value
+                    setItems(prevItems => {
+                        // Filter out items that belong to the deleted epic
+                        const deletedEpicId = payload.old?.id;
+                        if (deletedEpicId) {
+                            return prevItems.filter(item => item.launch?.id !== deletedEpicId);
+                        }
+                        return prevItems;
+                    });
+                    // Also trigger a full refresh to ensure data is up to date
+                    loadData(0, false);
+                }
+            )
+            .subscribe();
+
+        // Channel for epic archive status changes (both archived and unarchived)
+        const archiveChannel = supabase
+            .channel('epic-archive')
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'epic'
+                },
+                (payload) => {
+                    // Only react if the archived field actually changed
+                    const wasArchived = payload.old?.archived;
+                    const isArchived = payload.new?.archived;
+                    
+                    if (wasArchived !== isArchived) {
+                        if (isArchived) {
+                            console.log('Epic archived, refreshing My Tasks:', payload.new);
+                            // Clear cache for both showAll states
+                            if (typeof window !== 'undefined') {
+                                localStorage.removeItem(getCacheKey(false));
+                                localStorage.removeItem(getCacheKey(true));
+                            }
+                            // Filter out items that belong to the archived epic
+                            setItems(prevItems => {
+                                const archivedEpicId = payload.new?.id;
+                                if (archivedEpicId) {
+                                    return prevItems.filter(item => item.launch?.id !== archivedEpicId);
+                                }
+                                return prevItems;
+                            });
+                        } else {
+                            console.log('Epic unarchived, refreshing My Tasks:', payload.new);
+                            // Clear cache and reload to show tasks from unarchived epic
+                            if (typeof window !== 'undefined') {
+                                localStorage.removeItem(getCacheKey(false));
+                                localStorage.removeItem(getCacheKey(true));
+                            }
+                        }
+                        // Trigger a full refresh to ensure data is up to date
+                        loadData(0, false);
+                    }
+                }
+            )
+            .subscribe();
+
+        // Cleanup subscriptions on unmount
+        return () => {
+            supabase.removeChannel(deleteChannel);
+            supabase.removeChannel(archiveChannel);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showAllItems]);
 
     useEffect(() => {
         // When items change, fetch epic details to get release names

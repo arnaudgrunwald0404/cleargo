@@ -118,7 +118,7 @@ export async function checkAndMarkTokenUsed(jti: string): Promise<boolean> {
   } catch (error: any) {
     console.error(`[TokenStore] Error in checkAndMarkTokenUsed for ${jti}:`, error);
     // If we can't check, assume not used to allow the request through
-    // The token expiration (30m) provides security
+    // The token expiration (12h) provides security
     return false;
   }
 }

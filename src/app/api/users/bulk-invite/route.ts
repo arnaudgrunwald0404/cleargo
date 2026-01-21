@@ -190,14 +190,14 @@ export async function POST(req: NextRequest) {
 
       // Generate magic link
       const jti = randomUUID();
-      const expiresIn = "30m";
+      const expiresIn = "12h";
       const token = await createToken(
         { email: targetUser.email, jti, t: "magic" },
         expiresIn
       );
       
-      // Calculate expiration date (30 minutes from now)
-      const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+      // Calculate expiration date (12 hours from now)
+      const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
       
       // Mark token as sent in database before sending email
       await markTokenSent(jti, targetUser.email, expiresAt);

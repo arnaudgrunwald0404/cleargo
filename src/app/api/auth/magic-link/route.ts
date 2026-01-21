@@ -52,11 +52,11 @@ export async function POST(req: NextRequest) {
     }
 
     const jti = randomUUID();
-    const expiresIn = "30m";
+    const expiresIn = "12h";
     const token = await createToken({ email, jti, t: "magic" }, expiresIn);
 
-    // Calculate expiration date (30 minutes from now)
-    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    // Calculate expiration date (12 hours from now)
+    const expiresAt = new Date(Date.now() + 12 * 60 * 60 * 1000);
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${req.nextUrl.protocol}//${req.nextUrl.host}`;
     const link = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;

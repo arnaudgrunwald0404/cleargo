@@ -32,25 +32,35 @@ export async function patchSettings(payload: any) {
   });
   if (!res.ok) {
     let errorMessage = "Failed to save settings";
+    let errorData: any = null;
     try {
-      const errorData = await res.json();
-      errorMessage = errorData.error || errorData.details || errorMessage;
-      if (errorData.details && typeof errorData.details === 'object') {
-        errorMessage += `: ${JSON.stringify(errorData.details)}`;
-      } else if (errorData.details && typeof errorData.details === 'string') {
-        errorMessage += `: ${errorData.details}`;
+      const responseText = await res.text();
+      if (responseText) {
+        errorData = JSON.parse(responseText);
+        errorMessage = errorData.error || errorData.details || errorMessage;
+        if (errorData.details && typeof errorData.details === 'object') {
+          errorMessage += `: ${JSON.stringify(errorData.details)}`;
+        } else if (errorData.details && typeof errorData.details === 'string') {
+          errorMessage += `: ${errorData.details}`;
+        }
+        if (errorData.code) {
+          errorMessage += ` (code: ${errorData.code})`;
+        }
+      } else {
+        errorMessage = `Failed to save settings: ${res.status} ${res.statusText} (empty response)`;
       }
-      if (errorData.code) {
-        errorMessage += ` (code: ${errorData.code})`;
-      }
-    } catch {
+    } catch (parseError) {
       // If response is not JSON, use status text
       errorMessage = `Failed to save settings: ${res.status} ${res.statusText}`;
+      if (parseError instanceof Error) {
+        errorMessage += ` (parse error: ${parseError.message})`;
+      }
     }
     console.error("patchSettings error:", {
       status: res.status,
       statusText: res.statusText,
       errorMessage,
+      errorData,
       payload
     });
     throw new Error(errorMessage);
