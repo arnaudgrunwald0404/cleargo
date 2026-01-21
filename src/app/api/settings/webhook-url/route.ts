@@ -16,12 +16,27 @@ export async function GET(req: NextRequest) {
         
         // If not set or was localhost, try to construct from request headers (for production deployments)
         const host = req.headers.get('host');
-        const protocol = req.headers.get('x-forwarded-proto') || 
-                        (host?.includes('localhost') ? 'http' : 'https');
+        const forwardedProto = req.headers.get('x-forwarded-proto');
+        const forwardedHost = req.headers.get('x-forwarded-host');
+        
+        // Use forwarded host if available (common in production with proxies/load balancers)
+        const effectiveHost = forwardedHost || host;
+        
+        // Determine protocol: prefer x-forwarded-proto, then check if host suggests HTTPS
+        let protocol = 'https';
+        if (forwardedProto) {
+            protocol = forwardedProto.split(',')[0].trim(); // Handle multiple values
+        } else if (effectiveHost?.includes('localhost') || effectiveHost?.includes('127.0.0.1')) {
+            protocol = 'http';
+        }
         
         // Only use computed URL if it's not localhost
-        const computedUrl = host && !host.includes('localhost') && !host.includes('127.0.0.1')
-            ? `${protocol}://${host}` 
+        const computedUrl = effectiveHost && 
+                           !effectiveHost.includes('localhost') && 
+                           !effectiveHost.includes('127.0.0.1') &&
+                           !effectiveHost.includes(':3000') && // Exclude local dev ports
+                           !effectiveHost.includes(':3001')
+            ? `${protocol}://${effectiveHost}` 
             : null;
         
         // Prefer NEXT_PUBLIC_APP_URL (if not localhost), fallback to computed URL
