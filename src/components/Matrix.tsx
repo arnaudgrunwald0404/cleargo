@@ -411,20 +411,22 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     };
 
     // Helper function to get tooltip label for data source
-    const getDataSourceTooltip = (source: { type: string; value: string }, ticketCount?: number): string => {
+    const getDataSourceTooltip = (source: { type: string; value: string; label?: string }, ticketCount?: number): string => {
         if (source.type === 'aha_field') {
-            return getFieldLabel(source.value);
+            const fieldLabel = getFieldLabel(source.value);
+            return `This criteria benefits from an automated synchronization of the Aha field "${fieldLabel}"`;
         } else if (source.type === 'aha_description_part') {
-            return source.value; // search term
+            return `This criteria benefits from an automated synchronization of the part of the Aha description field "${source.value}"`;
         } else if (source.type === 'url') {
-            return source.value; // URL
+            const displayLabel = source.label || 'URL';
+            return `This criteria benefits from an automated synchronization of the ${displayLabel}`;
         } else if (source.type === 'jira_jql') {
-            if (ticketCount !== undefined && ticketCount !== null) {
-                return `${ticketCount} issue${ticketCount !== 1 ? 's' : ''} open`;
-            }
-            return 'Jira tickets';
+            const countText = ticketCount !== undefined && ticketCount !== null 
+                ? `${ticketCount} issue${ticketCount !== 1 ? 's' : ''} open`
+                : 'Jira tickets';
+            return `This criteria benefits from an automated synchronization of ${countText}`;
         } else if (source.type === 'success_metrics_defined') {
-            return 'Success metrics defined';
+            return 'This criteria benefits from an automated synchronization of success configuration success metrics';
         }
         return '';
     };

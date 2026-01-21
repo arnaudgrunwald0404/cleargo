@@ -1483,6 +1483,33 @@ export function CommentsModal({
             <Text fw={600} size="lg">
               {taskLabel}
             </Text>
+            {criterion?.data_sources && criterion.data_sources.length > 0 && (
+              <Text size="xs" c="dimmed" mt={4} style={{ lineHeight: 1.4 }}>
+                This criteria benefits from {criterion.data_sources.length} automated synchronization{criterion.data_sources.length !== 1 ? 's' : ''} of the following data:{' '}
+                {criterion.data_sources.map((source, index) => {
+                  let sourceText = '';
+                  if (source.type === 'aha_field') {
+                    const fieldLabel = getFieldLabel(source.value);
+                    sourceText = `the Aha field "${fieldLabel}"`;
+                  } else if (source.type === 'aha_description_part') {
+                    sourceText = `the part of the Aha description field "${source.value}"`;
+                  } else if (source.type === 'url') {
+                    const displayLabel = source.label || 'URL';
+                    sourceText = `the ${displayLabel}`;
+                  } else if (source.type === 'jira_jql') {
+                    sourceText = 'Jira tickets';
+                  } else if (source.type === 'success_metrics_defined') {
+                    sourceText = 'success configuration success metrics';
+                  }
+                  return sourceText;
+                }).filter(Boolean).map((text, index, array) => (
+                  <span key={index}>
+                    {index > 0 && index === array.length - 1 ? ' and ' : index > 0 ? ', ' : ''}
+                    {text}
+                  </span>
+                ))}
+              </Text>
+            )}
           </div>
         </div>
       }
