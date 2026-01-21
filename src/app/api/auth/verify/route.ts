@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyToken, createToken } from "@/lib/jwt";
+import { verifyToken, createToken, decodeTokenUnsafe } from "@/lib/jwt";
 import { checkAndMarkTokenUsed } from "@/lib/tokenStore";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
@@ -149,9 +149,57 @@ export async function GET(req: NextRequest) {
       stack: e?.stack,
     });
     
+    // Check if token is expired or invalid - try to extract email and redirect to resend page
+    const isExpired = e?.code === "ERR_JWT_EXPIRED" || e?.message?.includes("expired");
+    const isInvalid = e?.code === "ERR_JWT_INVALID" || e?.message?.includes("invalid");
+    
+    if ((isExpired || isInvalid) && token) {
+      let email: string | null = null;
+      
+      // Try to decode the token to extract email (works even for expired tokens)
+      const decoded = decodeTokenUnsafe<{ email?: string; t?: string; jti?: string }>(token);
+      
+      if (decoded?.email && decoded?.t === "magic") {
+        email = decoded.email;
+      } else if (decoded?.jti) {
+        // If we can't get email from token but have jti, try database lookup
+        // This helps with very old tokens that might have been tracked
+        try {
+          const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+          if (secretKey) {
+            const adminClient = createAdminClient(
+              process.env.NEXT_PUBLIC_SUPABASE_URL!,
+              secretKey
+            );
+            const { data: tokenData } = await adminClient
+              .from("used_magic_link_tokens")
+              .select("email")
+              .eq("jti", decoded.jti)
+              .single();
+            
+            if (tokenData?.email) {
+              email = tokenData.email;
+            }
+          }
+        } catch (dbError) {
+          console.error("[Verify] Error looking up token in database:", dbError);
+        }
+      }
+      
+      if (email) {
+        // Redirect to expired token page with email
+        const redirectUrl = `/auth/token-expired?email=${encodeURIComponent(email)}`;
+        return NextResponse.redirect(new URL(redirectUrl, req.url));
+      } else {
+        // Can't extract email, but still redirect to expired page (user can enter email manually)
+        const redirectUrl = `/auth/token-expired`;
+        return NextResponse.redirect(new URL(redirectUrl, req.url));
+      }
+    }
+    
     // Provide more specific error messages
     let errorMessage = "Invalid or expired token";
-    if (e?.code === "ERR_JWT_EXPIRED" || e?.message?.includes("expired")) {
+    if (isExpired) {
       errorMessage = "This invitation link has expired. Please request a new invitation.";
     } else if (e?.code === "ERR_JWT_INVALID" || e?.message?.includes("invalid")) {
       errorMessage = "This invitation link is invalid. Please request a new invitation.";
