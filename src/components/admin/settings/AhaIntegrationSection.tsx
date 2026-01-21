@@ -230,9 +230,15 @@ export default function AhaIntegrationSection({
     setTestingWebhook(true);
     setWebhookTestResult(null);
     
-    // Get the current webhook URL from the input field
-    const currentWebhookUrl = settings.aha_webhook_url || 
-      (typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/aha/webhook` : '/api/integrations/aha/webhook');
+    // Get the current webhook URL based on environment mode
+    // In production mode, use the production URL; in development, use the stored ngrok URL
+    let currentWebhookUrl: string;
+    if (webhookEnvironment === 'production' && productionWebhookUrl) {
+      currentWebhookUrl = productionWebhookUrl;
+    } else {
+      currentWebhookUrl = settings.aha_webhook_url || 
+        (typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/aha/webhook` : '/api/integrations/aha/webhook');
+    }
     
     try {
       const response = await fetch("/api/integrations/aha/webhook/test", {
