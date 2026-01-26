@@ -13,6 +13,7 @@
     "setup-prd-hook": "chmod +x .git/hooks/pre-commit scripts/update-prd.sh"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.10",
     "@mantine/core": "^8.3.9",
     "@mantine/form": "^8.3.9",
     "@mantine/hooks": "^8.3.9",
@@ -20,6 +21,7 @@
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",
     "@tabler/icons-react": "^3.35.0",
+    "ai": "^6.0.42",
     "cookie": "^0.6.0",
     "dotenv": "^17.2.3",
     "jose": "^5.2.3",
@@ -30,7 +32,7 @@
     "react-dom": "^19.2.3",
     "resend": "^3.2.0",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0",

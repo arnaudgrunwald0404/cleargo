@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
                             text: 'View Details',
                             emoji: true,
                         },
-                        url: `${APP_URL}/launch/${launch.id}`,
+                        url: `${APP_URL}/epics/${launch.id}`,
                     },
                 });
             }

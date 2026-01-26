@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
                             text: 'View',
                             emoji: true,
                         },
-                        url: `${APP_URL}/launch/${launch.id}`,
+                        url: `${APP_URL}/epics/${launch.id}`,
                     },
                 });
             }
@@ -213,7 +213,7 @@ export async function POST(request: NextRequest) {
                                 text: 'View Full Details',
                                 emoji: true,
                             },
-                            url: `${APP_URL}/launch/${launch.id}`,
+                            url: `${APP_URL}/epics/${launch.id}`,
                             style: 'primary',
                         },
                     ],

@@ -16,14 +16,15 @@ const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clear
  */
 export function buildStaleCriterionMessage(
     data: {
-    launch_name: string;
-    launch_id: string;
-    criterion_label: string;
-    criterion_id: string;
-    days_stale: number;
-    last_updated: string;
-    decision_owner_name: string;
-},
+        launch_name: string;
+        launch_id: string;
+        criterion_label: string;
+        criterion_id: string;
+        days_stale: number;
+        last_updated: string;
+        decision_owner_name: string;
+        ai_personalized_nudge?: string | null;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     return {
@@ -44,6 +45,15 @@ export function buildStaleCriterionMessage(
                     text: `*${data.launch_name}*\n_${data.criterion_label}_`,
                 },
             },
+            ...(data.ai_personalized_nudge ? [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `*🤖 AI Nudge:*\n${data.ai_personalized_nudge}`,
+                    },
+                }
+            ] : []),
             {
                 type: 'section',
                 fields: [
@@ -81,7 +91,7 @@ export function buildStaleCriterionMessage(
                             emoji: true,
                         },
                         style: 'primary',
-                        url: `${APP_URL}/launch/${data.launch_id}`,
+                        url: `${APP_URL}/epics/${data.launch_id}`,
                         action_id: 'update_criterion',
                     },
                     {
@@ -112,15 +122,15 @@ export function buildStaleCriterionMessage(
  */
 export function buildLaunchRiskAlertMessage(
     data: {
-    launch_name: string;
-    launch_id: string;
-    tier: string;
-    risk_level: 'Low' | 'Medium' | 'High';
-    readiness_score: number;
-    days_to_launch: number;
-    gate_blockers: number;
-    owner_name: string;
-},
+        launch_name: string;
+        launch_id: string;
+        tier: string;
+        risk_level: 'Low' | 'Medium' | 'High';
+        readiness_score: number;
+        days_to_launch: number;
+        gate_blockers: number;
+        owner_name: string;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const riskEmoji = data.risk_level === 'High' ? theme.emojis.risk.high : data.risk_level === 'Medium' ? theme.emojis.risk.medium : theme.emojis.risk.low;
@@ -185,7 +195,7 @@ export function buildLaunchRiskAlertMessage(
                             emoji: true,
                         },
                         style: 'primary',
-                        url: `${APP_URL}/launch/${data.launch_id}`,
+                        url: `${APP_URL}/epics/${data.launch_id}`,
                     },
                 ],
             },
@@ -201,14 +211,14 @@ export function buildLaunchRiskAlertMessage(
  */
 export function buildGoNoGoDecisionMessage(
     data: {
-    launch_name: string;
-    launch_id: string;
-    verdict: 'Go' | 'Conditional Go' | 'No Go';
-    decision_date: string;
-    notes: string;
-    conditions_count?: number;
-    decided_by: string;
-},
+        launch_name: string;
+        launch_id: string;
+        verdict: 'Go' | 'Conditional Go' | 'No Go';
+        decision_date: string;
+        notes: string;
+        conditions_count?: number;
+        decided_by: string;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const verdictEmoji = data.verdict === 'Go' ? theme.emojis.decision.go : data.verdict === 'No Go' ? theme.emojis.decision.noGo : theme.emojis.decision.conditional;
@@ -277,7 +287,7 @@ export function buildGoNoGoDecisionMessage(
                             text: 'View Full Details',
                             emoji: true,
                         },
-                        url: `${APP_URL}/launch/${data.launch_id}`,
+                        url: `${APP_URL}/epics/${data.launch_id}`,
                     },
                 ],
             },
@@ -293,23 +303,23 @@ export function buildGoNoGoDecisionMessage(
  */
 export function buildLeadershipDigestMessage(
     data: {
-    week_of: string;
-    high_risk_launches: Array<{
-        name: string;
-        id: string;
-        tier: string;
-        risk: string;
-        days_to_launch: number;
-        readiness: number;
-    }>;
-    upcoming_launches: Array<{
-        name: string;
-        id: string;
-        tier: string;
-        target_release_date: string;
-    }>;
-    total_active: number;
-},
+        week_of: string;
+        high_risk_launches: Array<{
+            name: string;
+            id: string;
+            tier: string;
+            risk: string;
+            days_to_launch: number;
+            readiness: number;
+        }>;
+        upcoming_launches: Array<{
+            name: string;
+            id: string;
+            tier: string;
+            target_release_date: string;
+        }>;
+        total_active: number;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const blocks: SlackBlock[] = [
@@ -350,7 +360,7 @@ export function buildLeadershipDigestMessage(
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • ${launch.days_to_launch} days • ${Math.round(launch.readiness * 100)}% ready`,
+                    text: `*<${APP_URL}/epics/${launch.id}|${launch.name}>*\n${launch.tier} • ${launch.days_to_launch} days • ${Math.round(launch.readiness * 100)}% ready`,
                 },
                 accessory: {
                     type: 'button',
@@ -359,7 +369,7 @@ export function buildLeadershipDigestMessage(
                         text: 'View',
                         emoji: true,
                     },
-                    url: `${APP_URL}/launch/${launch.id}`,
+                    url: `${APP_URL}/epics/${launch.id}`,
                 },
             });
         });
@@ -382,7 +392,7 @@ export function buildLeadershipDigestMessage(
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*<${APP_URL}/launch/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_release_date}`,
+                    text: `*<${APP_URL}/epics/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_release_date}`,
                 },
             });
         });
@@ -418,13 +428,13 @@ export function buildLeadershipDigestMessage(
  */
 export function buildLaunchStatusChangeMessage(
     data: {
-    launch_name: string;
-    launch_id: string;
-    old_status: string;
-    new_status: string;
-    changed_by: string;
-    reason?: string;
-},
+        launch_name: string;
+        launch_id: string;
+        old_status: string;
+        new_status: string;
+        changed_by: string;
+        reason?: string;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     return {
@@ -475,7 +485,7 @@ export function buildLaunchStatusChangeMessage(
                             text: 'View Launch',
                             emoji: true,
                         },
-                        url: `${APP_URL}/launch/${data.launch_id}`,
+                        url: `${APP_URL}/epics/${data.launch_id}`,
                     },
                 ],
             },
@@ -488,14 +498,14 @@ export function buildLaunchStatusChangeMessage(
  */
 export function buildDelegationMessage(
     data: {
-    epic_name: string;
-    epic_id: string;
-    task_label: string;
-    category: string;
-    delegation_type: string;
-    delegated_by: string;
-    epic_url?: string;
-},
+        epic_name: string;
+        epic_id: string;
+        task_label: string;
+        category: string;
+        delegation_type: string;
+        delegated_by: string;
+        epic_url?: string;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const delegationTypeLabels: Record<string, string> = {
@@ -786,14 +796,14 @@ export function buildCriteriaNudgeMessage(
  */
 export function buildCriterionCommentOrAttachmentMessage(
     data: {
-    epic_name: string;
-    epic_id: string;
-    criterion_label: string;
-    criterion_status_id: string;
-    added_by_name: string;
-    has_comment: boolean;
-    has_attachment: boolean;
-},
+        epic_name: string;
+        epic_id: string;
+        criterion_label: string;
+        criterion_status_id: string;
+        added_by_name: string;
+        has_comment: boolean;
+        has_attachment: boolean;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const actionTypes: string[] = [];

@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification } from '@/lib/slack/notifications';
+import { generateSmartNudge } from '@/lib/ai/client';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -102,6 +103,23 @@ export async function GET(request: NextRequest) {
                 continue;
             }
 
+            // Generate AI Personalized Nudge
+            let aiPersonalizedNudge: string | null = null;
+            try {
+                aiPersonalizedNudge = await generateSmartNudge({
+                    launchName: epic.name,
+                    criterionLabel: criterionData.label,
+                    ownerName: decisionOwner.first_name || decisionOwner.email,
+                    statusNotes: criterion.notes || null,
+                    daysStale: daysSinceUpdate
+                });
+                if (aiPersonalizedNudge) {
+                    console.log(`🤖 Generated AI nudge for ${decisionOwner.email} on ${criterionData.label}`);
+                }
+            } catch (aiError) {
+                console.warn('AI nudge generation failed (skipping):', aiError);
+            }
+
             try {
                 await sendSlackNotification({
                     type: 'stale_criterion',
@@ -121,6 +139,7 @@ export async function GET(request: NextRequest) {
                         days_stale: daysSinceUpdate,
                         last_updated: criterion.last_updated_at,
                         decision_owner_name: `${decisionOwner.first_name} ${decisionOwner.last_name}`,
+                        ai_personalized_nudge: aiPersonalizedNudge,
                     },
                 });
 

@@ -3,6 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MappedEpicData } from '../aha/mapping';
 import { getReleases } from '../aha/client';
 import { syncUserSlackHandle } from '../slack/notifications';
+import { pruneCriteria } from '../ai/client';
+import { isEnabled, FEATURE_AI_PRUNING } from '../flags';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -97,7 +99,7 @@ function getClearGOCandidateValue(epicData: MappedEpicData): boolean {
     }
 
     const cleargoCandidate = customFields.cleargo_candidate;
-    
+
     if (cleargoCandidate === null || cleargoCandidate === undefined) {
         return false;
     }
@@ -154,8 +156,8 @@ export async function upsertEpicFromAha(
             console.warn('Error fetching release schedule:', releaseError);
         } else if (releaseSchedule?.launch_date) {
             // Convert date to ISO string if it's a Date object, otherwise use as-is (already string)
-            upsertData.target_launch_date = releaseSchedule.launch_date instanceof Date 
-                ? releaseSchedule.launch_date.toISOString().split('T')[0] 
+            upsertData.target_launch_date = releaseSchedule.launch_date instanceof Date
+                ? releaseSchedule.launch_date.toISOString().split('T')[0]
                 : String(releaseSchedule.launch_date);
         }
     }
@@ -173,11 +175,11 @@ export async function upsertEpicFromAha(
     // Archive if cleargo_candidate is not "Yes", unarchive if it is "Yes"
     const isClearGOCandidate = getClearGOCandidateValue(epicData);
     const shouldBeArchived = !isClearGOCandidate;
-    
+
     // Always set archived status (for both new and existing epics)
     // This ensures automatic archiving/unarchiving based on cleargo_candidate
     upsertData.archived = shouldBeArchived;
-    
+
     // Log when archived status changes for existing epics
     if (existing) {
         const currentArchived = existing.archived ?? false;
@@ -187,7 +189,7 @@ export async function upsertEpicFromAha(
             );
         }
     }
-    
+
     const { data, error } = await supabase
         .from('epic')
         .upsert(upsertData, { onConflict: 'aha_id' })
@@ -215,7 +217,7 @@ export async function upsertEpicFromAha(
     if (!existing && finalEpic) {
         // Use ownerId as actor, or fallback to Product Ops user
         const actorId = ownerId || await getFallbackProductOpsUser();
-        
+
         try {
             await supabase.from('audit_log').insert({
                 actor_id: actorId,
@@ -407,7 +409,7 @@ export async function instantiateCriteriaForEpic(
     // Get all active criteria applicable to this tier (with decision_owner_email and rating_timing)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
-        .select('id, tier_applicability, decision_owner_email, rating_timing')
+        .select('id, label, description, tier_applicability, decision_owner_email, rating_timing')
         .eq('is_active', true);
 
     if (criteriaError) {
@@ -474,6 +476,36 @@ export async function instantiateCriteriaForEpic(
     const dueDateResults = await Promise.all(dueDatePromises);
     const dueDateMap = new Map(dueDateResults.map((r) => [r.criterionId, r.dueDate]));
 
+    // AI Pruning Suggestion (Human-in-the-Loop), gated by feature flag
+    let aiSuggestions: Array<{ id: string; reason: string }> = [];
+    if (isEnabled(FEATURE_AI_PRUNING)) {
+        try {
+            const { data: epicFull } = await sb
+                .from('epic')
+                .select('name, description, tags')
+                .eq('id', epicId)
+                .single();
+
+            if (epicFull) {
+                aiSuggestions = await pruneCriteria(
+                    epicFull.name,
+                    epicFull.description || '',
+                    epicFull.tags || [],
+                    newCriteria.map(c => ({
+                        id: c.id,
+                        label: c.label,
+                        description: (c as any).description || ''
+                    }))
+                );
+                console.log(`🤖 AI suggested pruning ${aiSuggestions.length} criteria for epic ${epicId}`);
+            }
+        } catch (aiError) {
+            console.warn('AI pruning suggestion failed (skipping):', aiError);
+        }
+    }
+
+    const aiSuggestionMap = new Map(aiSuggestions.map(s => [s.id, s.reason]));
+
     // Create epic_criterion_status records for new criteria only
     const newRecords = newCriteria.map((c) => {
         const record: any = {
@@ -482,6 +514,12 @@ export async function instantiateCriteriaForEpic(
             status: 'NOT_SET',
             last_updated_at: new Date().toISOString(),
         };
+
+        // Set AI pruning suggestion
+        if (aiSuggestionMap.has(c.id)) {
+            record.ai_prune_suggested = true;
+            record.ai_prune_reason = aiSuggestionMap.get(c.id);
+        }
 
         // Set decision_owner_id if resolved
         const decisionOwnerId = decisionOwnerMap.get(c.id);
@@ -554,7 +592,7 @@ export async function sendCriteriaAssignmentNotifications(
     const testSlackHandle = settings.slack_notification_test_slack_handle?.trim() || null;
     const useTestEmailFilter = testEmails.length > 0;
     const useTestSlackFilter = testSlackHandle && testSlackHandle.length > 0;
-    
+
     // Helper function to check if an email matches the filter
     const isEmailInFilter = (email: string): boolean => {
         if (!useTestEmailFilter) return true;
@@ -672,20 +710,20 @@ export async function sendCriteriaAssignmentNotifications(
     // Filter by test email or Slack handle - only send to matching users, but all are logged above
     const filteredCriteria = (useTestEmailFilter || useTestSlackFilter)
         ? criteriaStatuses.filter((cs: any) => {
-              const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
-                  ? cs.decision_owner[0]
-                  : (cs.decision_owner as any);
-              const ownerEmail = decisionOwner?.email?.toLowerCase();
-              const slackHandle = decisionOwner?.slack_handle;
-              
-              // If Slack handle filter is set, use it; otherwise use email filter
-              if (useTestSlackFilter) {
-                  return slackHandle && slackHandle === testSlackHandle;
-              } else if (useTestEmailFilter) {
-                  return isEmailInFilter(ownerEmail || '');
-              }
-              return false;
-          })
+            const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
+                ? cs.decision_owner[0]
+                : (cs.decision_owner as any);
+            const ownerEmail = decisionOwner?.email?.toLowerCase();
+            const slackHandle = decisionOwner?.slack_handle;
+
+            // If Slack handle filter is set, use it; otherwise use email filter
+            if (useTestSlackFilter) {
+                return slackHandle && slackHandle === testSlackHandle;
+            } else if (useTestEmailFilter) {
+                return isEmailInFilter(ownerEmail || '');
+            }
+            return false;
+        })
         : criteriaStatuses;
 
     if (filteredCriteria.length === 0) {
@@ -704,7 +742,7 @@ export async function sendCriteriaAssignmentNotifications(
             // Try to sync Slack handle before skipping
             console.log(`Attempting to sync Slack handle for ${group.assignee_email}...`);
             const syncedHandle = await syncUserSlackHandle(group.assignee_email);
-            
+
             if (syncedHandle) {
                 // Update the group with the synced handle
                 group.assignee_slack_handle = syncedHandle;
@@ -786,28 +824,28 @@ export async function updateEpicReadiness(
 export async function fetchAndUpsertReleaseFromAha(releaseName: string): Promise<string | null> {
     try {
         console.log(`🔄 Auto-fetching release "${releaseName}" from Aha API...`);
-        
+
         // Fetch all releases from Aha (paginated) to find the one matching by name
         let page = 1;
         const perPage = 50;
         let hasMore = true;
-        
+
         while (hasMore) {
             const response = await getReleases({ per_page: perPage, page });
             const releases = response.releases || [];
-            
+
             // Look for exact match first, then case-insensitive match
             let matchedRelease = releases.find((r: any) => r.name === releaseName);
             if (!matchedRelease) {
-                matchedRelease = releases.find((r: any) => 
+                matchedRelease = releases.find((r: any) =>
                     r.name?.toLowerCase() === releaseName.toLowerCase()
                 );
             }
-            
+
             if (matchedRelease) {
                 // Extract launch_date from end_date or start_date
                 const launchDate = matchedRelease.end_date || matchedRelease.start_date || null;
-                
+
                 // Upsert into release_schedule table
                 const { error } = await supabase
                     .from('release_schedule')
@@ -821,29 +859,29 @@ export async function fetchAndUpsertReleaseFromAha(releaseName: string): Promise
                             onConflict: 'release_name',
                         }
                     );
-                
+
                 if (error) {
                     console.error(`Error upserting release ${matchedRelease.name}:`, error);
                     throw error;
                 }
-                
+
                 if (launchDate) {
                     console.log(`✅ Fetched release "${releaseName}" with date: ${launchDate}`);
                 } else {
                     console.warn(`⚠️ Release "${releaseName}" found in Aha but has no date`);
                 }
-                
+
                 return launchDate;
             }
-            
+
             hasMore = releases.length === perPage;
             page++;
         }
-        
+
         // Release not found in Aha
         console.warn(`⚠️ Release "${releaseName}" not found in Aha API`);
         return null;
-        
+
     } catch (error) {
         console.error(`Error fetching release "${releaseName}" from Aha:`, error);
         throw error;

@@ -258,6 +258,16 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Days to Launch**: Automatic calculation from target launch date
 - **Visual Indicators**: Color-coded risk badges throughout UI
 
+#### 2.5 AI Checklist Pruning (Human-in-the-Loop)
+- **Trigger**: When criteria are instantiated for a new epic, an AI analysis runs (if `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set).
+- **Analysis**: The model (Gemini) reviews epic name, description, and tags and suggests which criteria may be irrelevant for that specific launch (e.g., internal-only vs public, maintenance vs new feature, geographic scope).
+- **Storage**: Suggestions are stored on `epic_criterion_status` as `ai_prune_suggested` (boolean) and `ai_prune_reason` (text).
+- **UI**: The Readiness tab shows an **AI Checklist Suggestions** banner when any criterion has a suggestion. Users can:
+  - View the list of suggested items and reasons.
+  - **Approve & Mark N/A**: Mark those criteria as N/A and clear the suggestion flags.
+  - **Dismiss All**: Clear suggestion flags and keep criteria as-is.
+- **Implementation**: `src/lib/ai/client.ts` (`pruneCriteria`), `src/lib/db/epics.ts` (during instantiation), `src/components/epic/AIPruneReviewBanner.tsx`.
+
 ### 3. Release Schedule Management
 
 #### 3.1 Release Schedule
@@ -554,7 +564,7 @@ Standard ranges above are used to inform default metric thresholds and per-epic 
 ### 10. Notifications & Reminders
 
 #### 10.1 Email Notifications
-- **Stale Criterion Reminders**: Daily reminders for criteria not updated in staleness window
+- **Stale Criterion Reminders**: Daily reminders for criteria not updated in staleness window (see scheduled job below; reminders may include an AI-generated personalized nudge when configured).
 - **Weekly Leadership Digest**: Summary of top launches by tier/risk
 - **Risk Alerts**: Alerts when launch enters high-risk status
 - **Go/No-Go Notifications**: Notifications when decision snapshots created
@@ -566,7 +576,8 @@ Standard ranges above are used to inform default metric thresholds and per-epic 
   - `/my-launches`: View user's launches
   - `/launch-summary [tier] [risk]`: Get launch summary
   - `/update-criterion [launch-id] [criterion-id] [status]`: Update criterion
-- **Interactive Messages**: Buttons and dropdowns for quick actions
+- **Interactive Messages**: Buttons and dropdowns for quick actions; links use `/epics/{id}` for epic detail.
+- **Stale Criterion Reminders**: Daily job (`/api/jobs/stale-criteria`) sends Slack (and email) reminders; when `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, each reminder can include an **AI-generated personalized nudge** (context-aware, concise) to improve engagement.
 - **App Home**: Personalized dashboard in Slack
 - **URL Unfurling**: Rich previews for launch console links
 - **Channel Notifications**: Post to configured Slack channels
@@ -647,6 +658,7 @@ The system uses the following launch stage phases:
 - **Storage**: Supabase Storage
 - **Email**: Resend
 - **File Processing**: xlsx library
+- **AI**: Google Gemini (via Vercel AI SDK) for checklist pruning suggestions and personalized stale-criterion nudges; requires `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`; implementation in `src/lib/ai/client.ts`.
 
 ### Database
 - **Provider**: Supabase (PostgreSQL)
@@ -742,6 +754,8 @@ The system uses the following launch stage phases:
 - `last_updated_by` (UUID, Foreign Key → app_user)
 - `score_value` (Integer) - Calculated score (2, 1, 0, null)
 - `data_source_values` (JSONB, Nullable) - Per-epic values for data sources that require input (e.g., URL links)
+- `ai_prune_suggested` (Boolean, Default: false) - True when AI suggests this criterion may be irrelevant for this epic
+- `ai_prune_reason` (Text, Nullable) - Short reason for the suggestion; used in the AI Checklist Suggestions banner
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -1097,16 +1111,13 @@ The system uses the following launch stage phases:
 13. System sends notifications to stakeholders
 
 ### Flow 4: Stale Criterion Reminder
-1. Scheduled job runs daily
-2. System queries criteria where last_updated_at > staleness_days ago
-3. System filters to criteria with status != GO
-4. System identifies decision owners
-5. System sends email/Slack reminder
-6. System logs notification
-7. User receives reminder
-8. User clicks link to update criterion
-9. User updates status
-10. System marks criterion as updated
+1. Scheduled job runs daily (`GET/POST /api/jobs/stale-criteria`; uses `app_settings.stale_criterion_days`, default 14).
+2. System queries criteria where `last_updated_at` is older than staleness window and status is NOT_SET or CONDITIONAL.
+3. System identifies decision owners and related epic/criterion data.
+4. (Optional) If `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, system generates an AI-powered personalized nudge per criterion (launch name, criterion label, owner, days stale, recent notes).
+5. System sends Slack (and email) reminder; Slack message may include the AI nudge and link to epic (`/epics/{id}`).
+6. System logs notification.
+7. User receives reminder, clicks link to epic, updates criterion; system marks criterion as updated.
 
 ### Flow 5: Weekly Leadership Digest
 1. Scheduled job runs Monday 9:00 AM (configurable)
@@ -1209,7 +1220,7 @@ The system uses the following launch stage phases:
 - **Modals**: Forms for status updates
 
 #### Notifications
-- **Stale Criterion Reminders**: Daily reminders
+- **Stale Criterion Reminders**: Daily reminders (job: `/api/jobs/stale-criteria`); may include an AI-generated personalized nudge when Gemini is configured.
 - **Risk Alerts**: High-risk launch notifications
 - **Go/No-Go Decisions**: Decision notifications
 - **Weekly Digest**: Leadership summary
@@ -1374,10 +1385,12 @@ The system uses the following launch stage phases:
 5. **Zoom Integration**: Automatic meeting transcript extraction
 
 ### AI/ML Features
-1. **Predictive Risk Scoring**: ML-based risk prediction
-2. **Natural Language Processing**: Extract criteria from meeting notes
-3. **Sentiment Analysis**: Analyze feedback sentiment
-4. **Recommendation Engine**: Suggest criteria based on epic type
+1. **AI Checklist Pruning** — ✅ **IMPLEMENTED**: When criteria are instantiated for an epic, Gemini suggests which may be irrelevant (from name/description/tags). Suggestions appear in the Readiness tab via the AI Checklist Suggestions banner; users can approve (mark N/A) or dismiss. See §2.5 and `src/lib/ai/client.ts` (`pruneCriteria`).
+2. **AI-Powered Stale Nudges** — ✅ **IMPLEMENTED**: The daily stale-criteria job can attach a short, context-aware AI-generated nudge to each Slack/email reminder (launch, criterion, owner, staleness). Requires Gemini API key. See §10.1–10.2, Flow 4, and `src/lib/ai/client.ts` (`generateSmartNudge`).
+3. **Predictive Risk Scoring**: ML-based risk prediction
+4. **Natural Language Processing**: Extract criteria from meeting notes
+5. **Sentiment Analysis**: Analyze feedback sentiment
+6. **Recommendation Engine**: Suggest criteria based on epic type
 
 ---
 
