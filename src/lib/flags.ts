@@ -7,6 +7,9 @@
 /** AI pruning suggestion (human-in-the-loop) for criteria; off by default */
 export const FEATURE_AI_PRUNING = 'ai_pruning';
 
+/** Meetings page and navigation tab (Google Calendar sync, transcripts, snippets); off by default */
+export const FEATURE_MEETINGS = 'meetings';
+
 export function isEnabled(flag: string): boolean {
   if (typeof window === 'undefined') {
     // Server-side: check environment variable

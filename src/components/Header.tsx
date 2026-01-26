@@ -9,6 +9,7 @@ import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
 import { SegmentedControl } from '@mantine/core';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
+import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
 
 interface HeaderProps {
     email?: string | null;
@@ -49,7 +50,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     );
                     setHasSettingsAccess(hasAccess);
 
-                    const hasMeetings = canRolesPerform(roles, 'meetings.read');
+                    const hasMeetings = isEnabled(FEATURE_MEETINGS) && canRolesPerform(roles, 'meetings.read');
                     setHasMeetingsAccess(hasMeetings);
                 }
             } catch (error) {

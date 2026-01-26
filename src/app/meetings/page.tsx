@@ -7,6 +7,7 @@ import { IconCalendar, IconUpload, IconBrain, IconLink, IconRefresh, IconAlertCi
 import Link from "next/link";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { canRolesPerform } from "@/lib/permissions";
+import { isEnabled, FEATURE_MEETINGS } from "@/lib/flags";
 
 interface Meeting {
     id: string;
@@ -83,8 +84,8 @@ export default function MeetingsPage() {
                 const roles = Array.isArray(userData.roles) 
                     ? userData.roles 
                     : (userData.role ? [userData.role] : []);
-                // Check if user has meetings.read capability
-                const access = canRolesPerform(roles, 'meetings.read');
+                // Check feature flag and meetings.read capability
+                const access = isEnabled(FEATURE_MEETINGS) && canRolesPerform(roles, 'meetings.read');
                 setHasAccess(access);
             } else {
                 setHasAccess(false);
