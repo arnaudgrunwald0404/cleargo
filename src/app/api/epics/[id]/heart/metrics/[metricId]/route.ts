@@ -12,6 +12,8 @@ import {
   deleteEpicHeartMetric,
   getLatestSnapshot,
   getSnapshots,
+  getMetricMilestones,
+  updateMetricMilestones,
 } from '@/lib/heart/service';
 import { getClient } from '@/lib/db';
 import type { UpdateEpicHeartMetricDTO } from '@/lib/heart/types';
@@ -52,9 +54,10 @@ export async function GET(
     
     const snapshots = await getSnapshots(metricId, startDate, endDate);
     const latestSnapshot = await getLatestSnapshot(metricId);
+    const milestones = await getMetricMilestones(metricId);
     
     return NextResponse.json({
-      metric,
+      metric: { ...metric, milestones },
       latestSnapshot,
       snapshots,
     });
@@ -98,6 +101,15 @@ export async function PATCH(
     
     // Update metric
     const metric = await updateEpicHeartMetric(metricId, dto);
+    
+    // Update milestones if provided
+    if (body.milestones !== undefined && Array.isArray(body.milestones)) {
+      try {
+        await updateMetricMilestones(metricId, body.milestones);
+      } catch (milestoneError) {
+        console.error('Error updating milestones:', milestoneError);
+      }
+    }
     
     return NextResponse.json(metric);
   } catch (error) {

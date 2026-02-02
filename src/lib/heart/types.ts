@@ -97,6 +97,36 @@ export interface EpicHeartMetric {
   custom_category_label?: string | null;
   custom_icon?: string | null;
   template_id?: string | null;
+  // Milestones (loaded separately)
+  milestones?: HeartMetricMilestone[];
+}
+
+// ============================================================================
+// Metric Milestones (multiple targets over time)
+// ============================================================================
+
+export interface HeartMetricMilestone {
+  id: string;
+  epic_heart_metric_id: string;
+  days_after_launch: number;
+  target_value: number;
+  label: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateHeartMetricMilestoneDTO {
+  days_after_launch: number;
+  target_value: number;
+  label?: string;
+}
+
+export interface MilestoneProgress {
+  milestone: HeartMetricMilestone;
+  currentValue: number | null;
+  status: HeartMetricStatus;
+  daysRemaining: number | null;
+  percentComplete: number; // Progress toward this milestone's target
 }
 
 // ============================================================================
@@ -324,6 +354,12 @@ export interface HeartMetricDisplay {
   isPreLaunch?: boolean;
   /** Human-readable measurement period (e.g. "Last 7 days", "Since launch (Day 5)") */
   measurementPeriod?: string;
+  /** Milestone progress for multi-target metrics */
+  milestoneProgress?: MilestoneProgress[];
+  /** Current active milestone (the next one to hit) */
+  currentMilestone?: MilestoneProgress | null;
+  /** Next upcoming milestone */
+  nextMilestone?: HeartMetricMilestone | null;
 }
 
 export interface EpicHeartDashboard {

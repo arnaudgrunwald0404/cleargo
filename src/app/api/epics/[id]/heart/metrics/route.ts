@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   getEpicHeartConfig,
   getEpicHeartMetrics,
+  createMetricMilestones,
 } from '@/lib/heart/service';
 import type { HeartCategoryId } from '@/lib/heart/types';
 
@@ -149,6 +150,16 @@ export async function POST(
         { error: insertError.message || 'Failed to create metric' },
         { status: 500 }
       );
+    }
+    
+    // Create milestones if provided
+    if (body.milestones && Array.isArray(body.milestones) && body.milestones.length > 0) {
+      try {
+        await createMetricMilestones(metric.id, body.milestones);
+      } catch (milestoneError) {
+        console.error('Error creating milestones:', milestoneError);
+        // Don't fail the request, just log the error
+      }
     }
     
     return NextResponse.json(metric, { status: 201 });

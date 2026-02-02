@@ -93,6 +93,12 @@ const HEART_CATEGORIES: Array<{
   },
 ];
 
+interface MilestoneFormData {
+  days: number;
+  target: number;
+  label: string;
+}
+
 interface MetricFormData {
   category: HeartCategoryId;
   existingMetricId: string | null; // Track if this is an existing metric for updates
@@ -103,7 +109,15 @@ interface MetricFormData {
   targetValue: number | null;
   targetTimeframeDays: number | null;
   description: string;
+  milestones: MilestoneFormData[];
 }
+
+// Default milestone presets
+const DEFAULT_MILESTONES: MilestoneFormData[] = [
+  { days: 30, target: 30, label: '1 Month' },
+  { days: 90, target: 60, label: '3 Months' },
+  { days: 180, target: 80, label: '6 Months' },
+];
 
 export function HeartManualConfigForm({
   epicId,
@@ -128,6 +142,25 @@ export function HeartManualConfigForm({
     const initial: Record<string, MetricFormData> = {};
     for (const cat of HEART_CATEGORIES) {
       const existing = existingMetrics.find(m => m.heart_category === cat.id);
+      // Convert existing milestones or use single target as one milestone
+      let milestones: MilestoneFormData[] = [];
+      if (existing?.milestones && existing.milestones.length > 0) {
+        milestones = existing.milestones.map(m => ({
+          days: m.days_after_launch,
+          target: m.target_value,
+          label: m.label || `Day ${m.days_after_launch}`,
+        }));
+      } else if (existing?.target_value && existing?.target_timeframe_days) {
+        // Legacy single target - convert to milestone
+        milestones = [{
+          days: existing.target_timeframe_days,
+          target: existing.target_value,
+          label: existing.target_timeframe_days <= 30 ? '1 Month' : 
+                 existing.target_timeframe_days <= 90 ? '3 Months' : 
+                 `${existing.target_timeframe_days} Days`,
+        }];
+      }
+      
       initial[cat.id] = {
         category: cat.id,
         existingMetricId: existing?.id || null,
@@ -138,6 +171,7 @@ export function HeartManualConfigForm({
         targetValue: existing?.target_value || null,
         targetTimeframeDays: existing?.target_timeframe_days || null,
         description: existing?.description || '',
+        milestones,
       };
     }
     return initial as Record<HeartCategoryId, MetricFormData>;
@@ -261,6 +295,21 @@ export function HeartManualConfigForm({
         return;
       }
 
+      // Validate milestones (at least 1, max 3)
+      for (const cat of categoriesToSave) {
+        const data = formData[cat.id];
+        if (data.milestones.length === 0) {
+          setError(`${cat.name} requires at least 1 milestone target.`);
+          setSaving(false);
+          return;
+        }
+        if (data.milestones.length > 3) {
+          setError(`${cat.name} can have at most 3 milestone targets.`);
+          setSaving(false);
+          return;
+        }
+      }
+
       let created = 0;
       let updated = 0;
 
@@ -268,6 +317,9 @@ export function HeartManualConfigForm({
       for (const cat of categoriesToSave) {
         const data = formData[cat.id];
         const isUpdate = !!data.existingMetricId;
+        
+        // For legacy compatibility: use first milestone as target_value/timeframe if milestones exist
+        const primaryMilestone = data.milestones.length > 0 ? data.milestones[0] : null;
         
         const url = isUpdate 
           ? `/api/epics/${epicId}/heart/metrics/${data.existingMetricId}`
@@ -283,8 +335,15 @@ export function HeartManualConfigForm({
             measurement_type: data.measurementType,
             pendo_event_ids: data.pendoEventIds,
             pendo_segment_id: data.pendoSegmentId,
-            target_value: data.targetValue,
-            target_timeframe_days: data.targetTimeframeDays,
+            // Use first milestone for legacy single-target fields
+            target_value: primaryMilestone?.target ?? data.targetValue,
+            target_timeframe_days: primaryMilestone?.days ?? data.targetTimeframeDays,
+            // Include full milestones array
+            milestones: data.milestones.map(m => ({
+              days_after_launch: m.days,
+              target_value: m.target,
+              label: m.label,
+            })),
           }),
         });
 
@@ -500,30 +559,133 @@ export function HeartManualConfigForm({
                         searchable
                       />
 
-                      <Divider label="Target (Optional)" labelPosition="left" />
+                      <Divider label="Milestone Targets" labelPosition="left" />
+                      
+                      <Text size="xs" c="dimmed" mb="xs">
+                        Set targets at different time horizons (e.g., 30% at 1 month, 60% at 3 months)
+                      </Text>
 
-                      <Group grow>
-                        <NumberInput
-                          label="Target Value"
-                          description={cat.id === 'adoption' ? 'e.g., 80 for 80% adoption' : 'Target value to achieve'}
-                          placeholder="e.g., 80"
-                          value={data.targetValue ?? ''}
-                          onChange={(value) => updateFormData(cat.id, { 
-                            targetValue: typeof value === 'number' ? value : null 
+                      {/* Milestone list */}
+                      {data.milestones.length > 0 ? (
+                        <Stack gap="xs">
+                          {data.milestones.map((milestone, idx) => {
+                            // Auto-generate label from days
+                            const autoLabel = milestone.days <= 30 ? '1 Month' :
+                              milestone.days <= 60 ? '2 Months' :
+                              milestone.days <= 90 ? '3 Months' :
+                              milestone.days <= 120 ? '4 Months' :
+                              milestone.days <= 150 ? '5 Months' :
+                              milestone.days <= 180 ? '6 Months' :
+                              milestone.days <= 270 ? '9 Months' :
+                              milestone.days <= 365 ? '1 Year' :
+                              `${Math.round(milestone.days / 30)} Months`;
+                            
+                            return (
+                              <Paper key={idx} withBorder p="xs" bg="gray.0">
+                                <Group gap="xs">
+                                  <NumberInput
+                                    size="xs"
+                                    placeholder="Days"
+                                    value={milestone.days}
+                                    onChange={(value) => {
+                                      const days = typeof value === 'number' ? value : 30;
+                                      const newLabel = days <= 30 ? '1 Month' :
+                                        days <= 60 ? '2 Months' :
+                                        days <= 90 ? '3 Months' :
+                                        days <= 120 ? '4 Months' :
+                                        days <= 150 ? '5 Months' :
+                                        days <= 180 ? '6 Months' :
+                                        days <= 270 ? '9 Months' :
+                                        days <= 365 ? '1 Year' :
+                                        `${Math.round(days / 30)} Months`;
+                                      const newMilestones = [...data.milestones];
+                                      newMilestones[idx] = { ...milestone, days, label: newLabel };
+                                      updateFormData(cat.id, { milestones: newMilestones });
+                                    }}
+                                    min={1}
+                                    max={365}
+                                    style={{ width: 70 }}
+                                  />
+                                  <Text size="xs" c="dimmed">days →</Text>
+                                  <NumberInput
+                                    size="xs"
+                                    placeholder="Target"
+                                    value={milestone.target}
+                                    onChange={(value) => {
+                                      const newMilestones = [...data.milestones];
+                                      newMilestones[idx] = { ...milestone, target: typeof value === 'number' ? value : 50 };
+                                      updateFormData(cat.id, { milestones: newMilestones });
+                                    }}
+                                    min={0}
+                                    max={100}
+                                    style={{ width: 70 }}
+                                  />
+                                  <Text size="xs" c="dimmed">%</Text>
+                                  <Badge size="xs" variant="light" color="blue">
+                                    {autoLabel}
+                                  </Badge>
+                                  {data.milestones.length > 1 && (
+                                    <Button
+                                      size="xs"
+                                      variant="subtle"
+                                      color="red"
+                                      onClick={() => {
+                                        const newMilestones = data.milestones.filter((_, i) => i !== idx);
+                                        updateFormData(cat.id, { milestones: newMilestones });
+                                      }}
+                                      style={{ marginLeft: 'auto' }}
+                                    >
+                                      Remove
+                                    </Button>
+                                  )}
+                                </Group>
+                              </Paper>
+                            );
                           })}
-                          min={0}
-                          max={cat.measurementTypes[0].value.includes('percentage') ? 100 : undefined}
-                        />
-                        <NumberInput
-                          label="Timeframe (Days)"
-                          description="Days after launch to hit target"
-                          placeholder="e.g., 60"
-                          value={data.targetTimeframeDays ?? ''}
-                          onChange={(value) => updateFormData(cat.id, { 
-                            targetTimeframeDays: typeof value === 'number' ? value : null 
-                          })}
-                          min={1}
-                        />
+                        </Stack>
+                      ) : (
+                        <Text size="xs" c="dimmed" ta="center" py="xs">
+                          No milestones set. Add milestones or use defaults.
+                        </Text>
+                      )}
+
+                      {/* Add milestone buttons */}
+                      <Group gap="xs" mt="xs">
+                        {data.milestones.length < 3 && (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            leftSection={<IconPlus size={14} />}
+                            onClick={() => {
+                              const lastDay = data.milestones.length > 0 
+                                ? Math.max(...data.milestones.map(m => m.days)) + 30 
+                                : 30;
+                              const newMilestones = [...data.milestones, { 
+                                days: lastDay, 
+                                target: 50, 
+                                label: `Day ${lastDay}` 
+                              }];
+                              updateFormData(cat.id, { milestones: newMilestones });
+                            }}
+                          >
+                            Add Milestone
+                          </Button>
+                        )}
+                        {data.milestones.length === 0 && (
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="blue"
+                            onClick={() => {
+                              updateFormData(cat.id, { milestones: [...DEFAULT_MILESTONES] });
+                            }}
+                          >
+                            Use Defaults (30/90/180 days)
+                          </Button>
+                        )}
+                        <Text size="xs" c="dimmed">
+                          {data.milestones.length}/3 milestones {data.milestones.length === 0 && '(at least 1 required)'}
+                        </Text>
                       </Group>
 
                       <Textarea

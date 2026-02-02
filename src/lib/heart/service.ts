@@ -29,6 +29,8 @@ import type {
   EpicHeartDashboard,
   HeartMetricDisplay,
   EpicHeartListItem,
+  HeartMetricMilestone,
+  MilestoneProgress,
 } from './types';
 
 // ============================================================================
@@ -737,6 +739,155 @@ export async function getSnapshots(
 }
 
 // ============================================================================
+// Milestone Functions
+// ============================================================================
+
+/**
+ * Get milestones for a metric
+ */
+export async function getMetricMilestones(metricId: string): Promise<HeartMetricMilestone[]> {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('heart_metric_milestones')
+    .select('*')
+    .eq('epic_heart_metric_id', metricId)
+    .order('days_after_launch', { ascending: true });
+  
+  if (error) {
+    console.error('Error fetching milestones:', error);
+    return [];
+  }
+  
+  return data || [];
+}
+
+/**
+ * Create milestones for a metric
+ */
+export async function createMetricMilestones(
+  metricId: string,
+  milestones: Array<{ days_after_launch: number; target_value: number; label?: string }>
+): Promise<HeartMetricMilestone[]> {
+  const supabase = getClient();
+  
+  const insertData = milestones.map(m => ({
+    epic_heart_metric_id: metricId,
+    days_after_launch: m.days_after_launch,
+    target_value: m.target_value,
+    label: m.label || null,
+  }));
+  
+  const { data, error } = await supabase
+    .from('heart_metric_milestones')
+    .insert(insertData)
+    .select();
+  
+  if (error) {
+    console.error('Error creating milestones:', error);
+    return [];
+  }
+  
+  return data || [];
+}
+
+/**
+ * Update milestones for a metric (replaces all existing)
+ */
+export async function updateMetricMilestones(
+  metricId: string,
+  milestones: Array<{ days_after_launch: number; target_value: number; label?: string }>
+): Promise<HeartMetricMilestone[]> {
+  const supabase = getClient();
+  
+  // Delete existing milestones
+  await supabase
+    .from('heart_metric_milestones')
+    .delete()
+    .eq('epic_heart_metric_id', metricId);
+  
+  // Insert new milestones
+  if (milestones.length === 0) return [];
+  
+  return createMetricMilestones(metricId, milestones);
+}
+
+/**
+ * Calculate milestone progress for a metric
+ */
+export function calculateMilestoneProgress(
+  milestones: HeartMetricMilestone[],
+  currentValue: number | null,
+  daysSinceLaunch: number | null
+): MilestoneProgress[] {
+  if (milestones.length === 0 || daysSinceLaunch === null) {
+    return [];
+  }
+  
+  return milestones.map(milestone => {
+    const daysRemaining = milestone.days_after_launch - daysSinceLaunch;
+    const isComplete = daysSinceLaunch >= milestone.days_after_launch;
+    const isPast = daysRemaining < 0;
+    
+    // Calculate percent complete toward this milestone
+    let percentComplete = 0;
+    if (currentValue !== null && milestone.target_value > 0) {
+      percentComplete = Math.min(100, (currentValue / milestone.target_value) * 100);
+    }
+    
+    // Determine status
+    let status: HeartMetricStatus = 'PENDING';
+    if (currentValue === null) {
+      status = 'PENDING';
+    } else if (currentValue >= milestone.target_value) {
+      status = 'ON_TRACK'; // Hit the target
+    } else if (isPast) {
+      status = 'MISSED'; // Past the deadline and didn't hit target
+    } else {
+      // Still have time - check if we're on pace
+      const expectedProgress = (daysSinceLaunch / milestone.days_after_launch);
+      const actualProgress = currentValue / milestone.target_value;
+      if (actualProgress >= expectedProgress * 0.8) {
+        status = 'ON_TRACK'; // Within 80% of expected pace
+      } else if (actualProgress >= expectedProgress * 0.5) {
+        status = 'AT_RISK'; // Between 50-80% of expected pace
+      } else {
+        status = 'AT_RISK'; // Below 50% of expected pace but still have time
+      }
+    }
+    
+    return {
+      milestone,
+      currentValue,
+      status,
+      daysRemaining: isPast ? null : daysRemaining,
+      percentComplete,
+    };
+  });
+}
+
+/**
+ * Get the current active milestone (next one to hit)
+ */
+export function getCurrentMilestone(
+  milestoneProgress: MilestoneProgress[],
+  daysSinceLaunch: number | null
+): MilestoneProgress | null {
+  if (milestoneProgress.length === 0 || daysSinceLaunch === null) {
+    return null;
+  }
+  
+  // Find the first milestone that hasn't passed yet
+  const upcoming = milestoneProgress.find(mp => 
+    mp.daysRemaining !== null && mp.daysRemaining >= 0
+  );
+  
+  if (upcoming) return upcoming;
+  
+  // If all milestones have passed, return the last one
+  return milestoneProgress[milestoneProgress.length - 1];
+}
+
+// ============================================================================
 // Dashboard Data
 // ============================================================================
 
@@ -855,6 +1006,26 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       survey = data;
     }
     
+    // Get milestones and calculate progress
+    let milestoneProgress: MilestoneProgress[] = [];
+    let currentMilestone: MilestoneProgress | null = null;
+    let nextMilestone: HeartMetricMilestone | null = null;
+    
+    if (metric) {
+      const milestones = await getMetricMilestones(metric.id);
+      if (milestones.length > 0) {
+        const currentValue = latestSnapshot?.value ?? null;
+        milestoneProgress = calculateMilestoneProgress(milestones, currentValue, daysSinceLaunch);
+        currentMilestone = getCurrentMilestone(milestoneProgress, daysSinceLaunch);
+        
+        // Find next upcoming milestone
+        const upcomingMilestones = milestones.filter(m => 
+          daysSinceLaunch !== null && m.days_after_launch > daysSinceLaunch
+        );
+        nextMilestone = upcomingMilestones.length > 0 ? upcomingMilestones[0] : null;
+      }
+    }
+    
     metricsWithLiveData.push({
       category,
       metric,
@@ -863,6 +1034,9 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       trend,
       isPreLaunch,
       measurementPeriod,
+      milestoneProgress,
+      currentMilestone,
+      nextMilestone,
     });
   }
 
@@ -923,6 +1097,23 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       }
     }
 
+    // Get milestones and calculate progress for custom metrics
+    const milestones = await getMetricMilestones(metric.id);
+    let milestoneProgress: MilestoneProgress[] = [];
+    let currentMilestone: MilestoneProgress | null = null;
+    let nextMilestone: HeartMetricMilestone | null = null;
+    
+    if (milestones.length > 0) {
+      const currentValue = latestSnapshot?.value ?? null;
+      milestoneProgress = calculateMilestoneProgress(milestones, currentValue, daysSinceLaunch);
+      currentMilestone = getCurrentMilestone(milestoneProgress, daysSinceLaunch);
+      
+      const upcomingMilestones = milestones.filter(m => 
+        daysSinceLaunch !== null && m.days_after_launch > daysSinceLaunch
+      );
+      nextMilestone = upcomingMilestones.length > 0 ? upcomingMilestones[0] : null;
+    }
+
     metricsWithLiveData.push({
       category: customCategory,
       metric,
@@ -931,6 +1122,9 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       trend,
       isPreLaunch,
       measurementPeriod,
+      milestoneProgress,
+      currentMilestone,
+      nextMilestone,
     });
   }
   

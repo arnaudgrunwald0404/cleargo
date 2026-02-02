@@ -309,7 +309,7 @@ function HeartMetricCard({
   item: HeartMetricDisplay;
   eventIdToName?: Record<string, string>;
 }) {
-  const { category, metric, latestSnapshot, trend, isPreLaunch, measurementPeriod } = item;
+  const { category, metric, latestSnapshot, trend, isPreLaunch, measurementPeriod, milestoneProgress, currentMilestone } = item;
 
   // Determine display value
   let displayValue: string = '--';
@@ -447,30 +447,84 @@ function HeartMetricCard({
           )}
         </div>
 
-        {/* Progress bar for percentage metrics */}
-        {metric && latestSnapshot?.value !== null && progressValue > 0 && (
+        {/* Milestone progress display */}
+        {metric && milestoneProgress && milestoneProgress.length > 0 ? (
           <div>
-            <Progress
-              value={progressValue}
-              color={statusColor}
-              size="sm"
-              radius="xl"
-            />
-            {metric.target_value && (
-              <Text size="xs" c="dimmed" mt={4}>
+            {/* Mini milestone indicators */}
+            <Group gap={4} mb={4}>
+              {milestoneProgress.map((mp, idx) => {
+                const milestoneStatusColor = mp.status === 'ON_TRACK' ? 'green' :
+                  mp.status === 'AT_RISK' ? 'yellow' :
+                  mp.status === 'MISSED' ? 'red' : 'gray';
+                const isActive = currentMilestone?.milestone.id === mp.milestone.id;
+                return (
+                  <Tooltip 
+                    key={mp.milestone.id}
+                    label={`${mp.milestone.label || `Day ${mp.milestone.days_after_launch}`}: ${mp.milestone.target_value}% target${mp.daysRemaining !== null ? ` (${mp.daysRemaining} days left)` : ''}`}
+                    position="top"
+                  >
+                    <div 
+                      style={{ 
+                        width: 8, 
+                        height: 8, 
+                        borderRadius: '50%', 
+                        backgroundColor: `var(--mantine-color-${milestoneStatusColor}-${isActive ? '6' : '3'})`,
+                        border: isActive ? '2px solid var(--mantine-color-blue-5)' : 'none',
+                        cursor: 'help',
+                      }} 
+                    />
+                  </Tooltip>
+                );
+              })}
+            </Group>
+            
+            {/* Current milestone progress */}
+            {currentMilestone && (
+              <>
+                <Progress
+                  value={currentMilestone.percentComplete}
+                  color={currentMilestone.status === 'ON_TRACK' ? 'green' :
+                    currentMilestone.status === 'AT_RISK' ? 'yellow' :
+                    currentMilestone.status === 'MISSED' ? 'red' : 'gray'}
+                  size="sm"
+                  radius="xl"
+                />
+                <Text size="xs" c="dimmed" mt={4}>
+                  {currentMilestone.milestone.label || `Day ${currentMilestone.milestone.days_after_launch}`}: {currentMilestone.milestone.target_value}%
+                  {currentMilestone.daysRemaining !== null && currentMilestone.daysRemaining > 0 && (
+                    <Text span c="blue" size="xs"> ({currentMilestone.daysRemaining}d left)</Text>
+                  )}
+                </Text>
+              </>
+            )}
+          </div>
+        ) : (
+          /* Fallback to single target display */
+          <>
+            {metric && latestSnapshot?.value !== null && progressValue > 0 && (
+              <div>
+                <Progress
+                  value={progressValue}
+                  color={statusColor}
+                  size="sm"
+                  radius="xl"
+                />
+                {metric.target_value && (
+                  <Text size="xs" c="dimmed" mt={4}>
+                    Target: {metric.target_value}%
+                    {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
+                  </Text>
+                )}
+              </div>
+            )}
+
+            {metric && !latestSnapshot && metric.target_value && (
+              <Text size="xs" c="dimmed">
                 Target: {metric.target_value}%
                 {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
               </Text>
             )}
-          </div>
-        )}
-
-        {/* Show target even if no snapshot yet */}
-        {metric && !latestSnapshot && metric.target_value && (
-          <Text size="xs" c="dimmed">
-            Target: {metric.target_value}%
-            {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
-          </Text>
+          </>
         )}
 
         {/* Status badge */}
