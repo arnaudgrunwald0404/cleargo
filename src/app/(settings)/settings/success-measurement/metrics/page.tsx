@@ -22,6 +22,7 @@ import {
   SimpleGrid,
   Tooltip,
   Switch,
+  Divider,
 } from '@mantine/core';
 import { IconPlus, IconPencil, IconTrash, IconAlertCircle, IconHeart, IconTemplate, IconCheck } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
@@ -32,7 +33,15 @@ import type {
   HeartMeasurementType,
   CreateCustomMetricTemplateDTO,
   UpdateCustomMetricTemplateDTO,
+  DefaultMilestone,
 } from '@/lib/heart/types';
+
+// Default milestone presets
+const DEFAULT_MILESTONE_PRESETS: DefaultMilestone[] = [
+  { days: 30, target: 30, label: '1 Month' },
+  { days: 90, target: 60, label: '3 Months' },
+  { days: 180, target: 80, label: '6 Months' },
+];
 
 const HEART_CATEGORIES = [
   { id: 'happiness', name: 'Happiness', icon: '😊', description: 'User satisfaction and sentiment' },
@@ -112,14 +121,15 @@ export default function SuccessMetricsPage() {
   }, [fetchDefaults, fetchTemplates]);
 
   // Save HEART default
-  const handleSaveDefault = async () => {
-    if (!editingDefault) return;
+  const handleSaveDefault = async (override?: HeartCategoryDefault) => {
+    const defaultToSave = override ?? editingDefault;
+    if (!defaultToSave) return;
     setSavingDefault(true);
     try {
       const res = await fetch('/api/settings/success-measurement/heart/defaults', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingDefault),
+        body: JSON.stringify(defaultToSave),
       });
       if (!res.ok) throw new Error('Failed to update default');
       
@@ -285,6 +295,7 @@ export default function SuccessMetricsPage() {
                                 default_measurement_type: null,
                                 guidance_text: null,
                                 example_events: null,
+                                default_milestones: null,
                                 updated_by: null,
                                 created_at: '',
                                 updated_at: '',
@@ -296,7 +307,15 @@ export default function SuccessMetricsPage() {
                           
                           {categoryDefault ? (
                             <Stack gap="xs">
-                              {categoryDefault.default_target_value && (
+                              {categoryDefault.default_milestones && categoryDefault.default_milestones.length > 0 ? (
+                                <Group gap="xs" wrap="wrap">
+                                  {categoryDefault.default_milestones.map((m, idx) => (
+                                    <Badge key={idx} color="blue" variant="light" size="sm">
+                                      {m.label}: {m.target}%
+                                    </Badge>
+                                  ))}
+                                </Group>
+                              ) : categoryDefault.default_target_value ? (
                                 <Group gap="xs">
                                   <Badge color="blue" variant="light" size="sm">
                                     Target: {categoryDefault.default_target_value}%
@@ -307,14 +326,13 @@ export default function SuccessMetricsPage() {
                                     </Badge>
                                   )}
                                 </Group>
+                              ) : (
+                                <Text size="xs" c="dimmed" fs="italic">No milestones configured</Text>
                               )}
                               {categoryDefault.default_measurement_type && (
                                 <Text size="xs" c="dimmed">
                                   Measurement: {MEASUREMENT_TYPES.find(m => m.value === categoryDefault.default_measurement_type)?.label}
                                 </Text>
-                              )}
-                              {!categoryDefault.default_target_value && (
-                                <Text size="xs" c="dimmed" fs="italic">No default configured</Text>
                               )}
                             </Stack>
                           ) : (
@@ -451,73 +469,15 @@ export default function SuccessMetricsPage() {
             <Text fw={500}>Edit {HEART_CATEGORIES.find(c => c.id === editingDefault?.heart_category)?.name} Default</Text>
           </Group>
         }
-        size="md"
+        size="lg"
       >
         {editingDefault && (
-          <Stack gap="md">
-            <NumberInput
-              label="Default Target Value (%)"
-              description="Target percentage to achieve"
-              placeholder="e.g., 75"
-              value={editingDefault.default_target_value ?? ''}
-              onChange={(value) => setEditingDefault({
-                ...editingDefault,
-                default_target_value: typeof value === 'number' ? value : null,
-              })}
-              min={0}
-              max={100}
-            />
-            
-            <NumberInput
-              label="Default Timeframe (days)"
-              description="Days to achieve the target"
-              placeholder="e.g., 30"
-              value={editingDefault.default_target_timeframe_days ?? ''}
-              onChange={(value) => setEditingDefault({
-                ...editingDefault,
-                default_target_timeframe_days: typeof value === 'number' ? value : null,
-              })}
-              min={1}
-              max={365}
-            />
-            
-            <Select
-              label="Default Measurement Type"
-              description="How this metric should be measured"
-              placeholder="Select measurement type"
-              data={MEASUREMENT_TYPES.filter(m => m.category === editingDefault.heart_category || editingDefault.heart_category === 'happiness').map(m => ({
-                value: m.value,
-                label: m.label,
-              }))}
-              value={editingDefault.default_measurement_type || null}
-              onChange={(value) => setEditingDefault({
-                ...editingDefault,
-                default_measurement_type: value as HeartMeasurementType | null,
-              })}
-              clearable
-            />
-            
-            <Textarea
-              label="Guidance Text"
-              description="Help text shown to users during setup"
-              placeholder="Tips for configuring this metric..."
-              value={editingDefault.guidance_text || ''}
-              onChange={(e) => setEditingDefault({
-                ...editingDefault,
-                guidance_text: e.target.value || null,
-              })}
-              rows={3}
-            />
-            
-            <Group justify="flex-end" mt="md">
-              <Button variant="subtle" onClick={() => setEditingDefault(null)}>
-                Cancel
-              </Button>
-              <Button onClick={handleSaveDefault} loading={savingDefault} leftSection={<IconCheck size={16} />}>
-                Save Default
-              </Button>
-            </Group>
-          </Stack>
+          <EditDefaultForm
+            editingDefault={editingDefault}
+            setEditingDefault={setEditingDefault}
+            onSave={handleSaveDefault}
+            saving={savingDefault}
+          />
         )}
       </Modal>
 
@@ -586,6 +546,225 @@ export default function SuccessMetricsPage() {
         </Stack>
       </Modal>
     </main>
+  );
+}
+
+// Edit Default Form Component (Milestone-based)
+function EditDefaultForm({
+  editingDefault,
+  setEditingDefault,
+  onSave,
+  saving,
+}: {
+  editingDefault: HeartCategoryDefault;
+  setEditingDefault: (value: HeartCategoryDefault | null) => void;
+  onSave: (override?: HeartCategoryDefault) => void;
+  saving: boolean;
+}) {
+  const [milestones, setMilestones] = useState<DefaultMilestone[]>([]);
+
+  useEffect(() => {
+    if (editingDefault.default_milestones && editingDefault.default_milestones.length > 0) {
+      setMilestones(editingDefault.default_milestones);
+    } else if (editingDefault.default_target_value && editingDefault.default_target_timeframe_days) {
+      setMilestones([{
+        days: editingDefault.default_target_timeframe_days,
+        target: editingDefault.default_target_value,
+        label: editingDefault.default_target_timeframe_days <= 30 ? '1 Month' :
+          editingDefault.default_target_timeframe_days <= 60 ? '2 Months' :
+          editingDefault.default_target_timeframe_days <= 90 ? '3 Months' :
+          editingDefault.default_target_timeframe_days <= 180 ? '6 Months' :
+          `${editingDefault.default_target_timeframe_days} Days`,
+      }]);
+    } else {
+      setMilestones([]);
+    }
+  }, [editingDefault]);
+
+  const getAutoLabel = (days: number) => {
+    if (days <= 30) return '1 Month';
+    if (days <= 60) return '2 Months';
+    if (days <= 90) return '3 Months';
+    if (days <= 120) return '4 Months';
+    if (days <= 150) return '5 Months';
+    if (days <= 180) return '6 Months';
+    if (days <= 270) return '9 Months';
+    if (days <= 365) return '1 Year';
+    return `${Math.round(days / 30)} Months`;
+  };
+
+  const handleSave = () => {
+    if (milestones.length === 0) {
+      notifications.show({
+        title: 'Validation Error',
+        message: 'Please add at least 1 default milestone target.',
+        color: 'red',
+      });
+      return;
+    }
+    if (milestones.length > 3) {
+      notifications.show({
+        title: 'Validation Error',
+        message: 'Please limit to at most 3 default milestone targets.',
+        color: 'red',
+      });
+      return;
+    }
+
+    const primary = milestones[0];
+    const nextDefault: HeartCategoryDefault = {
+      ...editingDefault,
+      default_milestones: milestones,
+      // Keep legacy fields in sync for backwards compatibility
+      default_target_value: primary?.target ?? null,
+      default_target_timeframe_days: primary?.days ?? null,
+    };
+    setEditingDefault(nextDefault);
+    onSave(nextDefault);
+  };
+
+  return (
+    <Stack gap="md">
+      <Text size="sm" c="dimmed">
+        Set default milestone targets used when new epics are created.
+      </Text>
+
+      <Divider label="Default Milestone Targets" labelPosition="left" />
+
+      {milestones.length > 0 ? (
+        <Stack gap="xs">
+          {milestones.map((milestone, idx) => {
+            const autoLabel = getAutoLabel(milestone.days);
+            return (
+              <Paper key={idx} withBorder p="xs" bg="gray.0">
+                <Group gap="xs">
+                  <NumberInput
+                    size="xs"
+                    placeholder="Days"
+                    value={milestone.days}
+                    onChange={(value) => {
+                      const days = typeof value === 'number' ? value : 30;
+                      const newLabel = getAutoLabel(days);
+                      const next = [...milestones];
+                      next[idx] = { ...milestone, days, label: newLabel };
+                      setMilestones(next);
+                    }}
+                    min={1}
+                    max={365}
+                    style={{ width: 70 }}
+                  />
+                  <Text size="xs" c="dimmed">days →</Text>
+                  <NumberInput
+                    size="xs"
+                    placeholder="Target"
+                    value={milestone.target}
+                    onChange={(value) => {
+                      const next = [...milestones];
+                      next[idx] = { ...milestone, target: typeof value === 'number' ? value : 50 };
+                      setMilestones(next);
+                    }}
+                    min={0}
+                    max={100}
+                    style={{ width: 70 }}
+                  />
+                  <Text size="xs" c="dimmed">%</Text>
+                  <Badge size="xs" variant="light" color="blue">
+                    {autoLabel}
+                  </Badge>
+                  {milestones.length > 1 && (
+                    <Button
+                      size="xs"
+                      variant="subtle"
+                      color="red"
+                      onClick={() => {
+                        const next = milestones.filter((_, i) => i !== idx);
+                        setMilestones(next);
+                      }}
+                      style={{ marginLeft: 'auto' }}
+                    >
+                      Remove
+                    </Button>
+                  )}
+                </Group>
+              </Paper>
+            );
+          })}
+        </Stack>
+      ) : (
+        <Text size="xs" c="dimmed" ta="center" py="xs">
+          No milestones set. Add milestones or use defaults.
+        </Text>
+      )}
+
+      <Group gap="xs" mt="xs">
+        {milestones.length < 3 && (
+          <Button
+            size="xs"
+            variant="light"
+            leftSection={<IconPlus size={14} />}
+            onClick={() => {
+              const lastDay = milestones.length > 0
+                ? Math.max(...milestones.map(m => m.days)) + 30
+                : 30;
+              const newLabel = getAutoLabel(lastDay);
+              setMilestones([...milestones, { days: lastDay, target: 50, label: newLabel }]);
+            }}
+          >
+            Add Milestone
+          </Button>
+        )}
+        {milestones.length === 0 && (
+          <Button
+            size="xs"
+            variant="light"
+            color="blue"
+            onClick={() => setMilestones([...DEFAULT_MILESTONE_PRESETS])}
+          >
+            Use Defaults (30/90/180 days)
+          </Button>
+        )}
+        <Text size="xs" c="dimmed">
+          {milestones.length}/3 milestones {milestones.length === 0 && '(at least 1 required)'}
+        </Text>
+      </Group>
+
+      <Select
+        label="Default Measurement Type"
+        description="How this metric should be measured"
+        placeholder="Select measurement type"
+        data={MEASUREMENT_TYPES.filter(m => m.category === editingDefault.heart_category || editingDefault.heart_category === 'happiness').map(m => ({
+          value: m.value,
+          label: m.label,
+        }))}
+        value={editingDefault.default_measurement_type || null}
+        onChange={(value) => setEditingDefault({
+          ...editingDefault,
+          default_measurement_type: value as HeartMeasurementType | null,
+        })}
+        clearable
+      />
+
+      <Textarea
+        label="Guidance Text"
+        description="Help text shown to users during setup"
+        placeholder="Tips for configuring this metric..."
+        value={editingDefault.guidance_text || ''}
+        onChange={(e) => setEditingDefault({
+          ...editingDefault,
+          guidance_text: e.target.value || null,
+        })}
+        rows={3}
+      />
+
+      <Group justify="flex-end" mt="md">
+        <Button variant="subtle" onClick={() => setEditingDefault(null)}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} loading={saving} leftSection={<IconCheck size={16} />}>
+          Save Default
+        </Button>
+      </Group>
+    </Stack>
   );
 }
 

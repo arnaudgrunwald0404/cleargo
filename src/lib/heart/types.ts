@@ -395,6 +395,12 @@ export interface HeartDashboardSummary {
 // HEART Settings Types (Admin-configurable defaults)
 // ============================================================================
 
+export interface DefaultMilestone {
+  days: number;
+  target: number;
+  label: string;
+}
+
 export interface HeartCategoryDefault {
   id: string;
   heart_category: HeartCategoryId;
@@ -403,6 +409,7 @@ export interface HeartCategoryDefault {
   default_measurement_type: HeartMeasurementType | null;
   guidance_text: string | null;
   example_events: string[] | null;
+  default_milestones: DefaultMilestone[] | null;
   updated_by: string | null;
   created_at: string;
   updated_at: string;
@@ -414,6 +421,7 @@ export interface UpdateHeartCategoryDefaultDTO {
   default_measurement_type?: HeartMeasurementType | null;
   guidance_text?: string | null;
   example_events?: string[] | null;
+  default_milestones?: DefaultMilestone[] | null;
 }
 
 // ============================================================================
