@@ -1,65 +1,80 @@
 -- Create epic_success_metric_history table to track all changes
 -- This provides accountability for metric and target changes
+-- Note: Only runs if required tables exist (may not exist in all deployments)
 
-CREATE TABLE IF NOT EXISTS public.epic_success_metric_history (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  epic_success_metric_id uuid NULL REFERENCES public.epic_success_metrics(id) ON DELETE CASCADE,
-  epic_id uuid NOT NULL REFERENCES public.epic(id) ON DELETE CASCADE,
-  metric_id uuid NOT NULL REFERENCES public.success_metrics(id) ON DELETE CASCADE,
-  change_type text NOT NULL CHECK (change_type IN (
-    'METRIC_ADDED',
-    'METRIC_REMOVED',
-    'TARGET_SET',
-    'TARGET_UPDATED',
-    'EVENT_CONFIG_UPDATED'
-  )),
-  changed_by uuid NOT NULL REFERENCES public.app_user(id),
-  old_value jsonb NULL,
-  new_value jsonb NULL,
-  changed_at timestamptz NOT NULL DEFAULT now()
-);
+DO $$ 
+BEGIN
+  -- Check if required tables exist
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'epic_success_metrics' AND table_schema = 'public') THEN
+    RAISE NOTICE 'epic_success_metrics table does not exist, skipping migration';
+    RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'success_metrics' AND table_schema = 'public') THEN
+    RAISE NOTICE 'success_metrics table does not exist, skipping migration';
+    RETURN;
+  END IF;
 
--- Create indexes for efficient querying
-CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_epic 
-  ON public.epic_success_metric_history(epic_id, changed_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_epic_metric 
-  ON public.epic_success_metric_history(epic_success_metric_id);
-
-CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_metric 
-  ON public.epic_success_metric_history(metric_id);
-
-CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_change_type 
-  ON public.epic_success_metric_history(change_type);
-
--- Enable RLS
-ALTER TABLE public.epic_success_metric_history ENABLE ROW LEVEL SECURITY;
-
--- Allow read access to authenticated users
-DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_success_metric_history;
-CREATE POLICY "Allow read access to authenticated users" ON public.epic_success_metric_history
-  FOR SELECT TO authenticated USING (true);
-
--- Allow write access to PMs and admins (history is created by triggers)
-DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_metric_history;
-CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metric_history
-  FOR INSERT TO authenticated 
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.app_user 
-      WHERE id = (auth.jwt()->>'sub')::uuid
-      AND (
-        roles @> ARRAY['PM']::text[] 
-        OR roles @> ARRAY['PRODUCT_OPS']::text[] 
-        OR roles @> ARRAY['CPO']::text[] 
-        OR roles @> ARRAY['SUPERADMIN']::text[]
-      )
-    )
+  -- Create table if not exists
+  CREATE TABLE IF NOT EXISTS public.epic_success_metric_history (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    epic_success_metric_id uuid NULL REFERENCES public.epic_success_metrics(id) ON DELETE CASCADE,
+    epic_id uuid NOT NULL REFERENCES public.epic(id) ON DELETE CASCADE,
+    metric_id uuid NOT NULL REFERENCES public.success_metrics(id) ON DELETE CASCADE,
+    change_type text NOT NULL CHECK (change_type IN (
+      'METRIC_ADDED',
+      'METRIC_REMOVED',
+      'TARGET_SET',
+      'TARGET_UPDATED',
+      'EVENT_CONFIG_UPDATED'
+    )),
+    changed_by uuid NOT NULL REFERENCES public.app_user(id),
+    old_value jsonb NULL,
+    new_value jsonb NULL,
+    changed_at timestamptz NOT NULL DEFAULT now()
   );
 
-COMMENT ON TABLE public.epic_success_metric_history IS 'History of all changes to epic success metrics, including metric additions/removals, target changes, and event configuration updates.';
+  -- Create indexes for efficient querying
+  CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_epic 
+    ON public.epic_success_metric_history(epic_id, changed_at DESC);
 
--- Function to log history entry
+  CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_epic_metric 
+    ON public.epic_success_metric_history(epic_success_metric_id);
+
+  CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_metric 
+    ON public.epic_success_metric_history(metric_id);
+
+  CREATE INDEX IF NOT EXISTS idx_epic_success_metric_history_change_type 
+    ON public.epic_success_metric_history(change_type);
+
+  -- Enable RLS
+  ALTER TABLE public.epic_success_metric_history ENABLE ROW LEVEL SECURITY;
+
+  -- Allow read access to authenticated users
+  DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_success_metric_history;
+  CREATE POLICY "Allow read access to authenticated users" ON public.epic_success_metric_history
+    FOR SELECT TO authenticated USING (true);
+
+  -- Allow write access to PMs and admins (history is created by triggers)
+  DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_metric_history;
+  CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metric_history
+    FOR INSERT TO authenticated 
+    WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM public.app_user 
+        WHERE id = (auth.jwt()->>'sub')::uuid
+        AND (
+          roles @> ARRAY['PM']::text[] 
+          OR roles @> ARRAY['PRODUCT_OPS']::text[] 
+          OR roles @> ARRAY['CPO']::text[] 
+          OR roles @> ARRAY['SUPERADMIN']::text[]
+        )
+      )
+    );
+
+  COMMENT ON TABLE public.epic_success_metric_history IS 'History of all changes to epic success metrics, including metric additions/removals, target changes, and event configuration updates.';
+END $$;
+
+-- Function to log history entry (created outside DO block)
 CREATE OR REPLACE FUNCTION log_epic_success_metric_history()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -190,9 +205,14 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Create trigger
-DROP TRIGGER IF EXISTS epic_success_metric_history_trigger ON public.epic_success_metrics;
-CREATE TRIGGER epic_success_metric_history_trigger
-  AFTER INSERT OR UPDATE OR DELETE ON public.epic_success_metrics
-  FOR EACH ROW
-  EXECUTE FUNCTION log_epic_success_metric_history();
+-- Create trigger only if table exists
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'epic_success_metrics' AND table_schema = 'public') THEN
+    DROP TRIGGER IF EXISTS epic_success_metric_history_trigger ON public.epic_success_metrics;
+    CREATE TRIGGER epic_success_metric_history_trigger
+      AFTER INSERT OR UPDATE OR DELETE ON public.epic_success_metrics
+      FOR EACH ROW
+      EXECUTE FUNCTION log_epic_success_metric_history();
+  END IF;
+END $$;

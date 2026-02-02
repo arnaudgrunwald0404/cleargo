@@ -1,7 +1,33 @@
 -- Fix history trigger to map current auth email to app_user.id, avoiding FK violations
 -- and relax policy to check roles by email instead of auth sub UUID
+-- Note: Only runs if required tables exist
 
--- 1) Replace history logging function
+DO $$ 
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'epic_success_metric_history' AND table_schema = 'public') THEN
+    RAISE NOTICE 'epic_success_metric_history table does not exist, skipping migration';
+    RETURN;
+  END IF;
+
+  -- Update the INSERT policy to check roles by email
+  DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_metric_history;
+  CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metric_history
+    FOR INSERT TO authenticated
+    WITH CHECK (
+      EXISTS (
+        SELECT 1 FROM public.app_user 
+        WHERE email = (auth.jwt()->>'email')
+        AND (
+          roles @> ARRAY['PM']::text[] 
+          OR roles @> ARRAY['PRODUCT_OPS']::text[] 
+          OR roles @> ARRAY['CPO']::text[] 
+          OR roles @> ARRAY['SUPERADMIN']::text[]
+        )
+      )
+    );
+END $$;
+
+-- Replace history logging function
 CREATE OR REPLACE FUNCTION public.log_epic_success_metric_history()
 RETURNS TRIGGER AS $$
 DECLARE
@@ -132,20 +158,3 @@ BEGIN
   RETURN COALESCE(NEW, OLD);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- 2) Align INSERT policy to check roles by email rather than auth sub UUID
-DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.epic_success_metric_history;
-CREATE POLICY "Allow write access to PMs and admins" ON public.epic_success_metric_history
-  FOR INSERT TO authenticated
-  WITH CHECK (
-    EXISTS (
-      SELECT 1 FROM public.app_user 
-      WHERE email = (auth.jwt()->>'email')
-      AND (
-        roles @> ARRAY['PM']::text[] 
-        OR roles @> ARRAY['PRODUCT_OPS']::text[] 
-        OR roles @> ARRAY['CPO']::text[] 
-        OR roles @> ARRAY['SUPERADMIN']::text[]
-      )
-    )
-  );

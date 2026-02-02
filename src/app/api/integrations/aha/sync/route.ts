@@ -105,9 +105,19 @@ export async function POST(req: NextRequest) {
             if (ownerEmail) {
                 const ownerUser = await getUserByEmail(ownerEmail);
                 if (ownerUser) return ownerUser.id;
-                return await getFallbackProductOpsUser();
+                try {
+                    return await getFallbackProductOpsUser();
+                } catch (e) {
+                    console.warn('Fallback user not found, proceeding without owner');
+                    return null;
+                }
             }
-            return await getFallbackProductOpsUser();
+            try {
+                return await getFallbackProductOpsUser();
+            } catch (e) {
+                console.warn('Fallback user not found, proceeding without owner');
+                return null;
+            }
         };
 
         // If a release is provided, use an efficient release-based sync (no full epic scan)
@@ -523,10 +533,20 @@ export async function POST(req: NextRequest) {
                     if (ownerUser) {
                         ownerId = ownerUser.id;
                     } else {
-                        ownerId = await getFallbackProductOpsUser();
+                        try {
+                            ownerId = await getFallbackProductOpsUser();
+                        } catch (e) {
+                            console.warn('Fallback user not found, proceeding without owner');
+                            ownerId = null;
+                        }
                     }
                 } else {
-                    ownerId = await getFallbackProductOpsUser();
+                    try {
+                        ownerId = await getFallbackProductOpsUser();
+                    } catch (e) {
+                        console.warn('Fallback user not found, proceeding without owner');
+                        ownerId = null;
+                    }
                 }
 
                 // Upsert epic

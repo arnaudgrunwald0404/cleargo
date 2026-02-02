@@ -13,6 +13,7 @@ import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { SuccessConfigSection } from "@/components/epic/SuccessConfigSection";
+import { HeartDashboard } from "@/components/epic/HeartDashboard";
 import { EpicMetricsManager } from "@/components/epic/EpicMetricsManager";
 import { ScorecardPageContent } from "@/components/epic/ScorecardPageContent";
 import { RetroPageContent } from "@/components/epic/RetroPageContent";
@@ -81,21 +82,21 @@ export default function EpicDetailPage() {
     const loadData = useCallback(async () => {
         // Prevent multiple simultaneous calls
         if (loadDataInProgressRef.current) {
-            console.warn('loadData already in progress, skipping duplicate call', { inProgress: loadDataInProgressRef.current });
+            console.warn('loadData already in progress, skipping duplicate call');
             return;
         }
 
-        // Debounce rapid successive calls (min 1000ms between calls to prevent loops)
+        // Debounce rapid successive calls (min 2000ms between calls to prevent loops)
         const now = Date.now();
         const timeSinceLastCall = now - lastLoadDataRef.current;
-        if (timeSinceLastCall < 1000) {
+        if (timeSinceLastCall < 2000) {
             console.warn(`loadData called too soon (${timeSinceLastCall}ms ago), debouncing`);
             if (loadDataTimeoutRef.current) {
                 clearTimeout(loadDataTimeoutRef.current);
             }
             loadDataTimeoutRef.current = setTimeout(() => {
                 loadData();
-            }, 1000 - timeSinceLastCall);
+            }, 2000 - timeSinceLastCall);
             return;
         }
 
@@ -112,7 +113,7 @@ export default function EpicDetailPage() {
 
             // Use shared rate-limit-aware fetch utility
             const fetchWithRetry = (url: string) => fetchWithRateLimit(url, { maxRetries: 1 });
-            const { batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+
 
             // Priority 1: Critical data (epic, settings, criteria) - fetch first
             const [epicRes, settingsRes, criteriaRes] = await Promise.all([
@@ -1722,19 +1723,29 @@ export default function EpicDetailPage() {
                     </Tabs.Panel>
 
                     <Tabs.Panel value="adoption" pt="md">
-                        {/* Success data is already loaded in parallel, but component renders only when tab is active */}
+                        {/* HEART Metrics Dashboard - AI-powered success metrics */}
                         {activeTab === 'adoption' && (
-                            <SuccessConfigSection
-                                epicId={epic.id}
-                                epicName={epic.name}
-                                epicTier={epic.tier}
-                                config={successConfig}
-                                metrics={successMetrics}
-                                isAdmin={isAdmin}
-                                onRefresh={fetchSuccessData}
-                                epicOwnerId={epic.owner_id}
-                                pmOwner={pmOwner}
-                            />
+                            <Stack gap="xl">
+                                <HeartDashboard
+                                    epicId={epic.id}
+                                    epicName={epic.name}
+                                />
+                                
+                                {/* Legacy Success Config - for backward compatibility */}
+                                {successConfig && (
+                                    <SuccessConfigSection
+                                        epicId={epic.id}
+                                        epicName={epic.name}
+                                        epicTier={epic.tier}
+                                        config={successConfig}
+                                        metrics={successMetrics}
+                                        isAdmin={isAdmin}
+                                        onRefresh={fetchSuccessData}
+                                        epicOwnerId={epic.owner_id}
+                                        pmOwner={pmOwner}
+                                    />
+                                )}
+                            </Stack>
                         )}
                     </Tabs.Panel>
 

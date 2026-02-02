@@ -13,6 +13,7 @@
     "setup-prd-hook": "chmod +x .git/hooks/pre-commit scripts/update-prd.sh"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.23",
     "@ai-sdk/google": "^3.0.10",
     "@mantine/core": "^8.3.9",
     "@mantine/form": "^8.3.9",
@@ -31,6 +32,7 @@
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "resend": "^3.2.0",
+    "supabase": "^2.72.8",
     "xlsx": "^0.18.5",
     "zod": "^3.25.76"
   },

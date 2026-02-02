@@ -142,12 +142,22 @@ export async function POST(req: NextRequest) {
                 ownerId = user.id;
             } else {
                 // Fallback to Product Ops user
-                console.warn(`Owner not found: ${epicData.owner_email}, using fallback`);
-                ownerId = await getFallbackProductOpsUser();
+                console.warn(`Owner not found: ${epicData.owner_email}, trying fallback`);
+                try {
+                    ownerId = await getFallbackProductOpsUser();
+                } catch (fallbackError) {
+                    console.warn('Fallback user not found, proceeding without owner:', fallbackError);
+                    ownerId = null;
+                }
             }
         } else {
-            // No owner specified, use fallback
-            ownerId = await getFallbackProductOpsUser();
+            // No owner specified, try fallback
+            try {
+                ownerId = await getFallbackProductOpsUser();
+            } catch (fallbackError) {
+                console.warn('Fallback user not found, proceeding without owner:', fallbackError);
+                ownerId = null;
+            }
         }
 
         // Check if this is a new epic

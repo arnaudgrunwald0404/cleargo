@@ -237,6 +237,19 @@ export async function mapEpicToEpic(
         }
     }
 
+    // ALWAYS extract and store cleargo_candidate for archiving logic
+    // This is critical for the upsertEpicFromAha function to determine archived status
+    if (Array.isArray(epic.custom_fields)) {
+        const cleargoField = epic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate');
+        if (cleargoField) {
+            // Store the actual value (usually "Yes" or null)
+            const value = cleargoField.value;
+            customFields.cleargo_candidate = typeof value === 'object' && value?.name 
+                ? value.name 
+                : value;
+        }
+    }
+
     // Store the full release name in standard fields (no parsing)
     const releaseName = epic.release?.name || null;
     if (releaseName) {

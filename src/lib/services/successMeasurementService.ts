@@ -69,6 +69,11 @@ export async function getMetrics(filters?: MetricFilters): Promise<SuccessMetric
   const { data, error } = await query;
 
   if (error) {
+    // Handle table not existing gracefully (migration not applied)
+    if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
+      console.warn('Table success_metrics does not exist. Success Measurement migration may not have been applied.');
+      return [];
+    }
     console.error('Error fetching metrics:', error);
     throw new Error(`Failed to fetch metrics: ${error.message}`);
   }
@@ -339,65 +344,26 @@ export async function getEpicSuccessConfig(epicId: string): Promise<EpicSuccessC
         delegated_post_launch_owner_details:app_user!delegated_post_launch_owner_id(id, email, first_name, last_name, avatar_url)
       `)
       .eq('epic_id', epicId)
-      .single();
+      .maybeSingle(); // Use maybeSingle instead of single to avoid PGRST116
 
     if (error) {
-      // If relationship error (PGRST200), fall back to separate queries
-      if (error.code === 'PGRST200' || error.message?.includes('relationship') || error.message?.includes('PGRST200')) {
-        console.warn('Relationship query failed, falling back to separate queries:', error.message);
-        return await getEpicSuccessConfigWithSeparateQueries(epicId);
-      }
-      
-      if (error.code === 'PGRST116') {
-        return null; // Not found
-      }
-      
       console.error('Error fetching epic success config:', error);
-      console.error('Error details:', {
-        code: error.code,
-        message: error.message,
-        details: error.details,
-        hint: error.hint
-      });
-      
-      // Check message for relationship error before throwing
-      if (error.message?.includes('relationship') || error.message?.includes('PGRST200')) {
-        console.warn('Relationship error detected in message, falling back to separate queries');
+      // If relationship error, fall back
+      if (error.code === 'PGRST200' || error.message?.includes('relationship')) {
         return await getEpicSuccessConfigWithSeparateQueries(epicId);
       }
-      
-      throw new Error(`Failed to fetch epic success config: ${error.message} (code: ${error.code})`);
+      return null;
     }
 
     return data as EpicSuccessConfigWithDetails;
   } catch (error: any) {
-    // If relationship error in catch block, try fallback
-    const errorMessage = error?.message || '';
-    const errorCode = error?.code || '';
-    
-    if (errorCode === 'PGRST200' || 
-        errorMessage.includes('relationship') || 
-        errorMessage.includes('PGRST200') ||
-        errorMessage.includes('Could not find a relationship')) {
-      console.warn('Relationship error caught in catch block, trying fallback:', errorMessage);
-      try {
-        return await getEpicSuccessConfigWithSeparateQueries(epicId);
-      } catch (fallbackError: any) {
-        console.error('Fallback query also failed:', fallbackError);
-        throw fallbackError;
-      }
+    console.warn('Catch block in getEpicSuccessConfig, trying fallback:', error.message);
+    try {
+      return await getEpicSuccessConfigWithSeparateQueries(epicId);
+    } catch (fallbackError: any) {
+      console.error('Fallback query also failed:', fallbackError);
+      return null;
     }
-    
-    // Re-throw if it's already our custom error (but check for relationship errors first)
-    if (errorMessage.includes('Failed to fetch epic success config') && 
-        !errorMessage.includes('relationship') && 
-        !errorMessage.includes('PGRST200')) {
-      throw error;
-    }
-    
-    // Wrap unexpected errors
-    console.error('Unexpected error in getEpicSuccessConfig:', error);
-    throw new Error(`Unexpected error fetching epic success config: ${errorMessage || 'Unknown error'}`);
   }
 }
 

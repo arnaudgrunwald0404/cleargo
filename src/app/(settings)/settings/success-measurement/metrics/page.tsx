@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Table,
   Button,
   Group,
-  Select,
   Drawer,
   Text,
   ActionIcon,
@@ -13,178 +12,201 @@ import {
   Stack,
   Modal,
   Alert,
+  Card,
+  NumberInput,
+  Select,
+  TextInput,
+  Textarea,
+  Tabs,
+  Paper,
+  SimpleGrid,
+  Tooltip,
+  Switch,
 } from '@mantine/core';
-import { IconPlus, IconPencil, IconTrash, IconAlertCircle } from '@tabler/icons-react';
+import { IconPlus, IconPencil, IconTrash, IconAlertCircle, IconHeart, IconTemplate, IconCheck } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import { MetricForm } from '@/components/admin/success-measurement/MetricForm';
-import type { SuccessMetric, CreateSuccessMetricDTO, MetricCategory, MetricSource, LeadingOrLagging } from '@/lib/success/types';
 import { PurpleLoader } from '@/components/PurpleLoader';
+import type { 
+  HeartCategoryDefault, 
+  HeartCustomMetricTemplate, 
+  HeartMeasurementType,
+  CreateCustomMetricTemplateDTO,
+  UpdateCustomMetricTemplateDTO,
+} from '@/lib/heart/types';
 
-export default function MetricsPage() {
-  const [metrics, setMetrics] = useState<SuccessMetric[]>([]);
+const HEART_CATEGORIES = [
+  { id: 'happiness', name: 'Happiness', icon: '😊', description: 'User satisfaction and sentiment' },
+  { id: 'engagement', name: 'Engagement', icon: '📈', description: 'Depth and frequency of feature usage' },
+  { id: 'adoption', name: 'Adoption', icon: '🚀', description: 'Percentage of eligible users trying the feature' },
+  { id: 'retention', name: 'Retention', icon: '🔄', description: 'Users returning to use the feature again' },
+  { id: 'task_success', name: 'Task Success', icon: '✅', description: 'Users completing key workflows successfully' },
+];
+
+const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string; category: string }[] = [
+  { value: 'events_per_user', label: 'Events per User', category: 'engagement' },
+  { value: 'events_per_user_per_week', label: 'Events per User per Week', category: 'engagement' },
+  { value: 'unique_users_percentage', label: 'Unique Users %', category: 'adoption' },
+  { value: 'unique_users_count', label: 'Unique Users Count', category: 'adoption' },
+  { value: 'return_rate_7_days', label: '7-day Return Rate', category: 'retention' },
+  { value: 'return_rate_14_days', label: '14-day Return Rate', category: 'retention' },
+  { value: 'return_rate_30_days', label: '30-day Return Rate', category: 'retention' },
+  { value: 'completion_rate', label: 'Completion Rate', category: 'task_success' },
+  { value: 'success_rate', label: 'Success Rate', category: 'task_success' },
+  { value: 'survey_score', label: 'Survey Score', category: 'happiness' },
+  { value: 'nps_score', label: 'NPS Score', category: 'happiness' },
+];
+
+export default function SuccessMetricsPage() {
+  const [activeTab, setActiveTab] = useState<string | null>('defaults');
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [editingMetric, setEditingMetric] = useState<SuccessMetric | null>(null);
-  const [deletingMetric, setDeletingMetric] = useState<string | null>(null);
+  
+  // HEART Defaults state
+  const [defaults, setDefaults] = useState<HeartCategoryDefault[]>([]);
+  const [editingDefault, setEditingDefault] = useState<HeartCategoryDefault | null>(null);
+  const [savingDefault, setSavingDefault] = useState(false);
+  
+  // Custom Templates state
+  const [templates, setTemplates] = useState<HeartCustomMetricTemplate[]>([]);
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<HeartCustomMetricTemplate | null>(null);
+  const [deletingTemplate, setDeletingTemplate] = useState<string | null>(null);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [metricToDelete, setMetricToDelete] = useState<SuccessMetric | null>(null);
-  const [filters, setFilters] = useState<{
-    category?: MetricCategory;
-    source?: MetricSource;
-    leading_or_lagging?: LeadingOrLagging;
-  }>({});
-  const fetchingRef = useRef(false);
-  const filtersRef = useRef(filters);
+  const [templateToDelete, setTemplateToDelete] = useState<HeartCustomMetricTemplate | null>(null);
 
-  // Keep filtersRef in sync with filters
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
-
-  const fetchMetrics = useCallback(async () => {
-    // Prevent concurrent fetches
-    if (fetchingRef.current) return;
-    
-    fetchingRef.current = true;
-    setLoading(true);
-    setError(null);
+  // Fetch HEART defaults
+  const fetchDefaults = useCallback(async () => {
     try {
-      const currentFilters = filtersRef.current;
-      const params = new URLSearchParams();
-      if (currentFilters.category) params.append('category', currentFilters.category);
-      if (currentFilters.source) params.append('source', currentFilters.source);
-      if (currentFilters.leading_or_lagging) params.append('leading_or_lagging', currentFilters.leading_or_lagging);
-
-      const res = await fetch(`/api/settings/success-measurement/metrics?${params.toString()}`);
-      if (!res.ok) {
-        throw new Error('Failed to fetch metrics');
-      }
+      const res = await fetch('/api/settings/success-measurement/heart/defaults');
+      if (!res.ok) throw new Error('Failed to fetch HEART defaults');
       const data = await res.json();
-      setMetrics(Array.isArray(data) ? data : []);
+      setDefaults(Array.isArray(data) ? data : []);
     } catch (err: any) {
-      console.error('Error fetching metrics:', err);
-      setError(err.message || 'Failed to fetch metrics');
+      console.error('Error fetching defaults:', err);
       notifications.show({
         title: 'Error',
-        message: err.message || 'Failed to fetch metrics',
+        message: 'Failed to load HEART category defaults',
+        color: 'red',
+      });
+    }
+  }, []);
+
+  // Fetch custom templates
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const res = await fetch('/api/settings/success-measurement/heart/templates');
+      if (!res.ok) throw new Error('Failed to fetch templates');
+      const data = await res.json();
+      setTemplates(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      console.error('Error fetching templates:', err);
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to load custom metric templates',
+        color: 'red',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    Promise.all([fetchDefaults(), fetchTemplates()]).finally(() => setLoading(false));
+  }, [fetchDefaults, fetchTemplates]);
+
+  // Save HEART default
+  const handleSaveDefault = async () => {
+    if (!editingDefault) return;
+    setSavingDefault(true);
+    try {
+      const res = await fetch('/api/settings/success-measurement/heart/defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingDefault),
+      });
+      if (!res.ok) throw new Error('Failed to update default');
+      
+      notifications.show({
+        title: 'Success',
+        message: 'Default updated successfully',
+        color: 'green',
+      });
+      setEditingDefault(null);
+      fetchDefaults();
+    } catch (err: any) {
+      notifications.show({
+        title: 'Error',
+        message: err.message || 'Failed to update default',
         color: 'red',
       });
     } finally {
-      setLoading(false);
-      fetchingRef.current = false;
+      setSavingDefault(false);
     }
-  }, []); // No dependencies - uses ref instead
+  };
 
-  useEffect(() => {
-    fetchMetrics();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.category, filters.source, filters.leading_or_lagging]);
-
-  const handleCreate = async (data: CreateSuccessMetricDTO) => {
+  // Create/Update custom template
+  const handleSaveTemplate = async (data: CreateCustomMetricTemplateDTO | UpdateCustomMetricTemplateDTO) => {
     try {
-      const res = await fetch('/api/settings/success-measurement/metrics', {
-        method: 'POST',
+      const isEdit = !!editingTemplate;
+      const url = isEdit 
+        ? `/api/settings/success-measurement/heart/templates/${editingTemplate.id}`
+        : '/api/settings/success-measurement/heart/templates';
+      
+      const res = await fetch(url, {
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
 
       if (!res.ok) {
         const errorData = await res.json();
-        const errorMessage = errorData.error || 'Failed to create metric';
-        const details = errorData.details;
-        const fullMessage = details 
-          ? `${errorMessage}: ${JSON.stringify(details)}`
-          : errorMessage;
-        throw new Error(fullMessage);
+        throw new Error(errorData.error || 'Failed to save template');
       }
 
       notifications.show({
         title: 'Success',
-        message: 'Metric created successfully',
+        message: `Template ${isEdit ? 'updated' : 'created'} successfully`,
         color: 'green',
       });
-      setShowCreateForm(false);
-      fetchMetrics();
+      setShowTemplateForm(false);
+      setEditingTemplate(null);
+      fetchTemplates();
     } catch (err: any) {
       notifications.show({
         title: 'Error',
-        message: err.message || 'Failed to create metric',
+        message: err.message || 'Failed to save template',
         color: 'red',
       });
-      throw err;
     }
   };
 
-  const handleUpdate = async (id: string, data: Partial<CreateSuccessMetricDTO>) => {
+  // Delete template
+  const handleDeleteTemplate = async () => {
+    if (!templateToDelete) return;
+    setDeletingTemplate(templateToDelete.id);
     try {
-      const res = await fetch(`/api/settings/success-measurement/metrics/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to update metric');
-      }
-
-      notifications.show({
-        title: 'Success',
-        message: 'Metric updated successfully',
-        color: 'green',
-      });
-      setEditingMetric(null);
-      fetchMetrics();
-    } catch (err: any) {
-      notifications.show({
-        title: 'Error',
-        message: err.message || 'Failed to update metric',
-        color: 'red',
-      });
-      throw err;
-    }
-  };
-
-  const handleDeleteClick = (metric: SuccessMetric) => {
-    setMetricToDelete(metric);
-    setDeleteModalOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!metricToDelete) return;
-
-    setDeletingMetric(metricToDelete.id);
-    try {
-      const res = await fetch(`/api/settings/success-measurement/metrics/${metricToDelete.id}`, {
+      const res = await fetch(`/api/settings/success-measurement/heart/templates/${templateToDelete.id}`, {
         method: 'DELETE',
       });
-
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to delete metric');
-      }
-
+      if (!res.ok) throw new Error('Failed to delete template');
+      
       notifications.show({
         title: 'Success',
-        message: 'Metric deleted successfully',
+        message: 'Template deleted successfully',
         color: 'green',
       });
       setDeleteModalOpen(false);
-      setMetricToDelete(null);
-      fetchMetrics();
+      setTemplateToDelete(null);
+      fetchTemplates();
     } catch (err: any) {
       notifications.show({
         title: 'Error',
-        message: err.message || 'Failed to delete metric',
+        message: err.message || 'Failed to delete template',
         color: 'red',
       });
     } finally {
-      setDeletingMetric(null);
+      setDeletingTemplate(null);
     }
   };
 
-  if (loading && metrics.length === 0) {
+  if (loading) {
     return (
       <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
         <PurpleLoader size="lg" />
@@ -204,224 +226,514 @@ export default function MetricsPage() {
       }}
       className="sm:px-6 lg:px-8"
       >
-        {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
-            {error}
-          </div>
-        )}
-
         <div className="flex gap-6">
-          {/* Main Content */}
           <div className="flex-1 min-w-0">
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <Group justify="space-between" mb="md">
-            <div>
-              <h1 style={{
-                fontFamily: 'var(--font-heading)',
-                fontSize: 'var(--font-size-page-title)',
-                fontWeight: 'var(--font-weight-bold)',
-                color: 'var(--color-gray-900)'
-              }}>
-                Success Metrics
-              </h1>
-              <Text size="sm" c="dimmed" mt="xs">
-                Manage success metrics for measurement
-              </Text>
-            </div>
-            <Button
-              leftSection={<IconPlus size={16} />}
-              onClick={() => setShowCreateForm(true)}
-            >
-              Create Metric
-            </Button>
-          </Group>
+              <Group justify="space-between" mb="md">
+                <div>
+                  <h1 style={{
+                    fontFamily: 'var(--font-heading)',
+                    fontSize: 'var(--font-size-page-title)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    color: 'var(--color-gray-900)'
+                  }}>
+                    Success Metrics
+                  </h1>
+                  <Text size="sm" c="dimmed" mt="xs">
+                    Configure HEART framework defaults and create custom metric templates
+                  </Text>
+                </div>
+              </Group>
 
-              <Stack gap="md" mb="md">
-            <Group>
-              <Select
-                label="Category"
-                placeholder="All categories"
-                clearable
-                data={[
-                  { value: 'ADOPTION', label: 'Adoption' },
-                  { value: 'REVENUE', label: 'Revenue' },
-                  { value: 'RETENTION', label: 'Retention' },
-                  { value: 'ENABLEMENT', label: 'Enablement' },
-                  { value: 'FRICTION', label: 'Friction' },
-                ]}
-                value={filters.category || null}
-                onChange={(value) => setFilters({ ...filters, category: value as MetricCategory | undefined })}
-                style={{ flex: 1 }}
-              />
-              <Select
-                label="Source"
-                placeholder="All sources"
-                clearable
-                data={[
-                  { value: 'PENDO', label: 'Pendo' },
-                  { value: 'SNOWFLAKE', label: 'Snowflake' },
-                  { value: 'MANUAL', label: 'Manual' },
-                ]}
-                value={filters.source || null}
-                onChange={(value) => setFilters({ ...filters, source: value as MetricSource | undefined })}
-                style={{ flex: 1 }}
-              />
-              <Select
-                label="Leading/Lagging"
-                placeholder="All"
-                clearable
-                data={[
-                  { value: 'LEADING', label: 'Leading' },
-                  { value: 'LAGGING', label: 'Lagging' },
-                ]}
-                value={filters.leading_or_lagging || null}
-                onChange={(value) => setFilters({ ...filters, leading_or_lagging: value as LeadingOrLagging | undefined })}
-                style={{ flex: 1 }}
-              />
-            </Group>
-          </Stack>
+              <Tabs value={activeTab} onChange={setActiveTab}>
+                <Tabs.List mb="md">
+                  <Tabs.Tab value="defaults" leftSection={<IconHeart size={16} />}>
+                    HEART Defaults
+                  </Tabs.Tab>
+                  <Tabs.Tab value="templates" leftSection={<IconTemplate size={16} />}>
+                    Custom Templates
+                  </Tabs.Tab>
+                </Tabs.List>
 
-          <Table striped highlightOnHover>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Category</Table.Th>
-                <Table.Th>Measurement Type</Table.Th>
-                <Table.Th>Source</Table.Th>
-                <Table.Th>Leading/Lagging</Table.Th>
-                <Table.Th>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {metrics.map((metric) => (
-                <Table.Tr key={metric.id}>
-                  <Table.Td>{metric.name}</Table.Td>
-                  <Table.Td>
-                    <Badge variant="light">{metric.category}</Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge variant="outline">{metric.measurement_type}</Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge color={metric.source === 'PENDO' ? 'blue' : metric.source === 'SNOWFLAKE' ? 'cyan' : 'gray'}>
-                      {metric.source}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Badge color={metric.leading_or_lagging === 'LEADING' ? 'green' : 'orange'}>
-                      {metric.leading_or_lagging}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>
-                    <Group gap="xs">
-                      <ActionIcon
-                        variant="light"
-                        color="blue"
-                        onClick={() => setEditingMetric(metric)}
-                        title="Edit"
-                      >
-                        <IconPencil size={16} />
-                      </ActionIcon>
-                      <ActionIcon
-                        variant="light"
-                        color="red"
-                        onClick={() => handleDeleteClick(metric)}
-                        loading={deletingMetric === metric.id}
-                        title="Delete"
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    </Group>
-                  </Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
+                {/* HEART Defaults Tab */}
+                <Tabs.Panel value="defaults">
+                  <Text size="sm" c="dimmed" mb="md">
+                    Set default targets for each HEART category. These defaults are used when setting up metrics for new epics.
+                  </Text>
 
-          {metrics.length === 0 && !loading && (
-            <Text ta="center" c="dimmed" py="xl">
-              No metrics found. Create one to get started.
-            </Text>
-              )}
+                  <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
+                    {HEART_CATEGORIES.map((category) => {
+                      const categoryDefault = defaults.find(d => d.heart_category === category.id);
+                      return (
+                        <Card key={category.id} withBorder padding="md">
+                          <Group justify="space-between" mb="sm">
+                            <Group gap="xs">
+                              <Text size="xl">{category.icon}</Text>
+                              <div>
+                                <Text fw={500}>{category.name}</Text>
+                                <Text size="xs" c="dimmed">{category.description}</Text>
+                              </div>
+                            </Group>
+                            <ActionIcon
+                              variant="light"
+                              color="blue"
+                              onClick={() => setEditingDefault(categoryDefault || {
+                                id: '',
+                                heart_category: category.id as any,
+                                default_target_value: null,
+                                default_target_timeframe_days: null,
+                                default_measurement_type: null,
+                                guidance_text: null,
+                                example_events: null,
+                                updated_by: null,
+                                created_at: '',
+                                updated_at: '',
+                              })}
+                            >
+                              <IconPencil size={16} />
+                            </ActionIcon>
+                          </Group>
+                          
+                          {categoryDefault ? (
+                            <Stack gap="xs">
+                              {categoryDefault.default_target_value && (
+                                <Group gap="xs">
+                                  <Badge color="blue" variant="light" size="sm">
+                                    Target: {categoryDefault.default_target_value}%
+                                  </Badge>
+                                  {categoryDefault.default_target_timeframe_days && (
+                                    <Badge color="gray" variant="light" size="sm">
+                                      {categoryDefault.default_target_timeframe_days} days
+                                    </Badge>
+                                  )}
+                                </Group>
+                              )}
+                              {categoryDefault.default_measurement_type && (
+                                <Text size="xs" c="dimmed">
+                                  Measurement: {MEASUREMENT_TYPES.find(m => m.value === categoryDefault.default_measurement_type)?.label}
+                                </Text>
+                              )}
+                              {!categoryDefault.default_target_value && (
+                                <Text size="xs" c="dimmed" fs="italic">No default configured</Text>
+                              )}
+                            </Stack>
+                          ) : (
+                            <Text size="xs" c="dimmed" fs="italic">No default configured</Text>
+                          )}
+                        </Card>
+                      );
+                    })}
+                  </SimpleGrid>
+                </Tabs.Panel>
+
+                {/* Custom Templates Tab */}
+                <Tabs.Panel value="templates">
+                  <Group justify="space-between" mb="md">
+                    <Text size="sm" c="dimmed">
+                      Create reusable metric templates for metrics beyond the standard HEART categories.
+                    </Text>
+                    <Button
+                      leftSection={<IconPlus size={16} />}
+                      onClick={() => {
+                        setEditingTemplate(null);
+                        setShowTemplateForm(true);
+                      }}
+                    >
+                      Create Template
+                    </Button>
+                  </Group>
+
+                  {templates.length === 0 ? (
+                    <Paper withBorder p="xl" ta="center">
+                      <Text c="dimmed">No custom templates yet. Create one to add metrics beyond HEART.</Text>
+                    </Paper>
+                  ) : (
+                    <Table striped highlightOnHover>
+                      <Table.Thead>
+                        <Table.Tr>
+                          <Table.Th>Template</Table.Th>
+                          <Table.Th>Category</Table.Th>
+                          <Table.Th>Measurement</Table.Th>
+                          <Table.Th>Default Target</Table.Th>
+                          <Table.Th>Status</Table.Th>
+                          <Table.Th>Used</Table.Th>
+                          <Table.Th>Actions</Table.Th>
+                        </Table.Tr>
+                      </Table.Thead>
+                      <Table.Tbody>
+                        {templates.map((template) => (
+                          <Table.Tr key={template.id}>
+                            <Table.Td>
+                              <Group gap="xs">
+                                <Text>{template.icon}</Text>
+                                <div>
+                                  <Text size="sm" fw={500}>{template.name}</Text>
+                                  {template.description && (
+                                    <Text size="xs" c="dimmed" lineClamp={1}>{template.description}</Text>
+                                  )}
+                                </div>
+                              </Group>
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge variant="light">{template.category_label}</Badge>
+                            </Table.Td>
+                            <Table.Td>
+                              <Text size="sm">
+                                {MEASUREMENT_TYPES.find(m => m.value === template.measurement_type)?.label || template.measurement_type}
+                              </Text>
+                            </Table.Td>
+                            <Table.Td>
+                              {template.default_target_value ? (
+                                <Text size="sm">
+                                  {template.default_target_value}%
+                                  {template.default_target_timeframe_days && ` / ${template.default_target_timeframe_days}d`}
+                                </Text>
+                              ) : (
+                                <Text size="sm" c="dimmed">—</Text>
+                              )}
+                            </Table.Td>
+                            <Table.Td>
+                              <Badge color={template.is_active ? 'green' : 'gray'} variant="light">
+                                {template.is_active ? 'Active' : 'Inactive'}
+                              </Badge>
+                            </Table.Td>
+                            <Table.Td>
+                              <Tooltip label={`Used on ${template.usage_count} epic(s)`}>
+                                <Badge color="gray" variant="outline" size="sm">
+                                  {template.usage_count}
+                                </Badge>
+                              </Tooltip>
+                            </Table.Td>
+                            <Table.Td>
+                              <Group gap="xs">
+                                <ActionIcon
+                                  variant="light"
+                                  color="blue"
+                                  onClick={() => {
+                                    setEditingTemplate(template);
+                                    setShowTemplateForm(true);
+                                  }}
+                                >
+                                  <IconPencil size={16} />
+                                </ActionIcon>
+                                <ActionIcon
+                                  variant="light"
+                                  color="red"
+                                  onClick={() => {
+                                    setTemplateToDelete(template);
+                                    setDeleteModalOpen(true);
+                                  }}
+                                  loading={deletingTemplate === template.id}
+                                >
+                                  <IconTrash size={16} />
+                                </ActionIcon>
+                              </Group>
+                            </Table.Td>
+                          </Table.Tr>
+                        ))}
+                      </Table.Tbody>
+                    </Table>
+                  )}
+                </Tabs.Panel>
+              </Tabs>
             </div>
           </div>
         </div>
       </div>
 
-      <Drawer
-        opened={showCreateForm}
-        onClose={() => setShowCreateForm(false)}
-        title="Create Metric"
-        position="right"
-        size="xl"
+      {/* Edit HEART Default Modal */}
+      <Modal
+        opened={!!editingDefault}
+        onClose={() => setEditingDefault(null)}
+        title={
+          <Group gap="xs">
+            <Text size="xl">{HEART_CATEGORIES.find(c => c.id === editingDefault?.heart_category)?.icon}</Text>
+            <Text fw={500}>Edit {HEART_CATEGORIES.find(c => c.id === editingDefault?.heart_category)?.name} Default</Text>
+          </Group>
+        }
+        size="md"
       >
-        <MetricForm
-          onSubmit={handleCreate}
-          onCancel={() => setShowCreateForm(false)}
+        {editingDefault && (
+          <Stack gap="md">
+            <NumberInput
+              label="Default Target Value (%)"
+              description="Target percentage to achieve"
+              placeholder="e.g., 75"
+              value={editingDefault.default_target_value ?? ''}
+              onChange={(value) => setEditingDefault({
+                ...editingDefault,
+                default_target_value: typeof value === 'number' ? value : null,
+              })}
+              min={0}
+              max={100}
+            />
+            
+            <NumberInput
+              label="Default Timeframe (days)"
+              description="Days to achieve the target"
+              placeholder="e.g., 30"
+              value={editingDefault.default_target_timeframe_days ?? ''}
+              onChange={(value) => setEditingDefault({
+                ...editingDefault,
+                default_target_timeframe_days: typeof value === 'number' ? value : null,
+              })}
+              min={1}
+              max={365}
+            />
+            
+            <Select
+              label="Default Measurement Type"
+              description="How this metric should be measured"
+              placeholder="Select measurement type"
+              data={MEASUREMENT_TYPES.filter(m => m.category === editingDefault.heart_category || editingDefault.heart_category === 'happiness').map(m => ({
+                value: m.value,
+                label: m.label,
+              }))}
+              value={editingDefault.default_measurement_type || null}
+              onChange={(value) => setEditingDefault({
+                ...editingDefault,
+                default_measurement_type: value as HeartMeasurementType | null,
+              })}
+              clearable
+            />
+            
+            <Textarea
+              label="Guidance Text"
+              description="Help text shown to users during setup"
+              placeholder="Tips for configuring this metric..."
+              value={editingDefault.guidance_text || ''}
+              onChange={(e) => setEditingDefault({
+                ...editingDefault,
+                guidance_text: e.target.value || null,
+              })}
+              rows={3}
+            />
+            
+            <Group justify="flex-end" mt="md">
+              <Button variant="subtle" onClick={() => setEditingDefault(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSaveDefault} loading={savingDefault} leftSection={<IconCheck size={16} />}>
+                Save Default
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* Create/Edit Template Drawer */}
+      <Drawer
+        opened={showTemplateForm}
+        onClose={() => {
+          setShowTemplateForm(false);
+          setEditingTemplate(null);
+        }}
+        title={editingTemplate ? 'Edit Custom Template' : 'Create Custom Template'}
+        position="right"
+        size="lg"
+      >
+        <TemplateForm
+          initialData={editingTemplate}
+          onSubmit={handleSaveTemplate}
+          onCancel={() => {
+            setShowTemplateForm(false);
+            setEditingTemplate(null);
+          }}
         />
       </Drawer>
 
-      <Drawer
-        opened={!!editingMetric}
-        onClose={() => setEditingMetric(null)}
-        title="Edit Metric"
-        position="right"
-        size="xl"
-      >
-        {editingMetric && (
-          <MetricForm
-            initialData={editingMetric}
-            onSubmit={(data) => handleUpdate(editingMetric.id, data)}
-            onCancel={() => setEditingMetric(null)}
-          />
-        )}
-      </Drawer>
-
-      {/* Delete Confirmation Modal */}
+      {/* Delete Template Modal */}
       <Modal
         opened={deleteModalOpen}
         onClose={() => {
           setDeleteModalOpen(false);
-          setMetricToDelete(null);
+          setTemplateToDelete(null);
         }}
         title={
-          <div className="flex items-center gap-2">
+          <Group gap="xs">
             <IconTrash size={20} className="text-red-600" />
-            <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Delete Metric</span>
-          </div>
+            <Text fw={500}>Delete Template</Text>
+          </Group>
         }
         centered
         size="md"
       >
-        <div className="space-y-4">
-          <Text size="sm" c="dimmed">
-            Are you sure you want to delete <strong>"{metricToDelete?.name}"</strong>?
+        <Stack gap="md">
+          <Text size="sm">
+            Are you sure you want to delete <strong>"{templateToDelete?.name}"</strong>?
           </Text>
-          <Alert icon={<IconAlertCircle size={16} />} title="Warning" color="red" variant="light">
-            This action cannot be undone. If this metric is referenced by any epics, you will need to remove those references first.
-          </Alert>
-          <Group justify="flex-end" mt="xl">
-            <Button
-              variant="subtle"
-              onClick={() => {
-                setDeleteModalOpen(false);
-                setMetricToDelete(null);
-              }}
-            >
+          {templateToDelete && templateToDelete.usage_count > 0 && (
+            <Alert icon={<IconAlertCircle size={16} />} color="yellow" variant="light">
+              This template is used by {templateToDelete.usage_count} epic(s). Deleting it won't remove existing metrics, but the template reference will be lost.
+            </Alert>
+          )}
+          <Group justify="flex-end" mt="md">
+            <Button variant="subtle" onClick={() => {
+              setDeleteModalOpen(false);
+              setTemplateToDelete(null);
+            }}>
               Cancel
             </Button>
             <Button
               color="red"
-              onClick={handleDeleteConfirm}
-              loading={deletingMetric === metricToDelete?.id}
+              onClick={handleDeleteTemplate}
+              loading={deletingTemplate === templateToDelete?.id}
               leftSection={<IconTrash size={16} />}
             >
-              Delete Metric
+              Delete Template
             </Button>
           </Group>
-        </div>
+        </Stack>
       </Modal>
     </main>
   );
 }
 
+// Template Form Component
+function TemplateForm({
+  initialData,
+  onSubmit,
+  onCancel,
+}: {
+  initialData: HeartCustomMetricTemplate | null;
+  onSubmit: (data: CreateCustomMetricTemplateDTO | UpdateCustomMetricTemplateDTO) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initialData?.name || '');
+  const [description, setDescription] = useState(initialData?.description || '');
+  const [categoryLabel, setCategoryLabel] = useState(initialData?.category_label || '');
+  const [icon, setIcon] = useState(initialData?.icon || '📊');
+  const [measurementType, setMeasurementType] = useState<HeartMeasurementType | null>(
+    initialData?.measurement_type || null
+  );
+  const [pendoEventPattern, setPendoEventPattern] = useState(initialData?.pendo_event_pattern || '');
+  const [targetValue, setTargetValue] = useState<number | ''>(initialData?.default_target_value ?? '');
+  const [timeframeDays, setTimeframeDays] = useState<number | ''>(initialData?.default_target_timeframe_days ?? '');
+  const [isActive, setIsActive] = useState(initialData?.is_active ?? true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name || !categoryLabel || !measurementType) {
+      notifications.show({
+        title: 'Validation Error',
+        message: 'Name, category label, and measurement type are required',
+        color: 'red',
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        name,
+        description: description || null,
+        category_label: categoryLabel,
+        icon,
+        measurement_type: measurementType,
+        pendo_event_pattern: pendoEventPattern || null,
+        default_target_value: typeof targetValue === 'number' ? targetValue : null,
+        default_target_timeframe_days: typeof timeframeDays === 'number' ? timeframeDays : null,
+        ...(initialData && { is_active: isActive }),
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Stack gap="md">
+      <TextInput
+        label="Template Name"
+        placeholder="e.g., Revenue Impact"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        required
+      />
+
+      <Textarea
+        label="Description"
+        placeholder="Describe what this metric measures..."
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
+      />
+
+      <TextInput
+        label="Category Label"
+        description="How this category will appear in the UI"
+        placeholder="e.g., Revenue, Time Saved, Efficiency"
+        value={categoryLabel}
+        onChange={(e) => setCategoryLabel(e.target.value)}
+        required
+      />
+
+      <TextInput
+        label="Icon"
+        description="Emoji to display for this category"
+        placeholder="📊"
+        value={icon}
+        onChange={(e) => setIcon(e.target.value)}
+        maxLength={4}
+        style={{ width: 80 }}
+      />
+
+      <Select
+        label="Measurement Type"
+        description="How this metric will be calculated"
+        placeholder="Select measurement type"
+        data={MEASUREMENT_TYPES.map(m => ({
+          value: m.value,
+          label: m.label,
+        }))}
+        value={measurementType}
+        onChange={(value) => setMeasurementType(value as HeartMeasurementType | null)}
+        required
+      />
+
+      <TextInput
+        label="Pendo Event Pattern"
+        description="Regex pattern to help find matching events (optional)"
+        placeholder="e.g., Revenue\\..*"
+        value={pendoEventPattern}
+        onChange={(e) => setPendoEventPattern(e.target.value)}
+      />
+
+      <Group grow>
+        <NumberInput
+          label="Default Target (%)"
+          placeholder="e.g., 75"
+          value={targetValue}
+          onChange={(value) => setTargetValue(typeof value === 'number' ? value : '')}
+          min={0}
+          max={100}
+        />
+        <NumberInput
+          label="Default Timeframe (days)"
+          placeholder="e.g., 30"
+          value={timeframeDays}
+          onChange={(value) => setTimeframeDays(typeof value === 'number' ? value : '')}
+          min={1}
+          max={365}
+        />
+      </Group>
+
+      {initialData && (
+        <Switch
+          label="Active"
+          description="Inactive templates won't appear in the setup wizard"
+          checked={isActive}
+          onChange={(e) => setIsActive(e.currentTarget.checked)}
+        />
+      )}
+
+      <Group justify="flex-end" mt="xl">
+        <Button variant="subtle" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button onClick={handleSubmit} loading={submitting}>
+          {initialData ? 'Update Template' : 'Create Template'}
+        </Button>
+      </Group>
+    </Stack>
+  );
+}

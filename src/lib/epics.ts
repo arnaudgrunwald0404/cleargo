@@ -100,7 +100,9 @@ export async function getEpics() {
         if (serviceRoleKey && supabaseUrl) {
             try {
                 // Try epic table first
-                let response = await fetch(`${supabaseUrl}/rest/v1/epic?select=*&order=created_at.desc`, {
+                // Filter: archived is not true (includes false and null)
+                // PostgREST syntax: or=(archived.is.null,archived.eq.false)
+                let response = await fetch(`${supabaseUrl}/rest/v1/epic?select=*&or=(archived.is.null,archived.eq.false)&order=created_at.desc`, {
                     method: 'GET',
                     headers: {
                         'apikey': serviceRoleKey,
@@ -143,11 +145,11 @@ export async function getEpics() {
         }
 
         // Try 'epic' table first, fallback to 'launch' if it doesn't exist
-        // Exclude archived epics from the main list
+        // Exclude archived epics from the main list (archived != true, includes false and null)
         let { data, error } = await supabase
             .from('epic')
             .select('*')
-            .eq('archived', false)
+            .or('archived.is.null,archived.eq.false')
             .order('created_at', { ascending: false });
         
         // If epic table doesn't exist, try launch table

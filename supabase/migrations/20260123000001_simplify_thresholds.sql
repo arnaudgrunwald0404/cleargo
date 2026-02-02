@@ -1,23 +1,30 @@
 -- Simplify success metric thresholds from per-tier to global
 -- Collapses existing tiered JSON into a single global threshold object
+-- Note: Only runs if required tables exist
 
--- For success_metrics.thresholds, use TIER_1 as the canonical thresholds
-UPDATE public.success_metrics
-SET thresholds = (thresholds->'TIER_1')
-WHERE thresholds IS NOT NULL
-  AND jsonb_typeof(thresholds) = 'object'
-  AND thresholds ? 'TIER_1';
+DO $$ 
+BEGIN
+  -- Update success_metrics.thresholds if table exists
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'success_metrics' AND table_schema = 'public') THEN
+    UPDATE public.success_metrics
+    SET thresholds = (thresholds->'TIER_1')
+    WHERE thresholds IS NOT NULL
+      AND jsonb_typeof(thresholds) = 'object'
+      AND thresholds ? 'TIER_1';
 
-COMMENT ON COLUMN public.success_metrics.thresholds IS
-  'Global thresholds for the metric (min, max, target). No longer tier-specific.';
+    COMMENT ON COLUMN public.success_metrics.thresholds IS
+      'Global thresholds for the metric (min, max, target). No longer tier-specific.';
+  END IF;
 
--- For epic_success_metrics.threshold_override, also collapse to global thresholds
-UPDATE public.epic_success_metrics
-SET threshold_override = (threshold_override->'TIER_1')
-WHERE threshold_override IS NOT NULL
-  AND jsonb_typeof(threshold_override) = 'object'
-  AND threshold_override ? 'TIER_1';
+  -- Update epic_success_metrics.threshold_override if table exists
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'epic_success_metrics' AND table_schema = 'public') THEN
+    UPDATE public.epic_success_metrics
+    SET threshold_override = (threshold_override->'TIER_1')
+    WHERE threshold_override IS NOT NULL
+      AND jsonb_typeof(threshold_override) = 'object'
+      AND threshold_override ? 'TIER_1';
 
-COMMENT ON COLUMN public.epic_success_metrics.threshold_override IS
-  'Global threshold override for the metric on this epic (min, max, target). No longer tier-specific.';
-
+    COMMENT ON COLUMN public.epic_success_metrics.threshold_override IS
+      'Global threshold override for the metric on this epic (min, max, target). No longer tier-specific.';
+  END IF;
+END $$;

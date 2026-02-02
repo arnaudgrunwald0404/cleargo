@@ -8,14 +8,25 @@ CREATE INDEX IF NOT EXISTS idx_ecs_epic_criterion
 
 -- Index for comment lookups by criterion status
 -- Speeds up batch comment count queries
-CREATE INDEX IF NOT EXISTS idx_criterion_comment_status 
-  ON criterion_comment(launch_criterion_status_id);
+-- Note: Only create if table exists (may have different name in some deployments)
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'criterion_comment' AND table_schema = 'public') THEN
+    CREATE INDEX IF NOT EXISTS idx_criterion_comment_status 
+      ON criterion_comment(launch_criterion_status_id);
+  END IF;
+END $$;
 
 -- Index for attachment lookups by criterion status
 -- Speeds up batch attachment count queries
-CREATE INDEX IF NOT EXISTS idx_criterion_attachment_status 
-  ON criterion_attachment(launch_criterion_status_id)
-  WHERE comment_id IS NULL; -- Only index attachments for criterion status, not comments
+DO $$ 
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'criterion_attachment' AND table_schema = 'public') THEN
+    CREATE INDEX IF NOT EXISTS idx_criterion_attachment_status 
+      ON criterion_attachment(launch_criterion_status_id)
+      WHERE comment_id IS NULL;
+  END IF;
+END $$;
 
 -- Composite index for filtering by epic and status
 -- Used for filtering matrix items by status

@@ -8,6 +8,41 @@ interface PendoConfig {
   environment?: string;
 }
 
+// ============================================================================
+// Pendo Feature Types
+// ============================================================================
+
+export interface PendoFeature {
+  id: string;
+  name: string;
+  appId: string;
+  kind: string; // 'Feature', 'Page', etc.
+  color: string | null;
+  group: string | null;
+  createdByUser: {
+    id: string;
+    username: string;
+    first: string;
+    last: string;
+  } | null;
+  createdAt: number | null;
+  lastUpdatedByUser: {
+    id: string;
+    username: string;
+  } | null;
+  lastUpdatedAt: number | null;
+  dirty: boolean;
+  // CSS/DOM selectors for the feature tag
+  eventPropertyConfigurations: Array<{
+    name: string;
+    selector: string;
+    parsedSelector: string;
+    type: string;
+  }>;
+  elementPathRules: string[];
+  pageId: string | null;
+}
+
 interface PendoEventCountParams {
   eventId: string;
   startDate: string; // YYYY-MM-DD
@@ -47,10 +82,16 @@ export class PendoClient {
     if (!response.ok) {
       let errorText: string;
       try {
-        const errorJson = await response.json();
-        errorText = errorJson.message || errorJson.error || JSON.stringify(errorJson);
-      } catch {
-        errorText = await response.text();
+        // Clone response to allow reading body multiple times if needed
+        const errorClone = response.clone();
+        try {
+          const errorJson = await errorClone.json();
+          errorText = errorJson.message || errorJson.error || JSON.stringify(errorJson);
+        } catch {
+          errorText = await response.text();
+        }
+      } catch (err) {
+        errorText = `Status: ${response.status} ${response.statusText}`;
       }
       const error = new Error(`Pendo API error: ${response.status} ${response.statusText} - ${errorText}`);
       (error as any).status = response.status;
@@ -61,49 +102,200 @@ export class PendoClient {
   }
 
   /**
-   * Get count of events for a given event ID and date range
+   * Get count of events for a given event ID and date range.
+   * Handles both Feature IDs and Track Event names using the unified 'events' source.
    */
   async getEventCount(params: PendoEventCountParams): Promise<number> {
     try {
-      // Pendo API endpoint for event counts
-      // Note: This is a placeholder - actual Pendo API structure may differ
-      const response = await this.request('/events/count', {
+      const isFeature = !params.eventId.includes('.');
+      const pipeline: any[] = [
+        { 
+          source: { 
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30 // Last 30 days by default
+            }
+          } 
+        }
+      ];
+
+      // Filter by type and ID
+      if (isFeature) {
+        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      } else {
+        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+      }
+
+      // Filter by date range (if provided, otherwise timeSeries handles it)
+      if (params.startDate && params.endDate) {
+        pipeline.push({
+          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
+        });
+      }
+
+      if (params.filters?.segmentId) {
+        pipeline.push({
+          identified: 'visitorId',
+          segment: { id: params.filters.segmentId },
+        });
+      }
+
+      pipeline.push({ count: null });
+
+      const response = await this.request('/aggregation', {
         method: 'POST',
         body: JSON.stringify({
-          eventId: params.eventId,
-          startDate: params.startDate,
-          endDate: params.endDate,
-          filters: params.filters || {},
+          response: { mimeType: 'application/json' },
+          request: { pipeline },
         }),
       });
 
-      return response.count || 0;
+      const results = Array.isArray(response) ? response : (response?.results || []);
+      if (results.length > 0) {
+        return Number(results[0].count) || 0;
+      }
+      return typeof response === 'number' ? response : (response?.count || 0);
     } catch (error: any) {
       console.error('Error fetching Pendo event count:', error);
-      throw error;
+      return 0;
     }
   }
 
   /**
-   * Get percentage of users who triggered an event
+   * Get unique visitors for a given event ID and date range.
    */
-  async getEventPercentage(params: PendoEventCountParams): Promise<number> {
+  async getUniqueVisitors(params: PendoEventCountParams): Promise<number> {
     try {
-      // Pendo API endpoint for event percentages
-      const response = await this.request('/events/percentage', {
+      const isFeature = !params.eventId.includes('.');
+      const pipeline: any[] = [
+        { 
+          source: { 
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30
+            }
+          } 
+        }
+      ];
+
+      if (isFeature) {
+        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      } else {
+        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+      }
+
+      if (params.startDate && params.endDate) {
+        pipeline.push({
+          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
+        });
+      }
+
+      if (params.filters?.segmentId) {
+        pipeline.push({
+          identified: 'visitorId',
+          segment: { id: params.filters.segmentId },
+        });
+      }
+
+      pipeline.push({ group: { group: ['visitorId'] } });
+      pipeline.push({ count: null });
+
+      const response = await this.request('/aggregation', {
         method: 'POST',
         body: JSON.stringify({
-          eventId: params.eventId,
-          startDate: params.startDate,
-          endDate: params.endDate,
-          filters: params.filters || {},
+          response: { mimeType: 'application/json' },
+          request: { pipeline },
         }),
       });
 
-      return response.percentage || 0;
+      const results = Array.isArray(response) ? response : (response?.results || []);
+      if (results.length > 0) {
+        return Number(results[0].count) || 0;
+      }
+      return typeof response === 'number' ? response : (response?.count || 0);
+    } catch (error: any) {
+      console.error('Error fetching Pendo unique visitors:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get total unique visitors in a segment (or all) for a date range.
+   * Uses the events source with date filtering to count unique visitors.
+   */
+  async getTotalUniqueVisitors(params: { startDate: string; endDate: string; segmentId?: string }): Promise<number> {
+    try {
+      // Calculate days between dates for timeSeries count
+      const start = new Date(params.startDate);
+      const end = new Date(params.endDate);
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+      const pipeline: any[] = [
+        { 
+          source: { 
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: `date("${params.endDate}")`,
+              count: -daysDiff
+            }
+          } 
+        }
+      ];
+
+      // Filter by segment if provided
+      if (params.segmentId) {
+        pipeline.push({
+          segment: { id: params.segmentId },
+        });
+      }
+
+      // Group by visitor and count unique visitors
+      pipeline.push({ group: { group: ['visitorId'] } });
+      pipeline.push({ count: null });
+
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline },
+        }),
+      });
+
+      const results = Array.isArray(response) ? response : (response?.results || []);
+      if (results.length > 0) {
+        return Number(results[0].count) || 0;
+      }
+      return typeof response === 'number' ? response : (response?.count || 0);
+    } catch (error: any) {
+      console.error('Error fetching Pendo total unique visitors:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get percentage of users who triggered an event.
+   */
+  async getEventPercentage(params: PendoEventCountParams): Promise<number> {
+    try {
+      const [eventCount, totalCount] = await Promise.all([
+        this.getUniqueVisitors(params),
+        this.getTotalUniqueVisitors({
+          startDate: params.startDate,
+          endDate: params.endDate,
+          segmentId: params.filters?.segmentId
+        })
+      ]);
+
+      if (totalCount === 0) return 0;
+      return (eventCount / totalCount) * 100;
     } catch (error: any) {
       console.error('Error fetching Pendo event percentage:', error);
-      throw error;
+      return 0;
     }
   }
 
@@ -290,6 +482,69 @@ export class PendoClient {
   }
 
   /**
+   * Get list of Pendo feature tags.
+   * These are UI elements tagged in Pendo's Visual Design Studio.
+   * Features track clicks and can be used for engagement/adoption metrics.
+   */
+  async getFeatures(): Promise<PendoFeature[]> {
+    try {
+      // Use ?expand=* to get features across all applications
+      const response = await this.request('/feature?expand=*', {
+        method: 'GET',
+      });
+
+      const source: any[] = Array.isArray(response) ? response : [];
+      const features: PendoFeature[] = [];
+
+      for (const item of source) {
+        if (!item) continue;
+        
+        const id = item.id || item.featureId;
+        const name = item.name || item.displayName;
+        const appId = item.appId || item.applicationId;
+        
+        if (!id || !name) continue;
+
+        features.push({
+          id: String(id),
+          name: String(name),
+          appId: appId ? String(appId) : '',
+          kind: item.kind || 'Feature',
+          color: item.color || null,
+          group: item.group || item.featureGroup || null,
+          createdByUser: item.createdByUser || null,
+          createdAt: item.createdAt || null,
+          lastUpdatedByUser: item.lastUpdatedByUser || null,
+          lastUpdatedAt: item.lastUpdatedAt || null,
+          dirty: item.dirty || false,
+          eventPropertyConfigurations: item.eventPropertyConfigurations || [],
+          elementPathRules: item.elementPathRules || [],
+          pageId: item.pageId || null,
+        });
+      }
+
+      console.log(
+        '[PendoClient] getFeatures: rawCount=%d filteredCount=%d',
+        source.length,
+        features.length
+      );
+      if (features.length > 0) {
+        console.log('[PendoClient] getFeatures: sampleFeature=%o', {
+          id: features[0].id,
+          name: features[0].name,
+          appId: features[0].appId,
+          kind: features[0].kind,
+        });
+      }
+
+      return features;
+    } catch (error: any) {
+      console.error('Error fetching Pendo features:', error);
+      return [];
+    }
+  }
+
+  /**
    * Get list of Pendo apps (products).
    *
    * Pendo does not expose a first-class "apps" listing endpoint in v1.
@@ -298,21 +553,15 @@ export class PendoClient {
    */
   async getApps(): Promise<Array<{ id: string; name: string }>> {
     try {
-      // Use ?expand=* to get features across all applications
-      const response = await this.request('/feature?expand=*', {
-        method: 'GET',
-      });
-
-      const source: any[] = Array.isArray(response) ? response : [];
+      // Reuse getFeatures to avoid duplicate API call
+      const features = await this.getFeatures();
 
       const appMap = new Map<string, string>();
 
-      for (const item of source) {
-        if (!item) continue;
-        const appId = item.appId || item.applicationId;
-        if (!appId) continue;
+      for (const feature of features) {
+        if (!feature.appId) continue;
 
-        const key = String(appId);
+        const key = String(feature.appId);
         if (!appMap.has(key)) {
           // Default label is a generic name; API route can override from settings
           appMap.set(key, `App ${key}`);
@@ -325,7 +574,7 @@ export class PendoClient {
 
       console.log(
         '[PendoClient] getApps: featureCount=%d appCount=%d',
-        source.length,
+        features.length,
         apps.length
       );
       if (apps.length > 0) {
@@ -335,6 +584,195 @@ export class PendoClient {
       return apps;
     } catch (error: any) {
       console.error('Error fetching Pendo apps:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get click count for a specific feature within a date range.
+   * Uses the unified 'events' source for more robust querying.
+   */
+  async getFeatureClickCount(params: {
+    featureId: string;
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
+    segmentId?: string;
+    appId?: string;
+  }): Promise<{ totalClicks: number; uniqueVisitors: number }> {
+    try {
+      const basePipeline: any[] = [
+        { 
+          source: { 
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30
+            }
+          } 
+        },
+        { filter: `type == "feature" && featureId == "${params.featureId}"` },
+      ];
+
+      if (params.startDate && params.endDate) {
+        basePipeline.push({
+          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
+        });
+      }
+
+      if (params.segmentId) {
+        basePipeline.push({
+          identified: 'visitorId',
+          segment: { id: params.segmentId },
+        });
+      }
+
+      const extractCount = (res: any) => {
+        const results = Array.isArray(res) ? res : (res?.results || []);
+        if (results.length > 0) return Number(results[0].count) || 0;
+        return typeof res === 'number' ? res : (res?.count || 0);
+      };
+
+      // 1. Total Clicks
+      const totalPipeline = [...basePipeline, { count: null }];
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline: totalPipeline },
+        }),
+      });
+
+      // 2. Unique Visitors
+      const uniquePipeline = [...basePipeline, { group: { group: ['visitorId'] } }, { count: null }];
+      const uniqueResponse = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline: uniquePipeline },
+        }),
+      });
+
+      return { 
+        totalClicks: extractCount(response), 
+        uniqueVisitors: extractCount(uniqueResponse) 
+      };
+    } catch (error: any) {
+      console.error('Error fetching feature click count:', error);
+      return { totalClicks: 0, uniqueVisitors: 0 };
+    }
+  }
+
+  /**
+   * Get visitors in a segment who have NOT clicked a specific feature.
+   * This is crucial for the Happiness automation - finding users who should
+   * be using a feature but aren't.
+   */
+  async getSegmentNonUsers(params: {
+    segmentId: string;
+    featureId: string;
+    startDate: string;
+    endDate: string;
+    limit?: number;
+  }): Promise<Array<{ visitorId: string; accountId?: string }>> {
+    try {
+      // First, get all visitors in the segment
+      const segmentVisitorsPipeline = [
+        {
+          source: {
+            visitors: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30
+            }
+          },
+        },
+        {
+          identified: 'visitorId',
+          segment: { id: params.segmentId },
+        },
+        {
+          select: { visitorId: 'visitorId', accountId: 'accountId' },
+        },
+      ];
+
+      const segmentVisitors = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline: segmentVisitorsPipeline },
+        }),
+      });
+
+      // Next, get visitors who HAVE clicked the feature
+      const featureUsersPipeline = [
+        {
+          source: {
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30
+            }
+          },
+        },
+        {
+          filter: `type == "feature" && featureId == "${params.featureId}"`,
+        },
+      ];
+
+      if (params.startDate && params.endDate) {
+        featureUsersPipeline.push({
+          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
+        });
+      }
+
+      featureUsersPipeline.push(
+        {
+          group: { group: ['visitorId'] },
+        },
+        {
+          select: { visitorId: 'visitorId' },
+        }
+      );
+
+      const featureUsers = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline: featureUsersPipeline },
+        }),
+      });
+
+      // Find the difference: segment visitors who haven't used the feature
+      const featureUserIds = new Set(
+        (Array.isArray(featureUsers) ? featureUsers : featureUsers?.results || [])
+          .map((u: any) => u.visitorId)
+      );
+
+      const segmentVisitorList = Array.isArray(segmentVisitors) 
+        ? segmentVisitors 
+        : segmentVisitors?.results || [];
+
+      const nonUsers = segmentVisitorList
+        .filter((v: any) => !featureUserIds.has(v.visitorId))
+        .slice(0, params.limit || 100)
+        .map((v: any) => ({
+          visitorId: v.visitorId,
+          accountId: v.accountId || undefined,
+        }));
+
+      console.log(
+        '[PendoClient] getSegmentNonUsers: segmentSize=%d featureUsers=%d nonUsers=%d',
+        segmentVisitorList.length,
+        featureUserIds.size,
+        nonUsers.length
+      );
+
+      return nonUsers;
+    } catch (error: any) {
+      console.error('Error fetching segment non-users:', error);
       return [];
     }
   }
