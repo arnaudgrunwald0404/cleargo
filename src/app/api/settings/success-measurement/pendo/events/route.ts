@@ -55,6 +55,12 @@ export async function GET(req: NextRequest) {
       }, { status: 200 }); // Return empty array instead of error
     }
 
+    // Optional query params for filtering
+    const url = new URL(req.url);
+    const activeOnly = url.searchParams.get('activeOnly') !== 'false';
+    const daysParam = Number(url.searchParams.get('days') || 3);
+    const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 3;
+
     try {
       const apiKey = decryptApiKey(integration.api_key_encrypted);
       const client = new PendoClient({
@@ -62,7 +68,28 @@ export async function GET(req: NextRequest) {
         environment: integration.environment,
       });
 
-      const events = await client.getEvents();
+      let events = await client.getEvents();
+
+      if (activeOnly) {
+        const today = new Date();
+        const start = new Date(today);
+        start.setDate(start.getDate() - days);
+        const startDate = start.toISOString().split('T')[0];
+        const endDate = today.toISOString().split('T')[0];
+
+        const checks = await Promise.all(
+          events.map(async (event) => {
+            const count = await client.getEventCount({
+              eventId: event.name,
+              startDate,
+              endDate,
+            });
+            return { event, count };
+          })
+        );
+
+        events = checks.filter(c => c.count > 0).map(c => c.event);
+      }
       
       console.log(`Returning ${events.length} Pendo events to client`);
       

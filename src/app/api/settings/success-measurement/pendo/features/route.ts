@@ -64,6 +64,9 @@ export async function GET(req: NextRequest) {
     // Optional query params for filtering
     const url = new URL(req.url);
     const appId = url.searchParams.get('appId');
+    const activeOnly = url.searchParams.get('activeOnly') !== 'false';
+    const daysParam = Number(url.searchParams.get('days') || 3);
+    const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 3;
 
     try {
       const apiKey = decryptApiKey(integration.api_key_encrypted);
@@ -77,6 +80,27 @@ export async function GET(req: NextRequest) {
       // Filter by app if specified
       if (appId) {
         features = features.filter(f => f.appId === appId);
+      }
+
+      if (activeOnly) {
+        const today = new Date();
+        const start = new Date(today);
+        start.setDate(start.getDate() - days);
+        const startDate = start.toISOString().split('T')[0];
+        const endDate = today.toISOString().split('T')[0];
+
+        const checks = await Promise.all(
+          features.map(async (feature) => {
+            const count = await client.getEventCount({
+              eventId: feature.id,
+              startDate,
+              endDate,
+            });
+            return { feature, count };
+          })
+        );
+
+        features = checks.filter(c => c.count > 0).map(c => c.feature);
       }
       
       console.log(`Returning ${features.length} Pendo features to client`);

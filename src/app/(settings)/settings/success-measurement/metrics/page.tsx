@@ -56,6 +56,7 @@ const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string; category:
   { value: 'events_per_user_per_week', label: 'Events per User per Week', category: 'engagement' },
   { value: 'unique_users_percentage', label: 'Unique Users %', category: 'adoption' },
   { value: 'unique_users_count', label: 'Unique Users Count', category: 'adoption' },
+  { value: 'unique_companies_count', label: 'Unique Companies Count', category: 'adoption' },
   { value: 'return_rate_7_days', label: '7-day Return Rate', category: 'retention' },
   { value: 'return_rate_14_days', label: '14-day Return Rate', category: 'retention' },
   { value: 'return_rate_30_days', label: '30-day Return Rate', category: 'retention' },
@@ -579,7 +580,7 @@ function EditDefaultForm({
     } else {
       setMilestones([]);
     }
-  }, [editingDefault]);
+  }, [editingDefault.id, editingDefault.heart_category]);
 
   const getAutoLabel = (days: number) => {
     if (days <= 30) return '1 Month';

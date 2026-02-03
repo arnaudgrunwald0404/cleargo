@@ -218,7 +218,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
             </Group>
             {daysSinceLaunch !== null && daysSinceLaunch >= 0 && (
               <Text size="sm" c="dimmed">
-                Day {daysSinceLaunch} since launch
+                Day {daysSinceLaunch} since release
               </Text>
             )}
           </div>
@@ -264,6 +264,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
         daysSinceLaunch={daysSinceLaunch}
       />
 
+
       {/* Add Custom Metric Modal */}
       <AddCustomMetricModal
         opened={showAddCustomMetric}
@@ -280,7 +281,11 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
       <Grid>
         {metrics.map((item) => (
           <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 2.4 }}>
-            <HeartMetricCard item={item} eventIdToName={dashboard?.pendoEventIdToName} />
+            <HeartMetricCard
+              item={item}
+              eventIdToName={dashboard?.pendoEventIdToName}
+              releaseDate={dashboard?.launchDate || null}
+            />
           </Grid.Col>
         ))}
       </Grid>
@@ -305,11 +310,13 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
 function HeartMetricCard({
   item,
   eventIdToName,
+  releaseDate,
 }: {
   item: HeartMetricDisplay;
   eventIdToName?: Record<string, string>;
+  releaseDate?: string | null;
 }) {
-  const { category, metric, latestSnapshot, trend, isPreLaunch, measurementPeriod, milestoneProgress, currentMilestone } = item;
+  const { category, metric, latestSnapshot, trend, isPreLaunch, measurementPeriod, milestoneProgress, currentMilestone, history } = item;
 
   // Determine display value
   let displayValue: string = '--';
@@ -351,6 +358,18 @@ function HeartMetricCard({
     return eventId;
   };
 
+  const historyPoints = (history || [])
+    .filter(s => s.value !== null && s.value !== undefined)
+    .map(s => ({ date: s.snapshot_date, value: s.value as number }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (latestSnapshot?.value !== null && latestSnapshot?.value !== undefined) {
+    const last = historyPoints[historyPoints.length - 1];
+    const latestDate = latestSnapshot.snapshot_date;
+    if (!last || last.date !== latestDate || last.value !== latestSnapshot.value) {
+      historyPoints.push({ date: latestDate, value: latestSnapshot.value });
+    }
+  }
+
   return (
     <Paper withBorder p="md" h="100%">
       <Stack gap="xs" h="100%" justify="space-between">
@@ -385,7 +404,7 @@ function HeartMetricCard({
               {latestSnapshot?.value === 0 && (
                 <Tooltip
                   label={isPreLaunch 
-                    ? "Measurement hasn't started yet - waiting for launch date"
+                    ? "Tracking baseline before release. Data will continue after release."
                     : "No events recorded yet. Check that the correct Pendo events/features are selected and that users are interacting with the feature."
                   }
                   multiline
@@ -393,7 +412,7 @@ function HeartMetricCard({
                   position="bottom"
                 >
                   <Text size="xs" c="orange.6" mt={2} style={{ cursor: 'help' }}>
-                    {isPreLaunch ? '⏳ Waiting for launch' : '❓ No activity detected'}
+                    {isPreLaunch ? '📊 Tracking baseline (pre-release)' : '❓ No activity detected'}
                   </Text>
                 </Tooltip>
               )}
@@ -428,6 +447,16 @@ function HeartMetricCard({
                 <Text size="xs" c="dimmed" mt={2}>
                   📅 {measurementPeriod}
                 </Text>
+              )}
+
+              {/* Sparkline trend preview */}
+              {historyPoints.length >= 1 && (
+                <div style={{ marginTop: 6 }}>
+                  <Sparkline
+                    points={historyPoints}
+                    releaseDate={releaseDate || null}
+                  />
+                </div>
               )}
               
               {/* Show AI rationale if available */}
@@ -535,7 +564,7 @@ function HeartMetricCard({
             variant="light"
             fullWidth
           >
-            {isPreLaunch ? '🚀 Pre-launch' :
+            {isPreLaunch ? '🚀 Pre-release' :
              latestSnapshot.status === 'ON_TRACK' ? '✓ On Track' :
              latestSnapshot.status === 'AT_RISK' ? '⚠ At Risk' :
              latestSnapshot.status === 'MISSED' ? '✗ Missed' : 'Pending'}
@@ -559,7 +588,7 @@ function DataCollectionInfo({
   daysSinceLaunch: number | null;
 }) {
   const isPreLaunch = daysSinceLaunch === null || daysSinceLaunch < 0;
-  const formattedLaunchDate = launchDate 
+  const formattedReleaseDate = launchDate 
     ? new Date(launchDate).toLocaleDateString('en-US', { 
         month: 'short', 
         day: 'numeric', 
@@ -572,16 +601,21 @@ function DataCollectionInfo({
       <Group gap="xs">
         <IconCalendar size={14} color="var(--mantine-color-dimmed)" />
         <Text size="sm" c="dimmed">
-          {formattedLaunchDate ? (
+          {formattedReleaseDate ? (
             <>
-              Measurement starts: <strong>{formattedLaunchDate}</strong>
+              Measurement starts: <strong>{formattedReleaseDate}</strong>
               {isPreLaunch && <Badge size="xs" color="blue" variant="light" ml="xs">Upcoming</Badge>}
             </>
           ) : (
-            <Text span c="orange.6">No launch date set (using last 7 days)</Text>
+            <Text span c="orange.6">No release date set (using last 7 days)</Text>
           )}
         </Text>
       </Group>
+      {isPreLaunch && (
+        <Text size="xs" c="dimmed">
+          Baseline tracking is active now; release will start the main measurement window.
+        </Text>
+      )}
     </Group>
   );
 }
@@ -609,12 +643,91 @@ function TrendIcon({ trend }: { trend: 'up' | 'down' | 'stable' }) {
   );
 }
 
+function Sparkline({
+  points,
+  releaseDate,
+}: {
+  points: Array<{ date: string; value: number }>;
+  releaseDate: string | null;
+}) {
+  if (points.length < 1) return null;
+  const values = points.map((p) => p.value);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min || 1;
+
+  const toTime = (date: string) => new Date(date).getTime();
+  const minTime = Math.min(...points.map((p) => toTime(p.date)));
+  const maxTime = Math.max(...points.map((p) => toTime(p.date)));
+  const timeRange = maxTime - minTime || 1;
+
+  const toX = (date: string) => ((toTime(date) - minTime) / timeRange) * 100;
+  const toY = (value: number) => 24 - ((value - min) / range) * 24;
+
+  const beforeRelease: string[] = [];
+  const afterRelease: string[] = [];
+  const releaseTime = releaseDate ? new Date(releaseDate).getTime() : null;
+
+  for (const point of points) {
+    const coord = `${toX(point.date)},${toY(point.value)}`;
+    if (releaseTime && new Date(point.date).getTime() >= releaseTime) {
+      afterRelease.push(coord);
+    } else {
+      beforeRelease.push(coord);
+    }
+  }
+
+  const releaseX = releaseTime && releaseTime >= minTime && releaseTime <= maxTime
+    ? toX(releaseDate as string)
+    : null;
+
+  return (
+    <svg width="100%" height="24" viewBox="0 0 100 24" preserveAspectRatio="none">
+      {beforeRelease.length >= 2 && (
+        <polyline
+          fill="none"
+          stroke="var(--mantine-color-blue-5)"
+          strokeWidth="2"
+          points={beforeRelease.join(' ')}
+        />
+      )}
+      {afterRelease.length >= 2 && (
+        <polyline
+          fill="none"
+          stroke="var(--mantine-color-green-5)"
+          strokeWidth="2"
+          points={afterRelease.join(' ')}
+        />
+      )}
+      {points.length === 1 && (
+        <circle
+          cx={toX(points[0].date)}
+          cy={toY(points[0].value)}
+          r="2.5"
+          fill="var(--mantine-color-blue-5)"
+        />
+      )}
+      {releaseX !== null && (
+        <line
+          x1={releaseX}
+          y1={0}
+          x2={releaseX}
+          y2={24}
+          stroke="var(--mantine-color-gray-4)"
+          strokeDasharray="2,2"
+        />
+      )}
+    </svg>
+  );
+}
+
 // Add Custom Metric Modal
 const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string }[] = [
   { value: 'events_per_user', label: 'Events per User' },
   { value: 'events_per_user_per_week', label: 'Events per User per Week' },
   { value: 'unique_users_percentage', label: 'Unique Users %' },
   { value: 'unique_users_count', label: 'Unique Users Count' },
+  { value: 'unique_companies_count', label: 'Unique Companies Count' },
   { value: 'return_rate_7_days', label: '7-day Return Rate' },
   { value: 'return_rate_14_days', label: '14-day Return Rate' },
   { value: 'return_rate_30_days', label: '30-day Return Rate' },

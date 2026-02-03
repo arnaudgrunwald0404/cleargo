@@ -28,6 +28,7 @@ export type HeartMeasurementType =
   | 'events_per_user_per_week'  // Engagement: events per user per week
   | 'unique_users_percentage'   // Adoption: unique users / total eligible users
   | 'unique_users_count'        // Adoption: raw count of users who used feature
+  | 'unique_companies_count'    // Adoption: raw count of companies (accounts) who used feature
   | 'return_rate_7_days'        // Retention: % who used again within 7 days
   | 'return_rate_14_days'       // Retention: % who used again within 14 days
   | 'return_rate_30_days'       // Retention: % who used again within 30 days
@@ -349,6 +350,7 @@ export interface HeartMetricDisplay {
   metric: EpicHeartMetric | null;
   latestSnapshot: EpicHeartSnapshot | null;
   survey: HeartSurvey | null;
+  history?: EpicHeartSnapshot[];
   trend: 'up' | 'down' | 'stable' | null;
   /** Whether the epic is pre-launch (launch date in future or not set) */
   isPreLaunch?: boolean;

@@ -224,6 +224,67 @@ export class PendoClient {
   }
 
   /**
+   * Get unique accounts (companies) for a given event ID and date range.
+   */
+  async getUniqueAccounts(params: PendoEventCountParams): Promise<number> {
+    try {
+      const isFeature = !params.eventId.includes('.');
+      const pipeline: any[] = [
+        { 
+          source: { 
+            events: null,
+            timeSeries: {
+              period: 'dayRange',
+              first: 'now()',
+              count: -30
+            }
+          } 
+        }
+      ];
+
+      if (isFeature) {
+        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      } else {
+        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+      }
+
+      if (params.startDate && params.endDate) {
+        pipeline.push({
+          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
+        });
+      }
+
+      if (params.filters?.segmentId) {
+        pipeline.push({
+          identified: 'visitorId',
+          segment: { id: params.filters.segmentId },
+        });
+      }
+
+      // Group by accountId to count unique companies
+      pipeline.push({ group: { group: ['accountId'] } });
+      pipeline.push({ count: null });
+
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({
+          response: { mimeType: 'application/json' },
+          request: { pipeline },
+        }),
+      });
+
+      const results = Array.isArray(response) ? response : (response?.results || []);
+      if (results.length > 0) {
+        return Number(results[0].count) || 0;
+      }
+      return typeof response === 'number' ? response : (response?.count || 0);
+    } catch (error: any) {
+      console.error('Error fetching Pendo unique accounts:', error);
+      return 0;
+    }
+  }
+
+  /**
    * Get total unique visitors in a segment (or all) for a date range.
    * Uses the events source with date filtering to count unique visitors.
    */

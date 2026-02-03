@@ -41,6 +41,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    // Optional query params for filtering
+    const url = new URL(req.url);
+    const activeOnly = url.searchParams.get('activeOnly') !== 'false';
+    const daysParam = Number(url.searchParams.get('days') || 3);
+    const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 3;
+
     try {
       const apiKey = decryptApiKey(integration.api_key_encrypted);
       const client = new PendoClient({
@@ -48,7 +54,28 @@ export async function GET(req: NextRequest) {
         environment: integration.environment,
       });
 
-      const segments = await client.getSegments();
+      let segments = await client.getSegments();
+
+      if (activeOnly) {
+        const today = new Date();
+        const start = new Date(today);
+        start.setDate(start.getDate() - days);
+        const startDate = start.toISOString().split('T')[0];
+        const endDate = today.toISOString().split('T')[0];
+
+        const checks = await Promise.all(
+          segments.map(async (segment) => {
+            const count = await client.getTotalUniqueVisitors({
+              startDate,
+              endDate,
+              segmentId: segment.id,
+            });
+            return { segment, count };
+          })
+        );
+
+        segments = checks.filter(c => c.count > 0).map(c => c.segment);
+      }
 
       return NextResponse.json({
         segments,

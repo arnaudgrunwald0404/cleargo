@@ -139,12 +139,49 @@ export async function getPendoContextForAgent(
   }
   
   // Fetch data in parallel
-  const [events, features, segments, apps] = await Promise.all([
+  let [events, features, segments, apps] = await Promise.all([
     client.getEvents().catch(() => []),
     client.getFeatures().catch(() => []),
     client.getSegments().catch(() => []),
     client.getApps().catch(() => []),
   ]);
+
+  // Filter out inactive events/features (0 activity in last 14 days)
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - 14);
+  const startDate = start.toISOString().split('T')[0];
+  const endDate = today.toISOString().split('T')[0];
+
+  const filterActive = async <T,>(items: T[], getId: (item: T) => string) => {
+    const checks = await Promise.all(
+      items.map(async (item) => {
+        const count = await client.getEventCount({
+          eventId: getId(item),
+          startDate,
+          endDate,
+        });
+        return { item, count };
+      })
+    );
+    return checks.filter(c => c.count > 0).map(c => c.item);
+  };
+
+  events = await filterActive(events, (e: any) => e.name);
+  features = await filterActive(features, (f: any) => f.id);
+  if (segments.length > 0) {
+    const segmentChecks = await Promise.all(
+      segments.map(async (segment) => {
+        const count = await client.getTotalUniqueVisitors({
+          startDate,
+          endDate,
+          segmentId: segment.id,
+        });
+        return { segment, count };
+      })
+    );
+    segments = segmentChecks.filter(c => c.count > 0).map(c => c.segment);
+  }
   
   // Try to get cached data for user/event counts
   const supabase = getDbClient();
@@ -183,7 +220,7 @@ export async function getPendoContextForAgent(
     group: f.group,
   }));
 
-  console.log(`[getPendoContextForAgent] events=${formattedEvents.length} features=${formattedFeatures.length} segments=${segments.length} apps=${apps.length}`);
+  console.log(`[getPendoContextForAgent] events=${formattedEvents.length} features=${formattedFeatures.length} segments=${segments.length} apps=${apps.length} (active last 14 days)`);
   
   return {
     events: formattedEvents,

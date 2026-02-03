@@ -17,6 +17,7 @@ import {
   Loader,
   Alert,
   Divider,
+  Tabs,
 } from '@mantine/core';
 import { IconAlertCircle, IconCheck, IconPlus } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
@@ -68,6 +69,7 @@ const HEART_CATEGORIES: Array<{
     measurementTypes: [
       { value: 'unique_users_percentage', label: 'Unique Users (% of eligible)' },
       { value: 'unique_users_count', label: 'Unique Users (count)' },
+      { value: 'unique_companies_count', label: 'Unique Companies (count)' },
     ],
   },
   {
@@ -131,6 +133,7 @@ export function HeartManualConfigForm({
   const [loadingPendo, setLoadingPendo] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<HeartCategoryId>('engagement');
   
   // Track which categories have been configured
   const [configuredCategories, setConfiguredCategories] = useState<Set<HeartCategoryId>>(
@@ -188,9 +191,9 @@ export function HeartManualConfigForm({
       setLoadingPendo(true);
       try {
         const [eventsRes, featuresRes, segmentsRes] = await Promise.all([
-          fetch('/api/settings/success-measurement/pendo/events'),
-          fetch('/api/settings/success-measurement/pendo/features'),
-          fetch('/api/settings/success-measurement/pendo/segments'),
+          fetch('/api/settings/success-measurement/pendo/events?activeOnly=true&days=14'),
+          fetch('/api/settings/success-measurement/pendo/features?activeOnly=true&days=14'),
+          fetch('/api/settings/success-measurement/pendo/segments?activeOnly=true&days=14'),
         ]);
 
         const idToLabel: Record<string, string> = {};
@@ -410,13 +413,23 @@ export function HeartManualConfigForm({
           </Alert>
         )}
 
-        <Accordion variant="separated" multiple defaultValue={['engagement', 'adoption']}>
-          {HEART_CATEGORIES.map((cat) => {
+        <Tabs value={activeCategory} onChange={(value) => setActiveCategory(value as HeartCategoryId)}>
+          <Tabs.List>
+            {HEART_CATEGORIES.map((cat) => (
+              <Tabs.Tab key={cat.id} value={cat.id}>
+                {cat.name}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs>
+
+        <Accordion variant="separated" multiple defaultValue={[activeCategory]}>
+          {HEART_CATEGORIES.filter((cat) => cat.id === activeCategory).map((cat) => {
             const isConfigured = configuredCategories.has(cat.id);
             const data = formData[cat.id];
 
             return (
-              <Accordion.Item key={cat.id} value={cat.id}>
+              <Accordion.Item key={cat.id} value={cat.id} id={`heart-edit-${cat.id}`}>
                 <Accordion.Control>
                   <Group gap="sm">
                     <Text size="xl">{cat.icon}</Text>

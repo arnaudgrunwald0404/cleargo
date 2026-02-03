@@ -13,6 +13,7 @@ const getClient = () => getAdminClient();
 import type {
   HeartCategory,
   HeartCategoryId,
+  HeartCategoryDefault,
   EpicHeartConfig,
   EpicHeartMetric,
   EpicHeartSnapshot,
@@ -31,6 +32,7 @@ import type {
   EpicHeartListItem,
   HeartMetricMilestone,
   MilestoneProgress,
+  DefaultMilestone,
 } from './types';
 
 // ============================================================================
@@ -96,7 +98,7 @@ export async function fetchLiveMetricValue(
     return { value: null, status: 'PENDING', error: 'No events configured' };
   }
 
-  // Determine if pre-launch
+  // Determine if pre-release
   const today = new Date();
   const isPreLaunch = !epicLaunchDate || epicLaunchDate > today;
   const daysSinceLaunch = epicLaunchDate 
@@ -112,10 +114,10 @@ export async function fetchLiveMetricValue(
   let startDate = rangeStart.toISOString().split('T')[0];
   let measurementPeriod = 'Last 7 days';
 
-  // For adoption metrics, use launch date if available and launched
+  // For adoption metrics, use release date if available and released
   if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users')) {
     startDate = epicLaunchDate.toISOString().split('T')[0];
-    measurementPeriod = daysSinceLaunch !== null ? `Since launch (Day ${daysSinceLaunch})` : 'Since launch';
+    measurementPeriod = daysSinceLaunch !== null ? `Since release (Day ${daysSinceLaunch})` : 'Since release';
   }
   
   try {
@@ -166,6 +168,16 @@ export async function fetchLiveMetricValue(
       
       case 'unique_users_count': {
         value = await client.getUniqueVisitors({
+          eventId: primaryEventId,
+          startDate,
+          endDate,
+          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+        });
+        break;
+      }
+
+      case 'unique_companies_count': {
+        value = await client.getUniqueAccounts({
           eventId: primaryEventId,
           startDate,
           endDate,
@@ -247,7 +259,7 @@ export async function fetchLiveMetricValue(
     // Calculate status based on value vs target
     let status: HeartMetricStatus = 'PENDING';
     if (value !== null) {
-      // Pre-launch: always PENDING, not MISSED (no expectation of usage yet)
+      // Pre-release: always PENDING, not MISSED (no expectation of usage yet)
       if (isPreLaunch) {
         status = 'PENDING';
       } else if (!targetValue) {
@@ -300,6 +312,31 @@ export async function getHeartCategories(): Promise<HeartCategory[]> {
   }
   
   return data || [];
+}
+
+/**
+ * Get HEART category defaults mapped by category
+ */
+export async function getHeartCategoryDefaults(): Promise<Record<HeartCategoryId, HeartCategoryDefault>> {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('heart_category_defaults')
+    .select('*');
+
+  if (error) {
+    if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
+      console.warn('Table heart_category_defaults does not exist. Defaults unavailable.');
+      return {} as Record<HeartCategoryId, HeartCategoryDefault>;
+    }
+    console.error('Error fetching HEART category defaults:', error);
+    return {} as Record<HeartCategoryId, HeartCategoryDefault>;
+  }
+
+  const mapped: Record<HeartCategoryId, HeartCategoryDefault> = {} as Record<HeartCategoryId, HeartCategoryDefault>;
+  for (const item of data || []) {
+    mapped[item.heart_category as HeartCategoryId] = item as HeartCategoryDefault;
+  }
+  return mapped;
 }
 
 // ============================================================================
@@ -611,25 +648,67 @@ export async function applyRecommendations(
   epicName: string
 ): Promise<EpicHeartMetric[]> {
   const metrics: EpicHeartMetric[] = [];
+  const defaultsByCategory = await getHeartCategoryDefaults();
+  const buildMilestones = (
+    defaultMilestones: DefaultMilestone[] | null | undefined,
+    fallbackTarget?: number | null,
+    fallbackDays?: number | null,
+    useDefaultMilestones?: boolean
+  ) => {
+    if (useDefaultMilestones && defaultMilestones && defaultMilestones.length > 0) {
+      return defaultMilestones.map((m) => ({
+        days_after_launch: m.days,
+        target_value: m.target,
+        label: m.label,
+      }));
+    }
+    if (fallbackTarget && fallbackDays) {
+      return [{
+        days_after_launch: fallbackDays,
+        target_value: fallbackTarget,
+        label: fallbackDays <= 30 ? '1 Month' :
+          fallbackDays <= 60 ? '2 Months' :
+          fallbackDays <= 90 ? '3 Months' :
+          fallbackDays <= 180 ? '6 Months' :
+          `${fallbackDays} Days`,
+      }];
+    }
+    return [];
+  };
   
   // Engagement
   if (recommendations.engagement) {
+    const defaults = defaultsByCategory['engagement'];
+    const targetValue = recommendations.engagement.targetValue ?? defaults?.default_target_value ?? null;
+    const targetTimeframeDays = recommendations.engagement.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'engagement',
       name: generateMetricName('engagement', recommendations.engagement.eventIds, epicName),
       measurement_type: recommendations.engagement.measurementType,
       pendo_event_ids: recommendations.engagement.eventIds,
-      target_value: recommendations.engagement.targetValue,
-      target_timeframe_days: recommendations.engagement.targetTimeframeDays,
+      target_value: targetValue,
+      target_timeframe_days: targetTimeframeDays,
       ai_suggested: true,
       ai_rationale: recommendations.engagement.rationale,
     });
+    const milestones = buildMilestones(
+      defaults?.default_milestones,
+      targetValue,
+      targetTimeframeDays,
+      recommendations.engagement.targetValue == null && recommendations.engagement.targetTimeframeDays == null
+    );
+    if (milestones.length > 0) {
+      await createMetricMilestones(metric.id, milestones);
+    }
     metrics.push(metric);
   }
   
   // Adoption
   if (recommendations.adoption) {
+    const defaults = defaultsByCategory['adoption'];
+    const targetValue = recommendations.adoption.targetValue ?? defaults?.default_target_value ?? null;
+    const targetTimeframeDays = recommendations.adoption.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'adoption',
@@ -637,39 +716,76 @@ export async function applyRecommendations(
       measurement_type: recommendations.adoption.measurementType,
       pendo_event_ids: recommendations.adoption.eventIds,
       pendo_segment_id: recommendations.adoption.segmentId,
-      target_value: recommendations.adoption.targetValue,
-      target_timeframe_days: recommendations.adoption.targetTimeframeDays,
+      target_value: targetValue,
+      target_timeframe_days: targetTimeframeDays,
       ai_suggested: true,
       ai_rationale: recommendations.adoption.rationale,
     });
+    const milestones = buildMilestones(
+      defaults?.default_milestones,
+      targetValue,
+      targetTimeframeDays,
+      recommendations.adoption.targetValue == null && recommendations.adoption.targetTimeframeDays == null
+    );
+    if (milestones.length > 0) {
+      await createMetricMilestones(metric.id, milestones);
+    }
     metrics.push(metric);
   }
   
   // Retention
   if (recommendations.retention) {
+    const defaults = defaultsByCategory['retention'];
+    const targetValue = recommendations.retention.targetValue ?? defaults?.default_target_value ?? null;
+    const targetTimeframeDays = recommendations.retention.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'retention',
       name: generateMetricName('retention', recommendations.retention.eventIds, epicName),
       measurement_type: recommendations.retention.measurementType,
       pendo_event_ids: recommendations.retention.eventIds,
+      target_value: targetValue,
+      target_timeframe_days: targetTimeframeDays,
       ai_suggested: true,
       ai_rationale: recommendations.retention.rationale,
     });
+    const milestones = buildMilestones(
+      defaults?.default_milestones,
+      targetValue,
+      targetTimeframeDays,
+      recommendations.retention.targetValue == null && recommendations.retention.targetTimeframeDays == null
+    );
+    if (milestones.length > 0) {
+      await createMetricMilestones(metric.id, milestones);
+    }
     metrics.push(metric);
   }
   
   // Task Success
   if (recommendations.taskSuccess) {
+    const defaults = defaultsByCategory['task_success'];
+    const targetValue = recommendations.taskSuccess.targetValue ?? defaults?.default_target_value ?? null;
+    const targetTimeframeDays = recommendations.taskSuccess.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'task_success',
       name: generateMetricName('task_success', recommendations.taskSuccess.eventIds, epicName),
       measurement_type: recommendations.taskSuccess.measurementType,
       pendo_event_ids: recommendations.taskSuccess.eventIds,
+      target_value: targetValue,
+      target_timeframe_days: targetTimeframeDays,
       ai_suggested: true,
       ai_rationale: recommendations.taskSuccess.rationale,
     });
+    const milestones = buildMilestones(
+      defaults?.default_milestones,
+      targetValue,
+      targetTimeframeDays,
+      recommendations.taskSuccess.targetValue == null && recommendations.taskSuccess.targetTimeframeDays == null
+    );
+    if (milestones.length > 0) {
+      await createMetricMilestones(metric.id, milestones);
+    }
     metrics.push(metric);
   }
   
@@ -934,6 +1050,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     // Create a "live snapshot" object (not stored, just for display)
     let latestSnapshot: EpicHeartSnapshot | null = null;
     let trend: 'up' | 'down' | 'stable' | null = null;
+    let history: EpicHeartSnapshot[] = [];
     
     // Track context for display
     let isPreLaunch: boolean | undefined;
@@ -969,6 +1086,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       
       // Calculate trend from historical snapshots (if any exist)
       const historicalSnapshots = await getSnapshots(metric.id);
+      history = historicalSnapshots;
       if (historicalSnapshots.length >= 1 && liveData.value !== null) {
         const lastHistorical = historicalSnapshots[historicalSnapshots.length - 1];
         if (lastHistorical.value !== null) {
@@ -983,6 +1101,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       
       if (latestSnapshot) {
         const snapshots = await getSnapshots(metric.id);
+        history = snapshots;
         if (snapshots.length >= 2) {
           const prev = snapshots[snapshots.length - 2];
           const curr = snapshots[snapshots.length - 1];
@@ -1031,6 +1150,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       metric,
       latestSnapshot,
       survey,
+      history,
       trend,
       isPreLaunch,
       measurementPeriod,
@@ -1058,6 +1178,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     let trend: 'up' | 'down' | 'stable' | null = null;
     let isPreLaunch: boolean | undefined;
     let measurementPeriod: string | undefined;
+    let history: EpicHeartSnapshot[] = [];
 
     if (pendoClient) {
       const liveData = await fetchLiveMetricValue(
@@ -1087,6 +1208,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
 
       // Calculate trend from historical snapshots
       const historicalSnapshots = await getSnapshots(metric.id);
+      history = historicalSnapshots;
       if (historicalSnapshots.length >= 1 && liveData.value !== null) {
         const lastHistorical = historicalSnapshots[historicalSnapshots.length - 1];
         if (lastHistorical.value !== null) {
@@ -1119,6 +1241,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       metric,
       latestSnapshot,
       survey: null,
+      history,
       trend,
       isPreLaunch,
       measurementPeriod,
