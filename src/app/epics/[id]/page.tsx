@@ -21,11 +21,13 @@ import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from 
 import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
-import { isEnabled, FEATURE_AI_PRUNING } from "@/lib/flags";
+import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 export default function EpicDetailPage() {
     const params = useParams();
     const id = params?.id as string | undefined;
+    const { flags: featureFlags } = useFeatureFlags();
 
     if (!id) {
         return <div className="p-8">Invalid epic ID</div>;
@@ -1241,17 +1243,49 @@ export default function EpicDetailPage() {
                                 size="xs"
                                 style={{ width: 150 }}
                             />
-                            <span style={{
-                                padding: 'var(--spacing-1) var(--spacing-2)',
-                                fontSize: 'var(--font-size-xs)',
-                                fontWeight: 'var(--font-weight-medium)',
-                                backgroundColor: 'var(--color-gray-100)',
-                                color: 'var(--color-gray-700)',
-                                borderRadius: 'var(--radius-base)',
-                                fontFamily: 'var(--font-body)'
-                            }}>
-                                {epic.status}
-                            </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span style={{
+                                    padding: 'var(--spacing-1) var(--spacing-2)',
+                                    fontSize: 'var(--font-size-xs)',
+                                    fontWeight: 'var(--font-weight-medium)',
+                                    backgroundColor: 'var(--color-gray-100)',
+                                    color: 'var(--color-gray-700)',
+                                    borderRadius: 'var(--radius-base)',
+                                    fontFamily: 'var(--font-body)'
+                                }}>
+                                    {epic.status}
+                                </span>
+                                <Tooltip
+                                    label={
+                                        <div style={{ maxWidth: '300px' }}>
+                                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is status determined?</div>
+                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                Status is derived from launch date, GA date, and retro completion. Only Cancelled is set manually.
+                                                <br /><br />
+                                                <strong>Pre_Release:</strong> Before target launch date
+                                                <br />
+                                                <strong>Released_Cohort_1:</strong> After launch, before GA date
+                                                <br />
+                                                <strong>Released_GA:</strong> After GA, before all retros (30/60/90) submitted
+                                                <br />
+                                                <strong>Released_Retroed:</strong> After GA and all retros submitted
+                                                <br />
+                                                <strong>Cancelled:</strong> Set manually
+                                            </div>
+                                        </div>
+                                    }
+                                    withArrow
+                                    multiline
+                                >
+                                    <IconInfoCircle
+                                        size={14}
+                                        style={{
+                                            color: 'var(--color-gray-400)',
+                                            cursor: 'help'
+                                        }}
+                                    />
+                                </Tooltip>
+                            </div>
 
                         </div>
                     </div>
@@ -1384,13 +1418,43 @@ export default function EpicDetailPage() {
                                         color: 'var(--color-gray-500)',
                                         textTransform: 'uppercase',
                                         letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>Readiness Score</div>
+                                        fontFamily: 'var(--font-body)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        gap: 'var(--spacing-1)'
+                                    }}>
+                                        Readiness Score
+                                        <Tooltip
+                                            label={
+                                                <div style={{ maxWidth: '300px' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                    <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                        The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
+                                                    </div>
+                                                </div>
+                                            }
+                                            withArrow
+                                            multiline
+                                        >
+                                            <IconInfoCircle
+                                                size={14}
+                                                style={{
+                                                    color: 'var(--color-gray-400)',
+                                                    cursor: 'help'
+                                                }}
+                                            />
+                                        </Tooltip>
+                                    </div>
                                     <div style={{
                                         fontSize: '17px',
                                         fontWeight: 'var(--font-weight-bold)',
                                         color: 'var(--color-gray-900)',
-                                        fontFamily: 'var(--font-body)'
+                                        fontFamily: 'var(--font-body)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'flex-end',
+                                        gap: 'var(--spacing-1)'
                                     }}>
                                         {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
                                     </div>
@@ -1413,7 +1477,11 @@ export default function EpicDetailPage() {
                                         justifyContent: 'flex-end',
                                         gap: 'var(--spacing-1)'
                                     }}>
-                                        Readiness Status
+                                        <div>
+                                            Readiness Status
+                                            <br />
+                                            <span style={{ textTransform: 'none', fontSize: '0.9em', fontWeight: 'normal' }}>aka "Are we ready to release?"</span>
+                                        </div>
                                         <Tooltip
                                             label={
                                                 <div style={{ maxWidth: '250px' }}>
@@ -1465,10 +1533,10 @@ export default function EpicDetailPage() {
                                         Risk Level
                                         <Tooltip
                                             label={
-                                                <div style={{ maxWidth: '250px' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
-                                                    <div style={{ fontSize: '12px' }}>
-                                                        Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
+                                                <div style={{ maxWidth: '300px' }}>
+                                                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                    <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                        Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
                                                     </div>
                                                 </div>
                                             }
@@ -1687,7 +1755,7 @@ export default function EpicDetailPage() {
                                             return true;
                                         });
 
-                                        const suggestedItems = isEnabled(FEATURE_AI_PRUNING)
+                                        const suggestedItems = isEnabled(FEATURE_AI_PRUNING, featureFlags)
                                             ? matrix.filter(m => m.ai_prune_suggested).map(m => ({
                                                 id: m.id,
                                                 label: m.criterion?.label || 'Unknown',
@@ -1702,7 +1770,7 @@ export default function EpicDetailPage() {
                                                     suggestedItems={suggestedItems}
                                                     onActionComplete={loadData}
                                                 />
-                                                <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} />
+                                                <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} showNotApplicable={isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)} />
                                             </>
                                         );
                                     })()}
@@ -1765,7 +1833,7 @@ export default function EpicDetailPage() {
                 </Tabs>
 
             </div>
-            {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} />}
+            {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} ahaFieldsToLoad={epicDetailCache.getSettings()?.aha_fields_to_load ?? undefined} />}
         </div>
     );
 }

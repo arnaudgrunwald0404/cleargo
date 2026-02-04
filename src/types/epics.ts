@@ -1,5 +1,5 @@
 export type EpicTier = 'TIER_1' | 'TIER_2' | 'TIER_3';
-export type EpicStatus = 'PLANNED' | 'PRE_LAUNCH' | 'LAUNCHING' | 'LAUNCHED' | 'POST_LAUNCH' | 'CANCELLED';
+export type EpicStatus = 'Pre_Release' | 'Released_Cohort_1' | 'Released_GA' | 'Released_Retroed' | 'Cancelled';
 export type EpicRisk = 'LOW' | 'MEDIUM' | 'HIGH';
 
 export interface Epic {
@@ -34,6 +34,7 @@ export interface Epic {
     aha_fields?: Record<string, any> | null;
     archived?: boolean;
     jira_epic_key?: string | null;
+    aha_record_not_found?: boolean;
     product?: { name: string };
     owner?: { name?: string; email?: string };
     created_at: string;

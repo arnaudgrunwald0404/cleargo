@@ -5,6 +5,7 @@ import { getReleases } from '../aha/client';
 import { syncUserSlackHandle } from '../slack/notifications';
 import { pruneCriteria } from '../ai/client';
 import { isEnabled, FEATURE_AI_PRUNING } from '../flags';
+import { getFeatureFlags } from '../settings-db';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -49,6 +50,7 @@ export interface Epic {
     aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     archived: boolean;
     jira_epic_key: string | null;
+    aha_record_not_found?: boolean;
     created_at: string;
     updated_at: string;
 }
@@ -81,6 +83,18 @@ export async function getEpicById(id: string): Promise<Epic | null> {
     }
 
     return data;
+}
+
+/** Set aha_record_not_found = true for the epic with this aha_id (e.g. when Aha API returns 404). */
+export async function setAhaRecordNotFoundByAhaId(ahaId: string): Promise<void> {
+    const existing = await getEpicByAhaId(ahaId);
+    if (!existing) return;
+    await supabase.from('epic').update({ aha_record_not_found: true }).eq('id', existing.id);
+}
+
+/** Clear aha_record_not_found for the epic (e.g. after successful sync from Aha). */
+export async function clearAhaRecordNotFound(epicId: string): Promise<void> {
+    await supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicId);
 }
 
 /**
@@ -166,10 +180,7 @@ export async function upsertEpicFromAha(
         upsertData.owner_id = ownerId;
     }
 
-    // Only set console_url for new epics
-    if (!existing) {
-        upsertData.status = 'PLANNED';
-    }
+    // Status is now computed from dates; only store 'Cancelled' override when needed
 
     // Determine archived status based on cleargo_candidate field
     // Archive if cleargo_candidate is not "Yes", unarchive if it is "Yes"
@@ -478,7 +489,8 @@ export async function instantiateCriteriaForEpic(
 
     // AI Pruning Suggestion (Human-in-the-Loop), gated by feature flag
     let aiSuggestions: Array<{ id: string; reason: string }> = [];
-    if (isEnabled(FEATURE_AI_PRUNING)) {
+    const featureFlags = await getFeatureFlags();
+    if (isEnabled(FEATURE_AI_PRUNING, featureFlags)) {
         try {
             const { data: epicFull } = await sb
                 .from('epic')
@@ -543,6 +555,13 @@ export async function instantiateCriteriaForEpic(
         .select('id');
 
     if (insertError) {
+        const isDuplicateKey = insertError.code === '23505'
+            || insertError.message?.includes('uq_launch_criterion_status')
+            || insertError.message?.includes('duplicate key');
+        if (isDuplicateKey) {
+            console.warn(`Criteria already exist for epic ${epicId} (duplicate key), skipping insert`);
+            return;
+        }
         console.error('Error inserting criteria:', insertError);
         throw new Error(`Failed to insert criteria: ${insertError.message}`);
     }
@@ -576,28 +595,7 @@ export async function sendCriteriaAssignmentNotifications(
     const { getSettings } = await import('../settings-db');
     const { groupCriteriaByEpicAndAssignee } = await import('../slack/notification-groups');
     const { buildCriteriaAssignmentMessage } = await import('../slack/templates');
-    const { sendSlackNotification } = await import('../slack/notifications');
-
-    // Get test filters from settings
-    // We filter by email address for both email and Slack notifications
-    // All notifications are logged, but only matching emails receive actual notifications
-    // Support multiple emails (comma or newline separated)
-    const settings = await getSettings();
-    const testEmailRaw = settings.slack_notification_test_email?.trim() || 'agrunwald@clearcompany.com';
-    const testEmails = testEmailRaw
-        .split(/[,\n]/)
-        .map(email => email.trim())
-        .filter(email => email.length > 0)
-        .map(email => email.toLowerCase());
-    const testSlackHandle = settings.slack_notification_test_slack_handle?.trim() || null;
-    const useTestEmailFilter = testEmails.length > 0;
-    const useTestSlackFilter = testSlackHandle && testSlackHandle.length > 0;
-
-    // Helper function to check if an email matches the filter
-    const isEmailInFilter = (email: string): boolean => {
-        if (!useTestEmailFilter) return true;
-        return testEmails.includes(email.toLowerCase());
-    };
+    const { sendSlackNotification, canReceiveSlackNotification } = await import('../slack/notifications');
 
     // Query newly created criteria with decision owner and epic info
     const { data: criteriaStatuses, error: queryError } = await sb
@@ -665,16 +663,16 @@ export async function sendCriteriaAssignmentNotifications(
         });
     }
 
+    const uniqueEmails = Array.from(notificationsByEmail.keys()).filter(e => e !== 'unknown');
+    const allowedForSlack = new Set<string>();
+    for (const email of uniqueEmails) {
+        if (await canReceiveSlackNotification(email)) allowedForSlack.add(email);
+    }
+
     console.log('📋 Slack Assignment Notifications - ALL NOTIFICATIONS (before filtering):');
     console.log(`   Total criteria with assignees: ${criteriaStatuses.length}`);
-    if (useTestSlackFilter) {
-        console.log(`   Test Slack handle filter: ${testSlackHandle} (only matching Slack handles will receive notifications)`);
-    } else {
-        console.log(`   Test email filter: ${useTestEmailFilter ? testEmails.join(', ') : 'DISABLED (sending to all)'}`);
-    }
-    console.log('   Breakdown by assignee (all will be logged, only filtered users will receive notifications):');
+    console.log(`   Slack recipients: per-user flag in User Management (${allowedForSlack.size} user(s) enabled)`);
     for (const [email, criteria] of notificationsByEmail.entries()) {
-        // Find Slack handle for this email
         const firstCriterion = criteriaStatuses.find((cs: any) => {
             const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
                 ? cs.decision_owner[0]
@@ -685,14 +683,7 @@ export async function sendCriteriaAssignmentNotifications(
             ? firstCriterion.decision_owner[0]
             : (firstCriterion.decision_owner as any)) : null;
         const slackHandle = decisionOwner?.slack_handle;
-        let willSend = false;
-        if (useTestSlackFilter) {
-            willSend = slackHandle && slackHandle === testSlackHandle;
-        } else if (useTestEmailFilter) {
-            willSend = isEmailInFilter(email);
-        } else {
-            willSend = true; // No filter, send to all
-        }
+        const willSend = allowedForSlack.has(email);
         const status = willSend ? '✅ WILL SEND' : '📝 LOGGED ONLY';
         console.log(`   ${status} - ${email} (Slack: ${slackHandle || 'none'}): ${criteria.length} criteria`);
         if (criteria.length <= 5) {
@@ -707,27 +698,16 @@ export async function sendCriteriaAssignmentNotifications(
         }
     }
 
-    // Filter by test email or Slack handle - only send to matching users, but all are logged above
-    const filteredCriteria = (useTestEmailFilter || useTestSlackFilter)
-        ? criteriaStatuses.filter((cs: any) => {
-            const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
-                ? cs.decision_owner[0]
-                : (cs.decision_owner as any);
-            const ownerEmail = decisionOwner?.email?.toLowerCase();
-            const slackHandle = decisionOwner?.slack_handle;
-
-            // If Slack handle filter is set, use it; otherwise use email filter
-            if (useTestSlackFilter) {
-                return slackHandle && slackHandle === testSlackHandle;
-            } else if (useTestEmailFilter) {
-                return isEmailInFilter(ownerEmail || '');
-            }
-            return false;
-        })
-        : criteriaStatuses;
+    const filteredCriteria = criteriaStatuses.filter((cs: any) => {
+        const decisionOwner = Array.isArray(cs.decision_owner) && cs.decision_owner.length > 0
+            ? cs.decision_owner[0]
+            : (cs.decision_owner as any);
+        const ownerEmail = decisionOwner?.email?.toLowerCase();
+        return ownerEmail && allowedForSlack.has(ownerEmail);
+    });
 
     if (filteredCriteria.length === 0) {
-        console.log(`⏭️  No criteria match test email filter: ${testEmails.join(', ')} (but all notifications were logged above)`);
+        console.log('⏭️  No assignees have Slack notifications enabled in User Management (all notifications logged above)');
         return;
     }
 

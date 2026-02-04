@@ -104,7 +104,7 @@ export async function POST(
 
     if (error) throw error;
 
-    // Send Slack notification to the approver (decision_owner)
+    // Send Slack notification to the accountable (decision_owner)
     try {
       // Fetch criterion status with epic, criterion, and decision_owner info
       const { data: criterionStatus, error: statusError } = await supabase

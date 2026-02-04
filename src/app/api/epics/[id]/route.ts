@@ -41,6 +41,12 @@ export async function PATCH(
 
         const body = await req.json();
 
+        // Only allow status = 'Cancelled' (override); all other statuses are computed from dates
+        const updates = { ...body };
+        if (updates.status !== undefined && updates.status !== 'Cancelled') {
+            delete updates.status;
+        }
+
         // Load current epic to compare changes
         const current = await getEpic(id);
         if (!current) {
@@ -75,10 +81,10 @@ export async function PATCH(
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic risk level' }, { status: 403 });
         }
 
-        const epic = await updateEpic(id, body);
+        await updateEpic(id, updates);
 
-        // Auto-lock success config if status changed to GO
-        if (typeof body.status !== 'undefined' && body.status === 'GO' && current.status !== 'GO') {
+        // Auto-lock success config if readiness_status changed to GO
+        if (typeof body.readiness_status !== 'undefined' && body.readiness_status === 'GO' && current.readiness_status !== 'GO') {
             try {
                 const { lockEpicSuccessConfig, getEpicSuccessConfig } = await import('@/lib/services/successMeasurementService');
                 const config = await getEpicSuccessConfig(id);
@@ -94,19 +100,17 @@ export async function PATCH(
             }
         }
 
-        // Trigger write-back to Aha! if epic has aha_id
-        if (epic.aha_id) {
+        const epic = await getEpic(id);
+        if (epic?.aha_id) {
             try {
                 const { writeBackEpicReadiness } = await import('@/lib/aha/write-back');
                 await writeBackEpicReadiness(epic.id);
                 console.log(`Write-back triggered for epic ${epic.id}`);
             } catch (error) {
                 console.error('Write-back failed:', error);
-                // Don't fail the update if write-back fails
             }
         }
-
-        return NextResponse.json(epic);
+        return NextResponse.json(epic ?? {});
     } catch (error) {
         console.error('Error updating epic:', error);
         return NextResponse.json({ error: 'Failed to update epic' }, { status: 500 });

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { recomputeEpicReadiness } from '@/lib/readiness';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { isEnabled, FEATURE_NOT_APPLICABLE } from '@/lib/flags';
+import { getFeatureFlags } from '@/lib/settings-db';
 
 export async function PATCH(
     req: NextRequest,
@@ -55,7 +57,36 @@ export async function PATCH(
             const { canRolesPerform } = await import('@/lib/permissions');
             const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'criteria.status.update');
             if (!canUpdate) {
-                return NextResponse.json({ error: 'Forbidden: cannot update criterion status' }, { status: 403 });
+                return NextResponse.json({ error: 'Forbidden: cannot update criterion score' }, { status: 403 });
+            }
+        }
+
+        const isNotApplicableStatus = typeof status === 'string' && (
+            status === 'NOT_APPLICABLE' ||
+            status === 'NA' ||
+            status.toUpperCase().trim() === 'N/A'
+        );
+
+        if (isNotApplicableStatus) {
+            const featureFlags = await getFeatureFlags();
+            if (!isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)) {
+                return NextResponse.json(
+                    { error: 'Not Applicable Go/No-Go score is not enabled' },
+                    { status: 400 }
+                );
+            }
+            const { data: row } = await supabase
+                .from('epic_criterion_status')
+                .select('criterion_id, criterion:criterion_id(gate)')
+                .eq('id', lcsId)
+                .eq('epic_id', id)
+                .single();
+            const criterion = (row as any)?.criterion;
+            if (criterion?.gate === true) {
+                return NextResponse.json(
+                    { error: 'Gating Go/No-Go score cannot be Not Applicable' },
+                    { status: 400 }
+                );
             }
         }
 
@@ -73,7 +104,9 @@ export async function PATCH(
             last_updated_by: appUser.id
         };
         
-        if (typeof status !== 'undefined') updateData.status = status;
+        if (typeof status !== 'undefined') {
+            updateData.status = isNotApplicableStatus ? 'NOT_APPLICABLE' : status;
+        }
         if (typeof notes !== 'undefined') updateData.current_status_notes = notes;
         if (typeof condition !== 'undefined') updateData.condition = condition;
         if (typeof condition_due_date !== 'undefined') updateData.condition_due_date = condition_due_date;

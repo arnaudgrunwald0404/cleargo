@@ -3,14 +3,15 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconTrash, IconInfoCircle } from '@tabler/icons-react';
+import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip, Menu, Checkbox, Stack, ScrollArea } from '@mantine/core';
+import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconArrowsRightLeft, IconUser } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
 import { ScopeFilterBanner } from '@/components/ScopeFilterBanner';
 import { createClient } from '@/lib/supabase/client';
+import { UserDisplay } from '@/components/UserDisplay';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -26,11 +27,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [configuredTags, setConfiguredTags] = useState<string[]>(['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']);
     const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
-    const [deletingEpicId, setDeletingEpicId] = useState<string | null>(null);
-    const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-    const [epicToDelete, setEpicToDelete] = useState<{ id: string; name: string } | null>(null);
+    const [archivingEpicId, setArchivingEpicId] = useState<string | null>(null);
+    const [archiveModalOpen, setArchiveModalOpen] = useState(false);
+    const [epicToArchive, setEpicToArchive] = useState<{ id: string; name: string } | null>(null);
     const [syncingReleaseName, setSyncingReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDates, setFetchingReleaseDates] = useState<Set<string>>(new Set());
     const fetchedReleaseDatesRef = useRef<Set<string>>(new Set());
@@ -43,6 +43,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [isDeterminingOrder, setIsDeterminingOrder] = useState(true);
     const [podOrder, setPodOrder] = useState<string[]>([]);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
+    const [ownerInfoMap, setOwnerInfoMap] = useState<Record<string, { first_name?: string; last_name?: string; avatar_url?: string }>>({});
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -54,6 +55,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     });
     const [showFilters, setShowFilters] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
+    
+    // Sync with Aha state
+    const [syncReleasesModalOpen, setSyncReleasesModalOpen] = useState(false);
+    const [availableReleases, setAvailableReleases] = useState<Array<{ id: string; name: string; start_date?: string; end_date?: string }>>([]);
+    const [selectedReleasesToSync, setSelectedReleasesToSync] = useState<Set<string>>(new Set());
+    const [loadingReleases, setLoadingReleases] = useState(false);
+    const [refreshingEpics, setRefreshingEpics] = useState(false);
+    const [syncingReleases, setSyncingReleases] = useState(false);
 
     useEffect(() => {
         // Load current user email and roles
@@ -94,15 +103,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         batchDelay: 150,
                         maxRetries: 1
                     });
-
-                    // Handle settings
-                    const settingsResult = supportingResults.find(r => r.url === '/api/settings');
-                    if (settingsResult?.response?.ok) {
-                        const data = await settingsResult.response.json();
-                        if (data.aha_tags && Array.isArray(data.aha_tags) && data.aha_tags.length > 0) {
-                            setConfiguredTags(data.aha_tags);
-                        }
-                    }
 
                     // Handle products
                     const productsResult = supportingResults.find(r => r.url === '/api/products');
@@ -216,47 +216,46 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     }
 
 
-    const canDeleteEpic = canRolesPerform(currentUserRoles, 'launch.delete');
+    const canArchiveEpic = canRolesPerform(currentUserRoles, 'launch.delete');
 
-    const handleDeleteClick = (epicId: string, epicName: string) => {
-        setEpicToDelete({ id: epicId, name: epicName });
-        setDeleteModalOpen(true);
+    const handleArchiveClick = (epicId: string, epicName: string) => {
+        setEpicToArchive({ id: epicId, name: epicName });
+        setArchiveModalOpen(true);
     };
 
-    const handleDeleteConfirm = async () => {
-        if (!epicToDelete) return;
+    const handleArchiveConfirm = async () => {
+        if (!epicToArchive) return;
 
-        setDeletingEpicId(epicToDelete.id);
-        setDeleteModalOpen(false);
-        
+        setArchivingEpicId(epicToArchive.id);
+        setArchiveModalOpen(false);
+
         try {
-            const res = await fetch(`/api/epics/${epicToDelete.id}`, {
-                method: 'DELETE',
+            const res = await fetch(`/api/epics/${epicToArchive.id}/archive`, {
+                method: 'POST',
                 credentials: 'include',
             });
 
             if (!res.ok) {
-                const error = await res.json();
-                throw new Error(error.error || 'Failed to delete epic');
+                const err = await res.json();
+                throw new Error(err.error || 'Failed to archive epic');
             }
 
-            // Remove epic from state
-            setEpics(epics.filter(e => e.id !== epicToDelete.id));
-            
+            setEpics(epics.filter(e => e.id !== epicToArchive.id));
+
             notifications.show({
-                title: 'Epic deleted',
-                message: `"${epicToDelete.name}" has been deleted successfully.`,
+                title: 'Epic archived',
+                message: `"${epicToArchive.name}" has been archived and removed from the list.`,
                 color: 'green',
             });
         } catch (error: any) {
             notifications.show({
-                title: 'Delete failed',
-                message: error.message || 'Failed to delete epic',
+                title: 'Archive failed',
+                message: error.message || 'Failed to archive epic',
                 color: 'red',
             });
         } finally {
-            setDeletingEpicId(null);
-            setEpicToDelete(null);
+            setArchivingEpicId(null);
+            setEpicToArchive(null);
         }
     };
 
@@ -282,26 +281,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         return true;
     });
 
-    // Extract pod from epic
-    const getPodFromEpic = (epic: Epic): string | null => {
-        // First check direct pod field
-        if (epic.pod) {
-            return epic.pod;
-        }
-        
-        // Then check aha_fields
+    const getModuleFromEpic = (epic: Epic): string | null => {
         if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return null;
         const fields = epic.aha_fields as any;
-        
-        // Check custom fields
         if (fields.custom_fields && typeof fields.custom_fields === 'object') {
-            const customFields = fields.custom_fields;
-            const pod = customFields?.dev_backlog_pod;
-            if (pod && typeof pod === 'string' && pod.trim()) {
-                return pod.trim();
+            const cf = fields.custom_fields;
+            const moduleVal = cf.gtm_module ?? cf.module;
+            if (moduleVal && typeof moduleVal === 'string' && moduleVal.trim()) {
+                return moduleVal.trim();
             }
         }
-        
         return null;
     };
 
@@ -361,41 +350,31 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
         });
 
-        // Convert to array and sort epics within each release by pod order
+        // Convert to array and sort epics within each release by module order
         const groups = Array.from(releaseGroupsMap.entries()).map(([releaseName, epics]) => {
-            // Sort epics within each release group by pod order
+            // Sort epics within each release group by module order
             const sortedEpics = [...epics].sort((a, b) => {
-                const podA = getPodFromEpic(a);
-                const podB = getPodFromEpic(b);
+                const moduleA = getModuleFromEpic(a);
+                const moduleB = getModuleFromEpic(b);
                 
-                // Epics without pods go to the end
-                if (!podA && !podB) return 0;
-                if (!podA) return 1;
-                if (!podB) return -1;
+                // Epics without module go to the end
+                if (!moduleA && !moduleB) return 0;
+                if (!moduleA) return 1;
+                if (!moduleB) return -1;
                 
-                // If pod order is set, use it for sorting
+                // If module order is set, use it for sorting
                 if (podOrder.length > 0) {
-                    // Normalize pod order for case-insensitive comparison
-                    const normalizedPodOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
-                    const normalizedPodA = podA.toLowerCase();
-                    const normalizedPodB = podB.toLowerCase();
-                    
-                    // Get index in pod order (case-insensitive)
-                    const indexA = normalizedPodOrder.indexOf(normalizedPodA);
-                    const indexB = normalizedPodOrder.indexOf(normalizedPodB);
-                    
-                    // If both pods are in the order, sort by their position
-                    if (indexA !== -1 && indexB !== -1) {
-                        return indexA - indexB;
-                    }
-                    
-                    // If only one is in the order, it comes first
+                    const normalizedOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
+                    const normA = moduleA.toLowerCase();
+                    const normB = moduleB.toLowerCase();
+                    const indexA = normalizedOrder.indexOf(normA);
+                    const indexB = normalizedOrder.indexOf(normB);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
                     if (indexA !== -1) return -1;
                     if (indexB !== -1) return 1;
                 }
                 
-                // If no pod order is set, or neither pod is in the order, sort alphabetically
-                return podA.localeCompare(podB);
+                return moduleA.localeCompare(moduleB);
             });
             
             return {
@@ -413,40 +392,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
         });
 
-        // Add ungrouped epics as a separate group at the end (also sorted by pod order)
+        // Add ungrouped epics as a separate group at the end (also sorted by module order)
         if (ungroupedEpics.length > 0) {
             const sortedUngrouped = [...ungroupedEpics].sort((a, b) => {
-                const podA = getPodFromEpic(a);
-                const podB = getPodFromEpic(b);
-                
-                // Epics without pods go to the end
-                if (!podA && !podB) return 0;
-                if (!podA) return 1;
-                if (!podB) return -1;
-                
-                // If pod order is set, use it for sorting
+                const moduleA = getModuleFromEpic(a);
+                const moduleB = getModuleFromEpic(b);
+                if (!moduleA && !moduleB) return 0;
+                if (!moduleA) return 1;
+                if (!moduleB) return -1;
                 if (podOrder.length > 0) {
-                    // Normalize pod order for case-insensitive comparison
-                    const normalizedPodOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
-                    const normalizedPodA = podA.toLowerCase();
-                    const normalizedPodB = podB.toLowerCase();
-                    
-                    // Get index in pod order (case-insensitive)
-                    const indexA = normalizedPodOrder.indexOf(normalizedPodA);
-                    const indexB = normalizedPodOrder.indexOf(normalizedPodB);
-                    
-                    // If both pods are in the order, sort by their position
-                    if (indexA !== -1 && indexB !== -1) {
-                        return indexA - indexB;
-                    }
-                    
-                    // If only one is in the order, it comes first
+                    const normalizedOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
+                    const normA = moduleA.toLowerCase();
+                    const normB = moduleB.toLowerCase();
+                    const indexA = normalizedOrder.indexOf(normA);
+                    const indexB = normalizedOrder.indexOf(normB);
+                    if (indexA !== -1 && indexB !== -1) return indexA - indexB;
                     if (indexA !== -1) return -1;
                     if (indexB !== -1) return 1;
                 }
-                
-                // If no pod order is set, or neither pod is in the order, sort alphabetically
-                return podA.localeCompare(podB);
+                return moduleA.localeCompare(moduleB);
             });
             
             groups.push({
@@ -458,6 +422,39 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
         return groups;
     }, [filteredEpics, releaseDateMap, podOrder]);
+
+    // Only show release groups whose release is in the schedule and not archived (GET /api/releases excludes archived)
+    const displayedReleaseGroups = useMemo(() => {
+        return releaseGroups.filter(g =>
+            g.releaseName === "Ungrouped" || releaseScheduleWithIds.some(r => r.release_name === g.releaseName)
+        );
+    }, [releaseGroups, releaseScheduleWithIds]);
+
+    // Fetch owner (PM) info from app_user for avatar and display name
+    useEffect(() => {
+        const emails = new Set<string>();
+        epics.forEach(epic => {
+            const e = epic.owner?.email || epic.owner_email;
+            if (e && typeof e === 'string' && e.includes('@')) emails.add(e.trim().toLowerCase());
+        });
+        if (emails.size === 0) {
+            setOwnerInfoMap({});
+            return;
+        }
+        const list = Array.from(emails);
+        (async () => {
+            const all: Record<string, { first_name?: string; last_name?: string; avatar_url?: string }> = {};
+            for (let i = 0; i < list.length; i += 100) {
+                const chunk = list.slice(i, i + 100);
+                const res = await fetch(`/api/users/by-email?emails=${encodeURIComponent(chunk.join(','))}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    Object.assign(all, data);
+                }
+            }
+            setOwnerInfoMap(all);
+        })();
+    }, [epics]);
 
     // Automatically fetch release dates from API when needed (only if not in database)
     useEffect(() => {
@@ -488,7 +485,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             // 2. Don't have a date in the current releaseDateMap (from releaseSchedule)
             // 3. Are not already in the database
             // 4. Haven't been fetched in this session
-            const releasesNeedingDates = releaseGroups
+            const releasesNeedingDates = displayedReleaseGroups
                 .filter(group => 
                     group.releaseName !== "Ungrouped" && 
                     !group.releaseDate && 
@@ -597,14 +594,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 const releasesData = await releasesRes.json();
                                 console.log("Refreshed release schedule from database:", releasesData);
                                 
-                                // Verify the saved releases are in the refreshed data
+                                // Verify the saved releases are in the refreshed data (archived releases are excluded from the list)
                                 successfulSaves.forEach(({ release_name }) => {
                                     const saved = releasesData.find((r: any) => r.release_name === release_name);
                                     if (saved && saved.launch_date) {
                                         console.log(`✅ Verified: ${release_name} has date ${saved.launch_date} in database - will not fetch from API again`);
-                                    } else {
-                                        console.error(`❌ Verification failed: ${release_name} not found or has no date in refreshed data`);
+                                    } else if (saved && !saved.launch_date) {
+                                        console.error(`❌ Verification failed: ${release_name} has no date in refreshed data`);
                                     }
+                                    // If not found: release may be archived (GET /api/releases excludes archived by default) - no error
                                 });
                                 
                                 setReleaseSchedule(releasesData || []);
@@ -648,12 +646,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
         fetchMissingReleaseDates();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [releaseSchedule, epics.length, releaseGroups.length]);
+    }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups]);
 
     // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)
     useEffect(() => {
         // Don't run if we don't have release groups yet
-        if (releaseGroups.length === 0) {
+        if (displayedReleaseGroups.length === 0) {
             if (process.env.NODE_ENV === 'development') {
                 console.log('[AHA Counts] Skipping - no release groups yet');
             }
@@ -661,7 +659,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
 
         const loadAhaEpicCounts = async () => {
-            console.log('[AHA Counts] Starting loadAhaEpicCounts, releaseGroups:', releaseGroups.length);
+            console.log('[AHA Counts] Starting loadAhaEpicCounts, releaseGroups:', displayedReleaseGroups.length);
             
             // First, load cached counts from releaseSchedule
             const cachedCounts = new Map<string, number | null>();
@@ -701,7 +699,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
 
             // Find releases that need fetching (not in cache and not already fetching)
-            const releasesToFetch = releaseGroups
+            const releasesToFetch = displayedReleaseGroups
                 .filter(group => {
                     const shouldFetch = group.releaseName !== "Ungrouped" && 
                         !cachedCounts.has(group.releaseName) &&
@@ -790,10 +788,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
         return () => clearTimeout(timeoutId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [releaseGroups.length, releaseSchedule.length, releaseScheduleWithIds.length, epics.length]);
+    }, [displayedReleaseGroups.length, releaseSchedule.length, releaseScheduleWithIds.length, epics.length]);
 
 
-    // Check for celebration condition: all epics LAUNCHED for 90+ days
+    // Check for celebration condition: all epics released for 90+ days
     const checkedReleasesRef = useRef<Set<string>>(new Set());
     useEffect(() => {
         const checkCelebrationCondition = () => {
@@ -807,15 +805,17 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 // Skip if we've already checked this release
                 if (checkedReleasesRef.current.has(group.releaseName)) continue;
                 
-                // Check if all epics are LAUNCHED
-                const allLaunched = group.epics.every(epic => epic.status === 'LAUNCHED');
+                // Check if all epics are released (Cohort 1, GA, or Retroed)
+                const allLaunched = group.epics.every(epic => 
+                    ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'].includes(epic.status)
+                );
                 if (!allLaunched) {
                     checkedReleasesRef.current.add(group.releaseName);
                     continue;
                 }
                 
-                // Check if all epics have been LAUNCHED for 90+ days
-                // We'll check updated_at as a proxy for when status was set to LAUNCHED
+                // Check if all epics have been released for 90+ days
+                // We'll check updated_at as a proxy for when status was set to released
                 const allLaunched90Days = group.epics.every(epic => {
                     if (!epic.updated_at) return false;
                     const updatedDate = new Date(epic.updated_at);
@@ -865,7 +865,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     });
 
     // Calculate stats for each release group
-    const releaseStats = releaseGroups.map(group => {
+    const releaseStats = displayedReleaseGroups.map(group => {
         const highRiskCount = group.epics.filter(epic => epic.risk_level === 'HIGH').length;
         // Prefer cached count from releaseSchedule, fallback to ahaEpicCounts state
         const cachedCount = cachedAhaCounts.get(group.releaseName);
@@ -883,8 +883,128 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     // Filter release groups if a release is selected
     const filteredReleaseGroups = selectedRelease 
-        ? releaseGroups.filter(group => group.releaseName === selectedRelease)
-        : releaseGroups;
+        ? displayedReleaseGroups.filter(group => group.releaseName === selectedRelease)
+        : displayedReleaseGroups;
+
+    // Check if user has permission to sync with Aha
+    const canSyncWithAha = useMemo(() => {
+        if (!currentUserRoles || currentUserRoles.length === 0) return false;
+        const allowedRoles = ['SUPERADMIN', 'CPO', 'PRODUCT_OPS', 'PRODUCT'];
+        return currentUserRoles.some(role => allowedRoles.includes(role.toUpperCase()));
+    }, [currentUserRoles]);
+
+    // Load available releases from Aha
+    const loadAvailableReleases = async () => {
+        setLoadingReleases(true);
+        try {
+            const res = await fetch('/api/integrations/aha/releases', {
+                method: 'GET',
+                credentials: 'include',
+            });
+            
+            if (!res.ok) {
+                throw new Error('Failed to load releases');
+            }
+            
+            const data = await res.json();
+            setAvailableReleases(data.releases || []);
+        } catch (error: any) {
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to load releases',
+                color: 'red',
+            });
+        } finally {
+            setLoadingReleases(false);
+        }
+    };
+
+    // Handle refresh existing epics
+    const handleRefreshEpics = async () => {
+        if (!confirm('This will refresh all existing epics with the latest data from Aha!. Continue?')) {
+            return;
+        }
+        setRefreshingEpics(true);
+        try {
+            const res = await fetch('/api/integrations/aha/sync?sync_all=true', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to refresh epics');
+            }
+            
+            notifications.show({
+                title: 'Success',
+                message: 'Epics refreshed successfully',
+                color: 'green',
+            });
+            
+            // Reload the page to show updated data
+            router.refresh();
+        } catch (error: any) {
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to refresh epics',
+                color: 'red',
+            });
+        } finally {
+            setRefreshingEpics(false);
+        }
+    };
+
+    // Handle sync selected releases
+    const handleSyncReleases = async () => {
+        if (selectedReleasesToSync.size === 0) {
+            notifications.show({
+                title: 'No releases selected',
+                message: 'Please select at least one release to sync',
+                color: 'yellow',
+            });
+            return;
+        }
+
+        setSyncingReleases(true);
+        try {
+            const res = await fetch('/api/integrations/aha/sync-releases-epics', {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    releaseIds: Array.from(selectedReleasesToSync),
+                }),
+            });
+            
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.error || 'Failed to sync releases');
+            }
+            
+            const data = await res.json();
+            notifications.show({
+                title: 'Success',
+                message: `Successfully synced ${data.synced || selectedReleasesToSync.size} release(s)`,
+                color: 'green',
+            });
+            
+            setSyncReleasesModalOpen(false);
+            setSelectedReleasesToSync(new Set());
+            
+            // Reload the page to show updated data
+            router.refresh();
+        } catch (error: any) {
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to sync releases',
+                color: 'red',
+            });
+        } finally {
+            setSyncingReleases(false);
+        }
+    };
 
     if (loading) {
         return (
@@ -907,17 +1027,49 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }}
             className="sm:px-6 lg:px-8"
             >
-            <Group align="flex-start" mb="sm">
-                <Box>
+            <Box mb="sm">
+                <Group align="center" gap="md">
                     <Title style={{ 
                         fontFamily: 'var(--font-heading)', 
                         color: 'var(--color-gray-900)', 
                         fontSize: 'var(--font-size-page-title)', 
                         fontWeight: 'var(--font-weight-bold)',
-                        marginBottom: 'var(--spacing-6)'
+                        marginBottom: 'var(--spacing-6)',
+                        margin: 0
                     }}>Releases</Title>
-                </Box>
-            </Group>
+                    {canSyncWithAha && (
+                        <Menu shadow="md" width={200}>
+                            <Menu.Target>
+                                <Button
+                                    leftSection={<IconArrowsRightLeft size={16} />}
+                                    variant="light"
+                                    color="violet"
+                                >
+                                    Sync with Aha!
+                                </Button>
+                            </Menu.Target>
+                            <Menu.Dropdown>
+                                <Menu.Item
+                                    leftSection={<IconRefresh size={16} />}
+                                    onClick={handleRefreshEpics}
+                                    disabled={refreshingEpics}
+                                >
+                                    {refreshingEpics ? 'Refreshing...' : 'Refresh existing epics'}
+                                </Menu.Item>
+                                <Menu.Item
+                                    leftSection={<IconArrowsRightLeft size={16} />}
+                                    onClick={async () => {
+                                        setSyncReleasesModalOpen(true);
+                                        await loadAvailableReleases();
+                                    }}
+                                >
+                                    Sync releases...
+                                </Menu.Item>
+                            </Menu.Dropdown>
+                        </Menu>
+                    )}
+                </Group>
+            </Box>
 
             {error && (
                 <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
@@ -1147,10 +1299,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
                             data={[
                                 { value: "ALL", label: "All Statuses" },
-                                { value: "PLANNED", label: "Planned" },
-                                { value: "PRE_LAUNCH", label: "Pre-Launch" },
-                                { value: "LAUNCHING", label: "Launching" },
-                                { value: "LAUNCHED", label: "Launched" },
+                                { value: "Pre_Release", label: "Pre-Release" },
+                                { value: "Released_Cohort_1", label: "Released Cohort 1" },
+                                { value: "Released_GA", label: "Released GA" },
+                                { value: "Released_Retroed", label: "Released Retroed" },
+                                { value: "Cancelled", label: "Cancelled" },
                             ]}
                             clearable
                             style={{ flex: 1 }}
@@ -1211,7 +1364,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             )}
 
             <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="md">
-                Epics appear below if in Aha! : ClearGO Candidate = Yes OR Tags contain any of: {configuredTags.map(tag => `"${tag}"`).join(', ')}
+                Epics appear below when in Aha!: ClearGO Candidate = Yes
             </Text>
                 
             {filteredReleaseGroups.length === 0 ? (
@@ -1405,6 +1558,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
+                                                <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
@@ -1436,7 +1590,19 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Dev Backlog Pod</th>
+                                                    }}>Module</th>
+                                                    <th className="px-4 py-3 text-left w-28" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            <IconUser size={14} />
+                                                            PM
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-left w-32" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
@@ -1462,10 +1628,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             Readiness
                                                             <Tooltip
                                                                 label={
-                                                                    <div style={{ maxWidth: '250px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
-                                                                        <div style={{ fontSize: '12px' }}>
-                                                                            Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                                    <div style={{ maxWidth: '300px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
                                                                         </div>
                                                                     </div>
                                                                 }
@@ -1487,10 +1653,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             Risk
                                                             <Tooltip
                                                                 label={
-                                                                    <div style={{ maxWidth: '250px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
-                                                                        <div style={{ fontSize: '12px' }}>
-                                                                            Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
+                                                                    <div style={{ maxWidth: '300px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
                                                                         </div>
                                                                     </div>
                                                                 }
@@ -1522,6 +1688,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div>
                                                         </td>
+                                                        <td className="px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div>
+                                                        </td>
                                                         <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div>
                                                         </td>
@@ -1547,6 +1716,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
+                                                <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
@@ -1578,7 +1748,19 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
-                                                    }}>Dev Backlog Pod</th>
+                                                    }}>Module</th>
+                                                    <th className="px-4 py-3 text-left w-28" style={{ 
+                                                        fontSize: "12px",
+                                                        fontWeight: 600,
+                                                        textTransform: "uppercase",
+                                                        letterSpacing: "0.05em",
+                                                        color: "#6B7280"
+                                                    }}>
+                                                        <div className="flex items-center gap-1">
+                                                            <IconUser size={14} />
+                                                            PM
+                                                        </div>
+                                                    </th>
                                                     <th className="px-4 py-3 text-left w-32" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
@@ -1604,10 +1786,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             Readiness
                                                             <Tooltip
                                                                 label={
-                                                                    <div style={{ maxWidth: '250px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
-                                                                        <div style={{ fontSize: '12px' }}>
-                                                                            Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                                    <div style={{ maxWidth: '300px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
                                                                         </div>
                                                                     </div>
                                                                 }
@@ -1629,10 +1811,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             Risk
                                                             <Tooltip
                                                                 label={
-                                                                    <div style={{ maxWidth: '250px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '4px' }}>Risk Level</div>
-                                                                        <div style={{ fontSize: '12px' }}>
-                                                                            Answers: "How risky is this launch?" Considers readiness status, time pressure (days to launch), readiness score vs threshold, gate blockers, and overdue criteria. A GO epic can still be HIGH risk if launching soon.
+                                                                    <div style={{ maxWidth: '300px' }}>
+                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
                                                                         </div>
                                                                     </div>
                                                                 }
@@ -1664,20 +1846,29 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#FFFFFF"}
                                                 >
                                                     <td className="px-4 py-3 w-100" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        <Link 
-                                                            href={`/epics/${epic.id}`} 
-                                                            prefetch={false} 
-                                                            className="font-medium"
-                                                            style={{ 
-                                                                color: "#228BE6",
-                                                                textDecoration: "none",
-                                                                fontWeight: 500
-                                                            }}
-                                                            onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
-                                                            onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
-                                                        >
-                                                            {epic.name}
-                                                        </Link>
+                                                        <span className="inline-flex items-center gap-2">
+                                                            {epic.aha_record_not_found && (
+                                                                <Tooltip label="Record not found in Aha." withArrow>
+                                                                    <span className="inline-flex text-red-600 flex-shrink-0" aria-hidden>
+                                                                        <IconAlertTriangle size={20} strokeWidth={2.5} />
+                                                                    </span>
+                                                                </Tooltip>
+                                                            )}
+                                                            <Link 
+                                                                href={`/epics/${epic.id}`} 
+                                                                prefetch={false} 
+                                                                className="font-medium"
+                                                                style={{ 
+                                                                    color: "#228BE6",
+                                                                    textDecoration: "none",
+                                                                    fontWeight: 500
+                                                                }}
+                                                                onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
+                                                                onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
+                                                            >
+                                                                {epic.name}
+                                                            </Link>
+                                                        </span>
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap w-24">
                                                         <span className={`px-2 py-1 rounded text-xs font-medium ${epic.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
@@ -1688,7 +1879,23 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {epic.pod || '-'}
+                                                        {getModuleFromEpic(epic) || '-'}
+                                                    </td>
+                                                    <td className="px-4 py-3 w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        {(() => {
+                                                            const email = epic.owner?.email || epic.owner_email;
+                                                            if (!email) return <span className="text-gray-500">-</span>;
+                                                            const info = ownerInfoMap[email.toLowerCase()];
+                                                            return (
+                                                                <UserDisplay
+                                                                    email={email}
+                                                                    firstName={info?.first_name}
+                                                                    lastName={undefined}
+                                                                    avatarUrl={info?.avatar_url}
+                                                                    size="xs"
+                                                                />
+                                                            );
+                                                        })()}
                                                     </td>
                                                     <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
@@ -1741,19 +1948,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </td>
                                                     <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">
-                                                            {canDeleteEpic && (
-                                                                <button
-                                                                    onClick={() => handleDeleteClick(epic.id, epic.name)}
-                                                                    disabled={deletingEpicId === epic.id}
-                                                                    className="text-sm text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                                                                    title="Delete epic"
-                                                                >
-                                                                    {deletingEpicId === epic.id ? (
-                                                                        <span className="text-xs">...</span>
-                                                                    ) : (
-                                                                        <IconTrash size={14} />
-                                                                    )}
-                                                                </button>
+                                                            {epic.aha_record_not_found && (
+                                                                <Tooltip label="Record not found in Aha." withArrow>
+                                                                    <span className="inline-flex text-red-600" style={{ flexShrink: 0 }} aria-hidden>
+                                                                        <IconAlertTriangle size={20} strokeWidth={2.5} />
+                                                                    </span>
+                                                                </Tooltip>
+                                                            )}
+                                                            {canArchiveEpic && (
+                                                                <Tooltip label='Archive epic. This will set "ClearGO Candidate" to "No" in Aha.'>
+                                                                    <button
+                                                                        onClick={() => handleArchiveClick(epic.id, epic.name)}
+                                                                        disabled={archivingEpicId === epic.id}
+                                                                        className="text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                                    >
+                                                                        {archivingEpicId === epic.id ? (
+                                                                            <span className="text-xs">...</span>
+                                                                        ) : (
+                                                                            <IconArchive size={14} />
+                                                                        )}
+                                                                    </button>
+                                                                </Tooltip>
                                                             )}
                                                         </div>
                                                     </td>
@@ -1769,17 +1984,17 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 )
             }
 
-            {/* Delete Confirmation Modal */}
+            {/* Archive Confirmation Modal */}
             <Modal
-                opened={deleteModalOpen}
+                opened={archiveModalOpen}
                 onClose={() => {
-                    setDeleteModalOpen(false);
-                    setEpicToDelete(null);
+                    setArchiveModalOpen(false);
+                    setEpicToArchive(null);
                 }}
                 title={
                     <div className="flex items-center gap-2">
-                        <IconTrash size={20} className="text-red-600" />
-                        <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Delete Epic</span>
+                        <IconArchive size={20} className="text-gray-600" />
+                        <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Archive Epic</span>
                     </div>
                 }
                 centered
@@ -1787,27 +2002,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             >
                 <div className="space-y-4">
                     <Text size="sm" c="dimmed">
-                        Are you sure you want to delete <strong>"{epicToDelete?.name}"</strong>?
+                        Archive <strong>"{epicToArchive?.name}"</strong>? This will set ClearGO Candidate to No in Aha and remove the epic from this list.
                     </Text>
-                    <Alert icon={<IconAlertCircle size={16} />} title="Warning" color="red" variant="light">
-                        This action cannot be undone. All criteria, comments, attachments, feedback, and snapshots associated with this epic will be permanently deleted.
+                    <Alert icon={<IconAlertCircle size={16} />} title="Archived epics" color="blue" variant="light">
+                        The epic will be archived in ClearGO. You can bring it back by setting ClearGO Candidate to Yes in Aha and syncing.
                     </Alert>
                     <Group justify="flex-end" mt="xl">
                         <Button
                             variant="subtle"
                             onClick={() => {
-                                setDeleteModalOpen(false);
-                                setEpicToDelete(null);
+                                setArchiveModalOpen(false);
+                                setEpicToArchive(null);
                             }}
                         >
                             Cancel
                         </Button>
                         <Button
-                            color="red"
-                            onClick={handleDeleteConfirm}
-                            leftSection={<IconTrash size={16} />}
+                            color="gray"
+                            onClick={handleArchiveConfirm}
+                            leftSection={<IconArchive size={16} />}
                         >
-                            Delete Epic
+                            Archive Epic
                         </Button>
                     </Group>
                 </div>
@@ -1890,6 +2105,90 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 </div>
             </Modal>
 
+            {/* Sync Releases Modal */}
+            <Modal
+                opened={syncReleasesModalOpen}
+                onClose={() => {
+                    setSyncReleasesModalOpen(false);
+                    setSelectedReleasesToSync(new Set());
+                }}
+                title="Sync Releases with Aha!"
+                size="lg"
+                centered
+            >
+                <Stack gap="md">
+                    <Text size="sm" c="dimmed">
+                        Select which releases to sync. All epics in the selected releases will be synced and their ClearGO Candidate field will be set to "Yes" in Aha!.
+                    </Text>
+                    
+                    {loadingReleases ? (
+                        <Box p="xl" style={{ display: 'flex', justifyContent: 'center' }}>
+                            <PurpleLoader size="sm" />
+                        </Box>
+                    ) : (
+                        <ScrollArea h={400}>
+                            <Stack gap="xs">
+                                {availableReleases.length === 0 ? (
+                                    <Text size="sm" c="dimmed" ta="center" py="xl">
+                                        No releases found
+                                    </Text>
+                                ) : (
+                                    availableReleases.map((release) => (
+                                        <Checkbox
+                                            key={release.id}
+                                            label={
+                                                <div>
+                                                    <Text fw={500}>{release.name}</Text>
+                                                    {(release.start_date || release.end_date) && (
+                                                        <Text size="xs" c="dimmed">
+                                                            {release.start_date && release.end_date
+                                                                ? `${new Date(release.start_date).toLocaleDateString()} - ${new Date(release.end_date).toLocaleDateString()}`
+                                                                : release.end_date
+                                                                ? `End: ${new Date(release.end_date).toLocaleDateString()}`
+                                                                : `Start: ${new Date(release.start_date!).toLocaleDateString()}`}
+                                                        </Text>
+                                                    )}
+                                                </div>
+                                            }
+                                            checked={selectedReleasesToSync.has(release.id)}
+                                            onChange={(event) => {
+                                                const newSelected = new Set(selectedReleasesToSync);
+                                                if (event.currentTarget.checked) {
+                                                    newSelected.add(release.id);
+                                                } else {
+                                                    newSelected.delete(release.id);
+                                                }
+                                                setSelectedReleasesToSync(newSelected);
+                                            }}
+                                        />
+                                    ))
+                                )}
+                            </Stack>
+                        </ScrollArea>
+                    )}
+                    
+                    <Group justify="flex-end" mt="md">
+                        <Button
+                            variant="subtle"
+                            onClick={() => {
+                                setSyncReleasesModalOpen(false);
+                                setSelectedReleasesToSync(new Set());
+                            }}
+                            disabled={syncingReleases}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            onClick={handleSyncReleases}
+                            loading={syncingReleases}
+                            leftSection={<IconArrowsRightLeft size={16} />}
+                            color="violet"
+                        >
+                            Sync Selected Releases
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
 
         </div>
         </>

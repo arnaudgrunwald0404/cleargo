@@ -156,7 +156,7 @@ export async function POST(
       throw insertError;
     }
 
-    // Send Slack notification to the approver (decision_owner)
+    // Send Slack notification to the accountable (decision_owner)
     // Note: We send notifications for all attachments, whether attached to comments or standalone
     try {
       // Fetch criterion status with epic, criterion, and decision_owner info

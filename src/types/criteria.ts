@@ -14,15 +14,19 @@ export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2";
 
 export type DecisionOwnerRole =
   | "CPO"
-  | "PRODUCT_LEAD"
+  | "CSM"
+  | "ENG"
+  | "IMPL"
+  | "LEARNING"
+  | "OTHER"
   | "PM"
   | "PMM"
-  | "ENG_LEAD"
-  | "SUPPORT_LEAD"
-  | "SECURITY"
-  | "LEARNING"
+  | "PRODUCT"
   | "PRODUCT_OPS"
-  | "OTHER";
+  | "REV_OPS"
+  | "SALES"
+  | "SECURITY"
+  | "SUPPORT";
 
 export type DataSourceType = "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined";
 

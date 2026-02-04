@@ -103,7 +103,7 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
     // Filter out archived and launched epics (only show pre-launch epics)
     const preLaunchEpics = epics.filter(epic => 
       epic.archived !== true &&
-      epic.status !== 'LAUNCHED' && epic.status !== 'POST_LAUNCH'
+      epic.status !== 'Released_Cohort_1' && epic.status !== 'Released_GA' && epic.status !== 'Released_Retroed'
     );
 
     // Group epics by release
@@ -147,9 +147,10 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
       .flat()
       .filter(epic => 
         epic.readiness_status !== 'COMPLETED' && 
-        epic.status !== 'LAUNCHED' && 
-        epic.status !== 'POST_LAUNCH' && 
-        epic.status !== 'CANCELLED'
+        epic.status !== 'Released_Cohort_1' && 
+        epic.status !== 'Released_GA' && 
+        epic.status !== 'Released_Retroed' && 
+        epic.status !== 'Cancelled'
       ).length;
   }, [gridData.releaseEpicsMap]);
 

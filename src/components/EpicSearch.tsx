@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { TextInput, Box, Paper, Text, Group, Stack } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
@@ -64,32 +64,42 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
   const [isOpen, setIsOpen] = useState(false);
   const [epics, setEpics] = useState<Epic[]>(providedEpics || []);
   const [loadingEpics, setLoadingEpics] = useState(fetchEpics);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Fetch epics if needed
+  const loadEpics = useCallback(async () => {
+    if (!fetchEpics || providedEpics !== undefined) return;
+    setLoadingEpics(true);
+    setFetchError(null);
+    try {
+      const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+      const res = await fetchWithRateLimit('/api/epics', { credentials: 'include', maxRetries: 2 });
+      if (res.ok) {
+        const data = await res.json();
+        setEpics(Array.isArray(data) ? data : []);
+      } else {
+        setFetchError('Could not load epics');
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setFetchError('Could not load epics');
+      if (message !== 'Failed to fetch') {
+        console.error('Failed to fetch epics for search:', error);
+      }
+    } finally {
+      setLoadingEpics(false);
+    }
+  }, [fetchEpics, providedEpics]);
+
   useEffect(() => {
     if (fetchEpics && providedEpics === undefined) {
-      async function loadEpics() {
-        try {
-          const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
-          const res = await fetchWithRateLimit('/api/epics', { credentials: 'include', maxRetries: 1 });
-          if (res.ok) {
-            const data = await res.json();
-            setEpics(Array.isArray(data) ? data : []);
-          }
-        } catch (error) {
-          console.error('Failed to fetch epics for search:', error);
-        } finally {
-          setLoadingEpics(false);
-        }
-      }
       loadEpics();
     } else if (providedEpics) {
       setEpics(providedEpics);
       setLoadingEpics(false);
     }
-  }, [fetchEpics, providedEpics]);
+  }, [fetchEpics, providedEpics, loadEpics]);
 
   // Filter epics based on search query (minimum 3 characters)
   const filteredEpics = useMemo(() => {
@@ -120,10 +130,15 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
     }
   }, [isOpen]);
 
-  // Open dropdown when there are results
+  // Open dropdown when there are results or when we need to show error/retry. Use exactly 3 deps so array size never changes.
+  const filteredLen = filteredEpics.length;
+  const queryLen = searchQuery.length;
+  const fetchErr = fetchError ?? null;
   useEffect(() => {
-    setIsOpen(filteredEpics.length > 0 && searchQuery.length >= 3);
-  }, [filteredEpics.length, searchQuery.length]);
+    const hasResults = filteredLen > 0 && queryLen >= 3;
+    const showError = fetchErr && queryLen >= 3;
+    setIsOpen(hasResults || showError);
+  }, [filteredLen, queryLen, fetchErr]);
 
   const handleInputChange = (value: string) => {
     setSearchQuery(value);
@@ -188,7 +203,29 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
         />
       </div>
 
-      {isOpen && filteredEpics.length > 0 && (
+      {isOpen && fetchError && searchQuery.length >= 3 && filteredEpics.length === 0 && (
+        <Paper
+          shadow="md"
+          p="sm"
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            right: 0,
+            zIndex: 10000,
+            marginTop: '4px',
+            backgroundColor: 'white',
+            border: '1px solid var(--color-gray-200)',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          <Text size="sm" c="dimmed" mb="xs">{fetchError}</Text>
+          <Text size="sm" component="button" type="button" c="blue" style={{ cursor: 'pointer', background: 'none', border: 'none', padding: 0 }} onClick={() => loadEpics()}>
+            Retry
+          </Text>
+        </Paper>
+      )}
+      {isOpen && !fetchError && filteredEpics.length > 0 && (
         <Paper
           shadow="md"
           p="xs"

@@ -46,15 +46,19 @@ interface LaunchStage {
 const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2"];
 const ROLES = [
   "CPO",
-  "PRODUCT_LEAD",
+  "CSM",
+  "ENG",
+  "IMPL",
+  "LEARNING",
+  "OTHER",
   "PM",
   "PMM",
-  "ENG_LEAD",
-  "SUPPORT_LEAD",
-  "SECURITY",
-  "LEARNING",
+  "PRODUCT",
   "PRODUCT_OPS",
-  "OTHER",
+  "REV_OPS",
+  "SALES",
+  "SECURITY",
+  "SUPPORT",
 ];
 
 export function CriteriaManager() {

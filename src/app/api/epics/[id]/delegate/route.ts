@@ -51,7 +51,7 @@ export async function POST(
       return NextResponse.json({ error: 'Missing required fields for criteria delegation' }, { status: 400 });
     }
 
-    // Get the new approver's user info (including Slack handle)
+    // Get the new accountable's user info (including Slack handle)
     const { data: newApprover, error: approverError } = await supabase
       .from('app_user')
       .select('id, email, first_name, last_name, slack_handle')
@@ -59,7 +59,7 @@ export async function POST(
       .single();
 
     if (approverError || !newApprover) {
-      return NextResponse.json({ error: 'New approver not found' }, { status: 404 });
+      return NextResponse.json({ error: 'New accountable not found' }, { status: 404 });
     }
 
     const newApproverId = newApprover.id;
@@ -172,7 +172,7 @@ export async function POST(
       });
     }
 
-    // For criteria delegations, get old approver info for logging and permission check
+    // For criteria delegations, get old accountable info for logging and permission check
     if (!taskId) {
       return NextResponse.json({ error: 'taskId is required for criteria delegations' }, { status: 400 });
     }
@@ -189,13 +189,13 @@ export async function POST(
         : (oldTask?.criterion as any)?.label;
     const resolvedTaskLabel = criterionLabel || taskLabel || 'Approval task';
 
-    // Permission check: Use permission matrix + allow current approver to delegate their own tasks
+    // Permission check: Use permission matrix + allow current accountable to delegate their own tasks
     const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
     const isCurrentApprover = oldApproverId === delegatorId;
 
     if (!hasDelegationPermission && !isCurrentApprover) {
       return NextResponse.json({ 
-        error: 'Forbidden: You do not have permission to delegate this task. Only CPO, Super Admin, or the current approver can delegate tasks.' 
+        error: 'Forbidden: You do not have permission to delegate this task. Only CPO, Super Admin, or the current accountable can delegate tasks.' 
       }, { status: 403 });
     }
 

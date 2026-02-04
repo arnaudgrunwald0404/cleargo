@@ -1,5 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { CreateEpicDTO, Epic } from '@/types/epics';
+import {
+    computeEpicReleaseStatus,
+    type EpicForStatus,
+    type RetroForStatus,
+} from '@/lib/epic-release-status';
 
 export async function instantiateEpicMatrix(epicId: string, tier: string) {
     const supabase = createClient();
@@ -62,7 +67,7 @@ export async function instantiateEpicMatrix(epicId: string, tier: string) {
 export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
     const supabase = createClient();
 
-    // 1. Insert Epic
+    // 1. Insert Epic (status is computed from dates on read; only Cancelled is stored as override)
     const { data: epic, error } = await supabase
         .from('epic')
         .insert({
@@ -73,7 +78,6 @@ export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
             target_launch_date: data.target_launch_date,
             aha_id: data.aha_id,
             aha_url: data.aha_url,
-            status: 'PLANNED', // Default
         })
         .select()
         .single();
@@ -87,6 +91,37 @@ export async function createEpic(data: CreateEpicDTO): Promise<Epic> {
     await instantiateEpicMatrix(epic.id, epic.tier);
 
     return epic as Epic;
+}
+
+async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
+    if (!epics || epics.length === 0) return epics;
+    try {
+        const supabase = createClient();
+        const ids = epics.map((e) => e.id);
+        const { data: retros } = await supabase
+            .from('epic_retros')
+            .select('epic_id, day_marker, status')
+            .in('epic_id', ids);
+        const byEpic = new Map<string, RetroForStatus[]>();
+        for (const r of retros || []) {
+            const list = byEpic.get(r.epic_id) ?? [];
+            list.push({ day_marker: r.day_marker, status: r.status ?? 'PENDING' });
+            byEpic.set(r.epic_id, list);
+        }
+        return epics.map((epic) => {
+            const retrosForStatus = byEpic.get(epic.id) ?? [];
+            const epicForStatus: EpicForStatus = {
+                id: epic.id,
+                status: epic.status,
+                target_launch_date: epic.target_launch_date,
+                scheduled_ga_dev_date: epic.scheduled_ga_dev_date,
+            };
+            const status = computeEpicReleaseStatus(epicForStatus, retrosForStatus);
+            return { ...epic, status };
+        });
+    } catch {
+        return epics;
+    }
 }
 
 export async function getEpics() {
@@ -128,7 +163,7 @@ export async function getEpics() {
                 if (response.ok) {
                     const directData = await response.json();
                     if (directData && Array.isArray(directData)) {
-                        return directData;
+                        return await applyComputedStatusToEpics(directData);
                     }
                 }
             } catch (directError: any) {
@@ -202,7 +237,7 @@ export async function getEpics() {
                         
                         if (!retryResult.error) {
                             console.log('✅ Successfully used legacy keys for database query');
-                            return retryResult.data || [];
+                            return await applyComputedStatusToEpics(retryResult.data || []);
                         }
                         
                         // If epic table doesn't exist, try launch table
@@ -213,7 +248,7 @@ export async function getEpics() {
                                 .order('created_at', { ascending: false });
                             if (!launchResult.error) {
                                 console.log('✅ Successfully used legacy keys for database query');
-                                return launchResult.data || [];
+                                return await applyComputedStatusToEpics(launchResult.data || []);
                             }
                         }
                     } catch (fallbackError) {
@@ -329,7 +364,7 @@ export async function getEpics() {
             return [];
         }
 
-        return data || [];
+        return await applyComputedStatusToEpics(data || []);
     } catch (error: any) {
         console.error('Exception in getEpics:', error?.message || String(error));
         return [];
@@ -351,22 +386,46 @@ export async function getEpic(id: string) {
         .single();
 
     if (error) {
-        // Return null for "not found" errors instead of throwing
         if (error.code === 'PGRST116') {
             return null;
         }
         throw error;
     }
 
-    return data;
+    const { data: retros } = await supabase
+        .from('epic_retros')
+        .select('day_marker, status')
+        .eq('epic_id', id);
+    const retrosForStatus: RetroForStatus[] = (retros || []).map((r) => ({
+        day_marker: r.day_marker,
+        status: r.status ?? 'PENDING',
+    }));
+    const epicForStatus: EpicForStatus = {
+        id: data.id,
+        status: data.status,
+        target_launch_date: data.target_launch_date,
+        scheduled_ga_dev_date: data.scheduled_ga_dev_date,
+    };
+    const computedStatus = computeEpicReleaseStatus(epicForStatus, retrosForStatus);
+    return { ...data, status: computedStatus };
 }
 
-export async function updateEpic(id: string, updates: Partial<CreateEpicDTO>) {
+export type EpicUpdatePayload = Partial<CreateEpicDTO> & {
+    /** Only 'Cancelled' is stored; all other statuses are computed from dates. */
+    status?: 'Cancelled';
+};
+
+export async function updateEpic(id: string, updates: EpicUpdatePayload) {
     const supabase = createClient();
+    const { status, ...rest } = updates;
+    const payload: Record<string, unknown> = { ...rest };
+    if (status === 'Cancelled') {
+        payload.status = 'Cancelled';
+    }
 
     const { data, error } = await supabase
         .from('epic')
-        .update(updates)
+        .update(payload)
         .eq('id', id)
         .select()
         .single();
