@@ -733,11 +733,11 @@ export async function applyRecommendations(
     metrics.push(metric);
   }
   
-  // Retention
+  // Retention (recommendation has no targetValue/targetTimeframeDays; use defaults only)
   if (recommendations.retention) {
     const defaults = defaultsByCategory['retention'];
-    const targetValue = recommendations.retention.targetValue ?? defaults?.default_target_value ?? null;
-    const targetTimeframeDays = recommendations.retention.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? null;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'retention',
@@ -753,7 +753,7 @@ export async function applyRecommendations(
       defaults?.default_milestones,
       targetValue,
       targetTimeframeDays,
-      recommendations.retention.targetValue == null && recommendations.retention.targetTimeframeDays == null
+      true
     );
     if (milestones.length > 0) {
       await createMetricMilestones(metric.id, milestones);
@@ -761,11 +761,11 @@ export async function applyRecommendations(
     metrics.push(metric);
   }
   
-  // Task Success
+  // Task Success (recommendation has no targetValue/targetTimeframeDays; use defaults only)
   if (recommendations.taskSuccess) {
     const defaults = defaultsByCategory['task_success'];
-    const targetValue = recommendations.taskSuccess.targetValue ?? defaults?.default_target_value ?? null;
-    const targetTimeframeDays = recommendations.taskSuccess.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? null;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? null;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'task_success',
@@ -781,7 +781,7 @@ export async function applyRecommendations(
       defaults?.default_milestones,
       targetValue,
       targetTimeframeDays,
-      recommendations.taskSuccess.targetValue == null && recommendations.taskSuccess.targetTimeframeDays == null
+      true
     );
     if (milestones.length > 0) {
       await createMetricMilestones(metric.id, milestones);
@@ -1080,7 +1080,6 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
           status: liveData.status,
           pendo_raw_data: {},
           calculated_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
         };
       }
       
@@ -1202,7 +1201,6 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
           status: liveData.status,
           pendo_raw_data: {},
           calculated_at: new Date().toISOString(),
-          created_at: new Date().toISOString(),
         };
       }
 

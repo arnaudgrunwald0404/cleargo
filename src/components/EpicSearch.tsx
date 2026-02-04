@@ -137,7 +137,7 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
   useEffect(() => {
     const hasResults = filteredLen > 0 && queryLen >= 3;
     const showError = fetchErr && queryLen >= 3;
-    setIsOpen(hasResults || showError);
+    setIsOpen(Boolean(hasResults || showError));
   }, [filteredLen, queryLen, fetchErr]);
 
   const handleInputChange = (value: string) => {

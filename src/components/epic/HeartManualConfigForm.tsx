@@ -523,23 +523,6 @@ export function HeartManualConfigForm({
                             searchable
                             clearable
                             maxDropdownHeight={200}
-                            // Show human-readable names for feature IDs
-                            valueComponent={({ value }) => {
-                              const displayName = pendoIdToLabel[value] || value;
-                              const feature = pendoFeatures.find(f => f.value === value);
-                              const icon = feature?.kind === 'Page' ? '📄' : '✨';
-                              return (
-                                <Badge
-                                  size="sm"
-                                  variant="light"
-                                  color="grape"
-                                  style={{ marginRight: 4 }}
-                                  title={displayName}
-                                >
-                                  {icon} {displayName.length > 25 ? displayName.slice(0, 22) + '...' : displayName}
-                                </Badge>
-                              );
-                            }}
                           />
                         </Stack>
                         

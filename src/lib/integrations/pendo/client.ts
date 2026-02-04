@@ -767,7 +767,7 @@ export class PendoClient {
       });
 
       // Next, get visitors who HAVE clicked the feature
-      const featureUsersPipeline = [
+      const featureUsersPipeline: any[] = [
         {
           source: {
             events: null,
