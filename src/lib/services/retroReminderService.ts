@@ -65,7 +65,7 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
       target_launch_date,
       status
     `)
-    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
+    .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
     .lte('target_launch_date', today)
     .not('target_launch_date', 'is', null);
 

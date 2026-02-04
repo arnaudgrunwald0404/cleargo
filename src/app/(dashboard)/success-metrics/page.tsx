@@ -128,8 +128,9 @@ export default function SuccessMetricsDashboardPage() {
           placeholder="All statuses"
           data={[
             { value: '', label: 'All Statuses' },
-            { value: 'LAUNCHED', label: 'Launched' },
-            { value: 'POST_LAUNCH', label: 'Post-Launch' },
+            { value: 'Released_Cohort_1', label: 'Released Cohort 1' },
+            { value: 'Released_GA', label: 'Released GA' },
+            { value: 'Released_Retroed', label: 'Released Retroed' },
           ]}
           value={filters.status}
           onChange={(value) => setFilters({ ...filters, status: value || '' })}

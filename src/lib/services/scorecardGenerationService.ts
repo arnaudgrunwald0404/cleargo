@@ -70,14 +70,12 @@ export async function generateScorecardsForDate(
 ): Promise<ScorecardGenerationResult[]> {
   const supabase = getClient();
   
-  // Query epics that are eligible for scorecard generation:
-  // - Status is LAUNCHED or POST_LAUNCH
-  // - target_launch_date is in the past
+  // Query epics that are eligible (not explicitly Cancelled; status is computed from dates on read)
   // - Has epic_success_config configured
   const { data: epics, error } = await supabase
     .from('epic')
     .select('id, status, target_launch_date')
-    .in('status', ['PLANNED', 'PRE_LAUNCH', 'LAUNCHING', 'LAUNCHED', 'POST_LAUNCH']);
+    .or('status.is.null,status.neq.Cancelled');
 
   if (error) {
     console.error('Error fetching eligible epics:', error);
@@ -119,7 +117,7 @@ export async function backfillActiveScorecardsToToday(): Promise<Array<{ epicId:
   const { data: epics, error } = await supabase
     .from('epic')
     .select('id, status, target_launch_date')
-    .in('status', ['PLANNED', 'PRE_LAUNCH', 'LAUNCHING', 'LAUNCHED', 'POST_LAUNCH']);
+    .or('status.is.null,status.neq.Cancelled');
 
   if (error) {
     console.error('Error fetching epics for backfill:', error);
@@ -208,7 +206,7 @@ export async function generateActiveScorecardsForDate(snapshotDate: string): Pro
   const { data: epics, error } = await supabase
     .from('epic')
     .select('id, status, target_launch_date')
-    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
+    .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
     .lte('target_launch_date', snapshotDate);
 
   if (error) {

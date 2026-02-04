@@ -34,8 +34,9 @@ export function SuccessMetricsSummary({
     );
   }
 
-  const total = summary.epicsByStatus.onTrack + summary.epicsByStatus.atRisk + summary.epicsByStatus.missed;
-  const onTrackPercentage = total > 0 ? (summary.epicsByStatus.onTrack / total) * 100 : 0;
+  const withScorecard = summary.epicsByStatus.onTrack + summary.epicsByStatus.atRisk + summary.epicsByStatus.missed;
+  const denominator = summary.totalEpicsTracked || 1;
+  const onTrackPercentage = denominator > 0 ? (summary.epicsByStatus.onTrack / denominator) * 100 : 0;
 
   return (
     <Grid>
@@ -61,7 +62,7 @@ export function SuccessMetricsSummary({
                   Scorecard Status Distribution
                 </Text>
                 <Text size="xs" c="dimmed">
-                  {total} epics with scorecards
+                  {withScorecard} of {summary.totalEpicsTracked} epics with scorecards
                 </Text>
               </Group>
               <Stack gap="xs">
@@ -71,7 +72,7 @@ export function SuccessMetricsSummary({
                     <Text size="sm" fw={500}>{summary.epicsByStatus.onTrack}</Text>
                   </Group>
                   <Progress
-                    value={(summary.epicsByStatus.onTrack / total) * 100}
+                    value={(summary.epicsByStatus.onTrack / denominator) * 100}
                     color="green"
                     size="lg"
                     radius="md"
@@ -83,7 +84,7 @@ export function SuccessMetricsSummary({
                     <Text size="sm" fw={500}>{summary.epicsByStatus.atRisk}</Text>
                   </Group>
                   <Progress
-                    value={(summary.epicsByStatus.atRisk / total) * 100}
+                    value={(summary.epicsByStatus.atRisk / denominator) * 100}
                     color="yellow"
                     size="lg"
                     radius="md"
@@ -95,7 +96,7 @@ export function SuccessMetricsSummary({
                     <Text size="sm" fw={500}>{summary.epicsByStatus.missed}</Text>
                   </Group>
                   <Progress
-                    value={(summary.epicsByStatus.missed / total) * 100}
+                    value={(summary.epicsByStatus.missed / denominator) * 100}
                     color="red"
                     size="lg"
                     radius="md"

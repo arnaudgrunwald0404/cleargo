@@ -221,7 +221,7 @@ export interface EpicSuccessConfigWithDetails {
 
 /**
  * Resolve product manager user ID from epic
- * Priority: pod mapping > AHA assigned_to_user > PM Foundation criteria approver
+ * Priority: pod mapping > AHA assigned_to_user > PM Foundation criteria accountable
  */
 export async function resolveProductManagerUserId(epicId: string): Promise<string | null> {
   const supabase = createClient();

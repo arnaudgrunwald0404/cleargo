@@ -97,7 +97,7 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
       target_launch_date,
       status
     `)
-    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
+    .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
     .lte('target_launch_date', today.toISOString().split('T')[0])
     .gte('target_launch_date', ninetyDaysAgo.toISOString().split('T')[0])
     .not('target_launch_date', 'is', null);
@@ -248,7 +248,7 @@ export async function getEpicsNeedingEscalation(): Promise<Array<{
         status
       )
     `)
-    .in('status', ['LAUNCHED', 'POST_LAUNCH'])
+    .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
     .lte('target_launch_date', today.toISOString().split('T')[0])
     .not('target_launch_date', 'is', null)
     .eq('epic_retros.status', 'PENDING');

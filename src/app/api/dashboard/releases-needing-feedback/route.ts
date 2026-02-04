@@ -31,7 +31,8 @@ export async function GET(req: NextRequest) {
             `)
             .gte('target_launch_date', today.toISOString().split('T')[0])
             .lte('target_launch_date', ninetyDaysFromNow.toISOString().split('T')[0])
-            .not('readiness_status', 'in', '("COMPLETED","CANCELLED")');
+            .not('readiness_status', 'in', '("COMPLETED","Cancelled")')
+            .neq('status', 'Cancelled');
 
         if (epicError) throw epicError;
 

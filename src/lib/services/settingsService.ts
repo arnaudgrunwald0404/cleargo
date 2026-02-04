@@ -146,6 +146,19 @@ export async function getAhaFields() {
   return res.json();
 }
 
+/** POST: fetch custom field definitions from Aha and merge into config; returns updated fields list */
+export async function refreshAhaFieldsFromAha() {
+  const res = await fetch("/api/settings/aha-fields", {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || "Failed to refresh field list from Aha");
+  }
+  return res.json();
+}
+
 export async function syncAhaFields() {
   const res = await fetch("/api/settings/aha-fields/sync", { method: "POST" });
   if (!res.ok) {
