@@ -54,7 +54,7 @@ type MatrixItem = {
     };
 };
 
-// Traffic Light Status Component
+// Traffic light (Go/No-Go score: GO / CONDITIONAL / NO_GO / NOT_APPLICABLE)
 interface TrafficLightProps {
     currentStatus: string;
     onStatusChange: (status: string) => void;
@@ -65,10 +65,11 @@ interface TrafficLightProps {
         no_go?: string;
     };
     isMobile?: boolean;
+    showNotApplicable?: boolean;
 }
 
-function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, isMobile = false }: TrafficLightProps) {
-    const lights = [
+function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, isMobile = false, showNotApplicable = false }: TrafficLightProps) {
+    const baseLights = [
         { 
             value: 'GO', 
             color: '#10b981', // green
@@ -91,6 +92,14 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
             definition: definitions.no_go || 'Does not meet requirements'
         },
     ];
+    const naLight = {
+        value: 'NOT_APPLICABLE',
+        color: '#6b7280', // gray
+        greyColor: '#d1d5db',
+        label: 'N/A',
+        definition: 'Not applicable; neutral to readiness score'
+    };
+    const lights = showNotApplicable ? [...baseLights, naLight] : baseLights;
 
     const buttonSize = isMobile ? 32 : 24;
     const gap = isMobile ? '12px' : '8px';
@@ -205,9 +214,10 @@ type Props = {
     items: MatrixItem[];
     onUpdate: () => void;
     epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
+    showNotApplicable?: boolean;
 };
 
-export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic }: Props) {
+export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false }: Props) {
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
         if (source.type === 'success_metrics_defined') {
@@ -414,19 +424,19 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
     const getDataSourceTooltip = (source: { type: string; value: string; label?: string }, ticketCount?: number): string => {
         if (source.type === 'aha_field') {
             const fieldLabel = getFieldLabel(source.value);
-            return `This criteria benefits from an automated synchronization of the Aha field "${fieldLabel}"`;
+            return `Synced from Aha: ${fieldLabel}`;
         } else if (source.type === 'aha_description_part') {
-            return `This criteria benefits from an automated synchronization of the part of the Aha description field "${source.value}"`;
+            return `Synced from Aha description: ${source.value}`;
         } else if (source.type === 'url') {
             const displayLabel = source.label || 'URL';
-            return `This criteria benefits from an automated synchronization of the ${displayLabel}`;
+            return `Synced from ${displayLabel}`;
         } else if (source.type === 'jira_jql') {
             const countText = ticketCount !== undefined && ticketCount !== null 
                 ? `${ticketCount} issue${ticketCount !== 1 ? 's' : ''} open`
                 : 'Jira tickets';
-            return `This criteria benefits from an automated synchronization of ${countText}`;
+            return `Synced from ${countText}`;
         } else if (source.type === 'success_metrics_defined') {
-            return 'This criteria benefits from an automated synchronization of success configuration success metrics';
+            return 'Synced from success metrics';
         }
         return '';
     };
@@ -976,7 +986,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
             // Show toast explaining rating wasn't saved
             notifications.show({
                 title: 'Rating cancelled',
-                message: 'The rating change has been cancelled and was not saved. A comment is required for this status transition.',
+                message: 'The rating change has been cancelled and was not saved. A comment is required for this Go/No-Go score change.',
                 color: 'orange',
                 autoClose: 5000,
             });
@@ -1050,9 +1060,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                             delete next[id];
                             return next;
                         });
-                        const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                        const errorMsg = responseData?.error || responseData?.message || `Failed to update Go/No-Go score: ${res.status}`;
                         notifications.show({
-                            title: 'Failed to save status',
+                            title: 'Failed to save Go/No-Go score',
                             message: errorMsg,
                             color: 'red',
                             autoClose: 5000,
@@ -1081,8 +1091,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         return next;
                     });
                     notifications.show({
-                        title: 'Failed to save status',
-                        message: e.message || 'An error occurred while saving the status',
+                        title: 'Failed to save Go/No-Go score',
+                        message: e.message || 'An error occurred while saving the Go/No-Go score',
                         color: 'red',
                         autoClose: 5000,
                     });
@@ -1144,9 +1154,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                             }
                             return next;
                         });
-                        const errorMsg = responseData?.error || responseData?.message || `Failed to update status: ${res.status}`;
+                        const errorMsg = responseData?.error || responseData?.message || `Failed to update Go/No-Go score: ${res.status}`;
                         notifications.show({
-                            title: 'Failed to save status',
+                            title: 'Failed to save Go/No-Go score',
                             message: errorMsg,
                             color: 'red',
                             autoClose: 5000,
@@ -1169,8 +1179,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         return next;
                     });
                     notifications.show({
-                        title: 'Failed to save status',
-                        message: e.message || 'An error occurred while saving the status',
+                        title: 'Failed to save Go/No-Go score',
+                        message: e.message || 'An error occurred while saving the Go/No-Go score',
                         color: 'red',
                         autoClose: 5000,
                     });
@@ -1382,8 +1392,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                 <thead className="bg-purple-100">
                                     <tr>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Criterion</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Status</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Approver</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Accountable</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '100px' }}>Sources</th>
                                         <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Comments</th>
@@ -1445,6 +1455,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         conditional: item.criterion.status_definition_conditional,
                                                         no_go: item.criterion.status_definition_no_go,
                                                     }}
+                                                    showNotApplicable={showNotApplicable && !item.criterion.gate}
                                                 />
                                             )}
                                         </td>
@@ -1897,9 +1908,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 )}
                                             </div>
                                             
-                                            {/* Status Section */}
+                                            {/* Go/No-Go score section */}
                                             <div className="mb-3">
-                                                <div className="text-xs font-medium text-gray-700 mb-2">Status</div>
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Go/No-Go Score</div>
                                                 {item.notRequired ? (
                                                     <div className="text-xs font-medium text-gray-500">Not required</div>
                                                 ) : (
@@ -1913,13 +1924,14 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                             no_go: item.criterion.status_definition_no_go,
                                                         }}
                                                         isMobile={true}
+                                                        showNotApplicable={showNotApplicable && !item.criterion.gate}
                                                     />
                                                 )}
                                             </div>
                                             
-                                            {/* Approver Section */}
+                                            {/* Accountable Section */}
                                             <div className="mb-3">
-                                                <div className="text-xs font-medium text-gray-700 mb-2">Approver</div>
+                                                <div className="text-xs font-medium text-gray-700 mb-2">Accountable</div>
                                                 {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                     <div className="flex items-center gap-2">
                                                         <div 

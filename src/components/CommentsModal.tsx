@@ -87,6 +87,7 @@ export function CommentsModal({
   const [ahaFieldsMap, setAhaFieldsMap] = useState<Record<string, string>>({});
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
+  const lastContentRebuildRef = useRef<number>(0);
 
   const [jiraEpicKey, setJiraEpicKey] = useState<string | null>(null);
   const [jiraDomain, setJiraDomain] = useState<string | null>(null);
@@ -645,6 +646,7 @@ export function CommentsModal({
       case 'CONDITIONAL': return '#f59e0b'; // yellow
       case 'NO_GO': return '#ef4444'; // red
       case 'NOT_SET': return '#9ca3af'; // gray
+      case 'NOT_APPLICABLE': return '#6b7280'; // gray
       default: return null;
     }
   };
@@ -657,6 +659,7 @@ export function CommentsModal({
       case 'CONDITIONAL': return 'CONDITIONAL (yellow)';
       case 'NO_GO': return 'NO_GO (red)';
       case 'NOT_SET': return 'NOT_SET (gray)';
+      case 'NOT_APPLICABLE': return 'N/A (not applicable)';
       default: return status;
     }
   };
@@ -770,6 +773,8 @@ export function CommentsModal({
       
       if (data) {
         baseContent = data.current_status_notes || '';
+        // Strip any previously added data source content to prevent duplication
+        baseContent = stripDataSourceContent(baseContent);
         baseContentRef.current = baseContent;
         // Load data source values if column exists
         if (data.data_source_values) {
@@ -890,6 +895,76 @@ export function CommentsModal({
     // Replace **text** with <strong>text</strong>
     // Use a regex that handles multiple occurrences and doesn't capture nested cases incorrectly
     return text.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  };
+
+  // Escape HTML for safe insertion; if value is a URL, return a clickable link
+  const escapeHtml = (s: string): string =>
+    String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+  // Allowlist of tags safe to render (lists, paragraphs, formatting, links)
+  const ALLOWED_HTML_TAGS = new Set(['ul', 'ol', 'li', 'p', 'br', 'strong', 'em', 'b', 'i', 'a', 'span']);
+  const sanitizeHtmlForDisplay = (html: string): string => {
+    if (typeof document === 'undefined') return escapeHtml(html);
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      const serialize = (node: Node): string => {
+        if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        const el = node as Element;
+        const tag = el.tagName.toLowerCase();
+        if (!ALLOWED_HTML_TAGS.has(tag)) {
+          return Array.from(el.childNodes).map(serialize).join('');
+        }
+        if (tag === 'br') return '<br>';
+        // Unwrap single <p> inside <li> for compact list display (no extra gap between bullets)
+        if (tag === 'li') {
+          const children = Array.from(el.childNodes);
+          const singleP = children.length === 1 && children[0].nodeType === Node.ELEMENT_NODE && (children[0] as Element).tagName.toLowerCase() === 'p';
+          const inner = singleP
+            ? Array.from((children[0] as Element).childNodes).map(serialize).join('')
+            : Array.from(el.childNodes).map(serialize).join('');
+          return `<li>${inner}</li>`;
+        }
+        let attrs = '';
+        if (tag === 'a' && el.getAttribute('href')) {
+          const href = el.getAttribute('href') || '';
+          if (href.startsWith('http://') || href.startsWith('https://')) {
+            attrs = ` href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"`;
+          }
+        }
+        const inner = Array.from(el.childNodes).map(serialize).join('');
+        // Mark empty paragraphs with an emoji so empty rows are visible
+        if (tag === 'p' && !inner.trim()) return '<p>📭</p>';
+        return `<${tag}${attrs}>${inner}</${tag}>`;
+      };
+      let out = Array.from(doc.body.childNodes).map(serialize).join('');
+      // Put an emoji on each empty row created by multiple <br> (so empty lines are visible)
+      out = out.replace(/(<br\s*\/?>)(\s*<br\s*\/?>)+/gi, (match, firstBr) => {
+        const extraBrCount = (match.match(/<br\s*\/?>/gi) || []).length - 1;
+        return firstBr + Array(extraBrCount).fill('📭<br>').join('');
+      });
+      return out;
+    } catch {
+      return escapeHtml(html);
+    }
+  };
+
+  const looksLikeHtml = (s: string): boolean =>
+    /<ul[\s>]|<\/ul>|<ol[\s>]|<\/ol>|<li[\s>]|<\/li>|<p[\s>]|<\/p>/.test(s);
+
+  const formatValueForHtmlDisplay = (value: string): string => {
+    if (!value) return value;
+    const trimmed = value.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const escaped = escapeHtml(trimmed);
+      return `<a href="${escaped}" target="_blank" rel="noopener noreferrer">${escaped}</a>`;
+    }
+    if (looksLikeHtml(trimmed)) return sanitizeHtmlForDisplay(trimmed);
+    return escapeHtml(value);
   };
 
   // Helper function to format checkbox items: remove bullets and put text inline with checkboxes
@@ -1070,6 +1145,46 @@ export function CommentsModal({
     }
   };
 
+  // Helper function to strip data source content from base content
+  // This prevents duplication when baseContent already contains previously added data sources
+  // Data sources are always appended after the base content, separated by HR tags
+  const stripDataSourceContent = (content: string): string => {
+    if (!content || !criterion?.data_sources || criterion.data_sources.length === 0) return content;
+    
+    // Data sources are added with HR separators between them
+    // The pattern is: baseContent + '\n\n' + dataSource1 + <hr> + dataSource2 + ...
+    // So we can split by HR tags and take only the first part (before any HR)
+    const hrPattern = /<hr[^>]*>/gi;
+    const parts = content.split(hrPattern);
+    
+    // If we found HR tags, everything before the first HR is the base content
+    if (parts.length > 1) {
+      return parts[0].trim();
+    }
+    
+    // If no HR tags, check if content ends with data source patterns
+    // Look for patterns that match data source content (e.g., **FieldLabel**<br>value)
+    // We'll use a simpler approach: if the last part matches data source patterns, remove it
+    let cleaned = content;
+    
+    // Try to identify data source content at the end by looking for the separator pattern
+    // Data sources are added with: baseContent + '\n\n' + dataSection
+    // So if we find '\n\n' followed by data source patterns, that's the separator
+    const doubleNewlineIndex = cleaned.lastIndexOf('\n\n');
+    if (doubleNewlineIndex > 0) {
+      const afterDoubleNewline = cleaned.substring(doubleNewlineIndex + 2);
+      // Check if the part after '\n\n' looks like data source content
+      // Data source content typically starts with **Label** or <strong>Label</strong>
+      const dataSourcePattern = /^(<strong>|<b>|\*\*)[^<*]+(<\/strong>|<\/b>|\*\*)/i;
+      if (dataSourcePattern.test(afterDoubleNewline.trim())) {
+        // This looks like data source content, remove it
+        cleaned = cleaned.substring(0, doubleNewlineIndex).trim();
+      }
+    }
+    
+    return cleaned;
+  };
+
   // Helper function to build content from data sources
   const buildContentFromDataSources = (
     baseContent: string,
@@ -1099,11 +1214,11 @@ export function CommentsModal({
             displayValue = formatAhaFieldValue(fieldValue);
           }
           
-          // Always show the field label, with value or "N/A" on a new line
+          // Always show the field label, with value or "N/A" on a new line (URLs as clickable links)
           const fieldLabel = getFieldLabel(source.value);
           const valueToShow = displayValue || 'N/A';
           const markdownContent = `**${fieldLabel}**`;
-          const htmlContent = convertMarkdownToHTML(markdownContent) + '<br>' + valueToShow;
+          const htmlContent = convertMarkdownToHTML(markdownContent) + '<br>' + formatValueForHtmlDisplay(valueToShow);
           dataSourceItems.push({ content: htmlContent, type: 'aha_field' });
         } else if (source.type === 'aha_description_part' && source.value) {
           // Parse description HTML table to find keyword and extract second column
@@ -1124,10 +1239,10 @@ export function CommentsModal({
             extractedValue = parseDescriptionTable(htmlContent, source.value);
           }
           
-          // Always show the description part label, with value or "N/A" on a new line
+          // Always show the description part label, with value or "N/A" on a new line (URLs as clickable links)
           const valueToShow = extractedValue || 'N/A';
           const markdownContent = `**${source.value}**`;
-          const convertedContent = convertMarkdownToHTML(markdownContent) + '<br>' + valueToShow;
+          const convertedContent = convertMarkdownToHTML(markdownContent) + '<br>' + formatValueForHtmlDisplay(valueToShow);
           dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
         } else if (source.type === 'url') {
           // Get URL value from fetched data source values
@@ -1157,7 +1272,7 @@ export function CommentsModal({
       dataSourceItems.forEach((item, idx) => {
         // Add separator between all data source items
         if (idx > 0) {
-          processedContent.push('<hr style="border: none; border-top: 1px solid #e0e0e0; padding-top: 0px;margin-top: 20px;">');
+          processedContent.push('<hr style="border: none; border-top: 1px solid #e0e0e0; padding-top: 0; margin-top: 8px; margin-bottom: 8px;">');
         }
         
         processedContent.push(item.content);
@@ -1379,12 +1494,30 @@ export function CommentsModal({
   const dataSourceValuesKey = useMemo(() => JSON.stringify(dataSourceValues), [dataSourceValues]);
 
   // Rebuild content when URL previews or data source values change
+  // Add minimum time between syncs to prevent duplicate synchronization
   useEffect(() => {
     if (!opened || contentLoading || Object.keys(dataSourceValues).length === 0 || !baseContentRef.current) return;
+    
+    const now = Date.now();
+    const MIN_TIME_BETWEEN_SYNCS = 2000; // 2 seconds minimum between syncs
+    
+    // Check if enough time has passed since last rebuild
+    if (now - lastContentRebuildRef.current < MIN_TIME_BETWEEN_SYNCS) {
+      // Schedule rebuild after the minimum time has elapsed
+      const timeSinceLastRebuild = now - lastContentRebuildRef.current;
+      const delay = MIN_TIME_BETWEEN_SYNCS - timeSinceLastRebuild;
+      const timer = setTimeout(() => {
+        const rebuiltContent = buildContentFromDataSources(baseContentRef.current, dataSourceValues, urlPreviews);
+        setContent(rebuiltContent);
+        lastContentRebuildRef.current = Date.now();
+      }, delay);
+      return () => clearTimeout(timer);
+    }
     
     // Rebuild content with updated previews using stored baseContent
     const rebuiltContent = buildContentFromDataSources(baseContentRef.current, dataSourceValues, urlPreviews);
     setContent(rebuiltContent);
+    lastContentRebuildRef.current = now;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlPreviewsKey, dataSourceValuesKey, opened, contentLoading]);
 
@@ -1406,6 +1539,7 @@ export function CommentsModal({
       fetchContent();
       setHasAddedComment(false); // Reset when drawer opens
       setActiveTab(initialTab); // Reset to initial tab when drawer opens
+      lastContentRebuildRef.current = 0; // Reset sync timer on open
     }
   }, [opened, initialTab]);
 
@@ -1475,7 +1609,7 @@ export function CommentsModal({
                 Comment required
               </Text>
               <Text c="white" fw={700} size="sm" mt={6} lh={1.25}>
-                A comment is required for this status transition. Please add a comment before closing.
+                A comment is required for this Go/No-Go score change. Please add a comment before closing.
               </Text>
             </div>
           )}
@@ -1485,21 +1619,21 @@ export function CommentsModal({
             </Text>
             {criterion?.data_sources && criterion.data_sources.length > 0 && (
               <Text size="xs" c="dimmed" mt={4} style={{ lineHeight: 1.4 }}>
-                This criteria benefits from {criterion.data_sources.length} automated synchronization{criterion.data_sources.length !== 1 ? 's' : ''} of the following data:{' '}
+                Synced from {criterion.data_sources.length} source{criterion.data_sources.length !== 1 ? 's' : ''}:{' '}
                 {criterion.data_sources.map((source, index) => {
                   let sourceText = '';
                   if (source.type === 'aha_field') {
                     const fieldLabel = getFieldLabel(source.value);
-                    sourceText = `the Aha field "${fieldLabel}"`;
+                    sourceText = `Aha: ${fieldLabel}`;
                   } else if (source.type === 'aha_description_part') {
-                    sourceText = `the part of the Aha description field "${source.value}"`;
+                    sourceText = `Aha description: ${source.value}`;
                   } else if (source.type === 'url') {
                     const displayLabel = source.label || 'URL';
-                    sourceText = `the ${displayLabel}`;
+                    sourceText = displayLabel;
                   } else if (source.type === 'jira_jql') {
                     sourceText = 'Jira tickets';
                   } else if (source.type === 'success_metrics_defined') {
-                    sourceText = 'success configuration success metrics';
+                    sourceText = 'success metrics';
                   }
                   return sourceText;
                 }).filter(Boolean).map((text, index, array) => (
@@ -1807,9 +1941,9 @@ export function CommentsModal({
                     >
                       <Group justify="space-between" gap="xs" mb={4}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                          {/* Status indicator dots showing before → after */}
+                          {/* Go/No-Go score indicator dots showing before → after */}
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-                            {/* Show previous status dot (before) */}
+                            {/* Show previous Go/No-Go score dot (before) */}
                             {comment.previous_status && getStatusColor(comment.previous_status) && (
                               <div
                                 style={{
@@ -1818,14 +1952,14 @@ export function CommentsModal({
                                   borderRadius: '50%',
                                   backgroundColor: getStatusColor(comment.previous_status)!,
                                 }}
-                                title={`Previous status: ${getStatusLabel(comment.previous_status)}`}
+                                title={`Previous Go/No-Go score: ${getStatusLabel(comment.previous_status)}`}
                               />
                             )}
-                            {/* Show arrow if there's a status change */}
+                            {/* Show arrow if there's a Go/No-Go score change */}
                             {comment.previous_status && comment.status_at_comment && comment.previous_status !== comment.status_at_comment && (
                               <>
                                 <span style={{ fontSize: '12px', color: '#6b7280' }}>→</span>
-                                {/* Show new status dot (after) */}
+                                {/* Show new Go/No-Go score dot (after) */}
                                 {getStatusColor(comment.status_at_comment) && (
                                   <div
                                     style={{
@@ -1834,12 +1968,12 @@ export function CommentsModal({
                                       borderRadius: '50%',
                                       backgroundColor: getStatusColor(comment.status_at_comment)!,
                                     }}
-                                    title={`New status: ${getStatusLabel(comment.status_at_comment)}`}
+                                    title={`New Go/No-Go score: ${getStatusLabel(comment.status_at_comment)}`}
                                   />
                                 )}
                               </>
                             )}
-                            {/* If no previous status but there's a status_at_comment, just show the new status */}
+                            {/* If no previous Go/No-Go score but there's a status_at_comment, just show the new Go/No-Go score */}
                             {!comment.previous_status && comment.status_at_comment && getStatusColor(comment.status_at_comment) && (
                               <div
                                 style={{
