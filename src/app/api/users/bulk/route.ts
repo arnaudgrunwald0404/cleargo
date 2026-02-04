@@ -19,12 +19,133 @@ function forbid() {
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
 
+const emailListSchema = z.object({
+  emails: z.array(z.string().email()).min(1, "At least one email required"),
+  role: z.string().optional().default("OTHER"),
+});
+
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function extractEmailFromToken(token: string): string | null {
+  const inBrackets = token.match(/<([^>]+)>/);
+  const candidate = inBrackets ? inBrackets[1].trim() : token;
+  return emailRegex.test(candidate) ? candidate.toLowerCase() : null;
+}
+
 export async function POST(req: NextRequest) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   const role = await resolveRole(user.email);
   if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
+
+  const contentType = req.headers.get("content-type") || "";
+
+  if (contentType.includes("application/json")) {
+    const body = await req.json();
+
+    if (Array.isArray(body.users) && body.users.length > 0) {
+      const normalized = body.users.map((u: { email: string; role?: string }) => {
+        const token = typeof u.email === "string" ? u.email.trim() : "";
+        const email = extractEmailFromToken(token) ?? (emailRegex.test(token) ? token.toLowerCase() : null);
+        const roleVal = (u.role && typeof u.role === "string") ? u.role : "OTHER";
+        return { email, role: roleVal };
+      }).filter((u: { email: string | null }) => u.email != null) as Array<{ email: string; role: string }>;
+      if (normalized.length === 0) {
+        return NextResponse.json({ error: "No valid emails in users list" }, { status: 400 });
+      }
+      const users = normalized.map((u) => ({
+        email: u.email,
+        first_name: null as string | null,
+        last_name: null as string | null,
+        roles: [u.role],
+        is_active: true,
+      }));
+      const { data: insertedUsers, error: insertError } = await supabase
+        .from("app_user")
+        .upsert(
+          users.map((u) => ({
+            email: u.email,
+            first_name: u.first_name,
+            last_name: u.last_name,
+            roles: u.roles,
+            is_active: u.is_active,
+            name: null,
+          })),
+          { onConflict: "email" }
+        )
+        .select();
+      if (insertError) {
+        return NextResponse.json({ error: "Failed to import users", details: insertError.message }, { status: 500 });
+      }
+      if (insertedUsers && insertedUsers.length > 0) {
+        for (const u of insertedUsers) {
+          if (u.email) {
+            syncUserSlackHandle(u.email).catch((err) => {
+              console.error(`Failed to sync Slack handle for ${u.email}:`, err);
+            });
+          }
+        }
+      }
+      return NextResponse.json({
+        message: "Import successful",
+        created: insertedUsers?.length || 0,
+      });
+    }
+
+    const rawTokens = typeof body.emails === "string"
+      ? body.emails.split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean)
+      : Array.isArray(body.emails)
+        ? body.emails.flatMap((e: unknown) => String(e).split(/[\n,]+/).map((s: string) => s.trim()).filter(Boolean))
+        : [];
+    const validEmails = rawTokens.map(extractEmailFromToken).filter((e: string | null): e is string => e != null);
+    if (validEmails.length === 0) {
+      return NextResponse.json({ error: "At least one valid email is required" }, { status: 400 });
+    }
+    const roleForAll = (body.role && typeof body.role === "string") ? body.role : "OTHER";
+    const parsed = emailListSchema.safeParse({ emails: validEmails, role: roleForAll });
+    if (!parsed.success) {
+      return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
+    }
+    const { role: singleRole } = parsed.data;
+    const users = validEmails.map((email: string) => ({
+      email,
+      first_name: null as string | null,
+      last_name: null as string | null,
+      roles: [singleRole],
+      is_active: true,
+    }));
+    type UserUpsert = { email: string; first_name: string | null; last_name: string | null; roles: string[]; is_active: boolean };
+    const { data: insertedUsers, error: insertError } = await supabase
+      .from("app_user")
+      .upsert(
+        users.map((u: UserUpsert) => ({
+          email: u.email,
+          first_name: u.first_name,
+          last_name: u.last_name,
+          roles: u.roles,
+          is_active: u.is_active,
+          name: null,
+        })),
+        { onConflict: "email" }
+      )
+      .select();
+    if (insertError) {
+      return NextResponse.json({ error: "Failed to import users", details: insertError.message }, { status: 500 });
+    }
+    if (insertedUsers && insertedUsers.length > 0) {
+      for (const u of insertedUsers) {
+        if (u.email) {
+          syncUserSlackHandle(u.email).catch((err) => {
+            console.error(`Failed to sync Slack handle for ${u.email}:`, err);
+          });
+        }
+      }
+    }
+    return NextResponse.json({
+      message: "Import successful",
+      created: insertedUsers?.length || 0,
+    });
+  }
 
   const formData = await req.formData();
   const file = formData.get("file") as File;

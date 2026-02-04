@@ -1052,22 +1052,6 @@ function AddCustomMetricModal({
                 searchable
                 clearable
                 maxDropdownHeight={200}
-                valueComponent={({ value }) => {
-                  const displayName = pendoIdToLabel[value] || value;
-                  const feature = pendoFeatures.find(f => f.value === value);
-                  const featureIcon = feature?.kind === 'Page' ? '📄' : '✨';
-                  return (
-                    <Badge
-                      size="sm"
-                      variant="light"
-                      color="grape"
-                      style={{ marginRight: 4 }}
-                      title={displayName}
-                    >
-                      {featureIcon} {displayName.length > 20 ? displayName.slice(0, 17) + '...' : displayName}
-                    </Badge>
-                  );
-                }}
               />
             </Stack>
             

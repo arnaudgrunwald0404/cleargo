@@ -44,15 +44,15 @@ export async function GET(req: NextRequest) {
       timestamp: new Date().toISOString(),
     };
 
-    // Test 1: Fetch track events
+    // Test 1: Fetch events (track types)
     try {
-      const events = await client.getTrackEvents();
+      const events = await client.getEvents();
       results.trackEvents = {
         count: events.length,
         sample: events.slice(0, 5).map(e => ({
           name: e.name,
-          userCount: e.userCount,
-          eventCount: e.eventCount,
+          id: e.id,
+          description: e.description,
         })),
       };
     } catch (err: any) {

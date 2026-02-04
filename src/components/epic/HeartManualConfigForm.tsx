@@ -137,7 +137,7 @@ export function HeartManualConfigForm({
   
   // Track which categories have been configured
   const [configuredCategories, setConfiguredCategories] = useState<Set<HeartCategoryId>>(
-    new Set(existingMetrics.map(m => m.heart_category))
+    () => new Set(existingMetrics.map(m => m.heart_category).filter((c): c is HeartCategoryId => c != null))
   );
   
   // Current form data for each category

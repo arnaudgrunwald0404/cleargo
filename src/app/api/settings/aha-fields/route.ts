@@ -118,32 +118,61 @@ export async function POST(req: NextRequest) {
         clearAhaConfigCache();
         const config = loadAhaConfig();
 
-        // Map custom fields by label
-        // Aha! API returns custom_field_definitions array
-        const fieldsByLabel = new Map<string, any>();
+        // Map custom fields by label (exact and normalized) and by Aha key for fallback
         const ahaCustomFields = customFieldsResponse.custom_field_definitions || customFieldsResponse.custom_fields || [];
-        
+        const fieldsByLabel = new Map<string, any>();
+        const fieldsByLabelNormalized = new Map<string, any>();
+        const fieldsByKey = new Map<string, any>();
+        const normalize = (s: string) => (s || '').trim().toLowerCase();
+
         for (const field of ahaCustomFields) {
-            fieldsByLabel.set(field.name, field);
+            if (field.name != null) fieldsByLabel.set(field.name, field);
+            if (field.name != null) fieldsByLabelNormalized.set(normalize(field.name), field);
+            if (field.key != null) fieldsByKey.set(field.key, field);
         }
 
-        // Update config with discovered keys
+        // Update config with discovered keys: try exact label, then normalized label, then alias as Aha key
         let updatedCount = 0;
         const updates: Array<{ alias: string; label: string; key: string }> = [];
         const notFound: Array<{ alias: string; label: string }> = [];
 
         for (const [alias, fieldConfig] of Object.entries(config.fields)) {
-            const ahaField = fieldsByLabel.get(fieldConfig.label);
+            const label = (fieldConfig as { label?: string }).label;
+            let ahaField = (label != null ? fieldsByLabel.get(label) ?? fieldsByLabelNormalized.get(normalize(label)) : null)
+                ?? (fieldConfig.key ? null : fieldsByKey.get(alias));
             if (ahaField) {
                 const oldKey = fieldConfig.key;
-                fieldConfig.key = ahaField.key;
-                if (oldKey !== ahaField.key) {
+                fieldConfig.key = ahaField.key ?? '';
+                if (oldKey !== fieldConfig.key) {
                     updatedCount++;
-                    updates.push({ alias, label: fieldConfig.label, key: ahaField.key });
+                    updates.push({ alias, label: label ?? alias, key: fieldConfig.key });
                 }
             } else {
-                notFound.push({ alias, label: fieldConfig.label });
+                notFound.push({ alias, label: label ?? alias });
             }
+        }
+
+        // Add any Aha custom fields not yet in config (so "Refresh" surfaces all fields from Aha)
+        const labelToAlias = new Map<string, string>();
+        for (const [alias, fieldConfig] of Object.entries(config.fields)) {
+            labelToAlias.set((fieldConfig as any).label, alias);
+        }
+        const slugFromName = (name: string) =>
+            name.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '') || 'field';
+        for (const ahaField of ahaCustomFields) {
+            const name = ahaField.name;
+            if (!name || typeof name !== 'string') continue;
+            if (labelToAlias.has(name)) continue;
+            let alias = slugFromName(name);
+            let suffix = 0;
+            while ((config.fields as Record<string, unknown>)[alias]) {
+                alias = `${slugFromName(name)}_${++suffix}`;
+            }
+            (config.fields as Record<string, { label: string; key: string }>)[alias] = {
+                label: name,
+                key: ahaField.key ?? '',
+            };
+            labelToAlias.set(name, alias);
         }
 
         // Save updated config

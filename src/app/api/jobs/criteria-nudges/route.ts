@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
+import { sendSlackNotification, syncUserSlackHandle, canReceiveSlackNotification } from '@/lib/slack/notifications';
 import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-groups';
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
@@ -30,24 +30,6 @@ export async function GET(request: NextRequest) {
         const nudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
         const nudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
         const nudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
-        // Filter by email address for both email and Slack notifications
-        // All notifications are logged, but only matching emails receive actual notifications
-        // Support multiple emails (comma or newline separated)
-        const testEmailRaw = settings.slack_notification_test_email?.trim() || 'agrunwald@clearcompany.com';
-        const testEmails = testEmailRaw
-            .split(/[,\n]/)
-            .map(email => email.trim())
-            .filter(email => email.length > 0)
-            .map(email => email.toLowerCase());
-        const testSlackHandle = settings.slack_notification_test_slack_handle?.trim() || null;
-        const useTestEmailFilter = testEmails.length > 0;
-        const useTestSlackFilter = testSlackHandle && testSlackHandle.length > 0;
-        
-        // Helper function to check if an email matches the filter
-        const isEmailInFilter = (email: string): boolean => {
-            if (!useTestEmailFilter) return true;
-            return testEmails.includes(email.toLowerCase());
-        };
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -235,28 +217,21 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        const uniqueEmails = Array.from(notificationsByEmail.keys()).filter(e => e !== 'unknown');
+        const allowedForSlack = new Set<string>();
+        for (const email of uniqueEmails) {
+            if (await canReceiveSlackNotification(email)) allowedForSlack.add(email);
+        }
+
         console.log('📋 Slack Nudge Notifications - ALL NOTIFICATIONS (before filtering):');
         console.log(`   Total criteria needing nudges: ${allCriteria.length}`);
-    if (useTestSlackFilter) {
-        console.log(`   Test Slack handle filter: ${testSlackHandle} (only matching Slack handles will receive notifications)`);
-    } else {
-        console.log(`   Test email filter: ${useTestEmailFilter ? testEmails.join(', ') : 'DISABLED (sending to all)'}`);
-    }
-        console.log('   Breakdown by assignee (all will be logged, only filtered users will receive notifications):');
+        console.log(`   Slack recipients: per-user flag in User Management (${allowedForSlack.size} user(s) enabled)`);
         for (const [email, criteria] of notificationsByEmail.entries()) {
-            // Find the Slack handle for this email
-            const firstCriterion = allCriteria.find((c: any) => 
+            const firstCriterion = allCriteria.find((c: any) =>
                 c.decision_owner?.email?.toLowerCase() === email
             );
             const slackHandle = firstCriterion?.decision_owner?.slack_handle;
-            let willSend = false;
-            if (useTestSlackFilter) {
-                willSend = slackHandle && slackHandle === testSlackHandle;
-            } else if (useTestEmailFilter) {
-                willSend = isEmailInFilter(email);
-            } else {
-                willSend = true; // No filter, send to all
-            }
+            const willSend = allowedForSlack.has(email);
             const status = willSend ? '✅ WILL SEND' : '📝 LOGGED ONLY';
             const nudgeTypes = [...new Set(criteria.map((c) => c.nudge_type))];
             console.log(`   ${status} - ${email} (Slack: ${slackHandle || 'none'}): ${criteria.length} criteria (${nudgeTypes.join(', ')})`);
@@ -272,26 +247,15 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        // Filter by test email or Slack handle - only send to matching users, but all are logged above
-        const filteredCriteria = (useTestEmailFilter || useTestSlackFilter)
-            ? allCriteria.filter((c: any) => {
-                  const ownerEmail = c.decision_owner?.email?.toLowerCase();
-                  const slackHandle = c.decision_owner?.slack_handle;
-                  
-                  // If Slack handle filter is set, use it; otherwise use email filter
-                  if (useTestSlackFilter) {
-                      return slackHandle && slackHandle === testSlackHandle;
-                  } else if (useTestEmailFilter) {
-                      return isEmailInFilter(ownerEmail || '');
-                  }
-                  return false;
-              })
-            : allCriteria;
+        const filteredCriteria = allCriteria.filter((c: any) => {
+            const ownerEmail = c.decision_owner?.email?.toLowerCase();
+            return ownerEmail && allowedForSlack.has(ownerEmail);
+        });
 
         if (filteredCriteria.length === 0) {
             return NextResponse.json({
                 success: true,
-                message: `No criteria match test email filter: ${testEmails.join(', ')} (but all notifications were logged)`,
+                message: 'No assignees have Slack notifications enabled in User Management (all notifications logged)',
                 count: 0,
                 debug: {
                     total_before_filter: allCriteria.length,
@@ -422,22 +386,13 @@ export async function GET(request: NextRequest) {
             debug: {
                 total_before_filter: allCriteria.length,
                 filtered_count: filteredCriteria.length,
-                test_email_filter: useTestEmailFilter ? testEmails : null,
-                test_slack_handle_filter: useTestSlackFilter ? testSlackHandle : null,
                 notifications_by_email: Object.fromEntries(
                     Array.from(notificationsByEmail.entries()).map(([email, criteria]) => {
-                        const firstCriterion = allCriteria.find((c: any) => 
+                        const firstCriterion = allCriteria.find((c: any) =>
                             c.decision_owner?.email?.toLowerCase() === email
                         );
                         const slackHandle = firstCriterion?.decision_owner?.slack_handle;
-                        let willSend = false;
-                        if (useTestSlackFilter) {
-                            willSend = slackHandle && slackHandle === testSlackHandle;
-                        } else if (useTestEmailFilter) {
-                            willSend = isEmailInFilter(email);
-                        } else {
-                            willSend = true;
-                        }
+                        const willSend = allowedForSlack.has(email);
                         return [
                             email,
                             {
