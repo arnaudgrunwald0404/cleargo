@@ -29,7 +29,7 @@ async function main() {
         .insert({
             name: 'Verification Launch ' + Date.now(),
             tier: 'TIER_1',
-            status: 'PLANNED',
+            status: 'Pre_Release',
             target_launch_date: new Date(Date.now() + 86400000 * 20).toISOString(), // T+20 days
             aha_id: 'TEST-' + Date.now(),
             owner_email: 'agrunwald@clearcompany.com' // Use a real email if possible, or mock

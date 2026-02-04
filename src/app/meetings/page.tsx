@@ -8,6 +8,7 @@ import Link from "next/link";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { canRolesPerform } from "@/lib/permissions";
 import { isEnabled, FEATURE_MEETINGS } from "@/lib/flags";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 interface Meeting {
     id: string;
@@ -42,6 +43,7 @@ interface ReleaseGroup {
 }
 
 export default function MeetingsPage() {
+    const { flags: featureFlags } = useFeatureFlags();
     const [meetings, setMeetings] = useState<Meeting[]>([]);
     const [loading, setLoading] = useState(true);
     const [syncing, setSyncing] = useState(false);
@@ -85,7 +87,7 @@ export default function MeetingsPage() {
                     ? userData.roles 
                     : (userData.role ? [userData.role] : []);
                 // Check feature flag and meetings.read capability
-                const access = isEnabled(FEATURE_MEETINGS) && canRolesPerform(roles, 'meetings.read');
+                const access = isEnabled(FEATURE_MEETINGS, featureFlags) && canRolesPerform(roles, 'meetings.read');
                 setHasAccess(access);
             } else {
                 setHasAccess(false);

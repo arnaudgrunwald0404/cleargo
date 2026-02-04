@@ -168,16 +168,28 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
     };
 
     if (readOnly) {
-        const listSpacingClass = compactLists ? "[&_li]:mb-0" : "[&_li]:mb-1";
+        const listSpacingClass = compactLists ? "[&_li]:mb-0 [&_ul]:my-0 [&_ol]:my-0 [&_li_p]:my-0 [&_li_p]:mb-0" : "[&_li]:mb-1";
+        const paragraphSpacing = compactLists
+            ? "[&_p]:my-0 [&_p]:mb-0 [&_p:has(>_strong:only-child)]:mt-4 [&_>*:first-child]:mt-0"
+            : "[&_p]:mb-2";
         return (
-            <div
-                className={`text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 ${listSpacingClass} [&_p]:mb-2 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800`}
-                dangerouslySetInnerHTML={{ __html: value || "" }}
-                style={{
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                }}
-            />
+            <>
+                {compactLists && (
+                    <style>{`.rich-text-compact-readonly p { margin: 0; }
+.rich-text-compact-readonly ul, .rich-text-compact-readonly ol { margin: 0.25rem 0 0 0; }
+.rich-text-compact-readonly li { margin-bottom: 0; }
+.rich-text-compact-readonly p:has(> strong:only-child) { margin-top: 1rem; }
+.rich-text-compact-readonly > *:first-child { margin-top: 0 !important; }`}</style>
+                )}
+                <div
+                    className={`text-sm text-gray-700 max-w-none [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 ${listSpacingClass} ${paragraphSpacing} [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800 ${compactLists ? "rich-text-compact-readonly" : ""}`}
+                    dangerouslySetInnerHTML={{ __html: value || "" }}
+                    style={{
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                    }}
+                />
+            </>
         );
     }
 
@@ -277,6 +289,13 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
 
             {/* Editor */}
             <div className="relative rounded-b-lg overflow-hidden">
+                {compactLists && (
+                    <style>{`.rich-text-compact-editor p { margin: 0; }
+.rich-text-compact-editor ul, .rich-text-compact-editor ol { margin: 0.25rem 0 0 0; }
+.rich-text-compact-editor li { margin-bottom: 0; }
+.rich-text-compact-editor p:has(> strong:only-child) { margin-top: 1rem; }
+.rich-text-compact-editor > *:first-child { margin-top: 0 !important; }`}</style>
+                )}
                 <div
                     ref={editorRef}
                     contentEditable
@@ -285,7 +304,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
                         setIsFocused(true);
                     }}
                     onBlur={() => setIsFocused(false)}
-                    className={`px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? '[&_li]:mb-0' : '[&_li]:mb-1'} [&_p]:my-1`}
+                    className={`px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? 'rich-text-compact-editor [&_li]:mb-0 [&_li_p]:my-0 [&_li_p]:mb-0 [&_p]:my-0 [&_p]:mb-0' : '[&_li]:mb-1 [&_p]:my-1'}`}
                     style={{
                         minHeight: `${rows * 20}px`,
                         whiteSpace: "pre-wrap",

@@ -4,7 +4,7 @@
  * 2. Fairness: Score per category, then average across categories (not raw questions)
  */
 
-type Status = "GO" | "CONDITIONAL_GO" | "NO_GO" | "NOT_SET";
+type Status = "GO" | "CONDITIONAL_GO" | "NO_GO" | "NOT_SET" | "NOT_APPLICABLE";
 
 export interface CriterionInput {
   id: string;
@@ -53,6 +53,7 @@ function statusToScore(status: Status): number {
       return 0.5;
     case "NO_GO":
     case "NOT_SET":
+    case "NOT_APPLICABLE":
     default:
       return 0.0;
   }
@@ -78,6 +79,15 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
 
   for (const c of inCategory) {
     const effectiveStatus: Status = useSignoffOverride ? "GO" : c.status;
+
+    if (effectiveStatus === "NOT_APPLICABLE") {
+      if (c.isGating) {
+        hasGatingNotSet = true;
+        hasAnyNotSet = true;
+      }
+      continue;
+    }
+
     const score = statusToScore(effectiveStatus);
 
     const baseWeight = c.weight ?? 1;
@@ -85,7 +95,6 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
       ? baseWeight * GATING_WEIGHT_MULTIPLIER
       : baseWeight;
 
-    // Track flags using effectiveStatus
     if (effectiveStatus === "NOT_SET") {
       hasAnyNotSet = true;
       if (c.isGating) hasGatingNotSet = true;
@@ -205,7 +214,8 @@ export function normalizeStatus(status: string | null | undefined): Status {
   if (normalized === "GO") return "GO";
   if (normalized === "NO_GO") return "NO_GO";
   if (normalized === "NOT_SET") return "NOT_SET";
-  
+  if (normalized === "NOT_APPLICABLE" || normalized === "NA" || normalized === "N/A") return "NOT_APPLICABLE";
+
   return "NOT_SET";
 }
 

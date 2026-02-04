@@ -21,7 +21,7 @@ describe('Email Notifications Integration', () => {
             recipientEmail: 'test@example.com',
             metadata: {
                 launchName: 'Test Launch',
-                oldStatus: 'PLANNED',
+                oldStatus: 'Pre_Release',
                 newStatus: 'GO',
                 launchUrl: 'http://localhost:3000/launches/123',
             },

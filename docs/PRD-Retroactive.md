@@ -696,7 +696,7 @@ The system uses the following launch stage phases:
 - `tier` (Enum: TIER_1, TIER_2, TIER_3)
 - `target_launch_date` (Date)
 - `scheduled_ga_dev_date` (Date)
-- `status` (Enum: PLANNED, PRE_LAUNCH, LAUNCHING, LAUNCHED, POST_LAUNCH, CANCELLED)
+- `status` (Enum: Pre_Release, Released_Cohort_1, Released_GA, Released_Retroed, Cancelled)
 - `readiness_score` (Float, 0-100)
 - `readiness_status` (Enum: GO, CONDITIONAL_GO, NO_GO, NOT_EVALUATED)
 - `risk_level` (Enum: LOW, MEDIUM, HIGH)

@@ -10,6 +10,7 @@ import { SegmentedControl } from '@mantine/core';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
+import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 
 interface HeaderProps {
     email?: string | null;
@@ -20,9 +21,11 @@ interface HeaderProps {
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
     const { scope, setScope } = useEpicScope();
+    const { flags: featureFlags } = useFeatureFlags();
     const [userRoles, setUserRoles] = useState<string[]>([]);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
     const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
+    const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
 
     // Fetch user roles and check settings access
     useEffect(() => {
@@ -50,8 +53,10 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     );
                     setHasSettingsAccess(hasAccess);
 
-                    const hasMeetings = isEnabled(FEATURE_MEETINGS) && canRolesPerform(roles, 'meetings.read');
+                    const hasMeetings = isEnabled(FEATURE_MEETINGS, featureFlags) && canRolesPerform(roles, 'meetings.read');
                     setHasMeetingsAccess(hasMeetings);
+
+                    setHasAnalyticsAccess(canRolesPerform(roles, 'analytics.read'));
                 }
             } catch (error) {
                 console.error('Failed to fetch user roles:', error);
@@ -73,6 +78,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const primaryTabs = [
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Releases' },
+        ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: '/feedback', label: 'Feedback' },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),

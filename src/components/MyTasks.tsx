@@ -7,6 +7,8 @@ import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { createClient } from "@/lib/supabase/client";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { isEnabled, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 
 type MyItem = {
     id: string;
@@ -33,24 +35,28 @@ type ReleaseGroup = {
     items: MyItem[];
 };
 
-// Read-only Traffic Light Status Indicator
+// Traffic light (Go/No-Go score) for My Items
 function StatusTrafficLight({ 
     status, 
     itemId, 
     epicId, 
     onStatusUpdate,
-    isSaving 
+    isSaving,
+    showNotApplicable = false,
+    isGate = false,
 }: { 
     status: string; 
     itemId: string;
     epicId: string;
     onStatusUpdate: () => void;
     isSaving: boolean;
+    showNotApplicable?: boolean;
+    isGate?: boolean;
 }) {
     const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
     
-    const lights = [
+    const baseLights = [
         { 
             value: 'GO', 
             color: '#10b981', // green
@@ -73,6 +79,14 @@ function StatusTrafficLight({
             definition: 'Does not meet requirements'
         },
     ];
+    const naLight = {
+        value: 'NOT_APPLICABLE',
+        color: '#6b7280',
+        greyColor: '#d1d5db',
+        label: 'N/A',
+        definition: 'Not applicable; neutral to readiness score'
+    };
+    const lights = showNotApplicable && !isGate ? [...baseLights, naLight] : baseLights;
 
     const handleStatusChange = async (newStatus: string) => {
         if (newStatus === status || isUpdating) return;
@@ -128,7 +142,7 @@ function StatusTrafficLight({
                     
                     if (!retryRes.ok) {
                         const retryErrorData = await retryRes.json().catch(() => ({}));
-                        throw new Error(retryErrorData.error || 'Failed to update status after retry');
+                        throw new Error(retryErrorData.error || 'Failed to update Go/No-Go score after retry');
                     }
                     
                     // Success after retry
@@ -142,7 +156,7 @@ function StatusTrafficLight({
                 }
                 
                 // For other errors, throw normally
-                throw new Error(errorData.error || 'Failed to update status');
+                throw new Error(errorData.error || 'Failed to update Go/No-Go score');
             }
             
             setOptimisticStatus(null);
@@ -154,10 +168,10 @@ function StatusTrafficLight({
             }
             onStatusUpdate();
         } catch (error: any) {
-            console.error('Failed to update status:', error);
+            console.error('Failed to update Go/No-Go score:', error);
             notifications.show({
                 title: 'Update failed',
-                message: error.message || 'Failed to update status. Please try again.',
+                message: error.message || 'Failed to update Go/No-Go score. Please try again.',
                 color: 'red',
                 autoClose: 5000,
             });
@@ -366,6 +380,8 @@ function setCachedEpicReleaseMap(map: Map<string, string | null>): void {
 }
 
 export function MyTasks() {
+    const { flags: featureFlags } = useFeatureFlags();
+    const showNotApplicable = isEnabled(FEATURE_NOT_APPLICABLE, featureFlags);
     const [items, setItems] = useState<MyItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -1149,7 +1165,7 @@ export function MyTasks() {
                                             textTransform: "uppercase",
                                             letterSpacing: "0.05em",
                                             color: "#6B7280"
-                                        }}>Status</th>
+                                        }}>Go/No-Go Score</th>
                                         <th className="px-4 py-3 text-left w-32" style={{ 
                                             fontSize: "12px",
                                             fontWeight: 600,
@@ -1227,6 +1243,8 @@ export function MyTasks() {
                                                     epicId={item.launch.id}
                                                     onStatusUpdate={loadData}
                                                     isSaving={savingItems.has(item.id)}
+                                                    showNotApplicable={showNotApplicable}
+                                                    isGate={item.criterion?.gate === true}
                                                 />
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>

@@ -31,7 +31,9 @@ type Props = {
   syncing?: boolean;
   syncResult?: SyncResult | null;
   onAutoSaveFields?: (fields: string[]) => void;
+  onRefreshFieldList?: () => void;
   onSynchronize?: () => void;
+  ahaFieldsRefreshing?: boolean;
   activeSubSection?: string;
 };
 
@@ -47,7 +49,9 @@ export default function IntegrationsSection({
   syncing,
   syncResult,
   onAutoSaveFields,
+  onRefreshFieldList,
   onSynchronize,
+  ahaFieldsRefreshing = false,
   activeSubSection = "aha",
 }: Props) {
   return (
@@ -69,7 +73,9 @@ export default function IntegrationsSection({
           syncing={syncing}
           syncResult={syncResult}
           onAutoSaveFields={onAutoSaveFields}
+          onRefreshFieldList={onRefreshFieldList}
           onSynchronize={onSynchronize}
+          refreshing={ahaFieldsRefreshing}
         />
       )}
 

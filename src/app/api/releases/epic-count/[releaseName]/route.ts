@@ -5,6 +5,9 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 
 export const dynamic = 'force-dynamic';
 
+/** Max age of cached Aha epic count before we re-fetch (ms). Refreshes denominator more often. */
+const AHA_EPIC_COUNT_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
+
 async function getHandler(
     req: NextRequest,
     { params }: { params: Promise<{ releaseName: string }> }
@@ -65,8 +68,18 @@ async function getHandler(
             .eq('release_name', releaseName)
             .single();
 
-        // If we have a cached count, return it (caching is preferred, can add refresh param later if needed)
-        if (!cacheError && cachedRelease && cachedRelease.aha_epic_count !== null) {
+        // Use cache only if it's not stale:
+        // 1) ClearGO has more epics than cached — release likely grew in Aha or we synced more.
+        // 2) Cache is older than max age — refresh denominator on a schedule.
+        const cachedCount = cachedRelease?.aha_epic_count ?? null;
+        const cachedAt = cachedRelease?.aha_epic_count_updated_at
+            ? new Date(cachedRelease.aha_epic_count_updated_at).getTime()
+            : 0;
+        const cacheAgeMs = Date.now() - cachedAt;
+        const cacheIsStaleByCount = cachedCount !== null && cleargoEpicCount > cachedCount;
+        const cacheIsStaleByAge = cachedAt > 0 && cacheAgeMs > AHA_EPIC_COUNT_CACHE_MAX_AGE_MS;
+        const cacheIsStale = cacheIsStaleByCount || cacheIsStaleByAge;
+        if (!cacheError && cachedRelease && cachedCount !== null && !cacheIsStale) {
             return NextResponse.json({ 
                 ahaCount: cachedRelease.aha_epic_count,
                 cleargoCount: cleargoEpicCount,

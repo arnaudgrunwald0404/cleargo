@@ -129,7 +129,7 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
     const oneHundredEightyDaysAgo = new Date();
     oneHundredEightyDaysAgo.setDate(today.getDate() - 180);
 
-    // Filter epics to only LAUNCHED status
+    // Filter epics to only released status (Released_Cohort_1, Released_GA, Released_Retroed)
     // If scheduled_ga_dev_date exists, check if it's within last 180 days
     // Otherwise, include the epic anyway (for demo purposes)
     const postLaunchEpics = epics.filter(epic => {
@@ -148,8 +148,8 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
       }
       
       // Check status (case-insensitive, trim whitespace)
-      const status = epic.status?.trim().toUpperCase();
-      if (status !== 'LAUNCHED') {
+      const status = epic.status?.trim();
+      if (!['Released_Cohort_1', 'Released_GA', 'Released_Retroed'].includes(status || '')) {
         return false;
       }
       

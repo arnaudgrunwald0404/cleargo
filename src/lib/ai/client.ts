@@ -105,3 +105,73 @@ export async function generateSmartNudge(data: {
         return null;
     }
 }
+
+/** Summary shape for digest narrative generation */
+export interface DigestNarrativeInput {
+    week_of: string;
+    last_releases: Array<{
+        release_name: string;
+        launch_date: string | null;
+        average_readiness: number;
+        metrics_count: number;
+        high_risk_epics?: Array<{ name: string; tier: string | null; risk_level: string | null }>;
+    }>;
+    next_releases: Array<{
+        release_name: string;
+        launch_date: string | null;
+        readiness_status: string;
+        high_risk_epics?: Array<{ name: string; tier: string | null; risk_level: string | null }>;
+    }>;
+}
+
+/**
+ * Generates a short narrative (2–4 sentences) for the Weekly Release Readiness Digest.
+ * E.g. "In the past few weeks we have launched [tier 1 X, tier 2 Y] which is very exciting...
+ * We are getting ready for the next release with [items] and things are looking good so far."
+ */
+export async function generateDigestNarrative(data: DigestNarrativeInput): Promise<string | null> {
+    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+        return null;
+    }
+
+    try {
+        const lastSummary = data.last_releases
+            .map(
+                (r) =>
+                    `${r.release_name} (avg readiness ${r.average_readiness}%, ${r.metrics_count} metrics)` +
+                    (r.high_risk_epics?.length
+                        ? `; high-risk: ${r.high_risk_epics.map((e) => `${e.name} (${e.tier || '?'})`).join(', ')}`
+                        : '')
+            )
+            .join('; ');
+        const nextSummary = data.next_releases
+            .map(
+                (r) =>
+                    `${r.release_name} (${r.readiness_status})` +
+                    (r.high_risk_epics?.length
+                        ? `; high-risk: ${r.high_risk_epics.map((e) => `${e.name} (${e.tier || '?'})`).join(', ')}`
+                        : '')
+            )
+            .join('; ');
+
+        const { text } = await generateText({
+            model,
+            prompt: `
+You are a Product Operations assistant writing the opening paragraph for the "Weekly Release Readiness Digest" Slack message.
+Write 2–4 short, professional sentences that:
+1. Remind the team what we launched recently (reference the last 1–2 releases by name and tier if relevant, e.g. "we launched Tier 1 X and Tier 2 Y") and note that we're seeing signs of adoption.
+2. Set up the next release (reference the next 1–2 releases) and mention important high-risk or tier 1/tier 2 items; say things are looking good so far (or note concerns briefly if any).
+Be concise, positive but factual. No bullet points. Output only the paragraph, no title or prefix.
+
+Data for this week (${data.week_of}):
+- Last releases: ${lastSummary || 'None'}
+- Next releases: ${nextSummary || 'None'}
+`,
+        });
+
+        return text?.trim() || null;
+    } catch (error) {
+        console.error('Error in generateDigestNarrative:', error);
+        return null;
+    }
+}

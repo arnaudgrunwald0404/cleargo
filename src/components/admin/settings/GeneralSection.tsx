@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import type { AppSettings } from "@/lib/settings-db";
 import { notifications } from "@mantine/notifications";
+import { ALL_FEATURE_FLAGS } from "@/lib/flags";
+import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 
 type Props = {
   settings: AppSettings;
@@ -11,6 +13,7 @@ type Props = {
 
 export default function GeneralSection({ settings, setSettings, currentUserRoles }: Props) {
   const [recalculating, setRecalculating] = useState(false);
+  const { refetch: refetchFeatureFlags } = useFeatureFlags();
 
   const handleRecalculateReadiness = async () => {
     if (recalculating) return;
@@ -203,6 +206,54 @@ export default function GeneralSection({ settings, setSettings, currentUserRoles
               </label>
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Feature Flags */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg flex items-center justify-center">
+            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Feature Flags</h2>
+            <p className="text-sm text-gray-500">Enable or disable features for the app</p>
+          </div>
+        </div>
+        <div className="space-y-4">
+          {ALL_FEATURE_FLAGS.map(({ key, label, description }) => {
+            const enabled = Array.isArray(settings.feature_flags) && settings.feature_flags.includes(key);
+            return (
+              <div key={key} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <div className="flex-1">
+                  <label htmlFor={`feature-${key}`} className="block text-sm font-medium text-gray-900 mb-1">
+                    {label}
+                  </label>
+                  <p className="text-xs text-gray-600">{description}</p>
+                </div>
+                <div className="ml-4">
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input
+                      id={`feature-${key}`}
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e) => {
+                        const current = Array.isArray(settings.feature_flags) ? [...settings.feature_flags] : [];
+                        const next = e.target.checked
+                          ? (current.includes(key) ? current : [...current, key])
+                          : current.filter((f) => f !== key);
+                        setSettings({ ...settings, feature_flags: next });
+                      }}
+                      className="sr-only peer"
+                    />
+                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-indigo-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  </label>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

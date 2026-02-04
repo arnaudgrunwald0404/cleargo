@@ -219,7 +219,7 @@ export function DelegationModal({
         </div>
 
         <div>
-          <Text size="sm" c="dimmed" mb={4}>Current Approver</Text>
+          <Text size="sm" c="dimmed" mb={4}>Current Accountable</Text>
           <Text fw={500}>{currentApproverEmail}</Text>
         </div>
 

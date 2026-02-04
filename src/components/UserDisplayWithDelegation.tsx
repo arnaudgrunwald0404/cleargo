@@ -20,7 +20,7 @@ interface UserDisplayWithDelegationProps {
   category: string;
   isGate: boolean;
   currentUserEmail: string; // The logged-in user's email
-  showDelegationButton?: boolean; // Only show if current user is the approver
+  showDelegationButton?: boolean; // Only show if current user is the accountable
   onDelegationComplete?: () => void; // Callback after successful delegation
 }
 

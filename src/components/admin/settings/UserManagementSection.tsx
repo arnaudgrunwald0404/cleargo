@@ -1,8 +1,8 @@
 "use client";
 import { PurpleLoader } from '../../PurpleLoader';
 import React, { useState, useMemo } from "react";
-import { Drawer, Stack, Group, TextInput, MultiSelect, Checkbox, Button } from "@mantine/core";
-import { IconTrash, IconMail, IconPencil, IconGripVertical, IconCheck, IconX } from "@tabler/icons-react";
+import { Drawer, Stack, Group, TextInput, MultiSelect, Select, Checkbox, Button, Textarea } from "@mantine/core";
+import { IconTrash, IconMail, IconPencil, IconGripVertical, IconCheck, IconX, IconUpload, IconList, IconArrowUp, IconArrowDown, IconArrowsSort } from "@tabler/icons-react";
 import type { AppSettings } from "@/lib/settings-db";
 import { ROLES } from "@/lib/constants/settings";
 
@@ -16,6 +16,7 @@ type User = {
   is_active?: boolean;
   last_logged_in?: string | null;
   pending?: boolean;
+  receive_slack_notifications?: boolean;
 };
 
 type Props = {
@@ -88,6 +89,17 @@ export default function UserManagementSection(props: Props) {
   const [approveRoles, setApproveRoles] = useState<string[]>([]);
   const [approving, setApproving] = useState(false);
 
+  const [bulkImportDrawerOpen, setBulkImportDrawerOpen] = useState(false);
+  const [bulkImportMode, setBulkImportMode] = useState<"file" | "emails" | null>(null);
+  const [bulkImportEmailsStep, setBulkImportEmailsStep] = useState<1 | 2>(1);
+  const [bulkImportEmailsText, setBulkImportEmailsText] = useState("");
+  const [bulkImportRoles, setBulkImportRoles] = useState<Record<string, string>>({});
+  const [bulkImportEmailsLoading, setBulkImportEmailsLoading] = useState(false);
+
+  type SortKey = "firstName" | "lastName" | "email" | "role";
+  const [userSortKey, setUserSortKey] = useState<SortKey>("lastName");
+  const [userSortDir, setUserSortDir] = useState<"asc" | "desc">("asc");
+
   const handleAddUser = async () => {
     try {
       const res = await fetch("/api/users", {
@@ -115,11 +127,76 @@ export default function UserManagementSection(props: Props) {
       const data = await res.json();
       alert(`Successfully imported ${data.created} user(s)`);
       setBulkImportFile(null);
+      setBulkImportDrawerOpen(false);
+      setBulkImportMode(null);
       onRefresh();
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     } finally {
       setBulkImportLoading(false);
+    }
+  };
+
+  const parsedEmails = useMemo(() => {
+    if (!bulkImportEmailsText.trim()) return [];
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const extractEmail = (token: string): string | null => {
+      const trimmed = token.trim();
+      if (!trimmed) return null;
+      const inBrackets = trimmed.match(/<([^>]+)>/);
+      const candidate = inBrackets ? inBrackets[1].trim() : trimmed;
+      return emailRegex.test(candidate) ? candidate.toLowerCase() : null;
+    };
+    return bulkImportEmailsText
+      .split(/[\n,]+/)
+      .map(extractEmail)
+      .filter((e): e is string => e != null);
+  }, [bulkImportEmailsText]);
+
+  const existingEmails = useMemo(
+    () => new Set(users.map((u) => (u.email || "").toLowerCase())),
+    [users]
+  );
+
+  const parsedEmailsNewOnly = useMemo(() => {
+    const unique = [...new Set(parsedEmails)];
+    return unique.filter((e) => !existingEmails.has(e));
+  }, [parsedEmails, existingEmails]);
+
+  const parsedEmailsAlreadyInSystem = useMemo(
+    () => parsedEmails.filter((e) => existingEmails.has(e)),
+    [parsedEmails, existingEmails]
+  );
+
+  const handleBulkImportEmails = async () => {
+    if (parsedEmailsNewOnly.length === 0) return;
+    setBulkImportEmailsLoading(true);
+    try {
+      const usersToImport = parsedEmailsNewOnly.map((email) => ({
+        email,
+        role: bulkImportRoles[email] ?? "OTHER",
+      }));
+      const res = await fetch("/api/users/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ users: usersToImport }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to import users");
+      }
+      const data = await res.json();
+      alert(`Successfully imported ${data.created} user(s)`);
+      setBulkImportDrawerOpen(false);
+      setBulkImportMode(null);
+      setBulkImportEmailsStep(1);
+      setBulkImportEmailsText("");
+      setBulkImportRoles({});
+      onRefresh();
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setBulkImportEmailsLoading(false);
     }
   };
 
@@ -140,14 +217,17 @@ export default function UserManagementSection(props: Props) {
     }
   };
 
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm("Delete this user?")) return;
+  const handleDeleteUser = async (id: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete user");
-      onRefresh();
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Failed to delete user");
+      }
+      return true;
     } catch (error: any) {
       alert(`Error: ${error.message}`);
+      return false;
     }
   };
 
@@ -249,22 +329,30 @@ export default function UserManagementSection(props: Props) {
   const editingUser = users.find((u) => u.id === editingUserId);
 
   const sortedUsers = useMemo(() => {
-    return [...users].sort((a, b) => {
-      // Sort by last_name first (case-insensitive)
-      const aLastName = (a.last_name || "").toLowerCase();
-      const bLastName = (b.last_name || "").toLowerCase();
-      const lastNameCompare = aLastName.localeCompare(bLastName);
-      
-      if (lastNameCompare !== 0) {
-        return lastNameCompare;
+    const firstRole = (u: User) => ((u.roles && u.roles[0]) || u.role || "OTHER").toLowerCase();
+    const cmp = (a: User, b: User): number => {
+      let v = 0;
+      switch (userSortKey) {
+        case "firstName":
+          v = (a.first_name || "").toLowerCase().localeCompare((b.first_name || "").toLowerCase());
+          break;
+        case "lastName":
+          v = (a.last_name || "").toLowerCase().localeCompare((b.last_name || "").toLowerCase());
+          break;
+        case "email":
+          v = (a.email || "").toLowerCase().localeCompare((b.email || "").toLowerCase());
+          break;
+        case "role":
+          v = firstRole(a).localeCompare(firstRole(b));
+          break;
       }
-      
-      // If last names are equal, sort by email (case-insensitive)
+      if (v !== 0) return userSortDir === "asc" ? v : -v;
       const aEmail = (a.email || "").toLowerCase();
       const bEmail = (b.email || "").toLowerCase();
       return aEmail.localeCompare(bEmail);
-    });
-  }, [users]);
+    };
+    return [...users].sort(cmp);
+  }, [users, userSortKey, userSortDir]);
 
   return (
     <div className="space-y-6">
@@ -338,16 +426,17 @@ export default function UserManagementSection(props: Props) {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Users</h3>
-                <p className="text-sm text-gray-500">Manage users, roles, and permissions</p>
+                <p className="text-sm text-gray-500">
+                  Manage users, roles, and permissions · {users.filter((u) => u.is_active !== false).length} active / {users.length} total
+                </p>
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowAddUser(true)} className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors">
                   Add User
                 </button>
-                <label className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors cursor-pointer">
+                <button type="button" onClick={() => { setBulkImportDrawerOpen(true); setBulkImportMode(null); setBulkImportEmailsStep(1); setBulkImportEmailsText(""); setBulkImportRoles({}); }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
                   Import Bulk
-                  <input type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => setBulkImportFile(e.target.files?.[0] || null)} />
-                </label>
+                </button>
                 {selectedUserIds.size > 0 && (
                   <>
                     <button
@@ -365,20 +454,6 @@ export default function UserManagementSection(props: Props) {
                 )}
               </div>
             </div>
-
-        {bulkImportFile && (
-          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-            <span className="text-sm text-blue-700">{bulkImportFile.name}</span>
-            <div className="flex gap-2">
-              <button type="button" onClick={handleBulkImport} disabled={bulkImportLoading} className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
-                {bulkImportLoading ? "Importing..." : "Import"}
-              </button>
-              <button type="button" onClick={() => setBulkImportFile(null)} className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300">
-                Cancel
-              </button>
-            </div>
-          </div>
-        )}
 
         {showAddUser && (
           <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-lg">
@@ -426,6 +501,7 @@ export default function UserManagementSection(props: Props) {
                 <col className="w-auto" />
                 <col className="w-auto" />
                 <col className="w-32" />
+                <col className="w-20" />
                 <col className="w-40" />
               </colgroup>
               <thead className="bg-purple-100">
@@ -440,11 +516,27 @@ export default function UserManagementSection(props: Props) {
                       }}
                     />
                   </th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">First Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Last Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Email</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Roles</th>
+                  {(["firstName", "lastName", "email", "role"] as SortKey[]).map((key) => (
+                    <th
+                      key={key}
+                      className="px-4 py-2 text-left text-xs font-medium text-purple-900 cursor-pointer select-none hover:bg-purple-200/50 transition-colors"
+                      onClick={() => {
+                        if (userSortKey === key) {
+                          setUserSortDir((d) => (d === "asc" ? "desc" : "asc"));
+                        } else {
+                          setUserSortKey(key);
+                          setUserSortDir("asc");
+                        }
+                      }}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        {key === "firstName" ? "First Name" : key === "lastName" ? "Last Name" : key === "email" ? "Email" : "Roles"}
+                        {userSortKey === key ? (userSortDir === "asc" ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />) : <IconArrowsSort size={14} className="opacity-40" />}
+                      </span>
+                    </th>
+                  ))}
                   <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Last Logged In</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-20" title="Receive Slack notifications">Slack</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-40">Actions</th>
                 </tr>
               </thead>
@@ -476,6 +568,30 @@ export default function UserManagementSection(props: Props) {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">{user.last_logged_in ? new Date(user.last_logged_in).toLocaleDateString() : "Never"}</td>
+                    <td className="px-4 py-3 w-20">
+                      <input
+                        type="checkbox"
+                        checked={!!user.receive_slack_notifications}
+                        title="Receive Slack notifications"
+                        onChange={async (e) => {
+                          const checked = e.target.checked;
+                          try {
+                            const res = await fetch(`/api/users/${user.id}`, {
+                              method: "PATCH",
+                              headers: { "Content-Type": "application/json" },
+                              credentials: "include",
+                              body: JSON.stringify({ receive_slack_notifications: checked }),
+                            });
+                            const data = await res.json().catch(() => ({}));
+                            if (!res.ok) throw new Error(data?.error || "Failed to update");
+                            onRefresh();
+                          } catch (err: any) {
+                            alert(err?.message || "Failed to update Slack notification setting");
+                          }
+                        }}
+                        className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+                      />
+                    </td>
                     <td className="px-4 py-3 whitespace-nowrap w-40">
                       <div className="flex justify-end gap-1">
                         {!user.last_logged_in && (
@@ -580,11 +696,168 @@ export default function UserManagementSection(props: Props) {
             onRefresh();
           }}
           onDelete={async () => {
-            await handleDeleteUser(editingUser.id);
-            setEditingUserId(null);
+            const ok = await handleDeleteUser(editingUser.id);
+            if (ok) {
+              setEditingUserId(null);
+              onRefresh();
+            }
           }}
         />
       )}
+
+      <Drawer
+        opened={bulkImportDrawerOpen}
+        onClose={() => {
+          setBulkImportDrawerOpen(false);
+          setBulkImportMode(null);
+          setBulkImportEmailsStep(1);
+          setBulkImportEmailsText("");
+          setBulkImportRoles({});
+          setBulkImportFile(null);
+        }}
+        title="Bulk import users"
+        position="right"
+        size="md"
+        padding="lg"
+      >
+        <Stack gap="lg">
+          {bulkImportMode === null && (
+            <>
+              <p className="text-sm text-gray-600">Choose how to import users:</p>
+              <div className="flex flex-col gap-3">
+                <label className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors">
+                  <IconUpload className="w-5 h-5 text-gray-500" />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Upload a file</span>
+                    <p className="text-xs text-gray-500 mt-0.5">.xlsx, .xls, or .csv with Email, First Name, Last Name, Roles, Active</p>
+                  </div>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setBulkImportFile(f);
+                        setBulkImportMode("file");
+                      }
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setBulkImportMode("emails")}
+                  className="flex items-center gap-3 p-4 border border-gray-200 rounded-lg hover:bg-gray-50 text-left transition-colors w-full"
+                >
+                  <IconList className="w-5 h-5 text-gray-500" />
+                  <div className="flex-1">
+                    <span className="font-medium text-gray-900">Paste email list</span>
+                    <p className="text-xs text-gray-500 mt-0.5">Comma-separated emails; choose one role for all on the next screen</p>
+                  </div>
+                </button>
+              </div>
+            </>
+          )}
+
+          {bulkImportMode === "file" && (
+            <>
+              {bulkImportFile ? (
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-800 font-medium">{bulkImportFile.name}</p>
+                  <p className="text-xs text-blue-600 mt-1">Click Import to add these users (roles per row from file).</p>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center gap-2 p-6 border-2 border-dashed border-gray-200 rounded-lg hover:bg-gray-50 cursor-pointer">
+                  <IconUpload className="w-10 h-10 text-gray-400" />
+                  <span className="text-sm text-gray-600">Choose .xlsx, .xls, or .csv</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) setBulkImportFile(f);
+                    }}
+                  />
+                </label>
+              )}
+              <Group justify="space-between">
+                <Button variant="subtle" onClick={() => { setBulkImportMode(null); setBulkImportFile(null); }}>Back</Button>
+                <Group>
+                  <Button variant="outline" onClick={() => { setBulkImportDrawerOpen(false); setBulkImportMode(null); setBulkImportFile(null); }}>Cancel</Button>
+                  <Button onClick={handleBulkImport} disabled={!bulkImportFile || bulkImportLoading}>
+                    {bulkImportLoading ? "Importing..." : "Import"}
+                  </Button>
+                </Group>
+              </Group>
+            </>
+          )}
+
+          {bulkImportMode === "emails" && bulkImportEmailsStep === 1 && (
+            <>
+              <Textarea
+                label="Paste emails (comma- or newline-separated)"
+                placeholder="email1@example.com, email2@example.com, ..."
+                value={bulkImportEmailsText}
+                onChange={(e) => setBulkImportEmailsText(e.currentTarget.value)}
+                minRows={5}
+                classNames={{ input: "font-mono text-sm" }}
+              />
+              <p className="text-xs text-gray-500">Invalid lines will be ignored. On the next screen you will choose one role for all.</p>
+              <Group justify="space-between">
+                <Button variant="subtle" onClick={() => setBulkImportMode(null)}>Back</Button>
+                <Group>
+                  <Button variant="outline" onClick={() => { setBulkImportDrawerOpen(false); setBulkImportMode(null); setBulkImportEmailsText(""); }}>Cancel</Button>
+                  <Button onClick={() => setBulkImportEmailsStep(2)} disabled={parsedEmails.length === 0}>
+                    Next ({parsedEmailsNewOnly.length} new{parsedEmailsAlreadyInSystem.length > 0 ? `, ${parsedEmailsAlreadyInSystem.length} already in system` : ""})
+                  </Button>
+                </Group>
+              </Group>
+            </>
+          )}
+
+          {bulkImportMode === "emails" && bulkImportEmailsStep === 2 && (
+            <>
+              {parsedEmailsAlreadyInSystem.length > 0 && (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  {parsedEmailsAlreadyInSystem.length} email(s) already in system; {parsedEmailsNewOnly.length} new to add.
+                </div>
+              )}
+              {parsedEmailsNewOnly.length === 0 ? (
+                <p className="text-sm text-gray-600">All {parsedEmails.length} email(s) are already in the system. Nothing to import.</p>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600">Assign a role to each new user. Default is OTHER.</p>
+                  <div className="max-h-[50vh] overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
+                    {parsedEmailsNewOnly.map((email) => (
+                      <div key={email} className="flex items-center gap-3 px-3 py-2 hover:bg-gray-50">
+                        <span className="flex-1 min-w-0 truncate text-sm text-gray-800" title={email}>{email}</span>
+                        <Select
+                          size="xs"
+                          data={ROLES as unknown as string[]}
+                          value={bulkImportRoles[email] ?? "OTHER"}
+                          onChange={(v) => v && setBulkImportRoles((prev) => ({ ...prev, [email]: v }))}
+                          allowDeselect={false}
+                          styles={{ root: { minWidth: 120 } }}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              <Group justify="space-between">
+                <Button variant="subtle" onClick={() => setBulkImportEmailsStep(1)}>Back</Button>
+                <Group>
+                  <Button variant="outline" onClick={() => { setBulkImportDrawerOpen(false); setBulkImportMode(null); setBulkImportEmailsStep(1); setBulkImportEmailsText(""); setBulkImportRoles({}); }}>Cancel</Button>
+                  <Button onClick={handleBulkImportEmails} disabled={bulkImportEmailsLoading || parsedEmailsNewOnly.length === 0}>
+                    {bulkImportEmailsLoading ? "Importing..." : "Import"}
+                  </Button>
+                </Group>
+              </Group>
+            </>
+          )}
+        </Stack>
+      </Drawer>
 
       {approvingUserEmail && (
         <ApproveUserDrawer
@@ -839,7 +1112,7 @@ function EditUserDrawer({ user, opened, onClose, onSave, onDelete }: { user: Use
         </Group>
         <Checkbox label="Active" checked={patch.is_active} onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })} />
         <Group justify="space-between" mt="xl">
-          <Button variant="outline" color="red" leftSection={<IconTrash size={16} />} onClick={async () => { if (confirm("Are you sure you want to delete this user?")) { await onDelete(); } }}>Delete</Button>
+          <Button variant="outline" color="red" leftSection={<IconTrash size={16} />} onClick={async () => { if (confirm("Are you sure you want to delete this user? This cannot be undone.")) { await onDelete(); } }}>Delete</Button>
           <Group>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button onClick={() => onSave(patch)}>Save Changes</Button>

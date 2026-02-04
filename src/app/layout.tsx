@@ -11,6 +11,7 @@ import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
 import { EpicScopeProvider } from "@/lib/contexts/EpicScopeContext";
+import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { getSession } from "@/lib/auth";
 
 // Force dynamic rendering for the root layout since it uses cookies for auth
@@ -90,11 +91,13 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <MantineProvider theme={theme}>
-          <EpicScopeProvider>
-            <Notifications />
-            <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-            {children}
-          </EpicScopeProvider>
+          <FeatureFlagsProvider>
+            <EpicScopeProvider>
+              <Notifications />
+              <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+              {children}
+            </EpicScopeProvider>
+          </FeatureFlagsProvider>
         </MantineProvider>
       </body>
     </html>
