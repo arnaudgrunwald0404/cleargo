@@ -10,6 +10,25 @@ export const dynamic = "force-dynamic";
 
 const ROLES_FILE = path.join(process.cwd(), "config", "roles.json");
 
+const LEGACY_ROLE_MAP: Record<string, Role> = {
+  PRODUCT_LEAD: "PRODUCT",
+  ENG_LEAD: "ENG",
+  SUPPORT_LEAD: "SUPPORT",
+};
+
+function normalizeRole(r: string): Role {
+  const upper = r.toUpperCase().trim();
+  return (LEGACY_ROLE_MAP[upper] ?? upper) as Role;
+}
+
+function normalizeRoles(roles: string[]): Role[] {
+  return roles.map(normalizeRole);
+}
+
+function validRoles(roles: Role[]): roles is Role[] {
+  return roles.every((r) => ALL_ROLES.includes(r));
+}
+
 async function readMapping(): Promise<Record<string, Role>> {
   try {
     const raw = await fs.readFile(ROLES_FILE, "utf8");
@@ -43,12 +62,13 @@ export async function GET() {
     const settings = await getSettings();
     const rawOverrides = (settings.permissions || {}) as Record<string, string[]>;
     
-    // Filter out invalid capabilities (handle stale data gracefully)
+    // Filter out invalid capabilities, normalize legacy role names in overrides
     const validCaps: Set<string> = new Set(CAPABILITIES.map(c => c.id as string));
     const overrides: Record<string, string[]> = {};
     for (const [cap, roles] of Object.entries(rawOverrides)) {
       if (validCaps.has(cap)) {
-        overrides[cap] = roles;
+        const normalized = normalizeRoles(Array.isArray(roles) ? roles : []);
+        overrides[cap] = normalized.filter((r) => ALL_ROLES.includes(r));
       }
     }
 
@@ -102,16 +122,16 @@ export async function PATCH(req: NextRequest) {
       const entries = Object.entries(body.rules as Record<string, string[]>);
       
       for (const [cap, roles] of entries) {
-        // Filter out invalid capabilities (handle stale data gracefully)
         if (!validCaps.has(cap)) {
           console.warn(`Filtering out invalid capability: ${cap}`);
           continue;
         }
-        // Validate roles
-        if (!Array.isArray(roles) || roles.some(r => !ALL_ROLES.includes(r as Role))) {
+        const roleList = Array.isArray(roles) ? roles : [];
+        const normalized = normalizeRoles(roleList);
+        if (!validRoles(normalized)) {
           return NextResponse.json({ error: `Invalid roles for ${cap}` }, { status: 400 });
         }
-        filteredRules[cap] = roles;
+        filteredRules[cap] = normalized;
       }
 
       // Persist overrides in app_settings.permissions (only valid capabilities)

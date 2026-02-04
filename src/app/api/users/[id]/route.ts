@@ -9,6 +9,7 @@ const updateUserSchema = z.object({
   last_name: z.string().optional(),
   roles: z.array(z.string()).optional(),
   is_active: z.boolean().optional(),
+  receive_slack_notifications: z.boolean().optional(),
 });
 
 function forbid() {
@@ -53,14 +54,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updateData.name = `${updateData.first_name || ""} ${updateData.last_name || ""}`.trim() || null;
   }
 
+  const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  for (const [key, value] of Object.entries(updateData)) {
+    if (value !== undefined) payload[key] = value;
+  }
+
   const { data: updatedUser, error } = await supabase
     .from("app_user")
-    .update({ ...updateData, updated_at: new Date().toISOString() })
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
 
   if (error) {
+    const msg = error.message || "";
+    const code = (error as { code?: string }).code;
+    if (code === "42703" || msg.includes("receive_slack_notifications") && (msg.includes("does not exist") || msg.includes("column"))) {
+      return NextResponse.json(
+        { error: "Slack notification setting is not available. Run the database migration: 20260130100000_add_receive_slack_notifications_to_app_user.sql" },
+        { status: 503 }
+      );
+    }
     return NextResponse.json({ error: "Failed to update user", details: error.message }, { status: 500 });
   }
 

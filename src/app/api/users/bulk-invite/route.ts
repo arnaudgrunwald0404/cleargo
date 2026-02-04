@@ -154,8 +154,13 @@ export async function POST(req: NextRequest) {
     error?: string;
   }> = [];
 
-  // Send emails to each user
-  for (const targetUser of targetUsers) {
+  const delayMs = Math.max(1000, parseInt(process.env.INVITE_DELAY_MS ?? "2000", 10) || 2000);
+  const delay = () => new Promise((resolve) => setTimeout(resolve, delayMs));
+
+  // Send emails to each user with a delay between sends to avoid rate limits
+  for (let i = 0; i < targetUsers.length; i++) {
+    if (i > 0) await delay();
+    const targetUser = targetUsers[i];
     try {
       const hasLoggedIn = authUserMap.get(
         targetUser.email?.toLowerCase() || ""

@@ -45,6 +45,8 @@ export interface AppSettings {
     jira_cloud_id?: string | null; // Jira Cloud ID (required for API calls, fetched automatically)
   // Mapping of Pendo appId -> human-friendly application name
   pendo_app_names?: Record<string, string>;
+  /** Enabled feature flag keys (e.g. ai_pruning, meetings, not_applicable). Used in Settings > Other Settings. */
+  feature_flags?: string[];
 }
 
 const DEFAULT_PENDO_APP_NAMES: Record<string, string> = {
@@ -83,6 +85,7 @@ export async function getSettings(): Promise<AppSettings> {
             email_sender: defaults.emailSender,
             aha_fields_to_load: [
                 'dev_backlog_pod',
+                'gtm_module',
                 'primary_goal',
                 'modernization_effort',
                 'csm_priority',
@@ -96,9 +99,10 @@ export async function getSettings(): Promise<AppSettings> {
             ],
             updated_at: new Date().toISOString(),
             permissions: {},
-            aha_tags: ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'],
+            aha_tags: [],
             enable_activity_feed: true,
             pendo_app_names: { ...DEFAULT_PENDO_APP_NAMES },
+            feature_flags: [],
         };
     }
 
@@ -106,6 +110,7 @@ export async function getSettings(): Promise<AppSettings> {
     if (!data.aha_fields_to_load || (Array.isArray(data.aha_fields_to_load) && data.aha_fields_to_load.length === 0)) {
         data.aha_fields_to_load = [
             'dev_backlog_pod',
+            'gtm_module',
             'primary_goal',
             'modernization_effort',
             'csm_priority',
@@ -119,14 +124,18 @@ export async function getSettings(): Promise<AppSettings> {
         ];
     }
 
-    // Ensure aha_tags has a default value if missing
-    if (!data.aha_tags || (Array.isArray(data.aha_tags) && data.aha_tags.length === 0)) {
-        data.aha_tags = ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
+    // Ensure aha_tags exists (empty: inclusion is ClearGO Candidate = Yes only)
+    if (!Array.isArray(data.aha_tags)) {
+        data.aha_tags = [];
     }
 
     // Ensure Pendo app names mapping has sensible defaults if missing
     if (!data.pendo_app_names || Object.keys(data.pendo_app_names).length === 0) {
         data.pendo_app_names = { ...DEFAULT_PENDO_APP_NAMES };
+    }
+
+    if (!Array.isArray(data.feature_flags)) {
+        data.feature_flags = [];
     }
 
     return data as AppSettings;
@@ -267,4 +276,9 @@ export async function updateSettings(
     }
     console.log('[settings-db] updateSettings returning currentSettings with pendo_app_names:', currentSettings.pendo_app_names);
     return currentSettings as AppSettings;
+}
+
+export async function getFeatureFlags(): Promise<string[]> {
+    const s = await getSettings();
+    return Array.isArray(s.feature_flags) ? s.feature_flags : [];
 }

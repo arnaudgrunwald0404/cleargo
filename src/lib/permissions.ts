@@ -26,7 +26,8 @@ export type CapabilityId =
   | "settings.ahaTags.update"
   | "settings.webhookUrl.read"
   | "settings.webhookUrl.update"
-  | "meetings.read";
+  | "meetings.read"
+  | "analytics.read";
 
 export type Capability = {
   id: CapabilityId;
@@ -37,13 +38,13 @@ export type Capability = {
 export const CAPABILITIES: Capability[] = [
   {
     id: "criteria.status.update",
-    label: "Update Criteria Status",
-    description: "Allow updating status/notes/conditions for a criterion.",
+    label: "Update Criteria Score",
+    description: "Allow updating Go/No-Go score/notes/conditions for a criterion.",
   },
   {
     id: "criteria.delegate",
-    label: "Delegate Criteria Approver",
-    description: "Allow delegating criteria approval tasks to other users. CPO and Super Admin can delegate any criteria, while approvers can delegate their own assigned tasks.",
+    label: "Delegate Criteria Accountable",
+    description: "Allow delegating criteria accountability to other users. CPO and Super Admin can delegate any criteria, while accountables can delegate their own assigned tasks.",
   },
   {
     id: "launch.tier.update",
@@ -165,13 +166,18 @@ export const CAPABILITIES: Capability[] = [
     label: "View Meetings",
     description: "Allow viewing and accessing the Meetings section.",
   },
+  {
+    id: "analytics.read",
+    label: "View Analytics",
+    description: "Allow viewing the Analytics dashboard (CPO-only for now).",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
-  "criteria.status.update": ["PM", "PMM", "ENG_LEAD", "PRODUCT_OPS", "CPO", "PRODUCT_LEAD"],
+  "criteria.status.update": ["PM", "PMM", "ENG", "PRODUCT_OPS", "CPO", "PRODUCT"],
   "criteria.delegate": ["CPO", "PRODUCT_OPS"],
   "launch.tier.update": ["PRODUCT_OPS", "CPO"],
-  "launch.risk.update": ["PRODUCT_OPS", "CPO", "PRODUCT_LEAD"],
+  "launch.risk.update": ["PRODUCT_OPS", "CPO", "PRODUCT"],
   "launch.delete": ["PRODUCT_OPS", "CPO"],
   "users.read": ["PRODUCT_OPS", "CPO"],
   "users.invite.send": ["PRODUCT_OPS", "CPO"],
@@ -191,9 +197,10 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.ahaFields.read": ["PRODUCT_OPS", "CPO"],
   "settings.ahaFields.sync": ["PRODUCT_OPS", "CPO"],
   "settings.ahaTags.update": ["CPO"],
-  "settings.webhookUrl.read": ["CPO", "PRODUCT_OPS", "PRODUCT_LEAD"],
+  "settings.webhookUrl.read": ["CPO", "PRODUCT_OPS", "PRODUCT"],
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
   "meetings.read": ["CPO", "SUPERADMIN"],
+  "analytics.read": ["CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

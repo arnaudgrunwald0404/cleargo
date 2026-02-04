@@ -187,7 +187,7 @@ describe('getUser', () => {
       expect(result.roles).toContain('PMM');
     });
 
-    it('should map SUPPORT_LEAD to CS', async () => {
+    it('should map SUPPORT to CS', async () => {
       const authUser = createMockAuthUser({ email: 'user@example.com' });
       mockSupabase.auth.getUser.mockResolvedValue({
         data: { user: authUser },
@@ -199,7 +199,7 @@ describe('getUser', () => {
         eq: jest.fn().mockReturnThis(),
         single: jest.fn().mockResolvedValue({
           data: {
-            roles: ['SUPPORT_LEAD'],
+            roles: ['SUPPORT'],
             role: null,
           },
           error: null,

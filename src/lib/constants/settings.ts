@@ -1,15 +1,19 @@
 export const ROLES = [
-  "SUPERADMIN",
   "CPO",
-  "PRODUCT_LEAD",
+  "CSM",
+  "ENG",
+  "IMPL",
+  "LEARNING",
+  "OTHER",
   "PM",
   "PMM",
-  "ENG_LEAD",
-  "SUPPORT_LEAD",
-  "SECURITY",
-  "LEARNING",
+  "PRODUCT",
   "PRODUCT_OPS",
-  "OTHER",
+  "REV_OPS",
+  "SALES",
+  "SECURITY",
+  "SUPERADMIN",
+  "SUPPORT",
 ] as const;
 
 export const DEFAULT_EMAIL_TEMPLATES = {

@@ -9,7 +9,7 @@ import type { Role as SystemRole } from '@/lib/roles-constants';
  * - PRODUCT_OPS, CPO, SUPERADMIN -> ADMIN
  * - PM -> PM
  * - PMM -> PMM
- * - SUPPORT_LEAD -> CS
+ * - SUPPORT -> CS
  * - CPO -> EXEC (also ADMIN)
  */
 export async function getUser(): Promise<{ id: string; roles: Role[] }> {
@@ -53,7 +53,7 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
       mappedRoles.push('PM');
     } else if (upperRole === 'PMM' && !mappedRoles.includes('PMM')) {
       mappedRoles.push('PMM');
-    } else if (upperRole === 'SUPPORT_LEAD' && !mappedRoles.includes('CS')) {
+    } else if (upperRole === 'SUPPORT' && !mappedRoles.includes('CS')) {
       mappedRoles.push('CS');
     }
   }

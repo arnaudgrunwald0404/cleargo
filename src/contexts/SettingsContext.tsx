@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { AppSettings } from "@/lib/settings-db";
-import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, syncAhaFields, patchEmailTemplates, getLaunchStages } from "@/lib/services/settingsService";
+import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getLaunchStages } from "@/lib/services/settingsService";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 interface SettingsContextType {
@@ -46,10 +46,12 @@ interface SettingsContextType {
     // AHA Fields
     availableAhaFields: Array<{ alias: string; label: string; key: string | null; type?: string }>;
     ahaFieldsLoading: boolean;
+    ahaFieldsRefreshing: boolean;
     ahaFieldsSaving: boolean;
     syncing: boolean;
     syncResult: { success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null;
     fetchAhaFields: () => Promise<void>;
+    refreshAhaFieldsList: () => Promise<void>;
     autoSaveAhaFields: (fieldsToLoad: string[]) => Promise<void>;
     handleSynchronizeFields: () => Promise<void>;
     
@@ -114,6 +116,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     
     const [availableAhaFields, setAvailableAhaFields] = useState<Array<{ alias: string; label: string; key: string | null; type?: string }>>([]);
     const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
+    const [ahaFieldsRefreshing, setAhaFieldsRefreshing] = useState(false);
     const [ahaFieldsSaving, setAhaFieldsSaving] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null>(null);
@@ -270,6 +273,19 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             console.error("Failed to fetch AHA fields:", error);
         } finally {
             setAhaFieldsLoading(false);
+        }
+    };
+
+    const refreshAhaFieldsList = async () => {
+        setAhaFieldsRefreshing(true);
+        try {
+            const data = await refreshAhaFieldsFromAha();
+            setAvailableAhaFields(data.fields || []);
+        } catch (error: any) {
+            console.error("Failed to refresh AHA field list:", error);
+            setError(error.message || "Failed to refresh field list from Aha.");
+        } finally {
+            setAhaFieldsRefreshing(false);
         }
     };
     
@@ -430,10 +446,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 fetchLaunchReleaseDates,
                 availableAhaFields,
                 ahaFieldsLoading,
+                ahaFieldsRefreshing,
                 ahaFieldsSaving,
                 syncing,
                 syncResult,
                 fetchAhaFields,
+                refreshAhaFieldsList,
                 autoSaveAhaFields,
                 handleSynchronizeFields,
                 launchStages,
