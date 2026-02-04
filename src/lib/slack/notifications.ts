@@ -63,9 +63,42 @@ async function logNotification(data: {
 }
 
 /**
+ * Check whether a user (by email) is allowed to receive Slack notifications.
+ * Uses app_user.receive_slack_notifications flag set in User Management.
+ */
+export async function canReceiveSlackNotification(email: string): Promise<boolean> {
+    if (!email || !email.includes('@')) return false;
+    try {
+        const supabase = createClient();
+        const { data, error } = await supabase
+            .from('app_user')
+            .select('receive_slack_notifications')
+            .ilike('email', email.trim())
+            .maybeSingle();
+        if (error || !data) return false;
+        return data.receive_slack_notifications === true;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Send a notification to Slack
  */
 export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<void> {
+    if (payload.recipient?.email && !(await canReceiveSlackNotification(payload.recipient.email))) {
+        await logNotification({
+            user_id: payload.recipient?.id,
+            launch_id: payload.launch_id,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'slack',
+            status: 'pending',
+            error: 'Skipped: user does not have Slack notifications enabled in User Management',
+        });
+        return;
+    }
+
     const client = getSlackClient();
     let isDirectMessage = false;
 

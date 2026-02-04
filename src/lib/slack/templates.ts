@@ -76,7 +76,7 @@ export function buildStaleCriterionMessage(
                 elements: [
                     {
                         type: 'mrkdwn',
-                        text: '💡 This criterion hasn\'t been updated recently. Please review and update the status.',
+                        text: '💡 This criterion hasn\'t been updated recently. Please review and update the Go/No-Go score.',
                     },
                 ],
             },
@@ -299,118 +299,253 @@ export function buildGoNoGoDecisionMessage(
 }
 
 /**
- * Leadership Digest
+ * Weekly Release Readiness Digest
+ * High-level overview: last 2 releases (metrics, red flags) and next 2 releases (readiness status, red flags).
  */
 export function buildLeadershipDigestMessage(
     data: {
         week_of: string;
-        high_risk_launches: Array<{
-            name: string;
-            id: string;
-            tier: string;
-            risk: string;
-            days_to_launch: number;
-            readiness: number;
+        narrative?: string | null;
+        last_releases?: Array<{
+            release_name: string;
+            launch_date: string | null;
+            average_readiness: number;
+            metrics_count: number;
+            red_flags: { no_metrics: boolean; no_progression: boolean };
+            high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number }>;
+            best_epics?: Array<{ name: string; id: string; scorecard_status: string | null; scorecard_date?: string }>;
+            worst_epics?: Array<{ name: string; id: string; scorecard_status: string | null; scorecard_date?: string }>;
+            above_target_epics?: Array<{ name: string; id: string; percent_of_goal: number }>;
+            no_metrics_epics?: Array<{ name: string; id: string }>;
+            no_progression_epics?: Array<{ name: string; id: string }>;
         }>;
-        upcoming_launches: Array<{
-            name: string;
-            id: string;
-            tier: string;
-            target_release_date: string;
+        next_releases?: Array<{
+            release_name: string;
+            launch_date: string | null;
+            readiness_status: string;
+            readiness_breakdown: { go: number; conditional_go: number; no_go: number; not_evaluated: number };
+            total_criteria_overdue?: number;
+            gate_red_count?: number;
+            gate_yellow_count?: number;
+            high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number; target_launch_date?: string | null }>;
+            red_flags: Array<{
+                epic_name: string;
+                epic_id: string;
+                gate_blockers: number;
+                overdue_criteria: number;
+                readiness_score: number;
+                risk_level: string | null;
+            }>;
         }>;
-        total_active: number;
     },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
+    const refDate = new Date();
+    const daysAgo = (dateStr: string | null): number | null => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        return Math.floor((refDate.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
+    };
+    const daysFromNow = (dateStr: string | null): number | null => {
+        if (!dateStr) return null;
+        const d = new Date(dateStr);
+        return Math.floor((d.getTime() - refDate.getTime()) / (24 * 60 * 60 * 1000));
+    };
+
     const blocks: SlackBlock[] = [
         {
             type: 'header',
             text: {
                 type: 'plain_text',
-                text: `${theme.emojis.digest} Weekly Launch Readiness Digest`,
+                text: 'Weekly Release Readiness Digest',
                 emoji: true,
             },
         },
         {
             type: 'context',
-            elements: [
-                {
-                    type: 'mrkdwn',
-                    text: `Week of ${data.week_of} • ${data.total_active} active launches`,
-                },
-            ],
-        },
-        {
-            type: 'divider',
+            elements: [{ type: 'mrkdwn', text: `Week of ${data.week_of}` }],
         },
     ];
-
-    // High Risk Launches
-    if (data.high_risk_launches.length > 0) {
+    if (data.narrative && data.narrative.trim()) {
         blocks.push({
             type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: '*🔴 High Risk Launches*',
-            },
+            text: { type: 'mrkdwn', text: data.narrative.trim() },
         });
+    }
+    // No divider between "Week of" and "Last 2 Releases"
 
-        data.high_risk_launches.forEach((launch) => {
+    // ---- Last 2 Releases (no dividers between releases; single divider only before Next 2 Releases) ----
+    blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*📚 Last 2 Releases*' },
+    });
+
+    if (data.last_releases && data.last_releases.length > 0) {
+        data.last_releases.forEach((release) => {
+            const launchDateStr = release.launch_date
+                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Date TBD';
+            const ago = daysAgo(release.launch_date);
+            const dateSuffix = ago !== null ? ` = ${ago} days ago` : '';
+            const retroLabel =
+                ago === 30 ? 'first' : ago === 60 ? 'second' : ago === 90 ? 'third' : null;
+            const retroHint =
+                retroLabel !== null ? `  ·  *🔍 time for ${retroLabel} retro*` : '';
+            const metricsCount = (release as { metrics_count?: number }).metrics_count ?? 0;
+
             blocks.push({
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*<${APP_URL}/epics/${launch.id}|${launch.name}>*\n${launch.tier} • ${launch.days_to_launch} days • ${Math.round(launch.readiness * 100)}% ready`,
+                    text: `*${release.release_name}*  ·  ${launchDateStr}${dateSuffix}${retroHint}`,
                 },
-                accessory: {
-                    type: 'button',
-                    text: {
-                        type: 'plain_text',
-                        text: 'View',
-                        emoji: true,
+            });
+            blocks.push({
+                type: 'context',
+                elements: [
+                    { type: 'mrkdwn', text: `Avg readiness *${release.average_readiness}%*  ·  *${metricsCount}* metrics tracked` },
+                ],
+            });
+            const lastHighRisk = (release as { high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number }> }).high_risk_epics ?? [];
+            if (lastHighRisk.length > 0) {
+                const highRiskLines = lastHighRisk
+                    .map((e) => {
+                        const riskBadge = e.risk_level === 'HIGH' ? '🔴' : '🟡';
+                        return `${riskBadge} <${APP_URL}/epics/${e.id}|${e.name}> (${e.tier || '?'}) ${e.readiness}%`;
+                    })
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_High risk:_\n${highRiskLines}` },
+                });
+            }
+            const noMetricsEpics = (release as { no_metrics_epics?: Array<{ name: string; id: string }> }).no_metrics_epics ?? [];
+            const noProgressionEpics = (release as { no_progression_epics?: Array<{ name: string; id: string }> }).no_progression_epics ?? [];
+            const redFlagLines: string[] = [];
+            for (const e of noMetricsEpics) {
+                redFlagLines.push(`<${APP_URL}/epics/${e.id}|${e.name}> no metric`);
+            }
+            for (const e of noProgressionEpics) {
+                redFlagLines.push(`<${APP_URL}/epics/${e.id}|${e.name}> no progression on metric`);
+            }
+            if (redFlagLines.length > 0) {
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Red flags:_\n${redFlagLines.join('\n')}` },
+                });
+            }
+            const aboveTarget = (release as { above_target_epics?: Array<{ name: string; id: string; percent_of_goal: number }> }).above_target_epics ?? [];
+            if (aboveTarget.length > 0) {
+                const aboveLines = aboveTarget
+                    .map((e) => `<${APP_URL}/epics/${e.id}|${e.name}> ${e.percent_of_goal}% of goal`)
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Above target:_\n${aboveLines}` },
+                });
+            }
+        });
+    } else {
+        blocks.push({
+            type: 'section',
+            text: { type: 'mrkdwn', text: '_No past releases in the schedule._' },
+        });
+    }
+
+    blocks.push({ type: 'divider' });
+
+    // ---- Next 2 Releases (no dividers between releases) ----
+    blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*🚀 Next 2 Releases*' },
+    });
+
+    let shownGoNoGo = false;
+    if (data.next_releases && data.next_releases.length > 0) {
+        data.next_releases.forEach((release) => {
+            const launchDateStr = release.launch_date
+                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Date TBD';
+            const inDays = daysFromNow(release.launch_date);
+            const dateSuffix = inDays !== null ? ` = in ${inDays} days` : '';
+            const goNoGoHint =
+                inDays !== null && inDays < 28 && !shownGoNoGo ? '  ·  _go/no-go decision time!_' : '';
+            if (inDays !== null && inDays < 28) shownGoNoGo = true;
+
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${release.release_name}*  ·  ${launchDateStr}${dateSuffix}${goNoGoHint}`,
+                },
+            });
+            const breakdown = release.readiness_breakdown;
+            const totalEpics = breakdown.go + breakdown.conditional_go + breakdown.no_go + breakdown.not_evaluated;
+            blocks.push({
+                type: 'context',
+                elements: [
+                    {
+                        type: 'mrkdwn',
+                        text: totalEpics
+                            ? `✅ ${breakdown.go} Go  ·  ⚠️ ${breakdown.conditional_go} Conditional  ·  ❌ ${breakdown.no_go} No-Go  ·  ⏸️ ${breakdown.not_evaluated} Not evaluated`
+                            : 'No epics in this release',
                     },
-                    url: `${APP_URL}/epics/${launch.id}`,
-                },
+                ],
             });
+            const nextHighRisk = (release as { high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number; target_launch_date?: string | null }> }).high_risk_epics ?? [];
+            if (nextHighRisk.length > 0) {
+                const highRiskLines = nextHighRisk
+                    .map((e) => {
+                        const riskBadge = e.risk_level === 'HIGH' ? '🔴' : '🟡';
+                        return `${riskBadge} <${APP_URL}/epics/${e.id}|${e.name}> (${e.tier || '?'}) ${e.readiness}%`;
+                    })
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_High risk:_\n${highRiskLines}` },
+                });
+            }
+            const totalOverdue = (release as { total_criteria_overdue?: number }).total_criteria_overdue ?? 0;
+            const gateRed = (release as { gate_red_count?: number }).gate_red_count ?? 0;
+            const gateYellow = (release as { gate_yellow_count?: number }).gate_yellow_count ?? 0;
+            const nextRedFlags: string[] = [];
+            if (totalOverdue > 0) nextRedFlags.push(`• ${totalOverdue} criteria overdue`);
+            if (gateRed > 0) nextRedFlags.push(`• ${gateRed} gate criteria at No-Go (red)`);
+            if (gateYellow > 0) nextRedFlags.push(`• ${gateYellow} gate criteria conditional (yellow)`);
+            if (nextRedFlags.length > 0) {
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Red flags:_\n${nextRedFlags.join('\n')}` },
+                });
+            } else if (release.red_flags.length > 0) {
+                const epicFlags = release.red_flags
+                    .slice(0, 5)
+                    .map((flag) => {
+                        const parts = [];
+                        if (flag.gate_blockers > 0) parts.push(`${flag.gate_blockers} gate blocker(s)`);
+                        if (flag.overdue_criteria > 0) parts.push(`${flag.overdue_criteria} overdue`);
+                        return `<${APP_URL}/epics/${flag.epic_id}|${flag.epic_name}>: ${parts.join(', ')}`;
+                    })
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Epics with issues:_\n${epicFlags}` },
+                });
+            }
         });
-
-        blocks.push({ type: 'divider' });
-    }
-
-    // Upcoming Launches
-    if (data.upcoming_launches.length > 0) {
+    } else {
         blocks.push({
             type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: '*📅 Upcoming Launches (Next 30 Days)*',
-            },
+            text: { type: 'mrkdwn', text: '_No upcoming releases in the schedule._' },
         });
-
-        data.upcoming_launches.forEach((launch) => {
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*<${APP_URL}/epics/${launch.id}|${launch.name}>*\n${launch.tier} • Target: ${launch.target_release_date}`,
-                },
-            });
-        });
-
-        blocks.push({ type: 'divider' });
     }
 
-    // Footer
     blocks.push({
         type: 'actions',
         elements: [
             {
                 type: 'button',
-                text: {
-                    type: 'plain_text',
-                    text: 'View Portfolio Dashboard',
-                    emoji: true,
-                },
+                text: { type: 'plain_text', text: 'View Portfolio Dashboard', emoji: true },
                 style: 'primary',
                 url: `${APP_URL}/portfolio`,
             },
@@ -418,7 +553,7 @@ export function buildLeadershipDigestMessage(
     });
 
     return {
-        text: `Weekly Launch Readiness Digest - Week of ${data.week_of}`,
+        text: `Weekly Release Readiness Digest - Week of ${data.week_of}`,
         blocks,
     };
 }

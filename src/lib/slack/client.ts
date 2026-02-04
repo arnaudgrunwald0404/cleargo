@@ -13,6 +13,27 @@ import type {
 
 const SLACK_API_BASE = 'https://slack.com/api';
 
+function getForbiddenChannels(): Set<string> {
+    const raw = process.env.SLACK_FORBIDDEN_CHANNELS || '';
+    const ids = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    const set = new Set<string>(ids);
+    for (const s of ids) {
+        if (s.startsWith('#')) set.add(s.slice(1));
+    }
+    return set;
+}
+
+function isChannelForbiddenWithSet(channel: string, forbidden: Set<string>): boolean {
+    if (forbidden.has(channel)) return true;
+    if (channel.startsWith('#') && forbidden.has(channel.slice(1))) return true;
+    return false;
+}
+
+/** Returns true if the channel (ID or #name) is in SLACK_FORBIDDEN_CHANNELS. */
+export function isChannelForbidden(channel: string): boolean {
+    return isChannelForbiddenWithSet(channel, getForbiddenChannels());
+}
+
 export class SlackClient {
     private botToken: string;
 
@@ -27,6 +48,11 @@ export class SlackClient {
      * Post a message to a Slack channel or user
      */
     async postMessage(message: SlackMessage): Promise<SlackPostMessageResponse> {
+        const forbidden = getForbiddenChannels();
+        if (isChannelForbiddenWithSet(message.channel, forbidden)) {
+            console.warn(`Slack: skipping postMessage to forbidden channel ${message.channel}`);
+            return { ok: true };
+        }
         const response = await fetch(`${SLACK_API_BASE}/chat.postMessage`, {
             method: 'POST',
             headers: {
@@ -44,6 +70,29 @@ export class SlackClient {
         }
 
         return data as SlackPostMessageResponse;
+    }
+
+    /**
+     * Delete a message (only messages posted by this bot)
+     */
+    async deleteMessage(channel: string, ts: string): Promise<SlackApiResponse> {
+        const response = await fetch(`${SLACK_API_BASE}/chat.delete`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${this.botToken}`,
+            },
+            body: JSON.stringify({ channel, ts }),
+        });
+
+        const data = await response.json();
+
+        if (!data.ok) {
+            console.error('Slack API error:', data.error);
+            throw new Error(`Slack API error: ${data.error}`);
+        }
+
+        return data;
     }
 
     /**
@@ -195,8 +244,14 @@ export class SlackClient {
         title?: string,
         initialComment?: string
     ): Promise<SlackApiResponse> {
+        const forbidden = getForbiddenChannels();
+        const allowed = channels.filter((c) => !isChannelForbiddenWithSet(c, forbidden));
+        if (allowed.length === 0) {
+            console.warn(`Slack: skipping uploadFile to forbidden channel(s) ${channels.join(', ')}`);
+            return { ok: true };
+        }
         const formData = new FormData();
-        formData.append('channels', channels.join(','));
+        formData.append('channels', allowed.join(','));
         formData.append('file', file as any, filename);
         if (title) formData.append('title', title);
         if (initialComment) formData.append('initial_comment', initialComment);

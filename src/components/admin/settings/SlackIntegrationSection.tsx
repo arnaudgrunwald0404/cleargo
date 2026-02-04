@@ -16,10 +16,7 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
   const slackNudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
   const slackNudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
   const slackNudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
-  // Default to agrunwald@clearcompany.com if not set (for testing)
-  // Support multiple emails (comma or newline separated)
-  const slackNotificationTestEmail = settings.slack_notification_test_email || 'agrunwald@clearcompany.com';
-  const slackNotificationTestSlackHandle = settings.slack_notification_test_slack_handle || '';
+  const slackNotificationTestEmail = settings.slack_notification_test_email ?? '';
   
   // Slack theme configuration
   const slackTheme: SlackThemeConfig = (settings as any).slack_theme || defaultSlackTheme;
@@ -141,30 +138,20 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
               </div>
             </div>
             <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                <strong>Slack notifications</strong> are controlled per user in <strong>User Management</strong>: use the &quot;Slack&quot; checkbox on each user to allow them to receive Slack DMs.
+              </p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Test Email Filter (for Email & Slack Notifications)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email notification filter (optional)</label>
                 <textarea
                   value={slackNotificationTestEmail}
                   onChange={(e) => setSettings({ ...settings, slack_notification_test_email: e.target.value } as any)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="agrunwald@clearcompany.com&#10;another@clearcompany.com"
+                  placeholder="Leave empty to send to all&#10;Or list emails separated by commas or new lines"
                   rows={3}
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  All notifications are logged, but only these email addresses receive actual email and Slack notifications. Enter multiple emails separated by commas or new lines. Default: agrunwald@clearcompany.com
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Test Slack Handle Filter (Optional - Overrides Email Filter for Slack)</label>
-                <input
-                  type="text"
-                  value={slackNotificationTestSlackHandle}
-                  onChange={(e) => setSettings({ ...settings, slack_notification_test_slack_handle: e.target.value } as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="U12345678"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Optional: If set, only send Slack notifications to this Slack user ID (e.g., U12345678). If empty, uses the email filter above. Leave empty to use email filter for Slack too.
+                  If set, only these email addresses receive actual email notifications. All notifications are logged. Leave empty for no filter.
                 </p>
               </div>
             </div>

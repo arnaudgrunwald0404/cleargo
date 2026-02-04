@@ -171,7 +171,7 @@ export async function POST(request: NextRequest) {
                         type: 'section',
                         text: {
                             type: 'mrkdwn',
-                            text: `${staleIndicator}*${criterionData.label}*\nLaunch: ${epic.name} | Status: ${criterion.status}`,
+                            text: `${staleIndicator}*${criterionData.label}*\nLaunch: ${epic.name} | Go/No-Go Score: ${criterion.status}`,
                         },
                     });
                 }
