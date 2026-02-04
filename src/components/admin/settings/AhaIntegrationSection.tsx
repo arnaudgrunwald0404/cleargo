@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import type { AppSettings } from "@/lib/settings-db";
-import { TagsInput, TextInput, Select } from "@mantine/core";
+import { TextInput, Select } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { canRolesPerform } from "@/lib/permissions";
 import AhaFieldsSection from "./AhaFieldsSection";
@@ -30,7 +30,9 @@ type Props = {
   syncing?: boolean;
   syncResult?: SyncResult | null;
   onAutoSaveFields?: (fields: string[]) => void;
+  onRefreshFieldList?: () => void;
   onSynchronize?: () => void;
+  refreshing?: boolean;
 };
 
 export default function AhaIntegrationSection({ 
@@ -45,11 +47,12 @@ export default function AhaIntegrationSection({
   syncing = false,
   syncResult = null,
   onAutoSaveFields,
+  onRefreshFieldList,
   onSynchronize,
+  refreshing = false,
 }: Props) {
   const [canViewWebhookUrl, setCanViewWebhookUrl] = useState(false);
   const [canUpdateWebhookUrl, setCanUpdateWebhookUrl] = useState(false);
-  const [canEditAhaTags, setCanEditAhaTags] = useState(false);
   const [testingWebhook, setTestingWebhook] = useState(false);
   const [webhookTestResult, setWebhookTestResult] = useState<{ 
     success: boolean; 
@@ -63,7 +66,6 @@ export default function AhaIntegrationSection({
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [syncingEpics, setSyncingEpics] = useState(false);
   const [webhookEnvironment, setWebhookEnvironment] = useState<'development' | 'production'>(
     (settings.aha_webhook_environment === 'development' || settings.aha_webhook_environment === 'production') 
       ? settings.aha_webhook_environment 
@@ -71,13 +73,11 @@ export default function AhaIntegrationSection({
   );
   const [productionWebhookUrl, setProductionWebhookUrl] = useState<string | null>(null);
   const webhookTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const tagsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const environmentTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     setCanViewWebhookUrl(canRolesPerform(currentUserRoles, "settings.webhookUrl.read"));
     setCanUpdateWebhookUrl(canRolesPerform(currentUserRoles, "settings.webhookUrl.update"));
-    setCanEditAhaTags(canRolesPerform(currentUserRoles, "settings.ahaTags.update"));
   }, [currentUserRoles]);
 
   useEffect(() => {
@@ -200,28 +200,10 @@ export default function AhaIntegrationSection({
     }
   };
 
-  const autoSaveTags = async (tags: string[]) => {
-    if (!canEditAhaTags) return;
-    setSaving(true);
-    try {
-      const saved = await patchSettings({
-        aha_tags: tags,
-      });
-      setSettings(saved);
-    } catch (error: any) {
-      console.error("Failed to auto-save tags:", error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
   useEffect(() => {
     return () => {
       if (webhookTimeoutRef.current) {
         clearTimeout(webhookTimeoutRef.current);
-      }
-      if (tagsTimeoutRef.current) {
-        clearTimeout(tagsTimeoutRef.current);
       }
     };
   }, []);
@@ -536,113 +518,8 @@ export default function AhaIntegrationSection({
         )}
       </section>
 
-      {/* Integration Tags Section */}
-      <section className="space-y-4">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h2 className="text-base font-semibold text-gray-900 mb-1">Integration Tags</h2>
-            <p className="text-sm text-gray-500">Tags that trigger inclusion in the Launch Console</p>
-          </div>
-          <button
-            type="button"
-            onClick={async () => {
-              if (!confirm("This will sync all epics from Aha that match your tag criteria AND belong to releases already synced in the system. This complements webhooks by ensuring no epics are missed. Continue?")) {
-                return;
-              }
-              
-              setSyncingEpics(true);
-              try {
-                const res = await fetch("/api/integrations/aha/sync?sync_all=true", {
-                  method: "POST",
-                  credentials: "include",
-                  headers: { "Content-Type": "application/json" },
-                });
-                
-                if (!res.ok) {
-                  const errorData = await res.json();
-                  throw new Error(errorData.error || "Failed to sync epics");
-                }
-                
-                const result = await res.json();
-                const skipDetails = [];
-                if (result.results.skipped_no_release > 0) {
-                  skipDetails.push(`${result.results.skipped_no_release} with no release`);
-                }
-                if (result.results.skipped_release_not_synced > 0) {
-                  skipDetails.push(`${result.results.skipped_release_not_synced} with unsynced release`);
-                }
-                const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
-                
-                alert(`Success: ${result.message}\n\nTotal epics fetched: ${result.results.total}\nCreated: ${result.results.created}\nUpdated: ${result.results.updated}${skipMessage}${result.results.errors.length > 0 ? `\nErrors: ${result.results.errors.length}` : ""}`);
-              } catch (error: any) {
-                alert(`Error: ${error.message}`);
-              } finally {
-                setSyncingEpics(false);
-              }
-            }}
-            disabled={syncingEpics}
-            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 h-fit"
-          >
-            {syncingEpics ? (
-              <>
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Syncing Epics...
-              </>
-            ) : (
-              <>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Sync Epics from Aha
-              </>
-            )}
-          </button>
-        </div>
-        <div>
-          <TagsInput
-            value={settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo']}
-            onChange={(tags) => {
-              setSettings({ ...settings, aha_tags: tags });
-              if (canEditAhaTags) {
-                if (tagsTimeoutRef.current) {
-                  clearTimeout(tagsTimeoutRef.current);
-                }
-                tagsTimeoutRef.current = setTimeout(() => {
-                  autoSaveTags(tags);
-                }, 1000);
-              }
-            }}
-            placeholder={canEditAhaTags ? "Enter tags..." : "Contact admin to modify tags"}
-            disabled={!canEditAhaTags}
-            clearable={canEditAhaTags}
-            className="w-full"
-            classNames={{
-              input: "border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-lg",
-              pill: "bg-indigo-50 text-indigo-700 font-medium"
-            }}
-          />
-          {saving && canEditAhaTags && (
-            <p className="text-xs text-gray-500 mt-1">Saving...</p>
-          )}
-          {!canEditAhaTags && (
-            <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-              </svg>
-              Only users with the "Update AHA Tags" permission can modify these tags.
-            </p>
-          )}
-          <p className="text-xs text-gray-500 mt-2">
-            Epics with any of these tags (or "ClearGO Candidate" = Yes) will be synced.
-          </p>
-        </div>
-      </section>
-
       {/* AHA Epic Fields Section */}
-      {onAutoSaveFields && onSynchronize && setDraggedFieldAlias && (
+      {onAutoSaveFields && onSynchronize && onRefreshFieldList && setDraggedFieldAlias && (
         <section className="pt-8 border-t border-gray-200">
           <AhaFieldsSection
             settings={settings}
@@ -655,7 +532,9 @@ export default function AhaIntegrationSection({
             syncing={syncing}
             syncResult={syncResult}
             onAutoSaveFields={onAutoSaveFields}
+            onRefreshFieldList={onRefreshFieldList}
             onSynchronize={onSynchronize}
+            refreshing={refreshing}
           />
         </section>
       )}

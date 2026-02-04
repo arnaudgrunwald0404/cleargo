@@ -61,7 +61,7 @@ jest.mock('@/lib/aha/mapping', () => ({
         aha_id: 'E-123',
         name: 'Test Epic',
         tier: 'TIER_1',
-        status: 'PLANNED',
+        status: 'Pre_Release',
         aha_release_name: 'Release 2025.10',
         owner_email: 'owner@example.com',
     }),

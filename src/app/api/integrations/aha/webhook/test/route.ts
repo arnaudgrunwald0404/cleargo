@@ -73,13 +73,7 @@ export async function POST(req: NextRequest) {
             webhookUrl = `${protocol}://${host}${webhookUrl}`;
         }
 
-        // Use the configured Aha! Integration Tags from settings
-        // If no tags are configured, fall back to default tags
-        const configuredTags = settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
-        // Use all configured tags for the test to ensure it matches the filter
-        const testTags = configuredTags.length > 0 ? configuredTags : ['LaunchConsole'];
-
-        // Create a test payload with a test epic ID that won't try to fetch from Aha
+        // Create a test payload: inclusion is ClearGO Candidate = Yes only
         const testEpicId = "TEST-WEBHOOK-" + Date.now();
         const testPayload = {
             event: "epic.updated",
@@ -88,15 +82,14 @@ export async function POST(req: NextRequest) {
                 reference_num: "CLEAR-TEST-" + Date.now(),
                 name: "Test Epic from Webhook Test",
                 url: "https://clearco.aha.io/epics/TEST",
-                tags: testTags, // Use configured tags from settings
+                tags: [],
                 assigned_to_user: {
                     email: user.email || "test@clearcompany.com"
                 },
-                custom_fields: {
-                    launch_tier: {
-                        value: "Tier 2"
-                    }
-                }
+                custom_fields: [
+                    { key: 'cleargo_candidate', value: 'Yes' },
+                    { key: 'launch_tier', value: { name: 'Tier 2' } }
+                ]
             }
         };
 

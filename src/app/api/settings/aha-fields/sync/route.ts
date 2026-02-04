@@ -91,6 +91,7 @@ export async function POST(req: NextRequest) {
                 // Update epic with new aha_fields
                 await upsertEpicFromAha(epicData, ownerId);
                 synced++;
+                await supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicRecord.id);
             } catch (error: any) {
                 console.error(`Failed to sync epic ${epicRecord.aha_id}:`, error);
                 failed++;
@@ -99,6 +100,10 @@ export async function POST(req: NextRequest) {
                     name: epicRecord.name,
                     error: error.message || 'Unknown error',
                 });
+                const isRecordNotFound = error?.message?.includes('404') || error?.message?.toLowerCase().includes('record not found');
+                if (isRecordNotFound) {
+                    await supabase.from('epic').update({ aha_record_not_found: true }).eq('id', epicRecord.id);
+                }
             }
         }
 

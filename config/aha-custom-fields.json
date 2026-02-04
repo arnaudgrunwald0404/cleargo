@@ -109,6 +109,10 @@
       "label": "Delivery Method",
       "key": "delivery_method"
     },
+    "gtm_module": {
+      "label": "GTM Module",
+      "key": "gtm_module"
+    },
     "cleargo_candidate": {
       "label": "ClearGO Candidate",
       "key": "cleargo_candidate"
@@ -124,6 +128,330 @@
     "setup_or_migration_process": {
       "label": "Setup or Migration Process",
       "key": "setup_or_migration_process"
+    },
+    "org_arr": {
+      "label": "Org ARR",
+      "key": "arr"
+    },
+    "before_screenshot_or_video": {
+      "label": "\"Before\" Screenshot or Video",
+      "key": "before_url"
+    },
+    "category": {
+      "label": "Category",
+      "key": "category"
+    },
+    "challenges": {
+      "label": "Challenges",
+      "key": "challenges"
+    },
+    "competitors": {
+      "label": "Competitors",
+      "key": "competitors"
+    },
+    "content_repository_url": {
+      "label": "Content Repository URL",
+      "key": "content_repository_url"
+    },
+    "rd_crossfunctional_dependencies": {
+      "label": "R&D Cross-Functional Dependencies",
+      "key": "crossfunctional_dependencies"
+    },
+    "csmnew_business_priority": {
+      "label": "CSM/New Business Priority",
+      "key": "csm_top20"
+    },
+    "customer_feedback": {
+      "label": "Customer Feedback",
+      "key": "customer_feedback"
+    },
+    "customers": {
+      "label": "Customers",
+      "key": "customers"
+    },
+    "phase_3_gtm_activation_cutoff": {
+      "label": "Phase 3: GTM Activation Cutoff",
+      "key": "date_enabled_for_sales"
+    },
+    "definition_of_success": {
+      "label": "Definition of Success",
+      "key": "definition_of_success"
+    },
+    "deployed_to_gtm_orgs": {
+      "label": "Deployed to GTM Orgs",
+      "key": "deployed_to_gtm_orgs"
+    },
+    "description": {
+      "label": "Description",
+      "key": "description"
+    },
+    "design_due_date": {
+      "label": "Design Due Date",
+      "key": "design_due_date"
+    },
+    "dev_backlog": {
+      "label": "Dev Backlog",
+      "key": "dev_backlog"
+    },
+    "development_start_date": {
+      "label": "Development Start Date",
+      "key": "development_start_date"
+    },
+    "dev_project_category": {
+      "label": "Dev Project Category",
+      "key": "dev_project_category"
+    },
+    "differentiators": {
+      "label": "Differentiators",
+      "key": "differentiators"
+    },
+    "dislikes": {
+      "label": "Dislikes",
+      "key": "dislikes"
+    },
+    "ga_cohort_2": {
+      "label": "GA Cohort 2",
+      "key": "early_access_date"
+    },
+    "education": {
+      "label": "Education",
+      "key": "education"
+    },
+    "employees": {
+      "label": "Employees",
+      "key": "employees"
+    },
+    "epic_faq_link": {
+      "label": "Epic FAQ Link",
+      "key": "epic_faq_link"
+    },
+    "estimate_after_pod_planning_dev_days": {
+      "label": "Estimate after Pod Planning (Dev Days)",
+      "key": "estimate_after_story_mapping"
+    },
+    "experience": {
+      "label": "Experience",
+      "key": "experience"
+    },
+    "fireside_chat_presentation": {
+      "label": "Fireside Chat Presentation",
+      "key": "fireside_chat_presentation"
+    },
+    "goals": {
+      "label": "Goals",
+      "key": "goals"
+    },
+    "phase_4a_gonogo_meeting": {
+      "label": "Phase 4a: Go/No-Go Meeting",
+      "key": "gonogo_meeting"
+    },
+    "growth_rate": {
+      "label": "Growth Rate",
+      "key": "growth_rate"
+    },
+    "ideas": {
+      "label": "Ideas",
+      "key": "ideas"
+    },
+    "impact": {
+      "label": "Impact",
+      "key": "impact"
+    },
+    "influence": {
+      "label": "Influence",
+      "key": "influence"
+    },
+    "lab_name": {
+      "label": "Lab Name",
+      "key": "lab_name"
+    },
+    "likes": {
+      "label": "Likes",
+      "key": "likes"
+    },
+    "mission": {
+      "label": "Mission",
+      "key": "mission"
+    },
+    "organization": {
+      "label": "Organization",
+      "key": "organization"
+    },
+    "org_churn_date": {
+      "label": "Org Churn Date",
+      "key": "org_churn_date"
+    },
+    "org_cohort": {
+      "label": "Org Cohort",
+      "key": "org_cohort"
+    },
+    "org_industry": {
+      "label": "Org Industry",
+      "key": "org_industry"
+    },
+    "org_license_type": {
+      "label": "Org License Type",
+      "key": "org_license_type"
+    },
+    "org_owner": {
+      "label": "Org Owner",
+      "key": "org_owner"
+    },
+    "org_partner": {
+      "label": "Org Partner",
+      "key": "org_partner"
+    },
+    "org_payroll": {
+      "label": "Org Payroll",
+      "key": "org_payroll"
+    },
+    "org_product_family": {
+      "label": "Org Product Family",
+      "key": "org_product_family"
+    },
+    "org_segment": {
+      "label": "Org Segment",
+      "key": "org_segment"
+    },
+    "org_status": {
+      "label": "Org Status",
+      "key": "org_status"
+    },
+    "organization_tag": {
+      "label": "Organization Tag",
+      "key": "org_tag"
+    },
+    "peer_reviewer": {
+      "label": "Peer Reviewer",
+      "key": "peer_reviewer"
+    },
+    "personas": {
+      "label": "Personas",
+      "key": "personas"
+    },
+    "phase_1_definition_deadline": {
+      "label": "Phase 1: Definition Deadline",
+      "key": "phase_1_definition_deadline"
+    },
+    "phase_2_sales_enablement_complete": {
+      "label": "Phase 2: Sales Enablement Complete",
+      "key": "phase_2_sales_enablement_complete"
+    },
+    "phase_4b_internal_readiness_distributed": {
+      "label": "Phase 4b: Internal Readiness Distributed",
+      "key": "phase_4_internal_readiness_distributed"
+    },
+    "presentation_highlight": {
+      "label": "Presentation Highlight",
+      "key": "presentation_highlight"
+    },
+    "pricing": {
+      "label": "Pricing",
+      "key": "pricing"
+    },
+    "pricing__packaging": {
+      "label": "Pricing & Packaging",
+      "key": "pricing_packaging"
+    },
+    "primary_initiative__2526": {
+      "label": "Primary Initiative - '25/'26",
+      "key": "primary_initiative"
+    },
+    "prioritization_comment": {
+      "label": "Prioritization Comment",
+      "key": "prioritization_comment"
+    },
+    "product_knowledge": {
+      "label": "Product knowledge",
+      "key": "product_knowledge"
+    },
+    "product_module": {
+      "label": "Product Module",
+      "key": "product_module"
+    },
+    "products": {
+      "label": "Products",
+      "key": "products"
+    },
+    "reach": {
+      "label": "Reach",
+      "key": "reach"
+    },
+    "definition_for_gtm_team": {
+      "label": "Definition for GTM Team",
+      "key": "ready_for_gtm_team"
+    },
+    "ready_for_gtm_team": {
+      "label": "Ready for GTM Team",
+      "key": "ready_for_gtm_team"
+    },
+    "recent_news": {
+      "label": "Recent News",
+      "key": "recent_news"
+    },
+    "release_confidence": {
+      "label": "Release Confidence",
+      "key": "release_confidence"
+    },
+    "responsibilities": {
+      "label": "Responsibilities",
+      "key": "responsibilities"
+    },
+    "revenue": {
+      "label": "Revenue",
+      "key": "revenue"
+    },
+    "sales_top20": {
+      "label": "Sales Top-20",
+      "key": "sales_top20"
+    },
+    "skills": {
+      "label": "Skills",
+      "key": "skills"
+    },
+    "strengths": {
+      "label": "Strengths",
+      "key": "strengths"
+    },
+    "tags": {
+      "label": "Tags",
+      "key": "tags"
+    },
+    "tentative_release": {
+      "label": "Tentative Release",
+      "key": "tentative_release"
+    },
+    "tentative_timing": {
+      "label": "Tentative Timing",
+      "key": "tentative_release_txt"
+    },
+    "ticket_type": {
+      "label": "Ticket Type",
+      "key": "ticket_type"
+    },
+    "trusts_information_from": {
+      "label": "Trusts information from",
+      "key": "trusts_information_from"
+    },
+    "tshirt_estimate": {
+      "label": "T-Shirt Estimate",
+      "key": "tshirt_estimate"
+    },
+    "vcp_theme": {
+      "label": "VCP Theme",
+      "key": "vcp_theme"
+    },
+    "vendors_used": {
+      "label": "Vendor(s) Used",
+      "key": "vendors_used"
+    },
+    "weaknesses": {
+      "label": "Weaknesses",
+      "key": "weaknesses"
+    },
+    "weekly_release_fix_version": {
+      "label": "Weekly Release (Fix Version)",
+      "key": "weekly_release_fix_version"
     }
   }
 }

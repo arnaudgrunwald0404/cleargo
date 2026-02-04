@@ -25,8 +25,22 @@ type Props = {
   syncing: boolean;
   syncResult: SyncResult | null;
   onAutoSaveFields: (fields: string[]) => void;
+  onRefreshFieldList?: () => void;
   onSynchronize: () => void;
+  refreshing?: boolean;
 };
+
+const refreshIcon = (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+const spinnerIcon = (
+  <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+  </svg>
+);
 
 export default function AhaFieldsSection({
   settings,
@@ -39,41 +53,54 @@ export default function AhaFieldsSection({
   syncing,
   syncResult,
   onAutoSaveFields,
+  onRefreshFieldList,
   onSynchronize,
+  refreshing = false,
 }: Props) {
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between">
-        <div className="flex-1">
-          <h2 className="text-base font-semibold text-gray-900 mb-1">Epic Fields</h2>
-          <p className="text-sm text-gray-500 mb-4">Configure which AHA fields (standard and custom) should be loaded with each launch</p>
-        </div>
-        <button
-          type="button"
-          onClick={onSynchronize}
-          disabled={syncing}
-          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 h-fit"
-        >
-          {syncing ? (
-            <>
-              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-              Synchronizing...
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Synchronize
-            </>
-          )}
-        </button>
+      <div>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">Epic Fields</h2>
+        <p className="text-sm text-gray-500 mb-4">Configure which AHA fields (standard and custom) should be loaded with each launch</p>
       </div>
 
-        {syncResult && (
+      {/* Stacked actions: Pull Epic Field Names, Force-Sync Epic Field Values */}
+      <div className="space-y-4">
+        {onRefreshFieldList && (
+          <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-gray-700">Pull Field Names</p>
+              <p className="text-sm text-gray-500 mt-0.5">Updates the list of Aha fields you can choose from below. Use this after adding new custom fields in Aha (e.g. GTM module) so they appear in the Epic Fields configuration.</p>
+            </div>
+            <button
+              type="button"
+              onClick={onRefreshFieldList}
+              disabled={refreshing || syncing}
+              className="w-56 min-w-[14rem] h-11 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 flex-shrink-0 border border-gray-300"
+            >
+              {refreshing ? spinnerIcon : refreshIcon}
+              {refreshing ? "Refreshing..." : "Pull Field Names"}
+            </button>
+          </div>
+        )}
+        <div className="flex items-start gap-4 flex-wrap sm:flex-nowrap">
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-700">Force-Sync Field Values</p>
+            <p className="text-sm text-gray-500 mt-0.5">Pulls the latest values for the selected Epic Fields from Aha into all launches. Use this after selecting or changing which fields to load, or when you want to refresh field data (e.g. GTM module) for existing epics.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onSynchronize}
+            disabled={syncing || refreshing}
+            className="w-56 min-w-[14rem] h-11 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 flex-shrink-0 border border-gray-300"
+          >
+            {syncing ? spinnerIcon : refreshIcon}
+            {syncing ? "Syncing..." : "Sync Field Values"}
+          </button>
+        </div>
+      </div>
+
+      {syncResult && (
           <div className={`mb-6 p-4 rounded-lg border ${syncResult.failed > 0 ? 'bg-yellow-50 border-yellow-200 text-yellow-800' : 'bg-green-50 border-green-200 text-green-800'}`}>
             <div className="flex items-start gap-2">
               {syncResult.failed > 0 ? (
@@ -146,7 +173,11 @@ export default function AhaFieldsSection({
                           <tr
                             key={field.alias}
                             draggable
-                            onDragStart={() => setDraggedFieldAlias(field.alias)}
+                            onDragStart={(e) => {
+                              setDraggedFieldAlias(field.alias);
+                              e.dataTransfer.setData("text/plain", field.alias);
+                              e.dataTransfer.effectAllowed = "move";
+                            }}
                             onDragOver={(e) => {
                               e.preventDefault();
                               e.dataTransfer.dropEffect = "move";

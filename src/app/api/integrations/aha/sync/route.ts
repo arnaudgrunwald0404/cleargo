@@ -10,6 +10,8 @@ import {
     instantiateCriteriaForEpic,
     getEpicByAhaId,
     fetchAndUpsertReleaseFromAha,
+    setAhaRecordNotFoundByAhaId,
+    clearAhaRecordNotFound,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
@@ -79,6 +81,17 @@ export async function POST(req: NextRequest) {
             .map((id: string) => id.trim())
             .filter(Boolean);
         const existingAhaIdsSet = new Set(existingAhaIds);
+
+        /** Invalidate cached Aha epic counts so the denominator refreshes on next load. */
+        const invalidateAhaEpicCountCache = async (forReleaseName?: string) => {
+            const now = new Date().toISOString();
+            const payload = { aha_epic_count: null, aha_epic_count_updated_at: null };
+            if (forReleaseName) {
+                await supabaseAdmin.from('release_schedule').update(payload).eq('release_name', forReleaseName);
+            } else {
+                await supabaseAdmin.from('release_schedule').update(payload).neq('release_name', '');
+            }
+        };
 
         console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, releaseName, user: user.email });
 
@@ -261,6 +274,7 @@ export async function POST(req: NextRequest) {
 
                     const ownerId = await resolveOwnerId(epicData.owner_email);
                     const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+                    await clearAhaRecordNotFound(savedEpic.id);
 
                     if (isNewEpic) {
                         await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
@@ -272,9 +286,13 @@ export async function POST(req: NextRequest) {
                     results.processed++;
                     results.removed_from_release++;
                 } catch (epicError) {
-                    const errorMsg = `Error revalidating epic ${ahaId}: ${(epicError as Error).message}`;
+                    const err = epicError as Error;
+                    const errorMsg = `Error revalidating epic ${ahaId}: ${err.message}`;
                     console.error(errorMsg);
                     results.errors.push(errorMsg);
+                    if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
+                        await setAhaRecordNotFoundByAhaId(ahaId);
+                    }
                 }
             }
 
@@ -366,6 +384,7 @@ export async function POST(req: NextRequest) {
 
                     const ownerId = await resolveOwnerId(epicData.owner_email);
                     const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+                    await clearAhaRecordNotFound(savedEpic.id);
 
                     if (isNewEpic) {
                         await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
@@ -376,13 +395,19 @@ export async function POST(req: NextRequest) {
 
                     results.processed++;
                 } catch (epicError) {
-                    const errorMsg = `Error processing epic ${ahaId}: ${(epicError as Error).message}`;
+                    const err = epicError as Error;
+                    const errorMsg = `Error processing epic ${ahaId}: ${err.message}`;
                     console.error(errorMsg);
                     results.errors.push(errorMsg);
+                    if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
+                        await setAhaRecordNotFoundByAhaId(ahaId);
+                    }
                 }
             }
 
             console.log('✅ Manual Aha release sync completed', results);
+
+            await invalidateAhaEpicCountCache(releaseName);
 
             return NextResponse.json({
                 success: true,
@@ -477,10 +502,15 @@ export async function POST(req: NextRequest) {
 
                 // Fetch full epic details to ensure all custom fields are loaded
                 let fullEpic = ahaEpic;
+                const ahaEpicId = ahaEpic.reference_num || ahaEpic.id;
                 try {
-                    fullEpic = await client.getEpic(ahaEpic.reference_num || ahaEpic.id);
+                    fullEpic = await client.getEpic(ahaEpicId);
                 } catch (fetchError) {
+                    const err = fetchError as Error;
                     console.warn(`Could not fetch full details for ${ahaEpic.reference_num}, using partial data`);
+                    if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
+                        await setAhaRecordNotFoundByAhaId(ahaEpicId);
+                    }
                 }
 
                 // Map Aha epic to our schema
@@ -551,6 +581,7 @@ export async function POST(req: NextRequest) {
 
                 // Upsert epic
                 const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+                await clearAhaRecordNotFound(savedEpic.id);
 
                 // Instantiate criteria for new epics
                 if (isNewEpic) {
@@ -565,13 +596,20 @@ export async function POST(req: NextRequest) {
                 results.processed++;
 
             } catch (epicError) {
-                const errorMsg = `Error processing epic ${ahaEpic.reference_num || ahaEpic.id}: ${(epicError as Error).message}`;
+                const err = epicError as Error;
+                const ahaIdForEpic = ahaEpic.reference_num || ahaEpic.id;
+                const errorMsg = `Error processing epic ${ahaIdForEpic}: ${err.message}`;
                 console.error(errorMsg);
                 results.errors.push(errorMsg);
+                if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
+                    await setAhaRecordNotFoundByAhaId(ahaIdForEpic);
+                }
             }
         }
 
         console.log('✅ Manual Aha sync completed', results);
+
+        await invalidateAhaEpicCountCache();
 
         const skipReasons = [];
         if (results.skipped_no_release > 0) {

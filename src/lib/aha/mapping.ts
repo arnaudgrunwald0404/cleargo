@@ -2,7 +2,6 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import type { AhaConfig, AhaEpic } from './types';
 import { getCustomFields } from './client';
-import { getSettings } from '@/lib/settings-db';
 
 let cachedConfig: AhaConfig | null = null;
 
@@ -97,38 +96,31 @@ async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, 
     }
 }
 
-export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Promise<any> {
-    const key = getCustomFieldKey(fieldAlias);
-
-    // AHA API returns custom_fields as an array, not an object
-    // Handle both array and object formats for compatibility
+/** Get custom field value from epic by Aha API key (used when alias key may be missing in config). */
+async function getCustomFieldValueByKey(epic: AhaEpic, key: string): Promise<any> {
     let field: any = null;
     if (Array.isArray(epic.custom_fields)) {
         field = epic.custom_fields.find((f: any) => f?.key === key);
     } else if (epic.custom_fields && typeof epic.custom_fields === 'object') {
         field = epic.custom_fields[key];
     }
-
     if (!field) return null;
-
     const value = field.value;
-
-    // For select fields, Aha may return value as an object with name property (the option label)
     if (value && typeof value === 'object' && !Array.isArray(value) && value.name) {
-        return value.name; // Return the option label
+        return value.name;
     }
-
-    // If value is a string, it might be a code for a select field
-    // Try to fetch the field definition to map code to label
     if (typeof value === 'string' && value.trim()) {
         const optionsMap = await getFieldDefinitionOptions(key);
         if (optionsMap && optionsMap.has(value)) {
-            return optionsMap.get(value); // Return the mapped label
+            return optionsMap.get(value);
         }
     }
-
-    // Return value as-is (could be number, boolean, string, etc.)
     return value ?? null;
+}
+
+export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Promise<any> {
+    const key = getCustomFieldKey(fieldAlias);
+    return getCustomFieldValueByKey(epic, key);
 }
 
 export function mapTierFromAha(ahaValue: string | null): string {
@@ -225,14 +217,11 @@ export async function mapEpicToEpic(
     const customFields: Record<string, any> = {};
     if (fieldsToLoad && Array.isArray(fieldsToLoad)) {
         for (const fieldAlias of fieldsToLoad) {
-            try {
-                const value = await getCustomFieldValue(epic, fieldAlias);
-                if (value !== null && value !== undefined) {
-                    customFields[fieldAlias] = value;
-                }
-            } catch (error) {
-                // Field alias not found in config, skip it
-                console.warn(`Field alias "${fieldAlias}" not found in AHA config, skipping`);
+            const key = getCustomFieldKeySafe(fieldAlias);
+            if (!key) continue;
+            const value = await getCustomFieldValueByKey(epic, key);
+            if (value !== null && value !== undefined) {
+                customFields[fieldAlias] = value;
             }
         }
     }
@@ -256,9 +245,17 @@ export async function mapEpicToEpic(
         standardFields.aha_release_name = releaseName;
     }
 
+    // When fieldsToLoad is provided, only include standard fields that are in the selected list
+    const standardFieldsForOutput =
+        fieldsToLoad && Array.isArray(fieldsToLoad)
+            ? Object.fromEntries(
+                  Object.entries(standardFields).filter(([key]) => fieldsToLoad.includes(key))
+              )
+            : standardFields;
+
     // Structure: { standard_fields: {...}, custom_fields: {...} }
     const ahaFields: Record<string, any> = {
-        standard_fields: standardFields,
+        standard_fields: standardFieldsForOutput,
         custom_fields: customFields,
     };
 
@@ -302,40 +299,28 @@ export async function mapEpicToEpic(
 
 
 export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
-    // Filter: (ClearGO Candidate == Yes) OR (tags contains any of the allowed tags from settings)
-    const settings = await getSettings();
-    const ALLOWED_TAGS = settings.aha_tags || ['LaunchConsole', 'cleargo', 'ClearGO', 'ClearGo'];
-
-    // Check for cleargo_candidate custom field if it exists in config, otherwise default to false
+    // Filter: only include epics where ClearGO Candidate = Yes
     let isClearGOCandidate = false;
     try {
-        // Try to get the field value using the key directly (cleargo_candidate)
         const fieldKey = 'cleargo_candidate';
         let fieldValue: any = null;
-        
-        // AHA API returns custom_fields as an array
+
         if (Array.isArray(epic.custom_fields)) {
             const field = epic.custom_fields.find((f: any) => f?.key === fieldKey);
             if (field) {
                 fieldValue = field.value;
-                // For select fields, value might be an object with name property
                 if (fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue) && fieldValue.name) {
                     fieldValue = fieldValue.name;
                 }
             }
         }
-        
-        // Check if the value is "Yes"
+
         isClearGOCandidate = fieldValue === 'Yes' || fieldValue === true;
     } catch (error) {
-        // cleargo_candidate might not be configured as a custom field, that's okay
-        // We'll rely on tags instead
-        console.debug('cleargo_candidate field not configured, using tags only');
+        console.debug('cleargo_candidate field not configured');
     }
-    
-    const hasLaunchTag = epic.tags?.some(tag => ALLOWED_TAGS.includes(tag)) ?? false;
 
-    return isClearGOCandidate || hasLaunchTag;
+    return isClearGOCandidate;
 }
 
 export function buildWriteBackPayload(data: {

@@ -11,6 +11,7 @@ import {
     instantiateCriteriaForEpic,
     getEpicByAhaId,
     fetchAndUpsertReleaseFromAha,
+    clearAhaRecordNotFound,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
@@ -64,11 +65,16 @@ export async function POST(req: NextRequest) {
                 console.log('✅ Fetched full epic details with custom fields');
             } catch (error) {
                 console.error('Failed to fetch epic details:', error);
+                const err = error as Error;
+                if (err?.message?.includes('404') || err?.message?.toLowerCase().includes('record not found')) {
+                    const { setAhaRecordNotFoundByAhaId } = await import('@/lib/db/epics');
+                    await setAhaRecordNotFoundByAhaId(epicId);
+                }
                 // If we have epic from payload, use it as fallback
                 if (!epic) {
                     return NextResponse.json({ 
                         error: 'Failed to fetch epic details', 
-                        details: error instanceof Error ? error.message : String(error)
+                        details: err?.message ?? String(error)
                     }, { status: 500 });
                 }
                 console.warn('Using epic from payload (may be missing some custom fields)');
@@ -166,6 +172,7 @@ export async function POST(req: NextRequest) {
 
         // Upsert epic
         const savedEpic = await upsertEpicFromAha(epicData, ownerId);
+        await clearAhaRecordNotFound(savedEpic.id);
         console.log(`${isNewEpic ? '🆕' : '🔄'} Epic ${isNewEpic ? 'created' : 'updated'}:`, {
             epic_id: savedEpic.id,
             aha_id: savedEpic.aha_id,
