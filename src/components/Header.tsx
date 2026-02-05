@@ -71,9 +71,6 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         return null;
     }
 
-    // Check if user has only the OTHER role (pending access)
-    const hasOnlyOtherRole = !role || role === 'OTHER';
-
     // Primary navigation tabs
     const primaryTabs = [
         { link: '/', label: 'Home' },
@@ -122,7 +119,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
                         {/* Logo - Purple rounded square with lightning bolt and ClearGO text */}
                         <Link 
-                            href={hasOnlyOtherRole ? "/access-pending" : "/"} 
+                            href="/" 
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -162,9 +159,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                             </span>
                         </Link>
 
-                        {/* Primary Navigation Tabs - Hidden for users with only OTHER role */}
-                        {!hasOnlyOtherRole && (
-                            <nav style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '100%' }}>
+                        <nav style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '100%' }}>
                                 {primaryTabs.map((tab) => {
                                     const active = isActive(tab.link);
                                     return (
@@ -204,14 +199,11 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     );
                                 })}
                             </nav>
-                        )}
                     </div>
 
                     {/* Right side: Scope Toggle, Search and User Avatar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        {/* Scope Toggle - Only show for users with proper roles */}
-                        {!hasOnlyOtherRole && (
-                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
                                 <SegmentedControl
                                     value={scope}
                                     onChange={(value) => setScope(value as 'all' | 'my')}
@@ -237,16 +229,12 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     }}
                                 />
                             </div>
-                        )}
-                        {/* Epic Search - Hidden for users with only OTHER role */}
-                        {!hasOnlyOtherRole && (
-                            <div style={{
+                        <div style={{
                                 position: 'relative',
                                 width: '280px'
                             }}>
                                 <EpicSearch fetchEpics={true} className="header-search" />
                             </div>
-                        )}
 
                         {/* User Avatar */}
                         <UserAvatar email={email} role={role} imageUrl={imageUrl} />

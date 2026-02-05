@@ -1,13 +1,10 @@
 import { type NextRequest } from 'next/server';
-import { updateSession, getUserWithRoles } from '@/lib/supabase/middleware';
+import { updateSession } from '@/lib/supabase/middleware';
 import { rateLimit } from '@/lib/rate-limit';
 import { NextResponse } from 'next/server';
 
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = ['/login', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password', '/setup-password'];
-
-// Routes accessible to users with only the OTHER role (pending access)
-const PENDING_ACCESS_ROUTES = ['/access-pending', '/auth/signout', '/account'];
 
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
@@ -105,28 +102,6 @@ export async function proxy(request: NextRequest) {
             const loginUrl = new URL('/login', request.url);
             loginUrl.searchParams.set('redirect', pathname);
             return NextResponse.redirect(loginUrl);
-        }
-
-        // Check if user has only OTHER role (pending access)
-        // Skip this check for routes that pending users can access
-        const isPendingAccessRoute = PENDING_ACCESS_ROUTES.some(route => 
-            pathname === route || pathname.startsWith(route + '/')
-        );
-        
-        if (!isPendingAccessRoute) {
-            const userWithRoles = await getUserWithRoles(request);
-            if (userWithRoles) {
-                const roles = userWithRoles.roles || [];
-                // If user has no roles or only has OTHER role, redirect to access-pending
-                const hasOnlyOtherRole = roles.length === 0 || 
-                    (roles.length === 1 && roles[0] === 'OTHER');
-                
-                if (hasOnlyOtherRole) {
-                    console.log(`[Proxy] Redirecting ${userWithRoles.email} to /access-pending (roles: ${roles.join(', ') || 'none'})`);
-                    const accessPendingUrl = new URL('/access-pending', request.url);
-                    return NextResponse.redirect(accessPendingUrl);
-                }
-            }
         }
     }
 

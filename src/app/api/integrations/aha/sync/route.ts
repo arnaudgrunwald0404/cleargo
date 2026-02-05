@@ -487,6 +487,7 @@ export async function POST(req: NextRequest) {
             updated: 0,
             skipped: 0,
             skipped_no_release: 0,
+            skipped_cleargo_no: 0,
             skipped_release_not_synced: 0,
             errors: [] as string[],
         };
@@ -511,6 +512,19 @@ export async function POST(req: NextRequest) {
                     if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
                         await setAhaRecordNotFoundByAhaId(ahaEpicId);
                     }
+                }
+
+                // Only refresh epics that have ClearGO Candidate = Yes in Aha (we do not write to Aha)
+                const cleargoCandidate = Array.isArray(fullEpic.custom_fields)
+                    ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')
+                    : null;
+                const cleargoCandidateValue = cleargoCandidate?.value?.name ?? cleargoCandidate?.value;
+                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                if (!isClearGOCandidate) {
+                    console.log(`⏭️  Skipping epic ${ahaEpic.reference_num || ahaEpic.id}: ClearGO Candidate is not Yes`);
+                    results.skipped_cleargo_no++;
+                    results.skipped++;
+                    continue;
                 }
 
                 // Map Aha epic to our schema
@@ -612,6 +626,9 @@ export async function POST(req: NextRequest) {
         await invalidateAhaEpicCountCache();
 
         const skipReasons = [];
+        if (results.skipped_cleargo_no > 0) {
+            skipReasons.push(`${results.skipped_cleargo_no} ClearGO Candidate not Yes`);
+        }
         if (results.skipped_no_release > 0) {
             skipReasons.push(`${results.skipped_no_release} with no release`);
         }

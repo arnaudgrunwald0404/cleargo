@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
@@ -112,13 +113,34 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const canDelete = await canRolesPerform((me?.roles as string[]) || [], "users.delete");
   if (!canDelete) return forbid();
 
-  const { error } = await supabase
+  const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!secretKey || !supabaseUrl) {
+    return NextResponse.json(
+      { error: "Server configuration error", details: "Missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY" },
+      { status: 503 }
+    );
+  }
+  const admin = createSupabaseAdminClient(supabaseUrl, secretKey);
+
+  const { data: deleted, error } = await admin
     .from("app_user")
     .delete()
-    .eq("id", id);
+    .eq("id", id)
+    .select("id");
 
   if (error) {
-    return NextResponse.json({ error: "Failed to delete user", details: error.message }, { status: 500 });
+    return NextResponse.json(
+      { error: "Failed to delete user", details: error.message },
+      { status: 500 }
+    );
+  }
+
+  if (!deleted || deleted.length === 0) {
+    return NextResponse.json(
+      { error: "User not found or could not be deleted", details: "No row was deleted. The user may not exist or may be protected by database constraints." },
+      { status: 404 }
+    );
   }
 
   return NextResponse.json({ message: "User deleted successfully" });

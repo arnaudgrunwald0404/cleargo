@@ -10,7 +10,6 @@ export default function UsersPage() {
         settings,
         setSettings,
         users,
-        pendingUsers,
         usersLoading,
         fetchUsers,
         pods,
@@ -102,7 +101,6 @@ export default function UsersPage() {
     return (
         <UserManagementSection
             users={users}
-            pendingUsers={pendingUsers}
             loading={usersLoading}
             onRefresh={fetchUsers}
             editingUserId={editingUserId}

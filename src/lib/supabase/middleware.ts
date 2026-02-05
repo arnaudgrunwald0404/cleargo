@@ -61,7 +61,6 @@ export async function updateSession(request: NextRequest) {
 
 /**
  * Get the current user's email and roles from the database.
- * Used in middleware to check if user has only the OTHER role (pending access).
  * Uses service role key to bypass RLS since we need to read roles for authorization.
  */
 export async function getUserWithRoles(request: NextRequest): Promise<UserWithRoles | null> {

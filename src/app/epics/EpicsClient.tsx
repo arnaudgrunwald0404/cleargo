@@ -3,8 +3,8 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip, Menu, Checkbox, Stack, ScrollArea } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconArrowsRightLeft, IconUser } from '@tabler/icons-react';
+import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea } from '@mantine/core';
+import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -57,12 +57,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     
     // Sync with Aha state
-    const [syncReleasesModalOpen, setSyncReleasesModalOpen] = useState(false);
-    const [availableReleases, setAvailableReleases] = useState<Array<{ id: string; name: string; start_date?: string; end_date?: string }>>([]);
-    const [selectedReleasesToSync, setSelectedReleasesToSync] = useState<Set<string>>(new Set());
-    const [loadingReleases, setLoadingReleases] = useState(false);
     const [refreshingEpics, setRefreshingEpics] = useState(false);
-    const [syncingReleases, setSyncingReleases] = useState(false);
 
     useEffect(() => {
         // Load current user email and roles
@@ -929,35 +924,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         return currentUserRoles.some(role => allowedRoles.includes(role.toUpperCase()));
     }, [currentUserRoles]);
 
-    // Load available releases from Aha
-    const loadAvailableReleases = async () => {
-        setLoadingReleases(true);
-        try {
-            const res = await fetch('/api/integrations/aha/releases', {
-                method: 'GET',
-                credentials: 'include',
-            });
-            
-            if (!res.ok) {
-                throw new Error('Failed to load releases');
-            }
-            
-            const data = await res.json();
-            setAvailableReleases(data.releases || []);
-        } catch (error: any) {
-            notifications.show({
-                title: 'Error',
-                message: error.message || 'Failed to load releases',
-                color: 'red',
-            });
-        } finally {
-            setLoadingReleases(false);
-        }
-    };
-
-    // Handle refresh existing epics
+    // Handle refresh existing epics (only those with ClearGO Candidate = Yes in Aha)
     const handleRefreshEpics = async () => {
-        if (!confirm('This will refresh all existing epics with the latest data from Aha!. Continue?')) {
+        if (!confirm('This will refresh epics that have ClearGO Candidate = Yes in Aha! with the latest data. Continue?')) {
             return;
         }
         setRefreshingEpics(true);
@@ -989,56 +958,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             });
         } finally {
             setRefreshingEpics(false);
-        }
-    };
-
-    // Handle sync selected releases
-    const handleSyncReleases = async () => {
-        if (selectedReleasesToSync.size === 0) {
-            notifications.show({
-                title: 'No releases selected',
-                message: 'Please select at least one release to sync',
-                color: 'yellow',
-            });
-            return;
-        }
-
-        setSyncingReleases(true);
-        try {
-            const res = await fetch('/api/integrations/aha/sync-releases-epics', {
-                method: 'POST',
-                credentials: 'include',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    releaseIds: Array.from(selectedReleasesToSync),
-                }),
-            });
-            
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Failed to sync releases');
-            }
-            
-            const data = await res.json();
-            notifications.show({
-                title: 'Success',
-                message: `Successfully synced ${data.synced || selectedReleasesToSync.size} release(s)`,
-                color: 'green',
-            });
-            
-            setSyncReleasesModalOpen(false);
-            setSelectedReleasesToSync(new Set());
-            
-            // Reload the page to show updated data
-            router.refresh();
-        } catch (error: any) {
-            notifications.show({
-                title: 'Error',
-                message: error.message || 'Failed to sync releases',
-                color: 'red',
-            });
-        } finally {
-            setSyncingReleases(false);
         }
     };
 
@@ -1074,35 +993,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         margin: 0
                     }}>Releases</Title>
                     {canSyncWithAha && (
-                        <Menu shadow="md" width={200}>
-                            <Menu.Target>
-                                <Button
-                                    leftSection={<IconArrowsRightLeft size={16} />}
-                                    variant="light"
-                                    color="copper"
-                                >
-                                    Sync with Aha!
-                                </Button>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                                <Menu.Item
-                                    leftSection={<IconRefresh size={16} />}
-                                    onClick={handleRefreshEpics}
-                                    disabled={refreshingEpics}
-                                >
-                                    {refreshingEpics ? 'Refreshing...' : 'Refresh existing epics'}
-                                </Menu.Item>
-                                <Menu.Item
-                                    leftSection={<IconArrowsRightLeft size={16} />}
-                                    onClick={async () => {
-                                        setSyncReleasesModalOpen(true);
-                                        await loadAvailableReleases();
-                                    }}
-                                >
-                                    Sync releases...
-                                </Menu.Item>
-                            </Menu.Dropdown>
-                        </Menu>
+                        <Button
+                            leftSection={<IconRefresh size={16} />}
+                            variant="light"
+                            color="copper"
+                            onClick={handleRefreshEpics}
+                            loading={refreshingEpics}
+                            disabled={refreshingEpics}
+                        >
+                            Refresh Epic Data
+                        </Button>
                     )}
                 </Group>
             </Box>
@@ -2142,91 +2042,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         </Button>
                     </Group>
                 </div>
-            </Modal>
-
-            {/* Sync Releases Modal */}
-            <Modal
-                opened={syncReleasesModalOpen}
-                onClose={() => {
-                    setSyncReleasesModalOpen(false);
-                    setSelectedReleasesToSync(new Set());
-                }}
-                title="Sync Releases with Aha!"
-                size="lg"
-                centered
-            >
-                <Stack gap="md">
-                    <Text size="sm" c="dimmed">
-                        Select which releases to sync. All epics in the selected releases will be synced and their ClearGO Candidate field will be set to "Yes" in Aha!.
-                    </Text>
-                    
-                    {loadingReleases ? (
-                        <Box p="xl" style={{ display: 'flex', justifyContent: 'center' }}>
-                            <PurpleLoader size="sm" />
-                        </Box>
-                    ) : (
-                        <ScrollArea h={400}>
-                            <Stack gap="xs">
-                                {availableReleases.length === 0 ? (
-                                    <Text size="sm" c="dimmed" ta="center" py="xl">
-                                        No releases found
-                                    </Text>
-                                ) : (
-                                    availableReleases.map((release) => (
-                                        <Checkbox
-                                            key={release.id}
-                                            label={
-                                                <div>
-                                                    <Text fw={500}>{release.name}</Text>
-                                                    {(release.start_date || release.end_date) && (
-                                                        <Text size="xs" c="dimmed">
-                                                            {release.start_date && release.end_date
-                                                                ? `${new Date(release.start_date).toLocaleDateString()} - ${new Date(release.end_date).toLocaleDateString()}`
-                                                                : release.end_date
-                                                                ? `End: ${new Date(release.end_date).toLocaleDateString()}`
-                                                                : `Start: ${new Date(release.start_date!).toLocaleDateString()}`}
-                                                        </Text>
-                                                    )}
-                                                </div>
-                                            }
-                                            checked={selectedReleasesToSync.has(release.id)}
-                                            onChange={(event) => {
-                                                const newSelected = new Set(selectedReleasesToSync);
-                                                if (event.currentTarget.checked) {
-                                                    newSelected.add(release.id);
-                                                } else {
-                                                    newSelected.delete(release.id);
-                                                }
-                                                setSelectedReleasesToSync(newSelected);
-                                            }}
-                                        />
-                                    ))
-                                )}
-                            </Stack>
-                        </ScrollArea>
-                    )}
-                    
-                    <Group justify="flex-end" mt="md">
-                        <Button
-                            variant="subtle"
-                            onClick={() => {
-                                setSyncReleasesModalOpen(false);
-                                setSelectedReleasesToSync(new Set());
-                            }}
-                            disabled={syncingReleases}
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSyncReleases}
-                            loading={syncingReleases}
-                            leftSection={<IconArrowsRightLeft size={16} />}
-                            color="copper"
-                        >
-                            Sync Selected Releases
-                        </Button>
-                    </Group>
-                </Stack>
             </Modal>
 
         </div>

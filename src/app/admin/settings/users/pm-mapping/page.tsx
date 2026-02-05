@@ -10,7 +10,6 @@ export default function PMMappingPage() {
         settings,
         setSettings,
         users,
-        pendingUsers,
         usersLoading,
         fetchUsers,
         pods,
@@ -101,7 +100,6 @@ export default function PMMappingPage() {
     return (
         <UserManagementSection
             users={users}
-            pendingUsers={pendingUsers}
             loading={usersLoading}
             onRefresh={fetchUsers}
             editingUserId={editingUserId}

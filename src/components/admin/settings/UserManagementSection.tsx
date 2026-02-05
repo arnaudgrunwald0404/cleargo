@@ -1,8 +1,8 @@
 "use client";
 import { PurpleLoader } from '../../PurpleLoader';
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import { Drawer, Stack, Group, TextInput, MultiSelect, Select, Checkbox, Button, Textarea } from "@mantine/core";
-import { IconTrash, IconMail, IconPencil, IconGripVertical, IconCheck, IconX, IconUpload, IconList, IconArrowUp, IconArrowDown, IconArrowsSort } from "@tabler/icons-react";
+import { IconTrash, IconMail, IconPencil, IconGripVertical, IconUpload, IconList, IconArrowUp, IconArrowDown, IconArrowsSort } from "@tabler/icons-react";
 import type { AppSettings } from "@/lib/settings-db";
 import { ROLES } from "@/lib/constants/settings";
 
@@ -21,7 +21,6 @@ type User = {
 
 type Props = {
   users: User[];
-  pendingUsers?: User[];
   loading: boolean;
   onRefresh: () => void;
   editingUserId: string | null;
@@ -54,7 +53,6 @@ type Props = {
 export default function UserManagementSection(props: Props) {
   const {
     users,
-    pendingUsers = [],
     loading,
     onRefresh,
     editingUserId,
@@ -85,10 +83,10 @@ export default function UserManagementSection(props: Props) {
   } = props;
 
   const [newUser, setNewUser] = useState({ email: "", first_name: "", last_name: "", roles: [] as string[], is_active: true });
-  const [approvingUserEmail, setApprovingUserEmail] = useState<string | null>(null);
-  const [approveRoles, setApproveRoles] = useState<string[]>([]);
-  const [approving, setApproving] = useState(false);
 
+  const [editingRolesUserId, setEditingRolesUserId] = useState<string | null>(null);
+  const [editingRolesDraft, setEditingRolesDraft] = useState<string[] | null>(null);
+  const rolesEditRef = useRef<HTMLDivElement>(null);
   const [bulkImportDrawerOpen, setBulkImportDrawerOpen] = useState(false);
   const [bulkImportMode, setBulkImportMode] = useState<"file" | "emails" | null>(null);
   const [bulkImportEmailsStep, setBulkImportEmailsStep] = useState<1 | 2>(1);
@@ -96,9 +94,45 @@ export default function UserManagementSection(props: Props) {
   const [bulkImportRoles, setBulkImportRoles] = useState<Record<string, string>>({});
   const [bulkImportEmailsLoading, setBulkImportEmailsLoading] = useState(false);
 
-  type SortKey = "firstName" | "lastName" | "email" | "role";
+  type SortKey = "firstName" | "lastName" | "email" | "role" | "lastLoggedIn";
   const [userSortKey, setUserSortKey] = useState<SortKey>("lastName");
   const [userSortDir, setUserSortDir] = useState<"asc" | "desc">("asc");
+
+  useEffect(() => {
+    if (!editingRolesUserId || editingRolesDraft === null) return;
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (rolesEditRef.current?.contains(target)) return;
+      if (document.body.contains(target) && (target as Element).closest?.("[role=\"listbox\"]")) return;
+      const user = users.find((u) => u.id === editingRolesUserId);
+      if (!user) {
+        setEditingRolesUserId(null);
+        setEditingRolesDraft(null);
+        return;
+      }
+      const original = user.roles?.length ? [...user.roles].sort() : [user.role || "OTHER"];
+      const draft = [...editingRolesDraft].sort();
+      const same = original.length === draft.length && original.every((r, i) => r === draft[i]);
+      if (!same) {
+        const roles = draft.length > 0 ? draft : ["OTHER"];
+        fetch(`/api/users/${editingRolesUserId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ roles }),
+        }).then(async (res) => {
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error((data as { error?: string })?.error || "Failed to update roles");
+          }
+          onRefresh();
+        }).catch((err: any) => alert(err?.message || "Failed to update roles"));
+      }
+      setEditingRolesUserId(null);
+      setEditingRolesDraft(null);
+    };
+    document.addEventListener("mousedown", handleMouseDown, true);
+    return () => document.removeEventListener("mousedown", handleMouseDown, true);
+  }, [editingRolesUserId, editingRolesDraft, users, onRefresh]);
 
   const handleAddUser = async () => {
     try {
@@ -209,7 +243,11 @@ export default function UserManagementSection(props: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: Array.from(selectedUserIds) }),
       });
-      if (!res.ok) throw new Error("Failed to delete users");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const msg = data.details ? `${data.error}: ${data.details}` : (data.error || "Failed to delete users");
+        throw new Error(msg);
+      }
       setSelectedUserIds(new Set());
       onRefresh();
     } catch (error: any) {
@@ -220,9 +258,10 @@ export default function UserManagementSection(props: Props) {
   const handleDeleteUser = async (id: string): Promise<boolean> => {
     try {
       const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || "Failed to delete user");
+        const msg = data.details ? `${data.error}: ${data.details}` : (data.error || "Failed to delete user");
+        throw new Error(msg);
       }
       return true;
     } catch (error: any) {
@@ -272,60 +311,6 @@ export default function UserManagementSection(props: Props) {
     }
   };
 
-  const handleApproveUser = async () => {
-    if (!approvingUserEmail) return;
-    if (approveRoles.length === 0) {
-      alert("Please select at least one role");
-      return;
-    }
-    setApproving(true);
-    try {
-      const pendingUser = pendingUsers.find(u => u.email === approvingUserEmail);
-      const res = await fetch("/api/users/approve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: approvingUserEmail,
-          first_name: pendingUser?.first_name,
-          last_name: pendingUser?.last_name,
-          roles: approveRoles,
-          is_active: true,
-        }),
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to approve user");
-      }
-      setApprovingUserEmail(null);
-      setApproveRoles([]);
-      onRefresh();
-      alert("User approved successfully! An email has been sent to notify them.");
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    } finally {
-      setApproving(false);
-    }
-  };
-
-  const handleDenyUser = async (email: string) => {
-    if (!confirm(`Are you sure you want to deny and delete the access request for ${email}? This action cannot be undone.`)) {
-      return;
-    }
-    try {
-      const res = await fetch(`/api/users/pending/${encodeURIComponent(email)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to deny user");
-      }
-      onRefresh();
-      alert("Access request denied. The user has been removed from the system and an email notification has been sent.");
-    } catch (error: any) {
-      alert(`Error: ${error.message}`);
-    }
-  };
-
   const editingUser = users.find((u) => u.id === editingUserId);
 
   const sortedUsers = useMemo(() => {
@@ -345,6 +330,12 @@ export default function UserManagementSection(props: Props) {
         case "role":
           v = firstRole(a).localeCompare(firstRole(b));
           break;
+        case "lastLoggedIn": {
+          const ta = a.last_logged_in ? new Date(a.last_logged_in).getTime() : 0;
+          const tb = b.last_logged_in ? new Date(b.last_logged_in).getTime() : 0;
+          v = ta - tb;
+          break;
+        }
       }
       if (v !== 0) return userSortDir === "asc" ? v : -v;
       const aEmail = (a.email || "").toLowerCase();
@@ -371,58 +362,6 @@ export default function UserManagementSection(props: Props) {
 
         {activeSubSection === "users" && (
           <div>
-            {/* Pending Users Section - Only show when there are pending requests */}
-            {pendingUsers.length > 0 && (
-              <div className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-lg">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-md font-semibold text-gray-900 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-amber-500 rounded-full"></span>
-                      Pending Access Requests ({pendingUsers.length})
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      Users waiting for approval
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  {pendingUsers.map((pendingUser) => (
-                    <div key={pendingUser.id || pendingUser.email} className="flex items-center justify-between p-3 bg-white rounded-lg border border-amber-200">
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-gray-900">{pendingUser.email}</p>
-                        {pendingUser.last_logged_in && (
-                          <p className="text-xs text-gray-500 mt-1">
-                            Last logged in: {new Date(pendingUser.last_logged_in).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleDenyUser(pendingUser.email)}
-                          className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-medium transition-colors flex items-center gap-2"
-                          title="Deny and delete access request"
-                        >
-                          <IconX className="w-4 h-4" />
-                          Deny
-                        </button>
-                        <button
-                          onClick={() => {
-                            setApprovingUserEmail(pendingUser.email);
-                            setApproveRoles([]);
-                          }}
-                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium transition-colors flex items-center gap-2"
-                          title="Approve access request"
-                        >
-                          <IconCheck className="w-4 h-4" />
-                          Approve
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Users</h3>
@@ -492,8 +431,8 @@ export default function UserManagementSection(props: Props) {
                 <span>Loading users...</span>
               </div>
             ) : (
-              <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                <table className="min-w-full divide-y divide-purple-200 table-fixed">
+              <div className="border-2 border-purple-200 rounded-lg bg-purple-50 overflow-x-auto overflow-y-visible">
+                <table className="min-w-full divide-y divide-purple-200 table-fixed" style={{ minWidth: '900px' }}>
               <colgroup>
                 <col className="w-12" />
                 <col className="w-auto" />
@@ -516,7 +455,7 @@ export default function UserManagementSection(props: Props) {
                       }}
                     />
                   </th>
-                  {(["firstName", "lastName", "email", "role"] as SortKey[]).map((key) => (
+                  {(["firstName", "lastName", "email", "role", "lastLoggedIn"] as SortKey[]).map((key) => (
                     <th
                       key={key}
                       className="px-4 py-2 text-left text-xs font-medium text-purple-900 cursor-pointer select-none hover:bg-purple-200/50 transition-colors"
@@ -530,12 +469,11 @@ export default function UserManagementSection(props: Props) {
                       }}
                     >
                       <span className="inline-flex items-center gap-1">
-                        {key === "firstName" ? "First Name" : key === "lastName" ? "Last Name" : key === "email" ? "Email" : "Roles"}
+                        {key === "firstName" ? "First Name" : key === "lastName" ? "Last Name" : key === "email" ? "Email" : key === "role" ? "Roles" : "Last Logged In"}
                         {userSortKey === key ? (userSortDir === "asc" ? <IconArrowUp size={14} /> : <IconArrowDown size={14} />) : <IconArrowsSort size={14} className="opacity-40" />}
                       </span>
                     </th>
                   ))}
-                  <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-32">Last Logged In</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 w-20" title="Receive Slack notifications">Slack</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-purple-900 w-40">Actions</th>
                 </tr>
@@ -558,14 +496,35 @@ export default function UserManagementSection(props: Props) {
                     <td className="px-4 py-3 text-sm text-gray-900">{user.first_name || "—"}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{user.last_name || "—"}</td>
                     <td className="px-4 py-3 text-sm text-gray-700">{user.email}</td>
-                    <td className="px-4 py-3 text-sm">
-                      <div className="flex flex-wrap gap-1">
-                        {(user.roles || [user.role || "OTHER"]).map((role: string) => (
-                          <span key={role} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
-                            {role}
-                          </span>
-                        ))}
-                      </div>
+                    <td className="px-4 py-2 text-sm align-top">
+                      {editingRolesUserId === user.id ? (
+                        <div ref={rolesEditRef}>
+                          <MultiSelect
+                            size="xs"
+                            data={ROLES as unknown as string[]}
+                            value={editingRolesDraft ?? (user.roles?.length ? user.roles : [user.role || "OTHER"])}
+                            onChange={(value) => setEditingRolesDraft(value.length > 0 ? value : ["OTHER"])}
+                            placeholder="Roles"
+                            classNames={{ input: "min-h-8 text-xs" }}
+                            styles={{ input: { minHeight: 28 } }}
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingRolesUserId(user.id);
+                            setEditingRolesDraft(user.roles?.length ? [...user.roles] : [user.role || "OTHER"]);
+                          }}
+                          className="flex flex-wrap gap-1 text-left rounded hover:bg-purple-100/80 transition-colors -m-1 p-1"
+                        >
+                          {(user.roles || [user.role || "OTHER"]).map((role: string) => (
+                            <span key={role} className="px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded">
+                              {role}
+                            </span>
+                          ))}
+                        </button>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-700 whitespace-nowrap w-32">{user.last_logged_in ? new Date(user.last_logged_in).toLocaleDateString() : "Never"}</td>
                     <td className="px-4 py-3 w-20">
@@ -859,73 +818,7 @@ export default function UserManagementSection(props: Props) {
         </Stack>
       </Drawer>
 
-      {approvingUserEmail && (
-        <ApproveUserDrawer
-          email={approvingUserEmail}
-          opened={!!approvingUserEmail}
-          onClose={() => {
-            setApprovingUserEmail(null);
-            setApproveRoles([]);
-          }}
-          onApprove={handleApproveUser}
-          roles={approveRoles}
-          setRoles={setApproveRoles}
-          approving={approving}
-        />
-      )}
     </div>
-  );
-}
-
-function ApproveUserDrawer({
-  email,
-  opened,
-  onClose,
-  onApprove,
-  roles,
-  setRoles,
-  approving,
-}: {
-  email: string;
-  opened: boolean;
-  onClose: () => void;
-  onApprove: () => void;
-  roles: string[];
-  setRoles: (roles: string[]) => void;
-  approving: boolean;
-}) {
-  return (
-    <Drawer opened={opened} onClose={onClose} title="Approve User Access" position="right" size="xl" padding="lg">
-      <Stack gap="md">
-        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-          <p className="text-sm text-green-800">
-            <strong>Email:</strong> {email}
-          </p>
-          <p className="text-sm text-green-700 mt-2">
-            This user has requested access to ClearGO. Select their roles below and approve to grant access. An email will be sent to notify them.
-          </p>
-        </div>
-        <MultiSelect
-          label="Roles *"
-          description="Select one or more roles for this user"
-          data={ROLES as unknown as string[]}
-          value={roles}
-          onChange={(value) => setRoles(value)}
-          placeholder="Select roles"
-          required
-          styles={{ input: { minHeight: "calc(2.5rem + 4px)", height: "calc(2.5rem + 4px)", fontSize: "1rem", display: "flex", alignItems: "center" } }}
-          classNames={{ input: "text-base" }}
-        />
-        <Group justify="space-between" mt="xl">
-          <Button variant="outline" onClick={onClose} disabled={approving}>
-            Cancel
-          </Button>
-          <Button onClick={onApprove} disabled={approving || roles.length === 0} leftSection={<IconCheck size={16} />}>
-            {approving ? "Approving..." : "Approve Access"}
-          </Button>
-        </Group>
-      </Stack>
-    </Drawer>
   );
 }
 
