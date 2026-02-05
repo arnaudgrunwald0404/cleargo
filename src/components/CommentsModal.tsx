@@ -643,7 +643,7 @@ export function CommentsModal({
     if (!status) return null;
     switch (status) {
       case 'GO': return '#10b981'; // green
-      case 'CONDITIONAL': return '#f59e0b'; // yellow
+      case 'CONDITIONAL': return 'var(--color-conditional-alloy, #FFA680)'; // Alloy
       case 'NO_GO': return '#ef4444'; // red
       case 'NOT_SET': return '#9ca3af'; // gray
       case 'NOT_APPLICABLE': return '#6b7280'; // gray
@@ -656,7 +656,7 @@ export function CommentsModal({
     if (!status) return 'Unknown';
     switch (status) {
       case 'GO': return 'GO (green)';
-      case 'CONDITIONAL': return 'CONDITIONAL (yellow)';
+      case 'CONDITIONAL': return 'CONDITIONAL (Alloy)';
       case 'NO_GO': return 'NO_GO (red)';
       case 'NOT_SET': return 'NOT_SET (gray)';
       case 'NOT_APPLICABLE': return 'N/A (not applicable)';
@@ -1659,8 +1659,10 @@ export function CommentsModal({
         </Tabs.List>
 
         <Tabs.Panel value="content" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingTop: '16px' }}>
-          <ScrollArea style={{ flex: 1, minHeight: 0 }} type="auto">
-            <Stack gap="lg" style={{ paddingRight: '16px', paddingBottom: '16px' }}>
+          {/* Data sources (URL, Jira) - scrollable, limited height so content entry can take the rest */}
+          {(criterion?.data_sources && (criterion.data_sources.some(s => s.type === 'url') || criterion.data_sources.some(s => s.type === 'jira_jql'))) && (
+            <ScrollArea style={{ flex: '0 1 auto', maxHeight: '40vh', minHeight: 0 }} type="auto">
+              <Stack gap="lg" style={{ paddingRight: '16px', paddingBottom: '16px' }}>
               {/* URL Data Sources Section */}
               {criterion?.data_sources && criterion.data_sources.some(s => s.type === 'url') && (
                 <div>
@@ -1868,41 +1870,38 @@ export function CommentsModal({
                   </Stack>
                 </div>
               )}
-
-              {/* Criterion Content Section */}
-              {contentLoading ? (
-                <div style={{ textAlign: 'center', padding: '20px' }}>
-                  <PurpleLoader size="sm" />
-                </div>
-              ) : (
-                <div>
-                  <RichText
-                    value={content}
-                    onChange={(newContent) => {
-                      setContent(newContent);
-                      // Update baseContentRef when user edits
-                      // Note: This assumes the user is only editing the base content part,
-                      // not the data sources section (which should be read-only/non-editable)
-                      // Data sources are dynamically generated and appended, so they shouldn't be in the editable area
-                      baseContentRef.current = newContent;
-                    }}
-                    placeholder="Add relevant content, links, and notes for this criterion..."
-                    rows={12}
-                    compactLists={true}
-                    readOnly={false}
-                  />
-                </div>
-              )}
-              {!contentLoading && (!criterion?.data_sources || criterion.data_sources.length === 0) && (
-                <Text size="xs" c="dimmed" mt="xs" style={{ marginTop: '8px' }}>
-                  No automated synchronization from Aha or other sources was defined for this criteria.
-                </Text>
-              )}
-              {savingContent && (
-                <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
-              )}
-            </Stack>
-          </ScrollArea>
+              </Stack>
+            </ScrollArea>
+          )}
+          {/* Criterion content - takes remaining height */}
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', paddingRight: '16px', paddingTop: '16px' }}>
+            {contentLoading ? (
+              <div style={{ textAlign: 'center', padding: '20px' }}>
+                <PurpleLoader size="sm" />
+              </div>
+            ) : (
+              <RichText
+                value={content}
+                onChange={(newContent) => {
+                  setContent(newContent);
+                  baseContentRef.current = newContent;
+                }}
+                placeholder="Add relevant content, links, and notes for this criterion..."
+                rows={12}
+                compactLists={true}
+                readOnly={false}
+                fillHeight
+              />
+            )}
+            {!contentLoading && (!criterion?.data_sources || criterion.data_sources.length === 0) && (
+              <Text size="xs" c="dimmed" mt="xs" style={{ marginTop: '8px' }}>
+                No automated synchronization from Aha or other sources was defined for this criteria.
+              </Text>
+            )}
+            {savingContent && (
+              <Text size="xs" c="dimmed" mt="xs">Saving...</Text>
+            )}
+          </div>
         </Tabs.Panel>
 
         <Tabs.Panel value="comments" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden', paddingTop: '16px' }}>

@@ -68,9 +68,9 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
             }}
           >
             {isFirstTime ? (
-              <>Welcome to ClearGO, <span style={{ color: 'var(--color-accent)' }}>{displayName}</span>!</>
+              <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
             ) : (
-              <>Welcome back, <span style={{ color: 'var(--color-accent)' }}>{displayName}</span></>
+              <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span></>
             )}
           </Title>
           <Text 
@@ -139,8 +139,8 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
               { label: 'Portfolio View', value: 'portfolio' }
             ]}
             size="md"
-            color="violet"
-            styles={(theme) => ({
+            color="brass"
+            styles={() => ({
               root: {
                 fontFamily: 'var(--font-body)',
                 backgroundColor: '#F3F4F6',
@@ -150,7 +150,7 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
                 boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
               },
               indicator: {
-                backgroundColor: '#6B46C1', // Purple background for selected
+                backgroundColor: 'var(--color-accent, #C3B497)',
                 borderRadius: '6px',
                 boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.1)'
               },
@@ -159,9 +159,8 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
                 fontSize: 'var(--font-size-base)',
                 fontWeight: 'var(--font-weight-medium)',
                 padding: '8px 20px',
-                color: '#6B7280', // Gray for unselected
+                color: '#6B7280',
                 transition: 'color 0.15s ease',
-                // Active state styling is handled in globals.css
               }
             })}
           />

@@ -1,8 +1,20 @@
 import { createTheme } from '@mantine/core';
 
 export const theme = createTheme({
-  primaryColor: 'blue',
+  primaryColor: 'brass',
   colors: {
+    brass: [
+      '#F5F2EC',
+      '#EDE8E0',
+      '#E2DBCF',
+      '#D5CBB9',
+      '#CABDA8',
+      '#C3B497', // Primary (index 6)
+      '#B0A086',
+      '#9A8B6E',
+      '#847558',
+      '#6E6044',
+    ],
     blue: [
       '#E7F5FF',
       '#D0EBFF',
@@ -50,6 +62,18 @@ export const theme = createTheme({
       '#F03E3E',
       '#E03131',
       '#C92A2A',
+    ],
+    copper: [
+      '#FFF5F2',
+      '#FFE8E0',
+      '#FFD4C7',
+      '#FFB8A3',
+      '#FF9A7F',
+      '#FF8A65',
+      '#FF7A52', // Copper (index 6)
+      '#E86A3D',
+      '#D15A2E',
+      '#B84A22',
     ],
   },
   fontFamily: 'Inter, system-ui, -apple-system, sans-serif',

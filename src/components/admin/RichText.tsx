@@ -11,9 +11,11 @@ interface RichTextProps {
     readOnly?: boolean;
     compactLists?: boolean;
     autoFocus?: boolean;
+    /** When true, the editor fills available height (use inside a flex container with minHeight: 0). */
+    fillHeight?: boolean;
 }
 
-export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false }: RichTextProps) {
+export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false, fillHeight = false }: RichTextProps) {
     const editorRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isFocused, setIsFocused] = useState(false);
@@ -220,6 +222,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
         <div 
             ref={containerRef}
             className="border border-gray-300 rounded-lg"
+            style={fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}
         >
             {/* Toolbar */}
             <div className="flex items-center gap-1 px-2 py-1 bg-gray-50 border-b border-gray-200 rounded-t-lg">
@@ -288,7 +291,10 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
             </div>
 
             {/* Editor */}
-            <div className="relative rounded-b-lg overflow-hidden">
+            <div
+                className="relative rounded-b-lg overflow-hidden"
+                style={fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}
+            >
                 {compactLists && (
                     <style>{`.rich-text-compact-editor p { margin: 0; }
 .rich-text-compact-editor ul, .rich-text-compact-editor ol { margin: 0.25rem 0 0 0; }
@@ -306,9 +312,10 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
                     onBlur={() => setIsFocused(false)}
                     className={`px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? 'rich-text-compact-editor [&_li]:mb-0 [&_li_p]:my-0 [&_li_p]:mb-0 [&_p]:my-0 [&_p]:mb-0' : '[&_li]:mb-1 [&_p]:my-1'}`}
                     style={{
-                        minHeight: `${rows * 20}px`,
+                        minHeight: fillHeight ? 120 : `${rows * 20}px`,
                         whiteSpace: "pre-wrap",
                         wordBreak: "break-word",
+                        ...(fillHeight ? { flex: 1, overflow: 'auto' as const } : {}),
                     }}
                     suppressContentEditableWarning
                 />

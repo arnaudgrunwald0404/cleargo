@@ -245,12 +245,19 @@ export async function mapEpicToEpic(
         standardFields.aha_release_name = releaseName;
     }
 
-    // When fieldsToLoad is provided, only include standard fields that are in the selected list
+    // When fieldsToLoad is provided, only include standard fields that are in the selected list.
+    // Always include aha_release_name so epics can be grouped by release (avoids "Ungrouped").
+    const RELEASE_STANDARD_KEYS = ['aha_release_name', 'release'];
     const standardFieldsForOutput =
         fieldsToLoad && Array.isArray(fieldsToLoad)
-            ? Object.fromEntries(
-                  Object.entries(standardFields).filter(([key]) => fieldsToLoad.includes(key))
-              )
+            ? {
+                  ...Object.fromEntries(
+                      Object.entries(standardFields).filter(([key]) => fieldsToLoad.includes(key))
+                  ),
+                  ...Object.fromEntries(
+                      Object.entries(standardFields).filter(([key]) => RELEASE_STANDARD_KEYS.includes(key))
+                  ),
+              }
             : standardFields;
 
     // Structure: { standard_fields: {...}, custom_fields: {...} }

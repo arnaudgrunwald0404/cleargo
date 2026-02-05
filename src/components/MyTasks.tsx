@@ -66,7 +66,7 @@ function StatusTrafficLight({
         },
         { 
             value: 'CONDITIONAL', 
-            color: '#f59e0b', // yellow/amber
+            color: 'var(--color-conditional-alloy, #FFA680)', // Alloy - middle traffic light
             greyColor: '#d1d5db',
             label: 'CONDITIONAL',
             definition: 'Meets requirements with conditions'
@@ -1187,6 +1187,7 @@ export function MyTasks() {
                                         <tr 
                                             key={item.id} 
                                             style={{ 
+                                                backgroundColor: "#FFFFFF",
                                                 borderBottom: "1px solid #E5E7EB",
                                                 transition: "background-color 0.15s ease"
                                             }}

@@ -92,11 +92,11 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
     return (
         <>
-            {/* Top Navigation Bar - Dark Blue Background */}
+            {/* Top Navigation Bar - Cast Iron background */}
             <header 
                 style={{
                     height: 'var(--nav-height, 64px)',
-                    backgroundColor: 'var(--nav-bg, #1E3A5F)',
+                    backgroundColor: 'var(--nav-bg, #37352A)',
                     position: 'fixed',
                     top: 0,
                     left: 0,
@@ -134,7 +134,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                 width: '40px',
                                 height: '40px',
                                 borderRadius: 'var(--radius-md, 8px)',
-                                backgroundColor: 'var(--color-accent, #6B46C1)',
+                                backgroundColor: 'var(--color-accent, #C3B497)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center'
@@ -144,7 +144,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     height="24"
                                     viewBox="0 0 24 24"
                                     fill="none"
-                                    stroke="white"
+                                    stroke="var(--color-cast-iron, #37352A)"
                                     strokeWidth="2.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"
@@ -179,8 +179,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                                 fontFamily: 'var(--font-body, system-ui, sans-serif)',
                                                 padding: 'var(--spacing-2, 8px) var(--spacing-3, 12px)',
                                                 borderRadius: 'var(--radius-base, 6px)',
-                                                backgroundColor: active ? 'var(--color-accent-bg, rgba(107, 70, 193, 0.15))' : 'transparent',
-                                                borderBottom: active ? '2px solid var(--color-accent, #6B46C1)' : '2px solid transparent',
+                                                backgroundColor: active ? 'var(--color-accent-bg)' : 'transparent',
+                                                borderBottom: active ? '2px solid var(--color-accent, #C3B497)' : '2px solid transparent',
                                                 transition: 'var(--transition-base, 0.2s ease)',
                                                 height: 'fit-content',
                                                 display: 'flex',
@@ -226,7 +226,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                             border: '1px solid rgba(255, 255, 255, 0.2)',
                                         },
                                         indicator: {
-                                            backgroundColor: 'var(--color-accent, #6B46C1)',
+                                            backgroundColor: 'var(--color-accent, #C3B497)',
                                         },
                                         label: {
                                             color: 'var(--nav-text, #FFFFFF)',

@@ -259,6 +259,42 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     };
 
+    const handleDeleteEpic = async () => {
+        if (!epicToArchive) return;
+
+        setArchivingEpicId(epicToArchive.id);
+
+        try {
+            const res = await fetch(`/api/epics/${epicToArchive.id}`, {
+                method: 'DELETE',
+                credentials: 'include',
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to delete epic');
+            }
+
+            setArchiveModalOpen(false);
+            setEpics(epics.filter(e => e.id !== epicToArchive.id));
+            setEpicToArchive(null);
+
+            notifications.show({
+                title: 'Epic deleted',
+                message: `"${epicToArchive.name}" has been permanently deleted and removed from the list.`,
+                color: 'green',
+            });
+        } catch (error: any) {
+            notifications.show({
+                title: 'Delete failed',
+                message: error.message || 'Failed to delete epic',
+                color: 'red',
+            });
+        } finally {
+            setArchivingEpicId(null);
+        }
+    };
+
     const filteredEpics = epics.filter(l => {
         // Exclude archived epics
         // #region agent log
@@ -1043,7 +1079,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 <Button
                                     leftSection={<IconArrowsRightLeft size={16} />}
                                     variant="light"
-                                    color="violet"
+                                    color="copper"
                                 >
                                     Sync with Aha!
                                 </Button>
@@ -1127,11 +1163,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         className={`
                                             flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all
                                             ${isSelected 
-                                                ? 'border-[#93C5FD] bg-[#EFF6FF] shadow-md border-[2px]' 
-                                                : 'border-[#E5E7EB] bg-white hover:border-[#BFDBFE] hover:shadow-sm'
+                                                ? 'shadow-md border-[2px]' 
+                                                : 'border-[#E5E7EB] bg-white hover:shadow-sm hover:border-[var(--color-cast-iron-border)]'
                                             }
                                         `}
                                         style={{ 
+                                            ...(isSelected ? {
+                                                borderColor: 'var(--color-cast-iron-border, #C9C6BF)',
+                                                backgroundColor: 'var(--color-cast-iron-bg, #F5F4F2)'
+                                            } : {}),
                                             fontFamily: 'var(--font-body)',
                                             transition: 'var(--transition-base)'
                                         }}
@@ -1140,7 +1180,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <h3 
                                                 style={{ 
                                                     fontFamily: 'var(--font-heading)',
-                                                    color: isSelected ? 'var(--color-blue-800)' : 'var(--color-gray-900)',
+                                                    color: isSelected ? 'var(--color-cast-iron)' : 'var(--color-gray-900)',
                                                     fontSize: '20px',
                                                     fontWeight: 'var(--font-weight-semibold)'
                                                 }}
@@ -1168,7 +1208,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         fontFamily: 'var(--font-body)'
                                                     }}>Epics loaded / in Aha!:</span>
                                                     <span className="font-medium" style={{ 
-                                                        color: isSelected ? 'var(--color-blue-900)' : 'var(--color-gray-900)', 
+                                                        color: isSelected ? 'var(--color-cast-iron)' : 'var(--color-gray-900)', 
                                                         fontSize: 'var(--font-size-sm)',
                                                         fontFamily: 'var(--font-body)'
                                                     }}>
@@ -1839,6 +1879,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <tr 
                                                     key={epic.id} 
                                                     style={{ 
+                                                        backgroundColor: "#FFFFFF",
                                                         borderBottom: "1px solid #E5E7EB",
                                                         transition: "background-color 0.15s ease"
                                                     }}
@@ -1917,11 +1958,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex flex-col gap-1 items-center">
                                                             {epic.readiness_status ? (
-                                                                <span className={`px-2 py-1 rounded text-xs font-medium text-center inline-block ${
-                                                                    epic.readiness_status === 'GO' ? 'bg-green-100 text-green-800' :
-                                                                    epic.readiness_status === 'NO_GO' ? 'bg-red-100 text-red-800' :
-                                                                    epic.readiness_status === 'CONDITIONAL_GO' ? 'bg-orange-100 text-orange-800' :
-                                                                    'bg-gray-100 text-gray-800'
+                                                                <span className={`text-xs font-medium ${
+                                                                    epic.readiness_status === 'GO' ? 'text-green-700 font-semibold' : 'text-gray-700'
                                                                 }`}>
                                                                     {epic.readiness_status === 'GO' ? 'GO' : 
                                                                      epic.readiness_status === 'NO_GO' ? 'NO GO' : 
@@ -2007,20 +2045,21 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     <Alert icon={<IconAlertCircle size={16} />} title="Archived epics" color="blue" variant="light">
                         The epic will be archived in ClearGO. You can bring it back by setting ClearGO Candidate to Yes in Aha and syncing.
                     </Alert>
-                    <Group justify="flex-end" mt="xl">
+                    <Group justify="flex-end" mt="xl" gap="sm">
                         <Button
                             variant="subtle"
-                            onClick={() => {
-                                setArchiveModalOpen(false);
-                                setEpicToArchive(null);
-                            }}
+                            color="red"
+                            onClick={handleDeleteEpic}
+                            loading={archivingEpicId === epicToArchive?.id}
+                            disabled={!!archivingEpicId}
                         >
-                            Cancel
+                            Changed my mind, delete this
                         </Button>
                         <Button
                             color="gray"
                             onClick={handleArchiveConfirm}
                             leftSection={<IconArchive size={16} />}
+                            disabled={!!archivingEpicId}
                         >
                             Archive Epic
                         </Button>
@@ -2182,7 +2221,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             onClick={handleSyncReleases}
                             loading={syncingReleases}
                             leftSection={<IconArrowsRightLeft size={16} />}
-                            color="violet"
+                            color="copper"
                         >
                             Sync Selected Releases
                         </Button>

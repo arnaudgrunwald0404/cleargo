@@ -79,7 +79,7 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
         },
         { 
             value: 'CONDITIONAL', 
-            color: '#f59e0b', // yellow/amber
+            color: 'var(--color-conditional-alloy, #FFA680)', // Alloy - middle traffic light
             greyColor: '#d1d5db',
             label: 'CONDITIONAL',
             definition: definitions.conditional || 'Meets requirements with conditions'
@@ -1378,8 +1378,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">
                             {/* Desktop Table View - hidden on mobile */}
-                            <div className="hidden md:block border-2 border-purple-200 rounded-lg bg-purple-50 overflow-hidden">
-                            <table className="min-w-full divide-y divide-purple-200 table-fixed w-full">
+                            <div className="hidden md:block border-2 rounded-lg overflow-hidden bg-gray-50" style={{ borderColor: 'var(--table-steel)' }}>
+                            <table className="min-w-full table-fixed w-full" style={{ borderColor: 'var(--table-steel)' }}>
                                 <colgroup>
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '120px' }} />
@@ -1389,18 +1389,18 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '40px' }} />
                                 </colgroup>
-                                <thead className="bg-purple-100">
+                                <thead style={{ backgroundColor: 'var(--table-steel)', color: 'var(--table-header-text-platinum)', borderBottom: '1px solid var(--table-steel)' }}>
                                     <tr>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Criterion</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900 normal-case" style={{ width: '120px', textTransform: 'none' }}>Go/No-Go Score</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '150px' }}>Accountable</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '120px' }}>Due On</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '100px' }}>Sources</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900">Comments</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium text-purple-900" style={{ width: '40px' }}></th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium">Criterion</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium normal-case" style={{ width: '120px', textTransform: 'none' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '150px' }}>Accountable</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '120px' }}>Due On</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '100px' }}>Sources</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium">Comments</th>
+                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '40px' }}></th>
                                     </tr>
                                 </thead>
-                                <tbody className="bg-white divide-y divide-purple-200">
+                                <tbody className="bg-white">
                                     {allItems.map((item, index) => {
                                         const isOverall = showOverall && index === 0;
                                         const isSignoff = item.criterion.label?.toLowerCase().includes('signoff');
@@ -1416,7 +1416,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                         }
                                         
                                         return (
-                                            <tr key={item.id} className={`hover:bg-purple-50 transition-colors ${isOverall && !isSignoff ? 'cursor-pointer' : ''} ${item.notRequired ? 'opacity-60' : ''}`} onClick={isOverall && !isSignoff ? () => toggleCategory(cat) : undefined}>
+                                            <tr key={item.id} className={`hover:bg-gray-50 transition-colors border-b ${item.notRequired ? 'opacity-60' : ''} ${isOverall && !isSignoff ? 'cursor-pointer' : ''}`} style={{ backgroundColor: '#FFFFFF', borderColor: 'var(--table-steel)' }} onClick={isOverall && !isSignoff ? () => toggleCategory(cat) : undefined}>
                                         <td className="px-4 py-3">
                                             <div className={`font-medium flex items-center gap-2 text-sm ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
                                                 {isOverall && !isSignoff && (
@@ -1879,7 +1879,8 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                     return (
                                         <div 
                                             key={item.id} 
-                                            className={`bg-white border border-purple-200 rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
+                                            className={`bg-white border rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
+                                            style={{ borderColor: 'var(--table-steel)' }}
                                         >
                                             {/* Header: Criterion name */}
                                             <div className="mb-3">

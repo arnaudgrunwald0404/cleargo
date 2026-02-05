@@ -6,6 +6,7 @@ import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { HeaderWrapper } from "@/components/HeaderWrapper";
+import { TableScopeWrapper } from "@/components/TableScopeWrapper";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
@@ -95,7 +96,7 @@ export default async function RootLayout({
             <EpicScopeProvider>
               <Notifications />
               <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-              {children}
+              <TableScopeWrapper>{children}</TableScopeWrapper>
             </EpicScopeProvider>
           </FeatureFlagsProvider>
         </MantineProvider>

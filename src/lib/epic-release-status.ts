@@ -1,6 +1,7 @@
 /**
  * Epic release status is derived from dates (target_launch_date, scheduled_ga_dev_date)
  * and retro completion. Only "Cancelled" is stored as an override on the epic.
+ * When scheduled_ga_dev_date is not set, GA date is computed as release date + 28 days.
  */
 
 export type EpicReleaseStatus =
@@ -15,6 +16,9 @@ const RELEASED_STATUSES: EpicReleaseStatus[] = [
   'Released_GA',
   'Released_Retroed',
 ];
+
+/** GA is 28 days after release when not set explicitly in Aha. */
+const GA_DAYS_AFTER_LAUNCH = 28;
 
 export function isReleasedStatus(status: string): boolean {
   return RELEASED_STATUSES.includes(status as EpicReleaseStatus);
@@ -44,6 +48,7 @@ function allRetrosSubmitted(retros: RetroForStatus[]): boolean {
 /**
  * Compute epic release status from dates and retro completion.
  * Stored epic.status is only used as override for Cancelled.
+ * GA date: from scheduled_ga_dev_date when set, else release date + 28 days.
  */
 export function computeEpicReleaseStatus(
   epic: EpicForStatus,
@@ -59,24 +64,25 @@ export function computeEpicReleaseStatus(
   const launchDate = epic.target_launch_date
     ? new Date(epic.target_launch_date)
     : null;
-  const gaDate = epic.scheduled_ga_dev_date
-    ? new Date(epic.scheduled_ga_dev_date)
-    : null;
 
   if (!launchDate || isNaN(launchDate.getTime())) {
     return 'Pre_Release';
   }
 
   launchDate.setHours(0, 0, 0, 0);
-  if (gaDate) gaDate.setHours(0, 0, 0, 0);
 
   if (today < launchDate) {
     return 'Pre_Release';
   }
 
+  let gaDate: Date | null = null;
+  if (epic.scheduled_ga_dev_date) {
+    gaDate = new Date(epic.scheduled_ga_dev_date);
+    gaDate.setHours(0, 0, 0, 0);
+  }
   if (!gaDate || isNaN(gaDate.getTime())) {
-    const retrosComplete = allRetrosSubmitted(retros);
-    return retrosComplete ? 'Released_Retroed' : 'Released_Cohort_1';
+    gaDate = new Date(launchDate);
+    gaDate.setDate(gaDate.getDate() + GA_DAYS_AFTER_LAUNCH);
   }
 
   if (today < gaDate) {

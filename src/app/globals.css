@@ -55,7 +55,7 @@
   --color-blue-900: #1E3A8A;
   --color-blue-material: #2196F3;
   --color-blue-material-dark: #1976D2;
-  --color-nav-blue: #1E3A5F;
+  --color-nav-blue: #37352A; /* Cast Iron - nav bar and other dark surfaces */
 
   /* Semantic colors - Success */
   --color-success-light: #D1FAE5;
@@ -91,10 +91,18 @@
   --color-gray-900: #111827;
   --color-black: #000000;
 
-  /* Accent color - used for logo, highlights, and key labels */
-  --color-accent: #6B46C1;
-  --color-accent-hover: #5B21B6;
-  --color-accent-bg: rgba(107, 70, 193, 0.15); /* Accent color with 15% opacity for backgrounds */
+  /* Accent color (Brass) - used for logo, name, primary buttons, and key labels */
+  --color-accent: #C3B497;
+  --color-accent-hover: #B0A086;
+  --color-accent-bg: rgba(195, 180, 151, 0.2); /* Brass with 20% opacity for backgrounds */
+  /* Cast Iron - text on brass, nav, and accent for selected states */
+  --color-cast-iron: #37352A;
+  --color-cast-iron-border: #C9C6BF;   /* light tint for selected card border */
+  --color-cast-iron-bg: #F5F4F2;       /* pale tint for selected card background */
+  /* Alloy - middle traffic light (Conditional Go) */
+  --color-conditional-alloy: #FFA680;
+  --color-conditional-alloy-bg: rgba(255, 166, 128, 0.25);
+  --color-conditional-alloy-text: var(--color-cast-iron);
 
   /* Spacing scale */
   --spacing-0: 0px;
@@ -168,6 +176,9 @@
   --table-header-text: var(--color-gray-500);
   --table-row-hover: var(--color-gray-50);
   --table-cell-padding: 12px 16px;
+  /* App tables (non-settings): Steel header/outlines, Platinum header text */
+  --table-steel: #697771;
+  --table-header-text-platinum: #FAF8F5;
 
   /* Card */
   --card-bg: var(--color-white);
@@ -178,9 +189,9 @@
   --card-shadow-hover: var(--shadow-md);
 
   /* Button */
-  --button-primary-bg: var(--color-blue-material);
-  --button-primary-hover: var(--color-blue-material-dark);
-  --button-primary-text: var(--color-white);
+  --button-primary-bg: var(--color-accent);
+  --button-primary-hover: var(--color-accent-hover);
+  --button-primary-text: var(--color-cast-iron);
   --button-height: 40px;
   --button-padding: 10px 20px;
   --button-radius: var(--radius-base);
@@ -246,8 +257,17 @@ body {
 }
 
 .status-option[data-value="CONDITIONAL"] {
-  background-color: var(--color-warning-light) !important;
-  color: var(--color-warning-dark) !important;
+  background-color: var(--color-conditional-alloy) !important;
+  color: var(--color-conditional-alloy-text) !important;
+}
+
+/* Mantine Select/Combobox options for Conditional – same Alloy background + dark text */
+.mantine-Select-option[data-value="CONDITIONAL"],
+.mantine-Select-option[data-value="CONDITIONAL_GO"],
+.mantine-Combobox-option[data-value="CONDITIONAL"],
+.mantine-Combobox-option[data-value="CONDITIONAL_GO"] {
+  background-color: var(--color-conditional-alloy) !important;
+  color: var(--color-conditional-alloy-text) !important;
 }
 
 .status-option[data-value="NO_GO"] {
@@ -259,14 +279,51 @@ body {
   opacity: 0.9;
 }
 
+/* Readiness badge - Conditional Go (Alloy) */
+.readiness-badge-conditional {
+  background-color: var(--color-conditional-alloy) !important;
+  color: var(--color-conditional-alloy-text) !important;
+}
+
 /* Modal separation from navbar */
 .mantine-Modal-inner {
   padding-top: 80px !important; /* Navbar is 60px, so 80px gives 20px gap */
 }
 
-/* SegmentedControl selected label styling - white text on purple */
+/* SegmentedControl selected label - Cast Iron text on brass */
 .mantine-SegmentedControl-input:checked + .mantine-SegmentedControl-label,
 .mantine-SegmentedControl-label[data-active="true"] {
-  color: #FFFFFF !important;
+  color: var(--color-cast-iron) !important;
   font-weight: 600 !important;
+}
+
+/* Primary (brass) buttons - Cast Iron text on brass */
+.mantine-Button-root[data-variant="filled"][data-color="brass"] {
+  color: var(--color-cast-iron) !important;
+}
+
+/* App tables (all pages except settings): Steel header/outlines, Platinum header text */
+[data-table-scope="app"] table thead th {
+  background: var(--table-steel) !important;
+  color: var(--table-header-text-platinum) !important;
+  border-color: var(--table-steel) !important;
+}
+[data-table-scope="app"] table {
+  border-color: var(--table-steel);
+}
+[data-table-scope="app"] table th,
+[data-table-scope="app"] table td {
+  border-color: var(--table-steel);
+}
+[data-table-scope="app"] table thead {
+  border-color: var(--table-steel);
+}
+[data-table-scope="app"] .mantine-Table-th,
+[data-table-scope="app"] .mantine-Table-td {
+  border-color: var(--table-steel);
+}
+[data-table-scope="app"] .mantine-Table-thead .mantine-Table-th {
+  background: var(--table-steel) !important;
+  color: var(--table-header-text-platinum) !important;
+  border-color: var(--table-steel) !important;
 }
