@@ -15,14 +15,21 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit) => {
 
     // Log auth endpoint errors for debugging
     if (!response.ok && typeof url === 'string' && url.includes('/auth/v1/')) {
+        let body: unknown = null;
+        try {
+            const text = await response.clone().text();
+            body = text ? JSON.parse(text) : null;
+        } catch {
+            // ignore parse errors
+        }
         console.error('❌ Supabase Auth API Error:', {
             url,
             status: response.status,
             statusText: response.statusText,
             method: options?.method || 'GET',
+            body,
         });
-        
-        // If it's a 404 on the token endpoint, provide helpful error message
+
         if (response.status === 404 && url.includes('/auth/v1/token')) {
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
             console.error('⚠️ Auth token endpoint not found. Please verify:');

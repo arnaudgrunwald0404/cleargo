@@ -236,66 +236,68 @@ export async function getSuccessPlanCompletionRate(
   };
 }
 
+type LaunchStageRow = { id: number; sort_order: number; duration_days: number | null };
+
 /**
- * Calculate criterion due date for a specific epic and criterion
- * Uses condition_due_date if available, otherwise calculates from launch stages
+ * Compute criterion due date from launch stages (sync, no DB).
+ * Returns null if inputs are missing or stage not found.
  */
-async function calculateCriterionDueDate(
-  epicId: string,
-  criterionId: string,
+function computeDueDateFromStages(
   epicTargetLaunchDate: string | null,
-  conditionDueDate: string | null | undefined,
-  ratingTimingId: number | null | undefined
-): Promise<Date | null> {
-  const supabase = getClient();
-
-  // If condition_due_date exists, use it
-  if (conditionDueDate) {
-    return new Date(conditionDueDate);
-  }
-
-  // Otherwise calculate from launch stages
-  if (!epicTargetLaunchDate || !ratingTimingId) {
+  ratingTimingId: number | null | undefined,
+  launchStages: LaunchStageRow[]
+): Date | null {
+  if (!epicTargetLaunchDate || ratingTimingId == null || !launchStages.length) {
     return null;
   }
-
-  // Fetch launch stages
-  const { data: launchStages, error } = await supabase
-    .from('launch_stages')
-    .select('id, sort_order, duration_days')
-    .order('sort_order', { ascending: true });
-
-  if (error || !launchStages || launchStages.length === 0) {
-    return null;
-  }
-
   const targetStage = launchStages.find((s) => s.id === ratingTimingId);
-  if (!targetStage) {
-    return null;
-  }
-
+  if (!targetStage) return null;
   const lastPreLaunchStage = launchStages.find((s) => s.sort_order === 3);
-  if (!lastPreLaunchStage) {
-    return null;
-  }
-
+  if (!lastPreLaunchStage) return null;
   const stagesBeforeTarget = launchStages.filter(
     (s) =>
       s.sort_order < targetStage.sort_order &&
       s.sort_order <= lastPreLaunchStage.sort_order &&
       s.duration_days !== null
   );
-
   const totalDaysBefore = stagesBeforeTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
-  if (totalDaysBefore === 0) {
-    return null;
-  }
-
+  if (totalDaysBefore === 0) return null;
   const targetDate = new Date(epicTargetLaunchDate);
   const dueDate = new Date(targetDate);
   dueDate.setDate(dueDate.getDate() - totalDaysBefore);
-
   return dueDate;
+}
+
+/**
+ * Fetch launch_stages once (small table). Reuse across many criterion due-date calculations.
+ */
+async function fetchLaunchStages(): Promise<LaunchStageRow[]> {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('launch_stages')
+    .select('id, sort_order, duration_days')
+    .order('sort_order', { ascending: true });
+  if (error || !data) return [];
+  return data as LaunchStageRow[];
+}
+
+/**
+ * Calculate criterion due date for a specific epic and criterion
+ * Uses condition_due_date if available, otherwise calculates from launch stages
+ */
+async function calculateCriterionDueDate(
+  _epicId: string,
+  _criterionId: string,
+  epicTargetLaunchDate: string | null,
+  conditionDueDate: string | null | undefined,
+  ratingTimingId: number | null | undefined,
+  launchStages?: LaunchStageRow[] | null
+): Promise<Date | null> {
+  if (conditionDueDate) {
+    return new Date(conditionDueDate);
+  }
+  const stages = launchStages ?? (await fetchLaunchStages());
+  return computeDueDateFromStages(epicTargetLaunchDate, ratingTimingId, stages);
 }
 
 export interface CriteriaOnTimeStats {
@@ -351,19 +353,22 @@ export async function getCriteriaOnTimeRate(
   const epicIds = epics.map(e => e.id);
   const epicMap = new Map(epics.map(e => [e.id, e]));
 
-  // Fetch all criterion statuses for these epics
-  const { data: statuses, error: statusesError } = await supabase
-    .from('epic_criterion_status')
-    .select(`
-      *,
-      criterion:criterion_id (
-        id,
-        label,
-        rating_timing
-      )
-    `)
-    .in('epic_id', epicIds);
+  const [statusesResult, launchStages] = await Promise.all([
+    supabase
+      .from('epic_criterion_status')
+      .select(`
+        *,
+        criterion:criterion_id (
+          id,
+          label,
+          rating_timing
+        )
+      `)
+      .in('epic_id', epicIds),
+    fetchLaunchStages(),
+  ]);
 
+  const { data: statuses, error: statusesError } = statusesResult;
   if (statusesError || !statuses) {
     return { topLateCriteria: [] };
   }
@@ -380,7 +385,6 @@ export async function getCriteriaOnTimeRate(
     }>;
   }>();
 
-  // Process each status
   for (const status of statuses) {
     const epic = epicMap.get(status.epic_id);
     if (!epic) continue;
@@ -391,18 +395,16 @@ export async function getCriteriaOnTimeRate(
     const criterionName = (criterion.label as string) || 'Unknown';
     const criterionId = criterion.id as string;
 
-    // Check if criterion is completed (not NOT_SET)
     const isCompleted = status.status && status.status !== 'NOT_SET';
     const completedDate = status.last_updated_at ? new Date(status.last_updated_at) : null;
 
-    // Calculate due date
-    const dueDate = await calculateCriterionDueDate(
-      status.epic_id,
-      criterionId,
-      epic.target_launch_date,
-      status.condition_due_date,
-      criterion.rating_timing as number | null | undefined
-    );
+    const dueDate = status.condition_due_date
+      ? new Date(status.condition_due_date)
+      : computeDueDateFromStages(
+          epic.target_launch_date,
+          criterion.rating_timing as number | null | undefined,
+          launchStages
+        );
 
     // Calculate days late if completed and due date exists
     let daysLate: number | null = null;
@@ -729,10 +731,47 @@ export async function getRetroCompletionRateTrends(
  * - Required signoffs status: 30% weight
  * - Cross-functional acknowledgements coverage: 20% weight
  */
+type HygieneStatusRow = {
+  status?: string | null;
+  criterion?: { label?: string | null; category?: string | null; gate?: boolean } | null;
+};
+
+function computeHygieneScoreFromStatuses(statuses: HygieneStatusRow[]): number {
+  if (!statuses.length) return 0;
+  const totalCriteria = statuses.length;
+  const completedCriteria = statuses.filter(s => s.status && s.status !== 'NOT_SET').length;
+  const completeness = totalCriteria > 0 ? completedCriteria / totalCriteria : 0;
+
+  const signoffCriteria = statuses.filter(s => {
+    const label = s.criterion?.label as string | null | undefined;
+    if (!label) return false;
+    return label.toLowerCase().includes('signoff') && (s.criterion?.gate ?? true);
+  });
+  let signoffScore = 1.0;
+  if (signoffCriteria.length > 0) {
+    const signoffStatuses = signoffCriteria.map(s => s.status);
+    if (signoffStatuses.some(s => s === 'NO_GO')) signoffScore = 0;
+    else if (signoffStatuses.some(s => s === 'CONDITIONAL' || s === 'CONDITIONAL_GO')) signoffScore = 0.2;
+    else if (signoffStatuses.every(s => s === 'GO')) signoffScore = 1.0;
+    else signoffScore = 0.5;
+  }
+
+  const acknowledgementCriteria = statuses.filter(s => {
+    const category = s.criterion?.category as string | null | undefined;
+    return category && ACKNOWLEDGEMENT_CATEGORIES.includes(category);
+  });
+  let acknowledgementCoverage = 1.0;
+  if (acknowledgementCriteria.length > 0) {
+    const acknowledged = acknowledgementCriteria.filter(s => s.status && s.status !== 'NOT_SET').length;
+    acknowledgementCoverage = acknowledged / acknowledgementCriteria.length;
+  }
+
+  const hygieneScore = (completeness * 0.5 + signoffScore * 0.3 + acknowledgementCoverage * 0.2) * 100;
+  return Math.round(hygieneScore * 100) / 100;
+}
+
 export async function calculateLaunchHygieneScore(epicId: string): Promise<number> {
   const supabase = getClient();
-
-  // Fetch all criteria for epic
   const { data: statuses, error } = await supabase
     .from('epic_criterion_status')
     .select(`
@@ -750,67 +789,7 @@ export async function calculateLaunchHygieneScore(epicId: string): Promise<numbe
     console.error('Error fetching criteria for hygiene score:', error);
     throw new Error(`Failed to fetch criteria: ${error.message}`);
   }
-
-  if (!statuses || statuses.length === 0) {
-    return 0; // No criteria = 0 score
-  }
-
-  // Calculate criteria completeness (50% weight)
-  const totalCriteria = statuses.length;
-  const completedCriteria = statuses.filter(s => 
-    s.status && s.status !== 'NOT_SET'
-  ).length;
-  const completeness = totalCriteria > 0 ? completedCriteria / totalCriteria : 0;
-
-  // Identify and calculate signoff score (30% weight)
-  const signoffCriteria = statuses.filter(s => {
-    const label = s.criterion?.label as string | null | undefined;
-    if (!label) return false;
-    const isSignoff = label.toLowerCase().includes('signoff');
-    // Consider "required" signoffs as those that are gates OR all signoffs
-    return isSignoff && (s.criterion?.gate || true); // All signoffs are considered required
-  });
-
-  let signoffScore = 1.0; // Default to perfect if no signoffs
-  if (signoffCriteria.length > 0) {
-    const signoffStatuses = signoffCriteria.map(s => s.status);
-    // If any required signoff is NO_GO = 0
-    if (signoffStatuses.some(s => s === 'NO_GO')) {
-      signoffScore = 0;
-    } else if (signoffStatuses.some(s => s === 'CONDITIONAL' || s === 'CONDITIONAL_GO')) {
-      // If any is CONDITIONAL = 0.2
-      signoffScore = 0.2;
-    } else if (signoffStatuses.every(s => s === 'GO')) {
-      // All GO = 1.0
-      signoffScore = 1.0;
-    } else {
-      // Some NOT_SET = 0.5
-      signoffScore = 0.5;
-    }
-  }
-
-  // Calculate acknowledgement coverage (20% weight)
-  const acknowledgementCriteria = statuses.filter(s => {
-    const category = s.criterion?.category as string | null | undefined;
-    return category && ACKNOWLEDGEMENT_CATEGORIES.includes(category);
-  });
-
-  let acknowledgementCoverage = 1.0; // Default to perfect if no acknowledgement criteria
-  if (acknowledgementCriteria.length > 0) {
-    const acknowledged = acknowledgementCriteria.filter(s => 
-      s.status && s.status !== 'NOT_SET'
-    ).length;
-    acknowledgementCoverage = acknowledged / acknowledgementCriteria.length;
-  }
-
-  // Weighted formula
-  const hygieneScore = (
-    completeness * 0.5 +
-    signoffScore * 0.3 +
-    acknowledgementCoverage * 0.2
-  ) * 100;
-
-  return Math.round(hygieneScore * 100) / 100; // Round to 2 decimal places
+  return computeHygieneScoreFromStatuses(statuses ?? []);
 }
 
 export interface LaunchHygieneDistribution {
@@ -869,25 +848,43 @@ export async function getLaunchHygieneDistribution(
     };
   }
 
-  // Calculate hygiene score for each epic
-  const scores: Array<{ epicId: string; epicName: string; score: number; tier: Tier; pod: string }> = [];
-  
-  for (const epic of epics) {
-    try {
-      const score = await calculateLaunchHygieneScore(epic.id);
-      const tier = (epic.tier as Tier) || 'TIER_3';
-      const pod = epic.pod || 'Unknown';
-      scores.push({
-        epicId: epic.id,
-        epicName: epic.name || 'Unknown',
-        score,
-        tier,
-        pod,
-      });
-    } catch (err) {
-      console.warn(`Failed to calculate hygiene score for epic ${epic.id}:`, err);
-      // Skip this epic
+  const epicIds = epics.map(e => e.id);
+  const { data: allStatuses, error: statusesError } = await supabase
+    .from('epic_criterion_status')
+    .select(`
+      epic_id,
+      status,
+      criterion:criterion_id (
+        id,
+        label,
+        category,
+        gate
+      )
+    `)
+    .in('epic_id', epicIds);
+
+  const statusesByEpic = new Map<string, HygieneStatusRow[]>();
+  if (!statusesError && allStatuses?.length) {
+    for (const row of allStatuses) {
+      const eid = (row as { epic_id: string }).epic_id;
+      if (!statusesByEpic.has(eid)) statusesByEpic.set(eid, []);
+      statusesByEpic.get(eid)!.push(row as HygieneStatusRow);
     }
+  }
+
+  const scores: Array<{ epicId: string; epicName: string; score: number; tier: Tier; pod: string }> = [];
+  for (const epic of epics) {
+    const statuses = statusesByEpic.get(epic.id) ?? [];
+    const score = computeHygieneScoreFromStatuses(statuses);
+    const tier = (epic.tier as Tier) || 'TIER_3';
+    const pod = epic.pod || 'Unknown';
+    scores.push({
+      epicId: epic.id,
+      epicName: epic.name || 'Unknown',
+      score,
+      tier,
+      pod,
+    });
   }
 
   if (scores.length === 0) {
@@ -1027,9 +1024,10 @@ export interface PMTimelinessStats {
   total: number;
 }
 
-async function getPMOwnedItems(epicId: string): Promise<PMOwnedItem[]> {
+async function getPMOwnedItems(epicId: string, launchStages?: LaunchStageRow[] | null): Promise<PMOwnedItem[]> {
   const supabase = getClient();
   const items: PMOwnedItem[] = [];
+  const stages = launchStages ?? await fetchLaunchStages();
 
   const { data: epic } = await supabase
     .from('epic')
@@ -1083,13 +1081,13 @@ async function getPMOwnedItems(epicId: string): Promise<PMOwnedItem[]> {
       
       if (!isPMOwned && !isPM) continue;
 
-      const dueDate = await calculateCriterionDueDate(
-        epicId,
-        criterion.id as string,
-        epic.target_launch_date,
-        status.condition_due_date,
-        criterion.rating_timing as number | null | undefined
-      );
+      const dueDate = status.condition_due_date
+        ? new Date(status.condition_due_date)
+        : computeDueDateFromStages(
+            epic.target_launch_date,
+            criterion.rating_timing as number | null | undefined,
+            stages
+          );
 
       const isCompleted = status.status && status.status !== 'NOT_SET';
       const completedDate = status.last_updated_at ? new Date(status.last_updated_at) : null;
@@ -1263,9 +1261,10 @@ export async function calculatePMTimelinessIndex(
     return 0;
   }
 
+  const launchStages = await fetchLaunchStages();
   const allItems: PMOwnedItem[] = [];
   for (const epic of epics) {
-    const items = await getPMOwnedItems(epic.id);
+    const items = await getPMOwnedItems(epic.id, launchStages);
     allItems.push(...items);
   }
 
@@ -1339,7 +1338,7 @@ export async function getPMTimelinessByPM(
   }
 
   const epicMap = new Map(epics.map(e => [e.id, e]));
-
+  const launchStages = await fetchLaunchStages();
   const results: PMTimelinessStats[] = [];
 
   for (const pmUser of pmUsers) {
@@ -1354,7 +1353,7 @@ export async function getPMTimelinessByPM(
       const epicPMUserId = await resolveProductManagerUserId(epic.id);
       
       if (epicPMUserId === pmUser.id) {
-        const items = await getPMOwnedItems(epic.id);
+        const items = await getPMOwnedItems(epic.id, launchStages);
         allItems.push(...items);
         const pod = epicMap.get(epic.id)?.pod || 'Unknown';
         podSet.add(pod);
