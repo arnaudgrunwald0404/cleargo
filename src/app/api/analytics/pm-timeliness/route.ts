@@ -20,7 +20,8 @@ export async function GET(req: NextRequest) {
       .select('roles')
       .eq('email', user.email)
       .single();
-    if (!canRolesPerform((appUser?.roles as string[]) || [], 'analytics.read')) {
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((appUser?.roles as string[]) || [], 'analytics.read', rules)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

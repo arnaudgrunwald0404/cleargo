@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
 import { createCriteria, getCriteria, listCriteria } from "@/lib/db/criteria";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 import type { CriterionCategory, DecisionOwnerRole, TierApplicability } from "@/types/criteria";
 
 const dataSourceSchema = z.object({
@@ -57,8 +59,8 @@ export async function POST(req: NextRequest) {
     throw userError;
   }
   
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canCreate = await canRolesPerform((me?.roles as string[]) || [], "criteria.create");
+  const rules = await getEffectivePermissionRules();
+  const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.create", rules);
   if (!canCreate) return forbid();
 
   const body = await req.json();

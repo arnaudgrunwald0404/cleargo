@@ -179,7 +179,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "launch.tier.update": ["PRODUCT_OPS", "CPO"],
   "launch.risk.update": ["PRODUCT_OPS", "CPO", "PRODUCT"],
   "launch.delete": ["PRODUCT_OPS", "CPO"],
-  "users.read": ["PRODUCT_OPS", "CPO"],
+  "users.read": ["PRODUCT_OPS", "CPO", "PMM", "PM"],
   "users.invite.send": ["PRODUCT_OPS", "CPO"],
   "users.create": ["PRODUCT_OPS", "CPO"],
   "users.update": ["PRODUCT_OPS", "CPO"],
@@ -208,20 +208,27 @@ export type PermissionRules = Record<CapabilityId, Role[]>;
 // Client-safe function that uses default rules only (no server imports)
 // This can be used in both client and server components
 export function canRolesPerform(roles: Role[] | string[] | null | undefined, capability: CapabilityId): boolean {
+  return canRolesPerformWithRules(roles, capability, DEFAULT_RULES);
+}
+
+// Check permission against a given rules map (e.g. effective rules from DB).
+// Use this on the server with getEffectivePermissionRules() so checks use DB overrides.
+export function canRolesPerformWithRules(
+  roles: Role[] | string[] | null | undefined,
+  capability: CapabilityId,
+  rules: Record<string, string[]>
+): boolean {
   if (!roles || roles.length === 0) return false;
-  
-  // Normalize roles to uppercase for case-insensitive comparison
-  const normalizedRoles = roles.map(r => String(r).toUpperCase());
-  
-  // SUPERADMIN bypasses all permission checks
-  if (normalizedRoles.includes('SUPERADMIN')) {
+
+  const normalizedRoles = roles.map((r) => String(r).toUpperCase());
+
+  if (normalizedRoles.includes("SUPERADMIN")) {
     return true;
   }
-  
-  // Normalize allowed roles to uppercase for comparison
-  const allowedRoles = (DEFAULT_RULES[capability] || []).map(r => String(r).toUpperCase());
+
+  const allowedRoles = (rules[capability] || []).map((r) => String(r).toUpperCase());
   const allowedSet = new Set(allowedRoles);
-  
+
   return normalizedRoles.some((r) => allowedSet.has(r));
 }
 

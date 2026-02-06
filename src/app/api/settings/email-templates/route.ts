@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveRole } from "@/lib/roles";
-import { updateSettings, getSettings } from "@/lib/settings-db";
+import { updateSettings, getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 import { z } from "zod";
 import { debugLog } from "@/lib/debug";
 
@@ -42,8 +43,8 @@ export async function GET(req: NextRequest) {
       throw userError;
     }
     
-    const { canRolesPerform } = await import('@/lib/permissions');
-    const canRead = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.read');
+    const rules = await getEffectivePermissionRules();
+    const canRead = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.emailTemplates.read', rules);
     if (!canRead) return forbid();
 
     const settings = await getSettings();
@@ -90,8 +91,8 @@ export async function PATCH(req: NextRequest) {
       throw userError;
     }
     
-    const { canRolesPerform } = await import('@/lib/permissions');
-    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'settings.emailTemplates.update');
+    const rules = await getEffectivePermissionRules();
+    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.emailTemplates.update', rules);
     debugLog({ location: 'email-templates/route.ts:PATCH', message: 'Permission check', data: { canUpdate, userRoles: me?.roles }, hypothesisId: 'E' });
     if (!canUpdate) return forbid();
 

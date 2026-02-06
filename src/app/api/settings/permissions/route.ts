@@ -3,8 +3,8 @@ import { promises as fs } from "fs";
 import path from "path";
 import { createClient } from "@/lib/supabase/server";
 import { ALL_ROLES, Role } from "@/lib/roles-constants";
-import { CAPABILITIES, DEFAULT_RULES } from "@/lib/permissions";
-import { getSettings, updateSettings } from "@/lib/settings-db";
+import { CAPABILITIES, DEFAULT_RULES, canRolesPerformWithRules } from "@/lib/permissions";
+import { getSettings, updateSettings, getEffectivePermissionRules } from "@/lib/settings-db";
 
 export const dynamic = "force-dynamic";
 
@@ -112,8 +112,8 @@ export async function PATCH(req: NextRequest) {
         throw userError;
       }
       
-      const { canRolesPerform } = await import('@/lib/permissions');
-      const ok = canRolesPerform((me?.roles as string[]) || [], 'settings.update');
+      const rules = await getEffectivePermissionRules();
+      const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.update', rules);
       if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
       // Validate capability ids and roles, filter out invalid capabilities

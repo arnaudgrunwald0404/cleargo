@@ -1,6 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 export async function PATCH(
     request: NextRequest,
@@ -31,8 +33,8 @@ export async function PATCH(
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'releases.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await request.json();
@@ -115,8 +117,8 @@ export async function DELETE(
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'releases.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const { error } = await supabase

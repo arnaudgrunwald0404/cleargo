@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getSettings } from '@/lib/settings-db';
-import { canRolesPerform } from '@/lib/permissions';
+import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { POST as webhookHandler } from '../route';
 
 export async function POST(req: NextRequest) {
@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
             throw userError;
         }
         
-        // Allow users who can view webhook URL to test it
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.webhookUrl.read');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.webhookUrl.read', rules);
         if (!ok) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }

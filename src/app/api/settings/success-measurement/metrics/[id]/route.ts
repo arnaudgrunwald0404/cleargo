@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveRole } from '@/lib/roles';
 import { getMetricById, updateMetric, deleteMetric } from '@/lib/services/successMeasurementService';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { updateSuccessMetricSchema } from '@/lib/success/validation';
 
 function forbid() {
@@ -68,8 +70,8 @@ export async function PATCH(
         throw userError;
       }
 
-      const { canRolesPerform } = await import('@/lib/permissions');
-      const canUpdate = canRolesPerform((me?.roles as string[]) || [], 'criteria.update');
+      const rules = await getEffectivePermissionRules();
+      const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.update', rules);
       if (!canUpdate) {
         return forbid();
       }
@@ -132,8 +134,8 @@ export async function DELETE(
         throw userError;
       }
 
-      const { canRolesPerform } = await import('@/lib/permissions');
-      const canDelete = canRolesPerform((me?.roles as string[]) || [], 'criteria.delete');
+      const rules = await getEffectivePermissionRules();
+      const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.delete', rules);
       if (!canDelete) {
         return forbid();
       }

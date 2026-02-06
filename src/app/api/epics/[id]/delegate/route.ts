@@ -99,7 +99,8 @@ export async function POST(
       }
 
       // Permission check: PM or admin can delegate
-      const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
+      const rules = await getEffectivePermissionRules();
+      const hasDelegationPermission = canRolesPerformWithRules(delegatorRoles, 'criteria.delegate', rules);
       const isCurrentOwner = successConfig.post_launch_owner === delegatorId || 
                             successConfig.delegated_post_launch_owner_id === delegatorId;
 
@@ -190,7 +191,8 @@ export async function POST(
     const resolvedTaskLabel = criterionLabel || taskLabel || 'Approval task';
 
     // Permission check: Use permission matrix + allow current accountable to delegate their own tasks
-    const hasDelegationPermission = canRolesPerform(delegatorRoles, 'criteria.delegate');
+    const rulesForCriteria = await getEffectivePermissionRules();
+    const hasDelegationPermission = canRolesPerformWithRules(delegatorRoles, 'criteria.delegate', rulesForCriteria);
     const isCurrentApprover = oldApproverId === delegatorId;
 
     if (!hasDelegationPermission && !isCurrentApprover) {

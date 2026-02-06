@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getEpic, updateEpic, deleteEpic } from '@/lib/epics';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -70,14 +72,13 @@ export async function PATCH(
         
         const roles = (me?.roles as string[]) || [];
 
-        // Enforce capability-based rules
-        const { canRolesPerform } = await import('@/lib/permissions');
+        const rules = await getEffectivePermissionRules();
         if (typeof body.tier !== 'undefined' && body.tier !== current.tier) {
-            const ok = await canRolesPerform(roles, 'launch.tier.update');
+            const ok = canRolesPerformWithRules(roles, 'launch.tier.update', rules);
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic tier' }, { status: 403 });
         }
         if (typeof body.risk_level !== 'undefined' && body.risk_level !== current.risk_level) {
-            const ok = await canRolesPerform(roles, 'launch.risk.update');
+            const ok = canRolesPerformWithRules(roles, 'launch.risk.update', rules);
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic risk level' }, { status: 403 });
         }
 
@@ -146,8 +147,8 @@ export async function DELETE(
         }
         
         const roles = (me?.roles as string[]) || [];
-        const { canRolesPerform } = await import('@/lib/permissions');
-            const ok = await canRolesPerform(roles, 'launch.delete');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules(roles, 'launch.delete', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden: cannot delete epic' }, { status: 403 });
 
         await deleteEpic(id);

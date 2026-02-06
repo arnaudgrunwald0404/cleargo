@@ -54,8 +54,8 @@ export async function PATCH(
 
         // Check permission to update criterion status in general
         {
-            const { canRolesPerform } = await import('@/lib/permissions');
-            const canUpdate = await canRolesPerform((me?.roles as string[]) || [], 'criteria.status.update');
+            const rules = await getEffectivePermissionRules();
+            const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.status.update', rules);
             if (!canUpdate) {
                 return NextResponse.json({ error: 'Forbidden: cannot update criterion score' }, { status: 403 });
             }

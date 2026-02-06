@@ -8,7 +8,8 @@ import { createToken } from "@/lib/jwt";
 import { canSendEmail, markTokenSent } from "@/lib/tokenStore";
 import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail, getRemindEmail } from "@/lib/email/templates";
-import { getSettings } from "@/lib/settings-db";
+import { getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const bulkInviteSchema = z.object({
   userIds: z.array(z.string().uuid()),
@@ -42,8 +43,8 @@ export async function POST(req: NextRequest) {
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const ok = await canRolesPerform((me?.roles as string[]) || [], "users.invite.send");
+    const rules = await getEffectivePermissionRules();
+    const ok = canRolesPerformWithRules((me?.roles as string[]) || [], "users.invite.send", rules);
     if (!ok) return forbid();
 
     // Get sending user's profile to construct sender name

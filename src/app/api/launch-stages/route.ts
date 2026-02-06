@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -77,8 +79,8 @@ async function postHandler(req: NextRequest) {
             throw userError;
         }
 
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'launchStages.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await req.json();
@@ -146,8 +148,8 @@ async function patchHandler(req: NextRequest) {
             throw userError;
         }
 
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'launchStages.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         body = await req.json();
@@ -227,8 +229,8 @@ async function putHandler(req: NextRequest) {
             return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
         }
 
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'launchStages.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await req.json();

@@ -3,6 +3,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { defaults } from "./settings";
 import { debugLog } from "./debug";
+import { DEFAULT_RULES } from "./permissions";
+import type { CapabilityId } from "./permissions";
 
 export interface AppSettings {
     id: number;
@@ -53,6 +55,13 @@ const DEFAULT_PENDO_APP_NAMES: Record<string, string> = {
     "-323232": "ClearCompany",
     "6212546329378816": "ClearCompany Learning",
 };
+
+/** Effective permission rules: DEFAULT_RULES merged with DB overrides (DB wins). Use for server-side permission checks. */
+export async function getEffectivePermissionRules(): Promise<Record<CapabilityId, string[]>> {
+    const settings = await getSettings();
+    const overrides = settings.permissions || {};
+    return { ...DEFAULT_RULES, ...overrides } as Record<CapabilityId, string[]>;
+}
 
 export async function getSettings(): Promise<AppSettings> {
     const supabase = await createClient();

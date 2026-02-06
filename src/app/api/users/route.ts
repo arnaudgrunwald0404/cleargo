@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole, isAdminRole } from "@/lib/roles";
 import { syncUserSlackHandle } from "@/lib/slack/notifications";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const createUserSchema = z.object({
   email: z.string().email(),
@@ -44,9 +46,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
   
-  const { canRolesPerform } = await import("@/lib/permissions");
+  const rules = await getEffectivePermissionRules();
   const roles = (me?.roles as string[]) || [];
-  const canRead = canRolesPerform(roles, "users.read") || canRolesPerform(roles, "criteria.delegate");
+  const canRead = canRolesPerformWithRules(roles, "users.read", rules) || canRolesPerformWithRules(roles, "criteria.delegate", rules);
   if (!canRead) return forbid();
 
   // Get users from app_user table
@@ -108,8 +110,8 @@ export async function POST(req: NextRequest) {
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const canCreate = await canRolesPerform((me?.roles as string[]) || [], "users.create");
+    const rules = await getEffectivePermissionRules();
+    const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], "users.create", rules);
     if (!canCreate) return forbid();
   }
 

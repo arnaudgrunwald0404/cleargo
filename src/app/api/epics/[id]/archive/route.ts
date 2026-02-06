@@ -3,6 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getEpic } from '@/lib/epics';
 import { getAhaClient } from '@/lib/aha/client';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,8 +40,8 @@ export async function POST(
         }
 
         const roles = (me?.roles as string[]) || [];
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform(roles, 'launch.delete');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules(roles, 'launch.delete', rules);
         if (!ok) {
             return NextResponse.json({ error: 'Forbidden: cannot archive epic' }, { status: 403 });
         }

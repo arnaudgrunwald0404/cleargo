@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteCriteria, updateCriteria } from "@/lib/db/criteria";
 import { resolveRole } from "@/lib/roles";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const dataSourceSchema = z.object({
   type: z.enum(["aha_field", "aha_description_part", "url", "jira_jql", "success_metrics_defined"]),
@@ -58,8 +60,8 @@ export async function DELETE(
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const canDelete = await canRolesPerform((me?.roles as string[]) || [], "criteria.delete");
+    const rules = await getEffectivePermissionRules();
+    const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.delete", rules);
     if (!canDelete) return forbid();
   }
 
@@ -103,8 +105,8 @@ export async function PUT(
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
+    const rules = await getEffectivePermissionRules();
+    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
     if (!canUpdate) return forbid();
   }
 
@@ -151,8 +153,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "criteria.update");
+    const rules = await getEffectivePermissionRules();
+    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
     if (!canUpdate) return forbid();
   }
 

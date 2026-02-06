@@ -29,8 +29,8 @@ export async function PATCH(
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'releases.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'releases.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await request.json();

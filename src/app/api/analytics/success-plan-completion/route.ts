@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getSuccessPlanCompletionRate, getSuccessPlanCompletionRateTrends } from '@/lib/services/analyticsService';
-import { canRolesPerform } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,7 +18,8 @@ export async function GET(req: NextRequest) {
       .select('roles')
       .eq('email', user.email)
       .single();
-    if (!canRolesPerform((appUser?.roles as string[]) || [], 'analytics.read')) {
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((appUser?.roles as string[]) || [], 'analytics.read', rules)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

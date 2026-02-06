@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/settings-db";
+import { getSettings, updateSettings, getEffectivePermissionRules } from "@/lib/settings-db";
 import { createClient } from "@/lib/supabase/server";
 import { debugLog } from "@/lib/debug";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 export const dynamic = 'force-dynamic';
 
@@ -37,8 +38,8 @@ async function getHandler(req: NextRequest) {
             return NextResponse.json({ error: "Failed to fetch user profile", details: userError.message }, { status: 500 });
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = canRolesPerform((me?.roles as string[]) || [], 'settings.read');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.read', rules);
         if (!ok) {
             return NextResponse.json({ error: 'Forbidden: You do not have permission to view settings' }, { status: 403 });
         }
@@ -83,8 +84,8 @@ async function patchHandler(req: NextRequest) {
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.update');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.update', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await req.json();

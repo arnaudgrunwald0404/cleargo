@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,8 +33,8 @@ export async function DELETE(
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'launchStages.manage');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'launchStages.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const id = parseInt(idParam);

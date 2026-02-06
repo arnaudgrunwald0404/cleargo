@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
 import { resolveRole } from "@/lib/roles";
 import { upsertCriteriaBatch, CreateCriterionInput } from "@/lib/db/criteria";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 import * as XLSX from "xlsx";
 import { CriterionCategory, TierApplicability } from "@/types/criteria";
 
@@ -38,8 +40,8 @@ export async function POST(req: NextRequest) {
           throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'criteria.import');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.import', rules);
         if (!ok) return new NextResponse('Forbidden', { status: 403 });
     } catch (authError) {
         console.error('[Import] Auth error:', authError);

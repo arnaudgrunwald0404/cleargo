@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { getEpic } from '@/lib/aha/client';
 import { mapEpicToEpic } from '@/lib/aha/mapping';
 import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser } from '@/lib/db/epics';
-import { getSettings } from '@/lib/settings-db';
+import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +33,8 @@ export async function POST(req: NextRequest) {
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.sync');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.sync', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         // Get current settings to determine which fields to load

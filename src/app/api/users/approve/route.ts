@@ -6,7 +6,8 @@ import { resolveRole, isAdminRole } from "@/lib/roles";
 import { syncUserSlackHandle } from "@/lib/slack/notifications";
 import { getApprovalEmail } from "@/lib/email/templates";
 import { Resend } from "resend";
-import { getSettings } from "@/lib/settings-db";
+import { getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const approveUserSchema = z.object({
   email: z.string().email(),
@@ -46,8 +47,8 @@ export async function POST(req: NextRequest) {
       throw userError;
     }
     
-    const { canRolesPerform } = await import("@/lib/permissions");
-    const canCreate = await canRolesPerform((me?.roles as string[]) || [], "users.create");
+    const rules = await getEffectivePermissionRules();
+    const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], "users.create", rules);
     if (!canCreate) return forbid();
   }
 

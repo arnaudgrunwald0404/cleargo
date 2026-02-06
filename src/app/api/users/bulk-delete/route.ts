@@ -3,6 +3,8 @@ import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const bulkDeleteSchema = z.object({
   ids: z.array(z.string().uuid()),
@@ -34,8 +36,8 @@ export async function POST(req: NextRequest) {
     throw userError;
   }
   
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const ok = await canRolesPerform((me?.roles as string[]) || [], "users.delete");
+  const rules = await getEffectivePermissionRules();
+  const ok = canRolesPerformWithRules((me?.roles as string[]) || [], "users.delete", rules);
   if (!ok) return forbid();
 
   const body = await req.json();

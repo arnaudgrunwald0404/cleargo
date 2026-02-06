@@ -3,6 +3,8 @@ import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { resolveRole } from "@/lib/roles";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 
 const updateUserSchema = z.object({
   email: z.string().email().optional(),
@@ -40,8 +42,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     throw userError;
   }
   
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canUpdate = await canRolesPerform((me?.roles as string[]) || [], "users.update");
+  const rules = await getEffectivePermissionRules();
+  const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "users.update", rules);
   if (!canUpdate) return forbid();
 
   const body = await req.json();
@@ -109,8 +111,8 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     throw userError;
   }
   
-  const { canRolesPerform } = await import("@/lib/permissions");
-  const canDelete = await canRolesPerform((me?.roles as string[]) || [], "users.delete");
+  const rules = await getEffectivePermissionRules();
+  const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], "users.delete", rules);
   if (!canDelete) return forbid();
 
   const secretKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;

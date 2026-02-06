@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRateLimitStats } from '@/lib/rate-limit';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
-import { canRolesPerform } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,8 +30,8 @@ async function handler(req: NextRequest) {
             return NextResponse.json({ error: 'Failed to fetch user profile', details: userError.message }, { status: 500 });
         }
         
-        // Check if user has admin permissions (settings.read or similar admin capability)
-        const hasAdminAccess = await canRolesPerform((me?.roles as string[]) || [], 'settings.read');
+        const rules = await getEffectivePermissionRules();
+        const hasAdminAccess = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.read', rules);
         if (!hasAdminAccess) {
             return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 });
         }

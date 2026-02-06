@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveRole } from '@/lib/roles';
 import { getMetrics, createMetric } from '@/lib/services/successMeasurementService';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { createSuccessMetricSchema } from '@/lib/success/validation';
 
 function forbid() {
@@ -67,8 +69,8 @@ export async function POST(req: NextRequest) {
       throw userError;
     }
 
-    const { canRolesPerform } = await import('@/lib/permissions');
-    const canCreate = canRolesPerform((me?.roles as string[]) || [], 'criteria.create');
+    const rules = await getEffectivePermissionRules();
+    const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.create', rules);
     if (!canCreate && role !== 'SUPERADMIN') {
       return forbid();
     }

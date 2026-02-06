@@ -4,6 +4,8 @@ import { join } from 'path';
 import { createClient } from '@/lib/supabase/server';
 import { getCustomFields } from '@/lib/aha/client';
 import { loadAhaConfig, clearAhaConfigCache } from '@/lib/aha/mapping';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,8 +34,8 @@ export async function GET(req: NextRequest) {
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.read');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.read', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         // Always read config file directly (don't use cache) to ensure fresh data
@@ -107,8 +109,8 @@ export async function POST(req: NextRequest) {
             throw userError;
         }
         
-        const { canRolesPerform } = await import('@/lib/permissions');
-        const ok = await canRolesPerform((me?.roles as string[]) || [], 'settings.ahaFields.read');
+        const rules = await getEffectivePermissionRules();
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.read', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         // Fetch custom field definitions from Aha! API
