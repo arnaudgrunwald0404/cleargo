@@ -595,8 +595,13 @@ export function MyTasks(props: MyTasksProps) {
             const params = new URLSearchParams();
             if (showAllItems) params.set('showAll', 'true');
             if (viewAsEmail) params.set('viewAsEmail', viewAsEmail);
+            if (!useCache) params.set('_t', String(Date.now()));
             const url = `/api/my-items${params.toString() ? `?${params.toString()}` : ''}`;
-            const res = await fetch(url);
+            const res = await fetch(url, {
+                cache: 'no-store',
+                credentials: 'include',
+                headers: useCache ? undefined : { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+            });
             
             if (!res.ok) {
                 // Don't retry on client errors (4xx) except 429 (rate limit)
