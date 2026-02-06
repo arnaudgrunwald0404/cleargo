@@ -4,7 +4,7 @@
  */
 
 import { getSlackClient } from './client';
-import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import type { SlackNotificationPayload, SlackUser } from '@/types/slack';
 import {
     buildStaleCriterionMessage,
@@ -70,7 +70,7 @@ async function logNotification(data: {
 export async function canReceiveSlackNotification(email: string): Promise<boolean> {
     if (!email || !email.includes('@')) return false;
     try {
-        const supabase = createClient();
+        const supabase = createAdminClient();
         const { data, error } = await supabase
             .from('app_user')
             .select('receive_slack_notifications')
@@ -373,7 +373,7 @@ export async function sendBatchNotifications(
  */
 export async function syncUserSlackHandle(email: string): Promise<string | null> {
     const client = getSlackClient();
-    const supabase = createClient();
+    const supabase = createAdminClient();
 
     try {
         // Look up Slack user by email
@@ -414,7 +414,7 @@ export async function syncSlackHandles(): Promise<{
     details: Array<{ email: string; slack_handle?: string; error?: string }>;
 }> {
     const client = getSlackClient();
-    const supabase = createClient();
+    const supabase = createAdminClient();
 
     const result = {
         synced: 0,
