@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
 import { getEpic } from '@/lib/epics';
-import { canRolesPerform } from '@/lib/permissions';
+import { canRolesPerform, canRolesPerformWithRules } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
 
 export const dynamic = 'force-dynamic';

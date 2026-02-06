@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getReleases, getReleaseEpics } from '@/lib/aha/client';
+import { canRolesPerformWithRules } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
 
