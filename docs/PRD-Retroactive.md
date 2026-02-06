@@ -617,6 +617,8 @@ The system uses the following launch stage phases:
 - **Comment Timestamps**: Track when comments added
 - **Comment Attachments**: Attach files to comments
 - **Comment Notifications**: Notify relevant users of new comments
+- **@Mentions**: Users can @mention someone in a comment (type @ and pick from a user list). Mentioned users are stored and shown inline in the comment text.
+- **Slack for comments**: When a comment is added, the criterion’s decision owner is notified via Slack (if the commenter is not the owner). If the comment @mentions someone other than the owner, both the owner and the mentioned user receive the same notification in a single Slack thread (multi-party DM).
 
 #### 12.2 File Attachments
 - **Criterion Attachments**: Attach files to criteria
@@ -846,10 +848,13 @@ The system uses the following launch stage phases:
 
 #### Criterion Comment
 - `id` (UUID, Primary Key)
-- `epic_criterion_status_id` (UUID, Foreign Key → epic_criterion_status)
-- `comment_text` (Text)
+- `launch_criterion_status_id` (UUID, Foreign Key → epic_criterion_status)
+- `comment_text` (Text) - HTML; may include mention spans with `data-mention-user-id`
 - `created_by` (UUID, Foreign Key → app_user)
+- `mentioned_user_ids` (UUID Array, Nullable) - User IDs @mentioned in the comment; used for Slack multi-recipient notification
 - `created_at` (Timestamp)
+- `status_at_comment` (Text, Nullable)
+- `previous_status` (Text, Nullable)
 - `updated_at` (Timestamp)
 
 #### Criterion Attachment

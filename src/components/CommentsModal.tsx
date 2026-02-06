@@ -1,12 +1,28 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
-import { RichText } from './admin/RichText';
+import { RichText, type RichTextMentionHandle } from './admin/RichText';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+
+function getMentionedUserIdsFromHtml(html: string): string[] {
+  if (!html) return [];
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const nodes = doc.querySelectorAll('[data-mention-user-id]');
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  nodes.forEach((el) => {
+    const id = el.getAttribute('data-mention-user-id');
+    if (id && !seen.has(id)) {
+      seen.add(id);
+      ids.push(id);
+    }
+  });
+  return ids;
+}
 
 interface Comment {
   id: string;
@@ -88,6 +104,12 @@ export function CommentsModal({
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
   const lastContentRebuildRef = useRef<number>(0);
+
+  const richTextRef = useRef<RichTextMentionHandle>(null);
+  const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionUsers, setMentionUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [mentionUsersLoading, setMentionUsersLoading] = useState(false);
 
   const [jiraEpicKey, setJiraEpicKey] = useState<string | null>(null);
   const [jiraDomain, setJiraDomain] = useState<string | null>(null);
@@ -438,6 +460,47 @@ export function CommentsModal({
     }
   };
 
+  const handleMentionTrigger = useCallback((query: string) => {
+    setMentionQuery(query);
+    setMentionDropdownOpen(true);
+    if (mentionUsers.length === 0 && !mentionUsersLoading) {
+      setMentionUsersLoading(true);
+      fetch('/api/users', { credentials: 'include' })
+        .then((res) => (res.ok ? res.json() : []))
+        .then((users: Array<{ id: string; email: string; first_name?: string; last_name?: string; name?: string }>) => {
+          const list = (Array.isArray(users) ? users : []).map((u) => ({
+            id: u.id,
+            email: u.email || '',
+            name: u.name || (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}`.trim() : u.first_name || u.last_name || u.email || ''),
+          }));
+          setMentionUsers(list);
+        })
+        .catch(() => setMentionUsers([]))
+        .finally(() => setMentionUsersLoading(false));
+    }
+  }, [mentionUsers.length, mentionUsersLoading]);
+
+  const mentionFiltered = useMemo(() => {
+    const q = mentionQuery.trim().toLowerCase();
+    if (!q) return mentionUsers.slice(0, 10);
+    return mentionUsers
+      .filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q))
+      .slice(0, 10);
+  }, [mentionUsers, mentionQuery]);
+
+  useEffect(() => {
+    if (!mentionDropdownOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMentionDropdownOpen(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [mentionDropdownOpen]);
+
+  useEffect(() => {
+    if (!opened) setMentionDropdownOpen(false);
+  }, [opened]);
+
   // Post new comment with attachments
   const handleSubmitComment = async () => {
     // Check if comment has actual content (strip HTML tags for validation) or files
@@ -486,14 +549,16 @@ export function CommentsModal({
       
       try {
         // Create the comment via API
+        const mentionedIds = getMentionedUserIdsFromHtml(optimisticComment.comment_text);
         const commentRes = await fetchWithRateLimit(`/api/epics/${epicId}/criteria/${taskId}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             comment_text: optimisticComment.comment_text,
             status_at_comment: statusAtComment ?? null,
             previous_status: previousStatus ?? null,
+            ...(mentionedIds.length > 0 ? { mentioned_user_ids: mentionedIds } : {}),
           }),
         });
 
@@ -2065,13 +2130,40 @@ export function CommentsModal({
             >
               <div style={{ position: 'relative', padding: '2px' }}>
                 <RichText
+                  ref={richTextRef}
                   key={`comment-input-${activeTab}`}
                   value={newComment}
                   onChange={setNewComment}
-                  placeholder="Type your comment here..."
+                  placeholder="Type your comment here... Use @ to mention someone."
                   rows={6}
                   autoFocus={activeTab === 'comments'}
+                  onMentionTrigger={handleMentionTrigger}
                 />
+                {mentionDropdownOpen && (
+                  <div style={{ position: 'absolute', left: 4, right: 4, top: '100%', marginTop: 4, zIndex: 20, background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 220, overflow: 'auto' }}>
+                    {mentionUsersLoading ? (
+                      <Text size="sm" c="dimmed" p="xs">Loading...</Text>
+                    ) : mentionFiltered.length === 0 ? (
+                      <Text size="sm" c="dimmed" p="xs">No users found</Text>
+                    ) : (
+                      mentionFiltered.map((user) => (
+                        <button
+                          key={user.id}
+                          type="button"
+                          onClick={() => {
+                            richTextRef.current?.insertMention({ id: user.id, name: user.name });
+                            setMentionDropdownOpen(false);
+                          }}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14 }}
+                          onMouseDown={(e) => e.preventDefault()}
+                        >
+                          <Text size="sm" fw={500}>{user.name}</Text>
+                          {user.email && <Text size="xs" c="dimmed">{user.email}</Text>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
                 {/* Post button and No comment button inside text box at bottom right */}
                 <div style={{ position: 'absolute', bottom: '8px', right: '8px', zIndex: 10, display: 'flex', gap: '8px', alignItems: 'center' }}>
                   {requireComment && onSkipComment && (

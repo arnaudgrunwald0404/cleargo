@@ -37,6 +37,8 @@ export interface SlackNotificationPayload {
     type: SlackNotificationType;
     priority: SlackMessagePriority;
     recipient?: SlackUser;
+    /** When set, send one message to all (e.g. MPDM). Used for criterion_comment_or_attachment with owner + mentioned. */
+    recipients?: SlackUser[];
     channel?: string;
     launch_id?: string;
     criterion_id?: string;

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  /* Base colors */
-  --background: #ffffff;
+  /* Base colors – app background is light white gold */
+  --background: var(--color-white-gold);
   --foreground: #171717;
 
   /* Typography */
@@ -57,7 +57,34 @@
   --color-blue-900: #1E3A8A;
   --color-blue-material: #2196F3;
   --color-blue-material-dark: #1976D2;
-  --color-nav-blue: #37352A; /* Cast Iron - nav bar and other dark surfaces */
+  --color-nav-blue: #37352A;
+
+  /* ========== Brand palette (see docs/COLOR_PALETTE.md) ========== */
+  /* Primary */
+  --color-white: #FFFFFF;
+  --color-platinum: #FAF8F5;
+  --color-cast-iron: #37352A;
+  /* Signature accents */
+  --color-alloy: #FFA680;
+  --color-copper: #FF7A52;
+  --color-copper-hover: #E66E4A;
+  --color-copper-bg: rgba(255, 122, 82, 0.2);
+  /* Secondary */
+  --color-bronze: #6C3A2A;
+  --color-verdigris: #9EB4AB;
+  --color-steel: #697771;
+  --color-pewter: #A1B4BA;
+  --color-white-gold: #F4EBD7;
+  --color-brass: #C3B497;
+  /* Legacy/alias – prefer palette names above */
+  --color-accent: var(--color-brass);
+  --color-accent-hover: #B0A086;
+  --color-accent-bg: rgba(195, 180, 151, 0.2);
+  --color-conditional-alloy: var(--color-alloy);
+  --color-conditional-alloy-bg: rgba(255, 166, 128, 0.25);
+  --color-conditional-alloy-text: var(--color-cast-iron);
+  --color-cast-iron-border: #C9C6BF;
+  --color-cast-iron-bg: #F5F4F2;
 
   /* Semantic colors - Success */
   --color-success-light: #D1FAE5;
@@ -79,8 +106,7 @@
   --color-info-base: #228BE6;
   --color-info-dark: #1E40AF;
 
-  /* Neutral colors */
-  --color-white: #FFFFFF;
+  /* Neutral / UI grays */
   --color-gray-50: #F9FAFB;
   --color-gray-100: #F3F4F6;
   --color-gray-200: #E5E7EB;
@@ -92,23 +118,6 @@
   --color-gray-800: #1F2937;
   --color-gray-900: #111827;
   --color-black: #000000;
-
-  /* Accent color (Brass) - used for name, primary buttons, and key labels */
-  --color-accent: #C3B497;
-  --color-accent-hover: #B0A086;
-  --color-accent-bg: rgba(195, 180, 151, 0.2); /* Brass with 20% opacity for backgrounds */
-  /* Copper - logo background (white icon/text on copper); brighter accent */
-  --color-copper: #C77B3C;
-  --color-copper-hover: #B86B2E;
-  --color-copper-bg: rgba(199, 123, 60, 0.2);
-  /* Cast Iron - text on brass, nav, and accent for selected states */
-  --color-cast-iron: #37352A;
-  --color-cast-iron-border: #C9C6BF;   /* light tint for selected card border */
-  --color-cast-iron-bg: #F5F4F2;       /* pale tint for selected card background */
-  /* Alloy - middle traffic light (Conditional Go) */
-  --color-conditional-alloy: #FFA680;
-  --color-conditional-alloy-bg: rgba(255, 166, 128, 0.25);
-  --color-conditional-alloy-text: var(--color-cast-iron);
 
   /* Spacing scale */
   --spacing-0: 0px;
@@ -183,8 +192,8 @@
   --table-row-hover: var(--color-gray-50);
   --table-cell-padding: 12px 16px;
   /* App tables (non-settings): Steel header/outlines, Platinum header text */
-  --table-steel: #697771;
-  --table-header-text-platinum: #FAF8F5;
+  --table-steel: var(--color-steel);
+  --table-header-text-platinum: var(--color-platinum);
 
   /* Card */
   --card-bg: var(--color-white);

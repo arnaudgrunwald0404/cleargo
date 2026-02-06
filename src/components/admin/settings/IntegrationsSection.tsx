@@ -31,6 +31,7 @@ type Props = {
   syncing?: boolean;
   syncResult?: SyncResult | null;
   onAutoSaveFields?: (fields: string[]) => void;
+  onAutoSaveSettings?: (updatedSettings: AppSettings) => Promise<void>;
   onRefreshFieldList?: () => void;
   onSynchronize?: () => void;
   ahaFieldsRefreshing?: boolean;
@@ -49,6 +50,7 @@ export default function IntegrationsSection({
   syncing,
   syncResult,
   onAutoSaveFields,
+  onAutoSaveSettings,
   onRefreshFieldList,
   onSynchronize,
   ahaFieldsRefreshing = false,
@@ -80,7 +82,11 @@ export default function IntegrationsSection({
       )}
 
       {activeSubSection === "slack" && (
-        <SlackIntegrationSection settings={settings} setSettings={setSettings} />
+        <SlackIntegrationSection
+          settings={settings}
+          setSettings={setSettings}
+          onSave={onAutoSaveSettings}
+        />
       )}
 
       {activeSubSection === "calendar" && (

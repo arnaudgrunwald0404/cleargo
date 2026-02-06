@@ -1,15 +1,18 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import type { AppSettings } from "@/lib/settings-db";
 import type { SlackThemeConfig } from "@/lib/slack/theme";
 import { defaultSlackTheme } from "@/lib/slack/theme";
 
+const SLACK_SAVE_DEBOUNCE_MS = 1500;
+
 type Props = {
   settings: AppSettings;
   setSettings: React.Dispatch<React.SetStateAction<AppSettings | null>>;
+  onSave?: (updatedSettings: AppSettings) => Promise<void>;
 };
 
-export default function SlackIntegrationSection({ settings, setSettings }: Props) {
+export default function SlackIntegrationSection({ settings, setSettings, onSave }: Props) {
   // Note: Slack settings may need to be added to AppSettings interface if they don't exist yet
   const slackDefaultChannel = (settings as any).slack_default_channel || '';
   const slackChannels = (settings as any).slack_channels || {};
@@ -26,6 +29,31 @@ export default function SlackIntegrationSection({ settings, setSettings }: Props
   useEffect(() => {
     setLocalTheme((settings as any).slack_theme || defaultSlackTheme);
   }, [settings]);
+
+  // Persist Slack settings to API when they change (debounced)
+  const isFirstRun = useRef(true);
+  useEffect(() => {
+    if (!onSave) return;
+    if (isFirstRun.current) {
+      isFirstRun.current = false;
+      return;
+    }
+    const timer = setTimeout(() => {
+      onSave(settings).catch((err) => {
+        console.error("Failed to save Slack settings:", err);
+      });
+    }, SLACK_SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [
+    (settings as any).slack_default_channel,
+    JSON.stringify((settings as any).slack_channels),
+    settings.slack_nudge_1_week_before,
+    settings.slack_nudge_on_due_date,
+    settings.slack_nudge_daily_after_due,
+    settings.slack_notification_test_email,
+    JSON.stringify((settings as any).slack_theme),
+    onSave,
+  ]);
 
   const updateTheme = (updates: Partial<SlackThemeConfig>) => {
     const newTheme = {

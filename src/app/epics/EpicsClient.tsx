@@ -3,7 +3,7 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Badge, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
@@ -53,7 +53,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         risk: "ALL",
         uxNeeds: "ALL"
     });
-    const [showFilters, setShowFilters] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     
     // Sync with Aha state
@@ -978,6 +977,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
               paddingLeft: 'var(--page-container-padding-x)',
               paddingRight: 'var(--page-container-padding-x)',
               paddingTop: 'var(--page-container-padding-top)',
+              paddingBottom: 'var(--spacing-8, 32px)',
               fontFamily: 'var(--font-body)'
             }}
             className="sm:px-6 lg:px-8"
@@ -1022,7 +1022,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             Array.from({ length: Math.max(releaseStats.length, 3) }).map((_, index) => (
                                 <div
                                     key={`skeleton-${index}`}
-                                    className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-gray-50 animate-pulse"
+                                    className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse"
                                     style={{ fontFamily: 'var(--font-body)' }}
                                 >
                                     <div className="space-y-2">
@@ -1070,7 +1070,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         style={{ 
                                             ...(isSelected ? {
                                                 borderColor: 'var(--color-cast-iron-border, #C9C6BF)',
-                                                backgroundColor: 'var(--color-cast-iron-bg, #F5F4F2)'
+                                                backgroundColor: 'var(--color-white, #FFFFFF)'
                                             } : {}),
                                             fontFamily: 'var(--font-body)',
                                             transition: 'var(--transition-base)'
@@ -1151,157 +1151,175 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 </Box>
             )}
 
-            {/* Search and Filters - Hidden by default */}
-            {showFilters && (
-                <Box className="bg-gray-50 rounded-lg p-4" mb="lg">
-                    <Group justify="flex-start" align="center" mb="md">
-                        <a
-                            href="#"
-                            onClick={(e) => {
-                                e.preventDefault();
-                                setShowFilters(false);
-                            }}
-                            className="text-sm font-medium"
-                        style={{ 
-                            color: 'var(--color-blue-material)',
-                            fontSize: 'var(--font-size-base)',
-                            fontWeight: 'var(--font-weight-medium)',
-                            fontFamily: 'var(--font-body)'
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-blue-material-dark)'}
-                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-blue-material)'}
-                        >
-                            Hide search and filters
-                        </a>
-                    </Group>
-                    <Group justify="space-between" align="center" mb="md">
-                        <Group gap="md" style={{ flex: 1 }}>
-                            <TextInput
-                                placeholder="Search epics..."
-                                value={filters.search}
-                                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                                leftSection={<IconSearch size={16} />}
-                                rightSection={
-                                    filters.search && (
-                                        <ActionIcon
-                                            size="sm"
-                                            variant="transparent"
-                                            onClick={() => setFilters({ ...filters, search: "" })}
-                                        >
-                                            <IconX size={14} />
-                                        </ActionIcon>
-                                    )
-                                }
-                                style={{ flex: 1, maxWidth: 400 }}
-                            />
-                        </Group>
-                        {(filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.uxNeeds !== "ALL" || filters.search) && (
-                            <Badge
-                                variant="light"
-                                color="indigo"
-                                size="lg"
-                                rightSection={
-                                    <ActionIcon
-                                        size="xs"
-                                        color="indigo"
-                                        radius="xl"
-                                        variant="transparent"
-                                        onClick={() => setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL", uxNeeds: "ALL" })}
-                                    >
-                                        <IconX size={12} />
-                                    </ActionIcon>
-                                }
+            {/* Search and filters bar - always visible */}
+            <Box
+                mb="lg"
+                style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 0',
+                    borderBottom: '1px solid var(--color-gray-200)'
+                }}
+            >
+                <TextInput
+                    placeholder="Search epics..."
+                    value={filters.search}
+                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                    leftSection={<IconSearch size={18} />}
+                    rightSection={
+                        filters.search ? (
+                            <ActionIcon
+                                size="sm"
+                                variant="transparent"
+                                onClick={() => setFilters({ ...filters, search: "" })}
                             >
-                                {[filters.search && "Search", filters.tier !== "ALL" && filters.tier, filters.status !== "ALL" && filters.status, filters.risk !== "ALL" && filters.risk, filters.uxNeeds !== "ALL" && (filters.uxNeeds === "HAS_VALUE" ? "Has UX Needs" : "No UX Needs")].filter(Boolean).length} active
-                            </Badge>
-                        )}
-                    </Group>
-
-                    <Group gap="md">
-                        <Select
-                            label="Tier"
-                            placeholder="All Tiers"
-                            value={filters.tier}
-                            onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
-                            data={[
-                                { value: "ALL", label: "All Tiers" },
-                                { value: "TIER_1", label: "Tier 1" },
-                                { value: "TIER_2", label: "Tier 2" },
-                                { value: "TIER_3", label: "Tier 3" },
-                            ]}
-                            clearable
-                            style={{ flex: 1 }}
-                        />
-                        <Select
-                            label="Status"
-                            placeholder="All Statuses"
-                            value={filters.status}
-                            onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
-                            data={[
-                                { value: "ALL", label: "All Statuses" },
-                                { value: "Pre_Release", label: "Pre-Release" },
-                                { value: "Released_Cohort_1", label: "Released Cohort 1" },
-                                { value: "Released_GA", label: "Released GA" },
-                                { value: "Released_Retroed", label: "Released Retroed" },
-                                { value: "Cancelled", label: "Cancelled" },
-                            ]}
-                            clearable
-                            style={{ flex: 1 }}
-                        />
-                        <Select
-                            label="Risk Level"
-                            placeholder="All Risks"
-                            value={filters.risk}
-                            onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
-                            data={[
-                                { value: "ALL", label: "All Risks" },
-                                { value: "LOW", label: "Low" },
-                                { value: "MEDIUM", label: "Medium" },
-                                { value: "HIGH", label: "High" },
-                            ]}
-                            clearable
-                            style={{ flex: 1 }}
-                        />
-                        <Select
-                            label="UX Needs"
-                            placeholder="All"
-                            value={filters.uxNeeds}
-                            onChange={(value) => setFilters({ ...filters, uxNeeds: value || "ALL" })}
-                            data={[
-                                { value: "ALL", label: "All" },
-                                { value: "HAS_VALUE", label: "Has Value" },
-                                { value: "NO_VALUE", label: "No Value" },
-                            ]}
-                            clearable
-                            style={{ flex: 1 }}
-                        />
-                    </Group>
-                </Box>
-            )}
-
-            {/* Toggle link to show filters - only show when filters are hidden */}
-            {!showFilters && (
-                <Group justify="flex-start" mb="md">
-                    <a
-                        href="#"
-                        onClick={(e) => {
-                            e.preventDefault();
-                            setShowFilters(true);
-                        }}
-                        className="text-sm font-medium"
-                        style={{ 
-                            color: 'var(--color-blue-material)',
-                            fontSize: 'var(--font-size-base)',
-                            fontWeight: 'var(--font-weight-medium)',
+                                <IconX size={14} />
+                            </ActionIcon>
+                        ) : null
+                    }
+                    style={{ minWidth: 220, maxWidth: 320 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
                             fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                <Select
+                    placeholder="Release"
+                    value={selectedRelease || ''}
+                    onChange={(value) => setSelectedRelease(value || null)}
+                    data={[
+                        { value: '', label: 'All Releases' },
+                        ...(releaseScheduleWithIds || [])
+                            .filter(r => r.release_name)
+                            .map(r => ({ value: r.release_name, label: r.release_name }))
+                    ]}
+                    clearable
+                    style={{ minWidth: 140 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
+                            backgroundColor: 'var(--color-gray-50)',
+                            fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                <Select
+                    placeholder="Tier"
+                    value={filters.tier}
+                    onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
+                    data={[
+                        { value: "ALL", label: "All Tiers" },
+                        { value: "TIER_1", label: "Tier 1" },
+                        { value: "TIER_2", label: "Tier 2" },
+                        { value: "TIER_3", label: "Tier 3" },
+                    ]}
+                    clearable
+                    style={{ minWidth: 120 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
+                            backgroundColor: 'var(--color-gray-50)',
+                            fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                <Select
+                    placeholder="Status"
+                    value={filters.status}
+                    onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
+                    data={[
+                        { value: "ALL", label: "All Statuses" },
+                        { value: "Pre_Release", label: "Pre-Release" },
+                        { value: "Released_Cohort_1", label: "Released Cohort 1" },
+                        { value: "Released_GA", label: "Released GA" },
+                        { value: "Released_Retroed", label: "Released Retroed" },
+                        { value: "Cancelled", label: "Cancelled" },
+                    ]}
+                    clearable
+                    style={{ minWidth: 150 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
+                            backgroundColor: 'var(--color-gray-50)',
+                            fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                <Select
+                    placeholder="Risk"
+                    value={filters.risk}
+                    onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
+                    data={[
+                        { value: "ALL", label: "All Risks" },
+                        { value: "LOW", label: "Low" },
+                        { value: "MEDIUM", label: "Medium" },
+                        { value: "HIGH", label: "High" },
+                    ]}
+                    clearable
+                    style={{ minWidth: 100 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
+                            backgroundColor: 'var(--color-gray-50)',
+                            fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                <Select
+                    placeholder="UX Needs"
+                    value={filters.uxNeeds}
+                    onChange={(value) => setFilters({ ...filters, uxNeeds: value || "ALL" })}
+                    data={[
+                        { value: "ALL", label: "All" },
+                        { value: "HAS_VALUE", label: "Has Value" },
+                        { value: "NO_VALUE", label: "No Value" },
+                    ]}
+                    clearable
+                    style={{ minWidth: 110 }}
+                    styles={{
+                        input: {
+                            borderRadius: 8,
+                            border: '1px solid var(--color-gray-300)',
+                            backgroundColor: 'var(--color-gray-50)',
+                            fontFamily: 'var(--font-body)'
+                        }
+                    }}
+                />
+                {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.uxNeeds !== "ALL" || selectedRelease) && (
+                    <Button
+                        variant="light"
+                        color="red"
+                        size="sm"
+                        leftSection={<IconX size={16} />}
+                        onClick={() => {
+                            setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL", uxNeeds: "ALL" });
+                            setSelectedRelease(null);
                         }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--color-blue-material-dark)'}
-                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--color-blue-material)'}
+                        style={{
+                            marginLeft: 'auto',
+                            fontFamily: 'var(--font-body)',
+                            fontWeight: 500
+                        }}
+                        styles={{
+                            root: {
+                                backgroundColor: 'var(--color-error-light, #FEE2E2)',
+                                color: 'var(--color-error-dark, #991B1B)'
+                            }
+                        }}
                     >
-                        Search and filter epics.
-                    </a>
-                </Group>
-            )}
+                        Clear Filters
+                    </Button>
+                )}
+            </Box>
 
             <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="md">
                 Epics appear below when in Aha!: ClearGO Candidate = Yes
@@ -1310,7 +1328,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             {filteredReleaseGroups.length === 0 ? (
                     <div className="rounded-lg overflow-hidden" style={{
                         border: `1px solid var(--color-gray-200)`,
-                        backgroundColor: 'var(--color-gray-50)'
+                        backgroundColor: 'var(--color-white, #FFFFFF)'
                     }}>
                         <div className="px-4 py-8 text-center" style={{ 
                             color: 'var(--color-gray-500)', 
@@ -1506,7 +1524,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-24" />
                                             </colgroup>
                                             <thead style={{ 
-                                                backgroundColor: "#F9FAFB",
+                                                backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>
@@ -1664,7 +1682,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-24" />
                                             </colgroup>
                                             <thead style={{ 
-                                                backgroundColor: "#F9FAFB",
+                                                backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>

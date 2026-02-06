@@ -150,11 +150,13 @@ export class SlackClient {
     }
 
     /**
-     * Get user by email address
+     * Get user by email address.
+     * Uses lowercase for lookup so Slack finds the user regardless of DB email casing.
      */
     async getUserByEmail(email: string): Promise<SlackUserInfoResponse> {
+        const normalizedEmail = email?.trim().toLowerCase() || '';
         const response = await fetch(
-            `${SLACK_API_BASE}/users.lookupByEmail?email=${encodeURIComponent(email)}`,
+            `${SLACK_API_BASE}/users.lookupByEmail?email=${encodeURIComponent(normalizedEmail)}`,
             {
                 headers: {
                     Authorization: `Bearer ${this.botToken}`,
@@ -177,6 +179,17 @@ export class SlackClient {
      * Returns the channel ID for the DM conversation
      */
     async openConversation(userId: string): Promise<string> {
+        return this.openMultiUserConversation([userId]);
+    }
+
+    /**
+     * Open a DM or multi-party DM with one or more users (1-8).
+     * Returns the channel ID for the conversation.
+     */
+    async openMultiUserConversation(userIds: string[]): Promise<string> {
+        if (userIds.length === 0) {
+            throw new Error('At least one user ID is required for conversations.open');
+        }
         const response = await fetch(`${SLACK_API_BASE}/conversations.open`, {
             method: 'POST',
             headers: {
@@ -184,7 +197,7 @@ export class SlackClient {
                 Authorization: `Bearer ${this.botToken}`,
             },
             body: JSON.stringify({
-                users: userId,
+                users: userIds.join(','),
             }),
         });
 
@@ -192,7 +205,7 @@ export class SlackClient {
 
         if (!data.ok) {
             console.error('Slack API error opening conversation:', data.error);
-            throw new Error(`Failed to open DM conversation: ${data.error}`);
+            throw new Error(`Failed to open conversation: ${data.error}`);
         }
 
         const openResponse = data as SlackConversationsOpenResponse;

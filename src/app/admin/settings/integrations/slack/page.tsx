@@ -15,6 +15,7 @@ export default function SlackIntegrationPage() {
         syncing,
         syncResult,
         autoSaveAhaFields,
+        autoSaveSettings,
         handleSynchronizeFields,
     } = useSettings();
 
@@ -39,6 +40,7 @@ export default function SlackIntegrationPage() {
             syncing={syncing}
             syncResult={syncResult}
             onAutoSaveFields={autoSaveAhaFields}
+            onAutoSaveSettings={autoSaveSettings}
             onSynchronize={handleSynchronizeFields}
             activeSubSection="slack"
         />

@@ -4,7 +4,7 @@
  */
 
 import { getSlackClient } from './client';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import type { SlackNotificationPayload, SlackUser } from '@/types/slack';
 import {
     buildStaleCriterionMessage,
@@ -26,7 +26,8 @@ function isSlackUserId(handle: string): boolean {
 }
 
 /**
- * Log notification to database
+ * Log notification to database.
+ * Uses admin client so logging succeeds from cron/jobs (no user session) and is not blocked by RLS.
  */
 async function logNotification(data: {
     user_id?: string;
@@ -40,10 +41,10 @@ async function logNotification(data: {
     slack_channel?: string;
 }) {
     try {
-        const supabase = createClient();
+        const supabase = createAdminClient();
         const { error } = await supabase.from('notification_log').insert({
             user_id: data.user_id || null,
-            launch_id: data.launch_id || null,
+            epic_id: data.launch_id || null,
             type: data.type,
             payload: data.payload,
             delivery_channel: data.delivery_channel,
@@ -86,6 +87,61 @@ export async function canReceiveSlackNotification(email: string): Promise<boolea
  * Send a notification to Slack
  */
 export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<void> {
+    if (payload.recipients && payload.recipients.length >= 2) {
+        const valid: SlackUser[] = [];
+        for (const r of payload.recipients) {
+            if (!r.slack_handle || !isSlackUserId(r.slack_handle)) {
+                if (r.email) {
+                    const synced = await syncUserSlackHandle(r.email);
+                    if (synced) r.slack_handle = synced;
+                }
+                if (!r.slack_handle || !isSlackUserId(r.slack_handle)) continue;
+            }
+            if (!(await canReceiveSlackNotification(r.email))) {
+                await logNotification({
+                    user_id: r.id,
+                    launch_id: payload.launch_id,
+                    type: payload.type,
+                    payload: payload.metadata,
+                    delivery_channel: 'slack',
+                    status: 'pending',
+                    error: 'Skipped: user does not have Slack notifications enabled in User Management',
+                });
+                continue;
+            }
+            valid.push(r);
+        }
+        if (valid.length === 0) return;
+        if (valid.length === 1) {
+            payload.recipient = valid[0];
+            delete payload.recipients;
+            return sendSlackNotification(payload);
+        }
+        const client = getSlackClient();
+        const theme = await getSlackTheme();
+        let message;
+        if (payload.type === 'criterion_comment_or_attachment' && payload.metadata) {
+            message = buildCriterionCommentOrAttachmentMessage(payload.metadata as any, theme);
+        } else {
+            throw new Error(`Multi-recipient is only supported for criterion_comment_or_attachment`);
+        }
+        const slackIds = valid.map((r) => r.slack_handle!);
+        const channel = await client.openMultiUserConversation(slackIds);
+        const response = await client.postMessage({ channel, ...message });
+        console.log('Slack MPDM notification sent:', { type: payload.type, channel, ts: response.ts });
+        await logNotification({
+            user_id: valid[0].id,
+            launch_id: payload.launch_id,
+            type: payload.type,
+            payload: { ...payload.metadata, multi_recipient: true, recipient_ids: valid.map((r) => r.id) },
+            delivery_channel: 'slack',
+            status: 'sent',
+            slack_ts: response.ts,
+            slack_channel: channel,
+        });
+        return;
+    }
+
     if (payload.recipient?.email && !(await canReceiveSlackNotification(payload.recipient.email))) {
         await logNotification({
             user_id: payload.recipient?.id,
@@ -97,6 +153,11 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             error: 'Skipped: user does not have Slack notifications enabled in User Management',
         });
         return;
+    }
+
+    if (payload.recipient?.email && (!payload.recipient.slack_handle || !isSlackUserId(payload.recipient.slack_handle))) {
+        const synced = await syncUserSlackHandle(payload.recipient.email);
+        if (synced) payload.recipient.slack_handle = synced;
     }
 
     const client = getSlackClient();

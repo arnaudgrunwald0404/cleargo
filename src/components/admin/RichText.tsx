@@ -1,7 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from "react";
 import { IconBold, IconItalic, IconList, IconListNumbers, IconLink } from "@tabler/icons-react";
+
+export interface MentionUser {
+    id: string;
+    name: string;
+}
+
+export interface RichTextMentionHandle {
+    insertMention: (user: MentionUser) => void;
+}
 
 interface RichTextProps {
     value: string;
@@ -13,13 +22,81 @@ interface RichTextProps {
     autoFocus?: boolean;
     /** When true, the editor fills available height (use inside a flex container with minHeight: 0). */
     fillHeight?: boolean;
+    /** Called when user types @; parent can show mention dropdown. Query is the text after @. */
+    onMentionTrigger?: (query: string) => void;
 }
 
-export function RichText({ value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false, fillHeight = false }: RichTextProps) {
+function getTextAndMentionStart(editor: HTMLElement): { text: string; startNode: Node | null; startOffset: number } | null {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = document.createRange();
+    range.setStart(editor, 0);
+    range.setEnd(sel.anchorNode!, sel.anchorOffset);
+    const text = range.toString();
+    const lastAt = text.lastIndexOf("@");
+    if (lastAt === -1) return null;
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT, null);
+    let count = 0;
+    let startNode: Node | null = null;
+    let startOffset = 0;
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const len = (node.textContent || "").length;
+        if (count + len >= lastAt) {
+            startNode = node;
+            startOffset = lastAt - count;
+            break;
+        }
+        count += len;
+    }
+    if (startNode === null) startNode = editor.firstChild || editor;
+    return { text: text.slice(lastAt + 1), startNode, startOffset };
+}
+
+const RichTextInner = forwardRef<RichTextMentionHandle, RichTextProps>(function RichTextInner(
+    { value, onChange, placeholder, rows = 6, readOnly = false, compactLists = false, autoFocus = false, fillHeight = false, onMentionTrigger },
+    ref
+) {
     const editorRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const [isFocused, setIsFocused] = useState(false);
     const savedSelectionRef = useRef<Range | null>(null);
+    const mentionStartRef = useRef<{ node: Node; offset: number } | null>(null);
+
+    useImperativeHandle(ref, () => ({
+        insertMention(user: MentionUser) {
+            const editor = editorRef.current;
+            if (!editor) return;
+            const sel = window.getSelection();
+            if (!sel || sel.rangeCount === 0) return;
+            const start = mentionStartRef.current;
+            if (!start) return;
+            const range = document.createRange();
+            range.setStart(start.node, start.offset);
+            range.setEnd(sel.anchorNode!, sel.anchorOffset);
+            const span = document.createElement("span");
+            span.setAttribute("data-mention-user-id", user.id);
+            span.setAttribute("class", "mention");
+            span.textContent = `@${user.name}`;
+            range.deleteContents();
+            range.insertNode(span);
+            range.setStartAfter(span);
+            range.collapse(true);
+            sel.removeAllRanges();
+            sel.addRange(range);
+            mentionStartRef.current = null;
+            if (editorRef.current) onChange(editorRef.current.innerHTML);
+        },
+    }), [onChange]);
+
+    const checkMentionTrigger = useCallback(() => {
+        const editor = editorRef.current;
+        if (!editor || !onMentionTrigger) return;
+        const info = getTextAndMentionStart(editor);
+        if (!info || info.startNode === null) return;
+        mentionStartRef.current = { node: info.startNode, offset: info.startOffset };
+        onMentionTrigger(info.text);
+    }, [onMentionTrigger]);
 
     useEffect(() => {
         if (editorRef.current && !isFocused) {
@@ -69,6 +146,13 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
     const handleInput = () => {
         if (editorRef.current) {
             onChange(editorRef.current.innerHTML);
+            checkMentionTrigger();
+        }
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (onMentionTrigger && e.key === "@") {
+            setTimeout(checkMentionTrigger, 0);
         }
     };
 
@@ -306,6 +390,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
                     ref={editorRef}
                     contentEditable
                     onInput={handleInput}
+                    onKeyDown={handleKeyDown}
                     onFocus={() => {
                         setIsFocused(true);
                     }}
@@ -327,5 +412,7 @@ export function RichText({ value, onChange, placeholder, rows = 6, readOnly = fa
             </div>
         </div>
     );
-}
+});
+
+export const RichText = RichTextInner;
 
