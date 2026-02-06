@@ -99,6 +99,17 @@ export async function PATCH(
             body 
         });
 
+        let previousStatus: string | undefined;
+        if (typeof status !== 'undefined') {
+            const { data: current } = await supabase
+                .from('epic_criterion_status')
+                .select('status')
+                .eq('id', lcsId)
+                .eq('epic_id', id)
+                .single();
+            previousStatus = current?.status;
+        }
+
         // Build update object, only including defined values
         const updateData: any = {
             last_updated_at: new Date().toISOString(),
@@ -135,6 +146,15 @@ export async function PATCH(
         const logEntry6 = {location:'route.ts:100',message:'Supabase update succeeded',data:{returnedDataKeys:data ? Object.keys(data) : [],returnedDataSourceValues:data?.data_source_values},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G',runId:'run1'};
         try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry6) + '\n'); } catch(e) {}
         // #endregion
+
+        if (typeof status !== 'undefined' && data?.status != null && data.status !== previousStatus) {
+            await supabase.from('audit_log').insert({
+                actor_id: appUser.id,
+                entity_type: 'epic_criterion_status',
+                entity_id: lcsId,
+                json_diff: { status: { old: previousStatus ?? null, new: data.status } },
+            });
+        }
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
         await recomputeEpicReadiness(id, appUser.id);

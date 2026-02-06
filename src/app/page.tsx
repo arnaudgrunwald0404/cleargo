@@ -1,7 +1,7 @@
 import { HomeDashboard } from '@/components/HomeDashboard';
 import { createClient } from '@/lib/supabase/server';
-import { getSettings } from '@/lib/settings-db';
 import { getSession } from '@/lib/auth';
+import { isSuperAdmin } from '@/lib/auth-helpers';
 import { redirect } from 'next/navigation';
 import { OAuthCodeHandler } from '@/components/OAuthCodeHandler';
 
@@ -62,8 +62,8 @@ export default async function HomePage({
   
   let email: string | null = userEmail || null;
   let firstName: string | null = null;
-  let enableActivityFeed = true;
   let isFirstTime = false;
+  const isSuperAdminUser = isSuperAdmin(userEmail ?? null);
   
   try {
     
@@ -111,19 +111,10 @@ export default async function HomePage({
     console.warn('Failed to fetch user profile:', error);
   }
 
-  // Fetch settings to check if activity feed is enabled
-  try {
-    const settings = await getSettings();
-    enableActivityFeed = settings.enable_activity_feed !== false;
-  } catch (error) {
-    // Silently fail - default to enabled
-    console.warn('Failed to fetch settings for activity feed:', error);
-  }
-
   return (
     <>
       <OAuthCodeHandler />
-      <HomeDashboard userEmail={email} firstName={firstName} enableActivityFeed={enableActivityFeed} isFirstTime={isFirstTime} />
+      <HomeDashboard userEmail={email} firstName={firstName} isFirstTime={isFirstTime} isSuperAdmin={isSuperAdminUser} />
     </>
   );
 }

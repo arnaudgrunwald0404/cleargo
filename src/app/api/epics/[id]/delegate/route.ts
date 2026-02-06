@@ -5,6 +5,7 @@ import { getEpic } from '@/lib/epics';
 import { canRolesPerform, canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
+import { getReleaseNameFromEpic, getEpicsForRelease } from '@/lib/services/releaseAnalyticsService';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,6 +13,7 @@ export type DelegationType =
   | 'SINGLE_TASK'
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
+  | 'RELEASE_CATEGORY_INCLUDING_GATES'
   | 'TEMPLATE_EXCLUDING_GATES'
   | 'TEMPLATE_INCLUDING_GATES'
   | 'POST_LAUNCH_OWNER';
@@ -282,6 +284,69 @@ export async function POST(
               epic_id: epicId,
               epic_name: epic.name,
               tasks_count: taskIds.length,
+            },
+          }));
+
+          await supabase.from('audit_log').insert(auditLogs);
+        }
+        break;
+      }
+
+      case 'RELEASE_CATEGORY_INCLUDING_GATES': {
+        const releaseName = getReleaseNameFromEpic(epic as any);
+        if (!releaseName) {
+          return NextResponse.json(
+            { error: 'This epic is not associated with a release. Cannot delegate by release.' },
+            { status: 400 }
+          );
+        }
+        const releaseEpics = await getEpicsForRelease(releaseName, supabase);
+        const releaseEpicIds = (releaseEpics || []).map((e: any) => e.id);
+        if (releaseEpicIds.length === 0) {
+          return NextResponse.json(
+            { error: 'No epics found for this release.' },
+            { status: 400 }
+          );
+        }
+        const { data: releaseTasks, error: fetchReleaseError } = await supabase
+          .from('epic_criterion_status')
+          .select('id, criterion:criterion_id(category)')
+          .in('epic_id', releaseEpicIds);
+
+        if (fetchReleaseError) throw fetchReleaseError;
+
+        const norm = (c: any) => (Array.isArray(c) ? c[0] : c);
+        const releaseTaskIds = (releaseTasks || [])
+          .filter((task: any) => {
+            const criterion = norm(task.criterion);
+            return criterion && criterion.category === category;
+          })
+          .map((task: any) => task.id);
+
+        if (releaseTaskIds.length > 0) {
+          const { error } = await supabase
+            .from('epic_criterion_status')
+            .update({ decision_owner_id: newApproverId })
+            .in('id', releaseTaskIds);
+
+          if (error) throw error;
+
+          delegatedTaskIds = releaseTaskIds;
+
+          const auditLogs = releaseTaskIds.map((tid: string) => ({
+            actor_id: delegatorId,
+            entity_type: 'delegation',
+            entity_id: tid,
+            json_diff: {
+              action: 'delegation',
+              delegation_type: delegationType,
+              category: category,
+              release_name: releaseName,
+              new_approver_id: newApproverId,
+              new_approver_email: newApproverEmail,
+              epic_id: epicId,
+              epic_name: epic.name,
+              tasks_count: releaseTaskIds.length,
             },
           }));
 

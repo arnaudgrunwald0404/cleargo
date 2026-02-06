@@ -102,7 +102,7 @@ export async function POST(
         .select('id')
         .in('id', mentionIds);
       const validIds = new Set((mentionUsers || []).map((u) => u.id));
-      validatedMentionIds = mentionIds.filter((id) => validIds.has(id) && id !== commenterId);
+      validatedMentionIds = mentionIds.filter((id) => validIds.has(id));
     }
 
     // Insert comment
@@ -185,7 +185,6 @@ export async function POST(
           .in('id', validatedMentionIds);
         const ownerId = decisionOwner?.id;
         for (const u of mentionedUsers || []) {
-          if (u.id === commenterId) continue;
           if (ownerId && u.id === ownerId) continue;
           if (recipients.some((r) => r.id === u.id)) continue;
           recipients.push(toSlackUser(u));

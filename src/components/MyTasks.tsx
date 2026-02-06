@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { Tooltip, Button, Text, Switch, Group } from "@mantine/core";
+import { IconRefresh } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
@@ -404,9 +405,16 @@ function setCachedEpicReleaseMap(map: Map<string, string | null>): void {
     }
 }
 
-export function MyTasks() {
+export interface MyTasksProps {
+    viewAsEmail?: string | null;
+    viewAsName?: string | null;
+}
+
+export function MyTasks(props: MyTasksProps) {
+    const { viewAsEmail = null, viewAsName = null } = props;
     const { flags: featureFlags } = useFeatureFlags();
     const showNotApplicable = isEnabled(FEATURE_NOT_APPLICABLE, featureFlags);
+    const readOnly = Boolean(viewAsEmail);
     const [items, setItems] = useState<MyItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -421,37 +429,35 @@ export function MyTasks() {
     const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
 
     useEffect(() => {
-        // Load cached data immediately
+        if (readOnly) {
+            loadData();
+            fetchCurrentUser();
+            fetchReleaseSchedule();
+            return;
+        }
         const cachedItems = getCachedData(showAllItems);
         const cachedSchedule = getCachedReleaseSchedule();
         const cachedEpicMap = getCachedEpicReleaseMap();
-        
+
         if (cachedItems) {
             setItems(cachedItems);
             setLoading(false);
-            setIsRefreshing(true); // Show we're refreshing in background
+            setIsRefreshing(true);
         }
-        
-        if (cachedSchedule) {
-            setReleaseSchedule(cachedSchedule);
-        }
-        
+        if (cachedSchedule) setReleaseSchedule(cachedSchedule);
         if (cachedEpicMap) {
             setEpicReleaseMap(cachedEpicMap);
-            setIsLoadingReleaseNames(false); // We have cached data, so not loading
+            setIsLoadingReleaseNames(false);
         } else if (cachedItems && cachedItems.length > 0) {
-            // If we have cached items but no cached epic map, we need to fetch release names
             setIsLoadingReleaseNames(true);
         } else {
-            setIsLoadingReleaseNames(false); // No items yet, not loading
+            setIsLoadingReleaseNames(false);
         }
-        
-        // Fetch fresh data
         loadData();
         fetchCurrentUser();
         fetchReleaseSchedule();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    }, [viewAsEmail]);
 
     // Set up real-time subscriptions to refresh when epics are deleted or archived
     useEffect(() => {
@@ -569,27 +575,27 @@ export function MyTasks() {
 
     const loadData = async (retryCount = 0, useCache = true) => {
         const maxRetries = 3;
-        const retryDelay = 1000 * Math.pow(2, retryCount); // Exponential backoff: 1s, 2s, 4s
-        
-        // Try to use cached data first if available and we have no current items
-        if (useCache && items.length === 0 && retryCount === 0) {
+        const retryDelay = 1000 * Math.pow(2, retryCount);
+        const useViewAsCache = !readOnly;
+
+        if (useCache && useViewAsCache && items.length === 0 && retryCount === 0) {
             const cachedItems = getCachedData(showAllItems);
             if (cachedItems && cachedItems.length > 0) {
                 setItems(cachedItems);
                 setLoading(false);
-                setIsRefreshing(true); // Indicate we're refreshing in background
+                setIsRefreshing(true);
             }
         }
-        
+
         try {
-            if (retryCount === 0) {
-                // Only set loading on first attempt if we don't have cached data
-                if (items.length === 0) {
-                    setLoading(true);
-                }
+            if (retryCount === 0 && (items.length === 0 || readOnly)) {
+                setLoading(true);
             }
-            setError(null); // Clear any previous errors
-            const url = showAllItems ? "/api/my-items?showAll=true" : "/api/my-items";
+            setError(null);
+            const params = new URLSearchParams();
+            if (showAllItems) params.set('showAll', 'true');
+            if (viewAsEmail) params.set('viewAsEmail', viewAsEmail);
+            const url = `/api/my-items${params.toString() ? `?${params.toString()}` : ''}`;
             const res = await fetch(url);
             
             if (!res.ok) {
@@ -610,8 +616,8 @@ export function MyTasks() {
             
             const data = await res.json();
             setItems(data);
-            setCachedData(showAllItems, data); // Cache the fresh data
-            setError(null); // Clear error on success
+            if (!readOnly) setCachedData(showAllItems, data);
+            setError(null);
             setIsRefreshing(false);
         } catch (e: any) {
             // Only set error if we've exhausted retries AND we don't have cached data
@@ -636,16 +642,18 @@ export function MyTasks() {
     };
 
     useEffect(() => {
-        // Reload data when showAllItems changes
-        // Try cache first, then fetch fresh
+        if (readOnly) {
+            loadData(0, false);
+            return;
+        }
         const cachedItems = getCachedData(showAllItems);
         if (cachedItems) {
             setItems(cachedItems);
             setIsRefreshing(true);
         }
-        loadData(0, false); // Don't use cache in this effect since we already loaded it above
+        loadData(0, false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [showAllItems]);
+    }, [showAllItems, viewAsEmail]);
 
     async function fetchReleaseSchedule() {
         try {
@@ -1055,6 +1063,22 @@ export function MyTasks() {
                     )}
                 </h2>
                 <Group gap="sm">
+                    <Button
+                        variant="subtle"
+                        size="sm"
+                        leftSection={<IconRefresh size={16} />}
+                        loading={isRefreshing}
+                        onClick={() => {
+                            if (typeof window !== 'undefined') {
+                                localStorage.removeItem(getCacheKey(false));
+                                localStorage.removeItem(getCacheKey(true));
+                            }
+                            loadData(0, false);
+                        }}
+                        style={{ fontFamily: 'var(--font-body)' }}
+                    >
+                        Refresh
+                    </Button>
                     <Text size="sm" style={{
                         fontFamily: 'var(--font-body)',
                         color: 'var(--color-gray-600)'
@@ -1239,6 +1263,7 @@ export function MyTasks() {
                                             letterSpacing: "0.05em",
                                             color: "#6B7280"
                                         }}>Due on</th>
+                                        {!readOnly && (
                                         <th className="px-4 py-3 text-right w-24" style={{ 
                                             fontSize: "12px",
                                             fontWeight: 600,
@@ -1246,6 +1271,7 @@ export function MyTasks() {
                                             letterSpacing: "0.05em",
                                             color: "#6B7280"
                                         }}></th>
+                                        )}
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
@@ -1305,6 +1331,14 @@ export function MyTasks() {
                                                 }}>{item.criterion.category}</div>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                {readOnly ? (
+                                                    <span className="px-2 py-1 rounded text-xs font-medium" style={{
+                                                        backgroundColor: item.status === 'GO' ? '#d1fae5' : item.status === 'CONDITIONAL' ? 'rgba(255, 166, 128, 0.3)' : item.status === 'NO_GO' ? '#fee2e2' : '#f3f4f6',
+                                                        color: item.status === 'GO' ? '#065f46' : item.status === 'CONDITIONAL' ? '#9a3412' : item.status === 'NO_GO' ? '#991b1b' : '#374151',
+                                                    }}>
+                                                        {item.status === 'NOT_APPLICABLE' ? 'n/a' : item.status.replace('_', ' ')}
+                                                    </span>
+                                                ) : (
                                                 <StatusTrafficLight
                                                     status={item.status}
                                                     itemId={item.id}
@@ -1319,6 +1353,7 @@ export function MyTasks() {
                                                         no_go: item.criterion?.status_definition_no_go,
                                                     }}
                                                 />
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                 {(() => {
@@ -1374,6 +1409,7 @@ export function MyTasks() {
                                                     }
                                                 })()}
                                             </td>
+                                            {!readOnly && (
                                             <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                 <Button
                                                     variant="subtle"
@@ -1386,6 +1422,7 @@ export function MyTasks() {
                                                     Delegate
                                                 </Button>
                                             </td>
+                                            )}
                                         </tr>
                                     ))}
                                 </tbody>

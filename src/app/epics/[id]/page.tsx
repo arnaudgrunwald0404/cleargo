@@ -1572,7 +1572,7 @@ export default function EpicDetailPage() {
                         activeTab={activeTab}
                         onTabChange={(value) => setActiveTab(value)}
                     />
-                    {matrix.length > 0 && (
+                    {matrix.length > 0 && activeTab === 'readiness' && (
                         <Group gap="sm" align="center">
                             <span className="font-medium text-gray-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--font-size-sm)' }}>Filters</span>
                             <Badge

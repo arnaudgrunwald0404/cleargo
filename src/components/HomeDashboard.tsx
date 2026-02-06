@@ -1,26 +1,49 @@
 "use client";
 
-import { Title, Text, Box, SegmentedControl } from '@mantine/core';
-import { ActivityFeed } from './ActivityFeed';
-import { EpicReleaseGrid } from './EpicReleaseGrid';
-import { PostLaunchPerformanceGrid } from './PostLaunchPerformanceGrid';
+import { Title, Text, Box, Select, Button, Group } from '@mantine/core';
 import { MyTasks } from './MyTasks';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+type ViewAsUser = { email: string; name: string } | null;
+
 interface HomeDashboardProps {
   userEmail?: string | null;
   firstName?: string | null;
-  enableActivityFeed?: boolean;
   isFirstTime?: boolean;
+  isSuperAdmin?: boolean;
 }
 
-export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true, isFirstTime = false }: HomeDashboardProps) {
+export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSuperAdmin = false }: HomeDashboardProps) {
   const router = useRouter();
   const supabase = createClient();
-  const [viewMode, setViewMode] = useState<'tasks' | 'portfolio'>('tasks');
-  
+  const [viewAsUser, setViewAsUser] = useState<ViewAsUser>(null);
+  const [usersForViewAs, setUsersForViewAs] = useState<Array<{ value: string; label: string }>>([]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch('/api/users', { credentials: 'include' });
+      if (!res.ok || cancelled) return;
+      const data = await res.json();
+      if (cancelled || !data?.users) return;
+      const currentEmail = (userEmail || '').toLowerCase();
+      const options: Array<{ value: string; label: string }> = [
+        { value: '', label: 'My tasks' },
+        ...data.users
+          .filter((u: { email?: string }) => (u.email || '').toLowerCase() !== currentEmail)
+          .map((u: { email: string; name?: string; first_name?: string; last_name?: string }) => ({
+            value: u.email,
+            label: [u.first_name, u.last_name].filter(Boolean).join(' ').trim() || u.name || u.email,
+          })),
+      ];
+      setUsersForViewAs(options);
+    })();
+    return () => { cancelled = true; };
+  }, [userEmail, isSuperAdmin]);
+
   // Client-side auth check as fallback
   useEffect(() => {
     const checkAuth = async () => {
@@ -133,82 +156,62 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
           )}
         </div>
 
-        {/* View Mode Toggle */}
-        <div style={{ marginBottom: 'var(--spacing-6)' }}>
-          <SegmentedControl
-            value={viewMode}
-            onChange={(value) => setViewMode(value as 'tasks' | 'portfolio')}
-            data={[
-              { label: 'My Tasks', value: 'tasks' },
-              { label: 'Portfolio View', value: 'portfolio' }
-            ]}
-            size="md"
-            color="brass"
-            styles={() => ({
-              root: {
-                fontFamily: 'var(--font-body)',
-                backgroundColor: '#F3F4F6',
-                padding: '4px',
-                borderRadius: '8px',
-                border: '1px solid #E5E7EB',
-                boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)'
-              },
-              indicator: {
-                backgroundColor: 'var(--color-accent, #C3B497)',
-                borderRadius: '6px',
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.1)'
-              },
-              label: {
-                fontFamily: 'var(--font-body)',
-                fontSize: 'var(--font-size-base)',
-                fontWeight: 'var(--font-weight-medium)',
-                padding: '8px 20px',
-                color: '#6B7280',
-                transition: 'color 0.15s ease',
-              }
-            })}
-          />
-        </div>
-
-        {/* Content Based on View Mode */}
-        {viewMode === 'tasks' ? (
-          <MyTasks />
-        ) : (
-          <div style={{ 
-            display: 'flex', 
-            gap: 'var(--spacing-6)', 
-            alignItems: 'flex-start',
-            flexDirection: enableActivityFeed ? undefined : 'column',
-          }}>
-            {/* Left Column - Main Content */}
-            <div style={{ flex: 1, minWidth: 0, width: '100%' }}>
-              {/* Epic Release Grid */}
-              <div className="mb-8">
-                <EpicReleaseGrid />
-              </div>
-
-              {/* Post-Launch Performance Grid */}
-              <div className="mb-8">
-                <PostLaunchPerformanceGrid />
-              </div>
-            </div>
-
-            {/* Right Column - Activity Feed */}
-            {enableActivityFeed && (
-              <div 
-                style={{ 
-                  width: '380px',
-                  flexShrink: 0
-                }}
-                className="hidden lg:block"
-              >
-                <Box>
-                  <ActivityFeed />
-                </Box>
-              </div>
-            )}
-          </div>
+        {isSuperAdmin && usersForViewAs.length > 1 && (
+          <Group align="center" gap="sm" style={{ marginBottom: 'var(--spacing-4)' }}>
+            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+              See Home page as
+            </Text>
+            <Select
+              data={usersForViewAs}
+              value={viewAsUser ? viewAsUser.email : ''}
+              onChange={(value) => {
+                if (value === null || value === '') {
+                  setViewAsUser(null);
+                  return;
+                }
+                const opt = usersForViewAs.find((o) => o.value === value);
+                setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
+              }}
+              placeholder="My tasks"
+              allowDeselect={false}
+              searchable
+              nothingFoundMessage="No user found"
+              size="sm"
+              style={{ minWidth: 220 }}
+              styles={() => ({
+                input: { fontFamily: 'var(--font-body)' },
+              })}
+            />
+          </Group>
         )}
+
+        {viewAsUser && (
+          <Box
+            style={{
+              marginBottom: 'var(--spacing-4)',
+              padding: '12px 16px',
+              backgroundColor: 'var(--color-platinum)',
+              border: '1px solid #E5E7EB',
+              borderRadius: '8px',
+            }}
+          >
+            <Group justify="space-between">
+              <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                Viewing task list as <strong style={{ color: 'var(--color-gray-900)' }}>{viewAsUser.name}</strong>
+              </Text>
+              <Button
+                variant="subtle"
+                size="xs"
+                onClick={() => setViewAsUser(null)}
+                style={{ fontFamily: 'var(--font-body)' }}
+              >
+                Back to my tasks
+              </Button>
+            </Group>
+          </Box>
+        )}
+
+        <MyTasks viewAsEmail={viewAsUser?.email ?? null} viewAsName={viewAsUser?.name ?? null} />
       </div>
     </div>
   );

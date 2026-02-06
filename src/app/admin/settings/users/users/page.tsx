@@ -17,6 +17,7 @@ export default function UsersPage() {
         saving,
         autoSaveSettings,
         fetchPods,
+        isSuperAdmin,
     } = useSettings();
 
     const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -128,6 +129,7 @@ export default function UsersPage() {
             activeSubSection="users"
             draggedPodIndex={draggedPodIndex}
             setDraggedPodIndex={setDraggedPodIndex}
+            isSuperAdmin={isSuperAdmin}
         />
     );
 }

@@ -3,13 +3,11 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
-import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
-import { ScopeFilterBanner } from '@/components/ScopeFilterBanner';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 
@@ -20,7 +18,6 @@ interface EpicsClientProps {
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const { scope, isMyScope } = useEpicScope();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
@@ -50,8 +47,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         search: "",
         tier: "ALL",
         status: "ALL",
-        risk: "ALL",
-        uxNeeds: "ALL"
+        risk: "ALL"
     });
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     
@@ -121,19 +117,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     }, [initialEpics.length]);
 
-    // Reload epics when scope changes
-    useEffect(() => {
-        if (initialEpics.length > 0) {
-            // Only reload if we have initial epics (component already mounted)
-            loadData();
-        }
-    }, [scope]);
-
     async function loadData() {
         try {
             setLoading(true);
-            // Use my-scope endpoint if scope is "my"
-            const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
 
             // Import fetchWithRateLimit
             const { fetchWithRateLimit, batchFetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
@@ -146,7 +132,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             }
 
             // Priority 2: Main data (epics) - most important
-            const epicsRes = await fetchWithRateLimit(endpoint, { maxRetries: 1 });
+            const epicsRes = await fetchWithRateLimit('/api/epics', { maxRetries: 1 });
             if (epicsRes.status === 401) {
                 router.push('/');
                 return;
@@ -302,12 +288,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         if (filters.tier !== "ALL" && l.tier !== filters.tier) return false;
         if (filters.status !== "ALL" && l.status !== filters.status) return false;
         if (filters.risk !== "ALL" && (l.risk_level || 'LOW') !== filters.risk) return false;
-        if (filters.uxNeeds !== "ALL") {
-            const uxNeedsValue = l.aha_fields?.custom_fields?.ux_needs;
-            const hasValue = uxNeedsValue !== null && uxNeedsValue !== undefined && uxNeedsValue !== '';
-            if (filters.uxNeeds === "HAS_VALUE" && !hasValue) return false;
-            if (filters.uxNeeds === "NO_VALUE" && hasValue) return false;
-        }
         return true;
     });
 
@@ -970,7 +950,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     return (
         <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
-            <ScopeFilterBanner />
             <div style={{
               maxWidth: 'var(--page-container-max-width)',
               margin: '0 auto',
@@ -992,20 +971,28 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         marginBottom: 'var(--spacing-6)',
                         margin: 0
                     }}>Releases</Title>
-                    {canSyncWithAha && (
-                        <Button
-                            leftSection={<IconRefresh size={16} />}
-                            variant="light"
-                            color="copper"
-                            onClick={handleRefreshEpics}
-                            loading={refreshingEpics}
-                            disabled={refreshingEpics}
-                        >
-                            Refresh Epic Data
-                        </Button>
-                    )}
                 </Group>
             </Box>
+
+            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="sm" mb="md">
+                Epics appear below when in Aha!: ClearGO Candidate = Yes
+                {canSyncWithAha && (
+                    <>
+                        {' — '}
+                        <Anchor
+                            component="button"
+                            type="button"
+                            size="sm"
+                            c="var(--color-cast-iron)"
+                            style={{ fontFamily: 'var(--font-body)' }}
+                            onClick={handleRefreshEpics}
+                            disabled={refreshingEpics}
+                        >
+                            {refreshingEpics ? 'Refreshing…' : 'Refresh Epic Data'}
+                        </Anchor>
+                    </>
+                )}
+            </Text>
 
             {error && (
                 <Alert icon={<IconAlertCircle size={16} />} title="Error" color="red" mb="xl">
@@ -1061,7 +1048,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             router.push(`/epics?${params.toString()}`, { scroll: false });
                                         }}
                                         className={`
-                                            flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all !bg-white
+                                            flex-shrink-0 w-64 p-4 rounded-lg border-1 border-gray-300 cursor-pointer transition-all !bg-white
                                             ${isSelected 
                                                 ? 'shadow-md border-[2px]' 
                                                 : 'border-[#E5E7EB] hover:shadow-sm hover:border-[var(--color-cast-iron-border)]'
@@ -1152,17 +1139,17 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             )}
 
             {/* Search and filters bar - always visible */}
-            <Box
-                mb="lg"
-                style={{
-                    display: 'flex',
-                    flexWrap: 'wrap',
-                    alignItems: 'center',
-                    gap: '12px',
-                    padding: '12px 0',
-                    borderBottom: '1px solid var(--color-gray-200)'
-                }}
-            >
+            <Group mb="lg" align="center" gap="sm">
+                <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>Filters:</Text>
+                <Box
+                    style={{
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        alignItems: 'center',
+                        gap: '16px',
+                        padding: '8px 0'
+                    }}
+                >
                 <TextInput
                     placeholder="Search epics..."
                     value={filters.search}
@@ -1184,27 +1171,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         input: {
                             borderRadius: 8,
                             border: '1px solid var(--color-gray-300)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                <Select
-                    placeholder="Release"
-                    value={selectedRelease || ''}
-                    onChange={(value) => setSelectedRelease(value || null)}
-                    data={[
-                        { value: '', label: 'All Releases' },
-                        ...(releaseScheduleWithIds || [])
-                            .filter(r => r.release_name)
-                            .map(r => ({ value: r.release_name, label: r.release_name }))
-                    ]}
-                    clearable
-                    style={{ minWidth: 140 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            backgroundColor: 'var(--color-gray-50)',
                             fontFamily: 'var(--font-body)'
                         }
                     }}
@@ -1274,34 +1240,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }
                     }}
                 />
-                <Select
-                    placeholder="UX Needs"
-                    value={filters.uxNeeds}
-                    onChange={(value) => setFilters({ ...filters, uxNeeds: value || "ALL" })}
-                    data={[
-                        { value: "ALL", label: "All" },
-                        { value: "HAS_VALUE", label: "Has Value" },
-                        { value: "NO_VALUE", label: "No Value" },
-                    ]}
-                    clearable
-                    style={{ minWidth: 110 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            backgroundColor: 'var(--color-gray-50)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || filters.uxNeeds !== "ALL" || selectedRelease) && (
+                {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
                     <Button
                         variant="light"
                         color="red"
                         size="sm"
                         leftSection={<IconX size={16} />}
                         onClick={() => {
-                            setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL", uxNeeds: "ALL" });
+                            setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
                             setSelectedRelease(null);
                         }}
                         style={{
@@ -1319,11 +1265,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         Clear Filters
                     </Button>
                 )}
-            </Box>
+                </Box>
+            </Group>
 
-            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="md">
-                Epics appear below when in Aha!: ClearGO Candidate = Yes
-            </Text>
+          
                 
             {filteredReleaseGroups.length === 0 ? (
                     <div className="rounded-lg overflow-hidden" style={{

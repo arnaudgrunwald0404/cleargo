@@ -84,6 +84,7 @@ interface SettingsContextType {
     
     // Current User
     currentUserRoles: string[];
+    isSuperAdmin: boolean;
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined);
@@ -135,6 +136,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [emailTemplatesInitialized, setEmailTemplatesInitialized] = useState(false);
     
     const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
+    const [isSuperAdmin, setIsSuperAdmin] = useState(false);
     
     const fetchCurrentUser = async () => {
         try {
@@ -144,6 +146,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             if (res.ok) {
                 const data = await res.json();
                 setCurrentUserRoles(data.user?.roles || []);
+                setIsSuperAdmin(!!data.isSuperAdmin);
             }
         } catch (error) {
             console.error("Failed to fetch current user:", error);
@@ -460,6 +463,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 setEmailTemplates,
                 fetchEmailTemplates,
                 currentUserRoles,
+                isSuperAdmin,
             }}
         >
             {children}

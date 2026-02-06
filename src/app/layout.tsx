@@ -7,13 +7,15 @@ import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { HeaderWrapper } from "@/components/HeaderWrapper";
 import { TableScopeWrapper } from "@/components/TableScopeWrapper";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
-import { EpicScopeProvider } from "@/lib/contexts/EpicScopeContext";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
+import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
+import { getEffectiveUserEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
 
 // Force dynamic rendering for the root layout since it uses cookies for auth
 export const dynamic = 'force-dynamic';
@@ -61,11 +63,13 @@ export default async function RootLayout({
     const session = await getSession();
     const sessionEmail = session?.email;
     
-    // Use email from Supabase auth or from lr_session cookie
-    const userEmail = user?.email || sessionEmail;
-    
-    if (userEmail) {
-      email = userEmail;
+    const realUserEmail = user?.email || sessionEmail;
+    const cookieStore = await cookies();
+    const impersonateCookie = cookieStore.get(IMPERSONATE_COOKIE_NAME)?.value;
+    const effectiveEmail = realUserEmail ? await getEffectiveUserEmail(realUserEmail.toLowerCase(), impersonateCookie) : '';
+
+    if (effectiveEmail) {
+      email = effectiveEmail;
 
       try {
         const { data: profile } = await supabase
@@ -99,13 +103,12 @@ export default async function RootLayout({
       >
         <MantineProvider theme={theme}>
           <FeatureFlagsProvider>
-            <EpicScopeProvider>
-              <Notifications />
-              <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-              <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
-                <TableScopeWrapper>{children}</TableScopeWrapper>
-              </div>
-            </EpicScopeProvider>
+            <Notifications />
+            <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+            <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
+              <TableScopeWrapper>{children}</TableScopeWrapper>
+            </div>
+            <ImpersonationBanner />
           </FeatureFlagsProvider>
         </MantineProvider>
       </body>

@@ -5,9 +5,6 @@ import Link from 'next/link';
 import { Card, Title, Text, Box, Tooltip } from '@mantine/core';
 import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
-import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
-import { ScopeFilterBanner } from './ScopeFilterBanner';
-
 interface Release {
   id: number;
   release_name: string;
@@ -25,7 +22,6 @@ interface PostLaunchPerformanceGridProps {
 }
 
 export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGridProps) {
-  const { scope, isMyScope } = useEpicScope();
   const [releases, setReleases] = useState<Release[]>([]);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [feedbackCounts, setFeedbackCounts] = useState<Map<string, number>>(new Map());
@@ -34,10 +30,9 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
   useEffect(() => {
     async function fetchData() {
       try {
-        const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
         const [releasesRes, epicsRes] = await Promise.all([
           fetch('/api/releases', { credentials: 'include' }),
-          fetch(endpoint, { credentials: 'include' }),
+          fetch('/api/epics', { credentials: 'include' }),
         ]);
 
         if (releasesRes.ok) {
@@ -82,7 +77,7 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
     }
 
     fetchData();
-  }, [scope]);
+  }, []);
 
   // Extract release name from epic's aha_fields
   const getReleaseName = (epic: Epic): string | null => {
@@ -272,20 +267,15 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
 
   if (loading) {
     return (
-      <>
-        <ScopeFilterBanner />
-        <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
+      <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
           <div className="flex items-center justify-center py-8">
             <PurpleLoader size="md" />
           </div>
         </Card>
-      </>
     );
   }
 
   return (
-    <>
-      <ScopeFilterBanner />
     <Card shadow="sm" padding="md" radius="md" withBorder className={className}>
       <Title order={3} className="mb-12" style={{ 
         fontFamily: 'var(--font-heading)',
@@ -303,7 +293,7 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
             const releaseEpics = gridData.releaseEpicsMap.get(release.release_name) || [];
             return (
               <div
-                key={release.id}
+                key={release.release_name}
                 style={{
                   display: 'flex',
                   flexDirection: 'column',
@@ -493,7 +483,6 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
         </div>
       </Box>
     </Card>
-    </>
   );
 }
 

@@ -4,8 +4,6 @@ import { Suspense } from 'react';
 import { getEpics } from '@/lib/epics';
 import EpicsClient from './EpicsClient';
 import { PurpleLoader } from '@/components/PurpleLoader';
-import { EpicScopeProvider } from '@/lib/contexts/EpicScopeContext';
-
 export const dynamic = 'force-dynamic';
 
 export default async function EpicsPage() {
@@ -30,15 +28,13 @@ export default async function EpicsPage() {
         const epics = await getEpics();
 
         return (
-            <EpicScopeProvider>
-                <Suspense fallback={
-                    <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
-                        <PurpleLoader size="md" />
-                    </div>
-                }>
-                    <EpicsClient initialEpics={epics || []} />
-                </Suspense>
-            </EpicScopeProvider>
+            <Suspense fallback={
+                <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
+                    <PurpleLoader size="md" />
+                </div>
+            }>
+                <EpicsClient initialEpics={epics || []} />
+            </Suspense>
         );
     } catch (error: any) {
         if (error.digest?.startsWith('NEXT_REDIRECT')) {

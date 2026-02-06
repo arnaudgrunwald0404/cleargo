@@ -1,9 +1,11 @@
+import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { getSettings } from '@/lib/settings-db';
 import { syncUserSlackHandle } from '@/lib/slack/notifications';
 import type { Role } from './roles';
 import type { Role as SystemRole } from '@/lib/roles-constants';
+import { getEffectiveUserEmail, IMPERSONATE_COOKIE_NAME } from '@/lib/auth/impersonation';
 
 const DEFAULT_AUTO_PROVISION_ROLE = 'PMM';
 
@@ -27,21 +29,23 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
     throw new Error('Unauthorized');
   }
 
-  const emailLower = user.email.toLowerCase();
+  const realEmailLower = user.email.toLowerCase();
+  const cookieStore = await cookies();
+  const impersonateCookie = cookieStore.get(IMPERSONATE_COOKIE_NAME)?.value;
+  const effectiveEmail = await getEffectiveUserEmail(realEmailLower, impersonateCookie);
 
-  // Get user roles from app_user table
-  let appUser: { roles: string[] | null; role?: string } | null = null;
+  let appUser: { id: string; roles: string[] | null; role?: string } | null = null;
   let userError: { code?: string } | null = null;
   const { data: appUserData, error: appUserError } = await supabase
     .from('app_user')
-    .select('roles, role')
-    .eq('email', emailLower)
+    .select('id, roles, role')
+    .eq('email', effectiveEmail)
     .single();
 
   appUser = appUserData;
   userError = appUserError;
 
-  if (!appUser && userError?.code === 'PGRST116') {
+  if (!appUser && userError?.code === 'PGRST116' && effectiveEmail === realEmailLower) {
     const domain = user.email?.split('@')[1]?.toLowerCase();
     if (domain) {
       const settings = await getSettings();
@@ -62,7 +66,7 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
             .from('app_user')
             .insert({
               id: user.id,
-              email: emailLower,
+              email: realEmailLower,
               first_name: firstName,
               last_name: lastName,
               name: fullName,
@@ -74,15 +78,15 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
               console.error('[getUser] Auto-provision insert failed:', insertError);
             }
           } else {
-            syncUserSlackHandle(emailLower).catch((err) => {
-              console.error(`Failed to sync Slack handle for ${emailLower}:`, err);
+            syncUserSlackHandle(realEmailLower).catch((err) => {
+              console.error(`Failed to sync Slack handle for ${realEmailLower}:`, err);
             });
           }
         }
         const { data: created } = await supabase
           .from('app_user')
-          .select('roles, role')
-          .eq('email', emailLower)
+          .select('id, roles, role')
+          .eq('email', realEmailLower)
           .single();
         if (created) appUser = created;
       }
@@ -92,6 +96,8 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
   if (!appUser) {
     return { id: user.id, roles: [] };
   }
+
+  const userId = appUser.id;
 
   // Handle both 'roles' array and legacy 'role' string field
   const systemRoles = (appUser.roles as SystemRole[] | null) || 
@@ -119,6 +125,6 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
     }
   }
 
-  return { id: user.id, roles: mappedRoles };
+  return { id: userId, roles: mappedRoles };
 }
 

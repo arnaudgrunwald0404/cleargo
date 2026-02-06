@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export interface ActivityFeedItem {
     id: string;
-    type: 'criterion_change' | 'epic_added' | 'release_updated' | 'feedback_added' | 'delegation';
+    type: 'criterion_change' | 'epic_added' | 'release_updated' | 'feedback_added' | 'delegation' | 'comment_added' | 'rating_red' | 'rating_yellow';
     title: string;
     description: string;
     timestamp: string;
@@ -118,6 +118,51 @@ export async function GET(req: NextRequest) {
 
         if (feedbackError) console.warn('Failed to fetch feedback:', feedbackError);
 
+        // Fetch recent criterion comments (with creator and epic info)
+        const { data: commentRows, error: commentsError } = await supabase
+            .from('criterion_comment')
+            .select(`
+                id,
+                comment_text,
+                created_at,
+                launch_criterion_status_id,
+                created_by:app_user!criterion_comment_created_by_fkey (
+                    name,
+                    email,
+                    first_name,
+                    last_name,
+                    avatar_url
+                )
+            `)
+            .order('created_at', { ascending: false })
+            .limit(limit);
+
+        if (commentsError) console.warn('Failed to fetch comments:', commentsError);
+
+        const statusIds = (commentRows || [])
+            .map((c: { launch_criterion_status_id?: string }) => c.launch_criterion_status_id)
+            .filter(Boolean) as string[];
+        let statusToEpic: Map<string, { epic_id: string; epic_name: string }> = new Map();
+        if (statusIds.length > 0) {
+            const { data: statuses } = await supabase
+                .from('epic_criterion_status')
+                .select(`
+                    id,
+                    epic_id,
+                    epic:epic_id (id, name)
+                `)
+                .in('id', [...new Set(statusIds)]);
+            if (statuses) {
+                for (const s of statuses) {
+                    const epic = firstItem((s as any).epic);
+                    statusToEpic.set(s.id, {
+                        epic_id: s.epic_id,
+                        epic_name: epic?.name || 'Epic',
+                    });
+                }
+            }
+        }
+
         // Transform audit logs into activity feed items
         const activities: ActivityFeedItem[] = [];
         // Track entities we've already added to prevent duplicates
@@ -134,26 +179,49 @@ export async function GET(req: NextRequest) {
 
             // Parse different types of activities
             if (log.entity_type === 'criterion' || log.entity_type === 'launch_criterion_status' || log.entity_type === 'epic_criterion_status') {
-                // Criteria status change
                 const diff = log.json_diff;
                 const statusChange = diff?.status || diff?.readiness_status;
-                
+                const newStatus = statusChange?.new;
+
                 if (statusChange) {
-                    // For criterion status changes, we need to fetch epic_id
                     if (log.entity_type === 'epic_criterion_status' || log.entity_type === 'launch_criterion_status') {
                         criterionStatusIds.push(log.entity_id);
                     }
-                    
-                    activity = {
-                        id: log.id,
-                        type: 'criterion_change',
-                        title: 'Criterion Updated',
-                        description: `Status changed from "${statusChange.old || 'N/A'}" to "${statusChange.new || 'N/A'}"`,
-                        timestamp: log.taken_at,
-                        actor: normalizeActor(log.actor),
-                        entity_type: log.entity_type,
-                        entity_id: log.entity_id,
-                    };
+
+                    if (newStatus === 'NO_GO') {
+                        activity = {
+                            id: log.id,
+                            type: 'rating_red',
+                            title: 'Red rating',
+                            description: `Criterion set to No Go (was "${statusChange.old || 'N/A'}")`,
+                            timestamp: log.taken_at,
+                            actor: normalizeActor(log.actor),
+                            entity_type: log.entity_type,
+                            entity_id: log.entity_id,
+                        };
+                    } else if (newStatus === 'CONDITIONAL') {
+                        activity = {
+                            id: log.id,
+                            type: 'rating_yellow',
+                            title: 'Yellow rating',
+                            description: `Criterion set to Conditional (was "${statusChange.old || 'N/A'}")`,
+                            timestamp: log.taken_at,
+                            actor: normalizeActor(log.actor),
+                            entity_type: log.entity_type,
+                            entity_id: log.entity_id,
+                        };
+                    } else {
+                        activity = {
+                            id: log.id,
+                            type: 'criterion_change',
+                            title: 'Criterion Updated',
+                            description: `Status changed from "${statusChange.old || 'N/A'}" to "${statusChange.new || 'N/A'}"`,
+                            timestamp: log.taken_at,
+                            actor: normalizeActor(log.actor),
+                            entity_type: log.entity_type,
+                            entity_id: log.entity_id,
+                        };
+                    }
                 }
             } else if (log.entity_type === 'launch' || log.entity_type === 'epic') {
                 const diff = log.json_diff;
@@ -249,11 +317,11 @@ export async function GET(req: NextRequest) {
 
             if (criterionStatuses) {
                 const epicIdMap = new Map(criterionStatuses.map(cs => [cs.id, cs.epic_id]));
-                // Update activities with epic_id
                 for (const activity of activities) {
-                    if (activity.type === 'criterion_change' && 
+                    const isCriterionActivity = (activity.type === 'criterion_change' || activity.type === 'rating_red' || activity.type === 'rating_yellow') &&
                         (activity.entity_type === 'epic_criterion_status' || activity.entity_type === 'launch_criterion_status') &&
-                        activity.entity_id) {
+                        activity.entity_id;
+                    if (isCriterionActivity) {
                         activity.epic_id = epicIdMap.get(activity.entity_id);
                     }
                 }
@@ -278,6 +346,33 @@ export async function GET(req: NextRequest) {
                 actor: normalizeActor(feedback.attributed_to),
                 entity_type: 'feedback',
                 entity_id: feedback.id,
+                epic_id: epicId,
+            });
+
+            if (activities.length >= limit) {
+                break;
+            }
+        }
+
+        // Add comment activities
+        for (const comment of commentRows || []) {
+            const statusId = (comment as any).launch_criterion_status_id;
+            const meta = statusId ? statusToEpic.get(statusId) : undefined;
+            const epicName = meta?.epic_name || 'Epic';
+            const epicId = meta?.epic_id;
+            const rawText = (comment as any).comment_text || '';
+            const plainText = rawText.replace(/<[^>]*>/g, '').trim();
+            const truncated = plainText.length > 100 ? plainText.substring(0, 100) + '...' : plainText;
+
+            activities.push({
+                id: (comment as any).id,
+                type: 'comment_added',
+                title: 'Comment Added',
+                description: `${epicName}: "${truncated}"`,
+                timestamp: (comment as any).created_at,
+                actor: normalizeActor((comment as any).created_by),
+                entity_type: 'criterion_comment',
+                entity_id: (comment as any).id,
                 epic_id: epicId,
             });
 

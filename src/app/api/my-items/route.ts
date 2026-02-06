@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getSession } from '@/lib/auth';
+import { isSuperAdmin } from '@/lib/auth-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -39,11 +40,29 @@ export async function GET(req: NextRequest) {
         // Get query parameter for showing all items vs pending only
         const { searchParams } = new URL(req.url);
         const showAll = searchParams.get('showAll') === 'true';
+        const viewAsEmailParam = searchParams.get('viewAsEmail');
+        const viewAsEmail = typeof viewAsEmailParam === 'string' && viewAsEmailParam.trim() ? viewAsEmailParam.trim() : null;
+
+        let effectiveEmail = userEmail;
+        if (viewAsEmail) {
+            if (!isSuperAdmin(userEmail)) {
+                return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+            }
+            const { data: targetUser } = await supabase
+                .from('app_user')
+                .select('email')
+                .ilike('email', viewAsEmail)
+                .maybeSingle();
+            if (!targetUser?.email) {
+                return NextResponse.json({ error: 'User not found' }, { status: 404 });
+            }
+            effectiveEmail = targetUser.email;
+        }
 
         // Let the database filter items using pod->PM mapping and indexes
         const { data, error } = await supabase
             .rpc('my_items_for_user', { 
-                p_email: userEmail,
+                p_email: effectiveEmail,
                 p_show_all: showAll
             });
 

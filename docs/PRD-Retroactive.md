@@ -1,7 +1,7 @@
 # ClearGO Launch Readiness Console - Product Requirements Document (Retroactive)
 
-**Version:** 1.0  
-**Date:** January 2025  
+**Version:** 1.1  
+**Date:** February 2026  
 **Status:** Production  
 **Document Type:** Retroactive PRD (Generated from Implementation)
 
@@ -193,6 +193,12 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Database Field**: `archived` (Boolean, default: false) - tracks whether an epic is archived
 - **Index**: Indexed for efficient filtering of archived epics
 - **Sync Behavior**: Archiving status is updated during Aha! sync operations
+
+#### 1.5 Portfolio Page
+- **Route**: Dedicated `/portfolio` page for Go/No-Go and post-launch epic tracking
+- **Content**: Combines **Epic Release Grid** (releases as columns, epics as rows with readiness status), **Post-Launch Performance Grid** (launched epics with feedback/performance indicators), and optional **Activity Feed** sidebar (when enabled in settings)
+- **Layout**: Full-width grid section with sticky activity feed on large screens; responsive for mobile/tablet
+- **Purpose**: Single portfolio view across pre-launch and post-launch with consistent release grouping and activity visibility
 
 #### 1.3 Epic Creation & Editing
 - **Manual Creation**: Create epics directly in ClearGO
@@ -401,6 +407,32 @@ The system includes 10 pre-configured success metrics based on industry-standard
 
 Standard ranges above are used to inform default metric thresholds and per-epic targets but there is no longer a separate “adoption benchmark” entity or adoption-curve comparison feature.
 
+#### 5.7 HEART Metrics Framework
+
+The HEART framework (Google: Happiness, Engagement, Adoption, Retention, Task Success) provides an alternative, Pendo-centric model for post-launch success measurement alongside the standard success metrics.
+
+- **HEART Categories**: Happiness, Engagement, Adoption, Retention, Task Success; admin-configurable with descriptions, icons, sort order, and whether a survey is required
+- **Epic HEART Config**: Per-epic config with setup method (`auto`, `ai_assisted`, `manual`), status (`draft`, `active`, `archived`), optional AI model version, approval tracking
+- **HEART Metrics**: Per-epic metrics with measurement types (e.g. `events_per_user`, `unique_users_percentage`, `return_rate_7_days`, `completion_rate`, `survey_score`, `nps_score`); Pendo event IDs, segment, app; target value and timeframe; optional AI-suggested flag and rationale; custom metrics with category label and icon; optional link to custom metric template
+- **Milestones**: Multi-target metrics support milestones (days after launch, target value, label) for phased goals
+- **AI-Assisted Setup**: `setupHeartMetricsWithAI` / `runHeartAgent` use epic context and Pendo context (events, features, segments, apps) to recommend metrics per HEART category; PMs can apply recommendations via Apply Recommendations flow
+- **Snapshots**: Daily and initial snapshots compute current value vs target; status ON_TRACK, AT_RISK, MISSED, PENDING; cron job `/api/cron/heart-snapshots` for daily runs
+- **Pendo Data Confidence**: Per-metric confidence level (high/medium/low/unknown), score, and issues (e.g. no recent data, low volume, missing feature/event, segment empty, data gap)
+- **HEART Dashboard**: Epic-level dashboard shows config, metrics with latest snapshot, trend, milestone progress, measurement period; list view of epics with HEART and overall status
+- **Admin Defaults & Templates**: Category defaults (target value, timeframe, measurement type, guidance, example events, default milestones); custom metric templates (reusable across epics) with name, category label, measurement type, Pendo event pattern, defaults
+- **API Surface**: `GET/POST /api/epics/[id]/heart`, `GET/POST /api/epics/[id]/heart/metrics`, `GET/POST /api/epics/[id]/heart/recommendations`, `POST /api/epics/[id]/heart/apply-recommendations`, `GET /api/epics/[id]/heart/snapshots`, `GET/POST /api/epics/[id]/heart/automations`, `GET/POST /api/settings/success-measurement/heart/defaults`, `GET/POST /api/settings/success-measurement/heart/templates`; Pendo check and metrics by ID
+
+#### 5.8 Happiness Automations & CSM Nudges
+
+Automations drive proactive outreach when HEART or usage signals indicate risk (e.g. segment non-usage, usage drop, negative feedback, time since launch).
+
+- **Trigger Types**: Segment non-usage (segment + feature/events + lookback), usage drop (threshold % and comparison period), negative feedback (survey + score threshold), feature struggle, time since launch (days + adoption % threshold)
+- **Action Types**: Pendo guide (show in-app guide), Pendo NPS/satisfaction survey, CSM notification (Slack/email with template, account details, suggested action), Slack alert (channel, template, optional @mentions), email campaign and custom webhook (coming soon)
+- **Rule Lifecycle**: Draft → pending approval → active/paused/completed/archived; recurring rules with interval and cooldown; max executions per user
+- **Execution**: Evaluate trigger → get target audience → execute action; status pending/in_progress/completed/failed/cancelled; metrics (total reached, conversions, conversion rate)
+- **CSM Nudges**: When action is CSM notification, system creates **CSM nudge** records (account, assigned CSM, status: pending/assigned/contacted/resolved/dismissed, context, notes); `GET/PATCH /api/csm/nudges`, `PATCH /api/csm/nudges/[nudgeId]` for list and update
+- **APIs**: `GET/POST /api/epics/[id]/heart/automations`, `GET/PATCH/DELETE /api/epics/[id]/heart/automations/[ruleId]`, `POST /api/epics/[id]/heart/automations/[ruleId]/execute`
+
 #### 4.2 Feedback Collection
 - **Feedback Entry**: Manual feedback entry from a global Feedback page, with optional epic linking
 - **Feedback Types**:
@@ -447,6 +479,19 @@ Standard ranges above are used to inform default metric thresholds and per-epic 
 - **Pending Items**: Count of items requiring attention
 - **Overdue Count**: Count of overdue criteria
 - **Recent Updates**: Recently updated items
+
+### 6A. Analytics Dashboard
+
+- **Route**: `/analytics` (dashboard analytics page)
+- **Access**: Gated by capability `analytics.read` (assigned via Admin > Settings > Permissions); SUPERADMIN, CPO, PRODUCT_OPS and other roles can be granted this capability
+- **Metrics**:
+  - **Success plan completion**: Rate of epics with locked success config (snapshot and 6-month trends); filters: tier, pod, date range
+  - **Retro completion**: Rate of T+30/60/90 retros submitted on time (snapshot and trends)
+  - **Launch hygiene**: Distribution of launch readiness (e.g. GO vs CONDITIONAL vs NO_GO) over time (snapshot and trends)
+  - **Criteria timeliness**: Share of criteria updated within staleness window; on-time stats
+  - **PM timeliness**: Per-PM stats on criterion update timeliness
+- **Views**: Snapshot (current period) vs trends (time-series over configurable months); filters apply to all cards
+- **APIs**: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene`, `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
 
 ### 7. Decision Snapshots
 
@@ -530,7 +575,7 @@ Standard ranges above are used to inform default metric thresholds and per-epic 
   - App ID
   - Default channel
   - Notification settings
-  - Slack allowed recipients (optional allowlist of email addresses permitted to receive Slack messages)
+  - **Slack allowed recipients**: Optional allowlist of email addresses permitted to receive Slack messages (`slack_allowed_recipients` in app_settings). If empty, all users with Slack handles can receive messages; if set, only listed emails receive Slack notifications.
 - **Email Templates**: Configure email templates for notifications
 - **Activity Feed**: Enable/disable activity feed
 
@@ -560,6 +605,19 @@ Standard ranges above are used to inform default metric thresholds and per-epic 
 - **Pod List**: View all pods
 - **Pod Configuration**: Configure pod settings
 - **Product-Pod Mapping**: Map products to pods
+
+#### 9.7 Admin Impersonation
+- **Who Can Impersonate**: Only users with role **SUPERADMIN** can start or stop impersonation
+- **Start Impersonation**: `POST /api/admin/impersonate` with target user email; server issues a signed JWT cookie (`cleargo_impersonate`) with short expiry; effective user for all subsequent requests is the impersonated user
+- **Stop Impersonation**: `POST /api/admin/impersonate/stop` clears the impersonation cookie; user returns to their real identity
+- **Restrictions**: Cannot impersonate another super admin; enforced server-side
+- **UI**: **Impersonation Banner** shown when impersonating (duration, "Stop impersonating" button); hidden on login and setup-password pages
+- **Implementation**: `src/lib/auth/impersonation.ts`, `src/components/ImpersonationBanner.tsx`, `src/app/api/admin/impersonate/`; `getEffectiveUserEmail()` used where effective user is needed
+
+#### 9.8 Feature Flags
+- **Per-User Flags**: Feature flags are fetched per authenticated user via `GET /api/settings/feature-flags`
+- **Storage**: Flags stored in settings/DB; `getFeatureFlags()` returns the current set of flags
+- **Use**: Enables gradual rollouts and feature toggles without code deploy
 
 ### 10. Notifications & Reminders
 
@@ -904,6 +962,7 @@ The system uses the following launch stage phases:
 - `slack_notification_settings` (JSONB)
 - `email_templates` (JSONB)
 - `enable_activity_feed` (Boolean, Default: true)
+- `slack_allowed_recipients` (Text Array, Default: []) - If non-empty, only these email addresses may receive Slack notifications; if empty, all users with Slack handles may receive
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
@@ -1068,6 +1127,18 @@ The system uses the following launch stage phases:
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 
+#### HEART Framework (summary)
+- **epic_heart_config**: Epic-level HEART config (setup_method, status, ai_model_version, approval)
+- **epic_heart_metric**: Per-epic HEART metrics (category, measurement_type, pendo_event_ids, target_value, target_timeframe_days, ai_suggested, milestones)
+- **epic_heart_metric_milestone**: Multi-target milestones (days_after_launch, target_value, label)
+- **epic_heart_snapshot**: Daily snapshot per metric (value, target_at_snapshot, status, data_confidence)
+- **heart_category**: HEART categories (happiness, engagement, adoption, retention, task_success) with defaults
+- **heart_custom_metric_template**: Reusable custom metric templates
+- **happiness_automation_rule**: Trigger + action rules (segment non-usage, usage drop, CSM notification, Slack alert, etc.)
+- **happiness_csm_nudge**: CSM nudge records (account, assigned CSM, status, context)
+- **happiness_action_execution**, **happiness_automation_metrics**: Execution and metrics for automations
+- **pendo_events_cache**: Cached Pendo events for AI agent context
+
 ---
 
 ## User Flows
@@ -1116,7 +1187,7 @@ The system uses the following launch stage phases:
 13. System sends notifications to stakeholders
 
 ### Flow 4: Stale Criterion Reminder
-1. Scheduled job runs daily (`GET/POST /api/jobs/stale-criteria`; uses `app_settings.stale_criterion_days`, default 14).
+1. Scheduled job runs daily (`GET/POST /api/jobs/stale-criteria`; uses `app_settings.staleness_days`, default 14).
 2. System queries criteria where `last_updated_at` is older than staleness window and status is NOT_SET or CONDITIONAL.
 3. System identifies decision owners and related epic/criterion data.
 4. (Optional) If `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, system generates an AI-powered personalized nudge per criterion (launch name, criterion label, owner, days stale, recent notes).
@@ -1177,11 +1248,6 @@ The system uses the following launch stage phases:
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
 - **Release Refresh Optimization**: When a `release` query param is provided, the sync endpoint fetches epics directly from Aha! for that release and revalidates only the epics currently shown (via `existingAhaIds`), avoiding a full epic list scan.
-
-### My Scope API
-
-#### Scope Management
-- **GET** `/api/epics/my-scope` - Get all epics where user is decision owner of at least one criterion
 
 ### Product Manager API
 
@@ -1271,14 +1337,18 @@ The system uses the following launch stage phases:
 
 ### Authentication
 - **Provider**: Supabase Auth
-- **Method**: Google OAuth
-- **Session Management**: Server-side sessions with cookies
+- **Methods**:
+  - **Google OAuth**: Primary method for signed-in users
+  - **Magic Link**: Passwordless sign-in via email link; session stored in custom `lr_session` cookie; supported by `/api/auth/magic-link`, `/api/auth/verify`
+  - **Password**: Invitation and reset flows; `/setup-password`, `/reset-password`, `/api/auth/setup-password`, `/api/auth/resend-invitation`; Supabase verify token for reset
+- **Session Management**: Server-side sessions with cookies; APIs accept both Supabase session and magic-link session
 - **Token Refresh**: Automatic token refresh
 - **Logout**: `/api/auth/signout` endpoint
 
 ### Authorization (RBAC)
 
 #### Roles
+- **SUPERADMIN**: Full access including impersonation; receives feedback notifications; same administrative scope as CPO/PRODUCT_OPS
 - **CPO**: Full access, settings management
 - **PRODUCT_LEAD**: Portfolio view, epic management
 - **PM**: Epic ownership, criterion updates
@@ -1290,22 +1360,26 @@ The system uses the following launch stage phases:
 - **PRODUCT_OPS**: Admin access, settings, criteria management
 - **OTHER**: Read-only access
 
+**Capability model**: In addition to role-based access, the app uses a capability matrix (e.g. `criteria.status.update`, `analytics.read`, `users.read`) configurable per role in Admin > Settings > Permissions. Access to specific features (e.g. Analytics dashboard, user management) is determined by these capabilities.
+
 #### Permissions Matrix
 
-| Action | CPO | PRODUCT_LEAD | PM | PMM/ENG/SUPPORT/SECURITY/LEARNING | PRODUCT_OPS | OTHER |
-|--------|-----|--------------|----|----------------------------------|-------------|-------|
-| View Portfolio | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| View Epic Detail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Create Epic | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Edit Epic | ✅ | ✅ | Owner only | ❌ | ✅ | ❌ |
-| Delete Epic | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| Update Criterion Status | ✅ | ✅ | Decision owner | Decision owner | ✅ | ❌ |
-| Create Snapshot | ✅ | ✅ | Owner | ❌ | ✅ | ❌ |
-| Manage Criteria | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Manage Settings | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| Manage Users | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| View Audit Log | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
-| View Meetings | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Action | SUPERADMIN | CPO | PRODUCT_LEAD | PM | PMM/ENG/SUPPORT/SECURITY/LEARNING | PRODUCT_OPS | OTHER |
+|--------|------------|-----|--------------|----|----------------------------------|-------------|-------|
+| View Portfolio | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| View Epic Detail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Create Epic | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| Edit Epic | ✅ | ✅ | ✅ | Owner only | ❌ | ✅ | ❌ |
+| Delete Epic | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Update Criterion Status | ✅ | ✅ | ✅ | Decision owner | Decision owner | ✅ | ❌ |
+| Create Snapshot | ✅ | ✅ | ✅ | Owner | ❌ | ✅ | ❌ |
+| Manage Criteria | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Manage Settings | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Manage Users | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| View Audit Log | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| View Meetings | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| Impersonate User | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| View Analytics | ✅ | ✅ | If permitted | If permitted | If permitted | ✅ | If permitted |
 
 ### Row-Level Security (RLS)
 - **Epic**: All authenticated users can read, owners/Product Ops/CPO can write
@@ -1432,10 +1506,14 @@ The system uses the following launch stage phases:
 - Slack Integration: `docs/launch-readiness/slack-integration-setup.md`
 - Feedback System: `docs/feedback-system-implementation.md`
 - Activity Feed: `docs/activity-feed-implementation.md`
+- Jira Epic Key: `docs/jira-epic-key-methodology.md`
+- HEART Framework: `src/lib/heart/` (types, service, agent, snapshot-calculator, happiness-automation, pendo-context, data-confidence)
+- Admin Impersonation: `src/lib/auth/impersonation.ts`, `src/components/ImpersonationBanner.tsx`, `src/app/api/admin/impersonate/`
+- Analytics: `src/app/(dashboard)/analytics/page.tsx`, `src/lib/services/analyticsService`, `src/app/api/analytics/`
 
 ---
 
 **Document Status**: Complete  
-**Last Updated**: January 2026  
+**Last Updated**: February 2026  
 **Next Review**: As needed
 

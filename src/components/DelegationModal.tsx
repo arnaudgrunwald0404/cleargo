@@ -10,6 +10,7 @@ export type DelegationType =
   | 'SINGLE_TASK'
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
+  | 'RELEASE_CATEGORY_INCLUDING_GATES'
   | 'TEMPLATE_EXCLUDING_GATES'
   | 'TEMPLATE_INCLUDING_GATES'
   | 'POST_LAUNCH_OWNER';
@@ -57,28 +58,46 @@ export function DelegationModal({
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [delegationCounts, setDelegationCounts] = useState<{
+    singleTask: number;
+    categoryExcludingGates: number;
+    categoryIncludingGates: number;
+    releaseCategoryIncludingGates?: number;
+    releaseName?: string | null;
+  } | null>(null);
 
-  // Load users from cache immediately, then refresh in background
+  // Load users and delegation counts when modal opens
   useEffect(() => {
     if (opened) {
-      // Load from cache immediately for instant display
       const cachedUsers = getCachedUsers();
       if (cachedUsers && cachedUsers.length > 0) {
         setUsers(cachedUsers);
         setLoadingUsers(false);
-        // Still fetch fresh data in background to update cache
         fetchUsers();
       } else {
-        // No cache, show loading and fetch
         setLoadingUsers(true);
         fetchUsers();
       }
+      if (!isPostLaunchOwner) {
+        setDelegationCounts(null);
+        fetch(`/api/epics/${epicId}/delegate/counts?category=${encodeURIComponent(category)}`, { credentials: 'include' })
+          .then((res) => res.ok ? res.json() : null)
+          .then((data) => data && setDelegationCounts({
+            singleTask: data.singleTask ?? 1,
+            categoryExcludingGates: data.categoryExcludingGates ?? 0,
+            categoryIncludingGates: data.categoryIncludingGates ?? 0,
+            releaseCategoryIncludingGates: data.releaseCategoryIncludingGates ?? 0,
+            releaseName: data.releaseName ?? null,
+          }))
+          .catch(() => {});
+      } else {
+        setDelegationCounts(null);
+      }
     } else {
-      // Reset when modal closes
       setSearchQuery('');
       setSelectedUser(null);
     }
-  }, [opened]);
+  }, [opened, epicId, category, isPostLaunchOwner]);
 
   const fetchUsers = async () => {
     // Don't show loading if we already have users from cache
@@ -140,8 +159,7 @@ export function DelegationModal({
     const typeToDelegate = delegationType;
     onClose();
     
-    // Reset state
-    setDelegationType('SINGLE_TASK');
+    setDelegationType(isPostLaunchOwner ? 'POST_LAUNCH_OWNER' : 'SINGLE_TASK');
     setSelectedUser(null);
     setSearchQuery('');
     setNewApproverEmail('');
@@ -174,6 +192,8 @@ export function DelegationModal({
         return `Delegate all ${category} tasks (except GATE criteria) for this epic`;
       case 'CATEGORY_INCLUDING_GATES':
         return `Delegate all ${category} tasks (including GATE criteria) for this epic`;
+      case 'RELEASE_CATEGORY_INCLUDING_GATES':
+        return `Delegate all ${category} tasks (including GATE criteria) for release ${delegationCounts?.releaseName ?? 'this release'}`;
       case 'TEMPLATE_EXCLUDING_GATES':
         return `Delegate all ${category} tasks (except GATE criteria) for ALL future epics`;
       case 'TEMPLATE_INCLUDING_GATES':
@@ -208,6 +228,135 @@ export function DelegationModal({
     return colors[Math.abs(hash) % colors.length];
   };
 
+  const stepBadgeStyle: React.CSSProperties = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 28,
+    height: 28,
+    borderRadius: '50%',
+    backgroundColor: '#B87333',
+    color: '#fff',
+    fontWeight: 700,
+    fontSize: '1rem',
+    fontFamily: 'system-ui, -apple-system, sans-serif',
+    marginRight: 10,
+    flexShrink: 0,
+  };
+
+  const StepBadge = ({ n }: { n: 1 | 2 }) => (
+    <span aria-hidden style={stepBadgeStyle}>{n}</span>
+  );
+
+  const scopeSection = selectedUser && (
+    <Stack
+      gap="md"
+      style={{
+        animation: 'delegateScopeSwoop 0.35s ease-out',
+      }}
+    >
+      {delegationType !== 'POST_LAUNCH_OWNER' ? (
+        <div>
+          <Text size="lg" fw={600} mb="lg"><StepBadge n={2} />Scope</Text>
+          <Radio.Group
+            value={delegationType}
+            onChange={(value) => setDelegationType(value as DelegationType)}
+          >
+            <Stack gap="xs">
+              <Radio
+                value="SINGLE_TASK"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>
+                      This task only
+                      <Text component="span" size="sm" c="dimmed" ml={6}>
+                        (1 item)
+                      </Text>
+                    </Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
+                  </div>
+                }
+              />
+              <Radio
+                value="CATEGORY_EXCLUDING_GATES"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>
+                      All {category} tasks in this epic (excluding GATE)
+                      {delegationCounts != null && (
+                        <Text component="span" size="sm" c="dimmed" ml={6}>
+                          ({delegationCounts.categoryExcludingGates} {delegationCounts.categoryExcludingGates === 1 ? 'item' : 'items'})
+                        </Text>
+                      )}
+                    </Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_EXCLUDING_GATES')}</Text>
+                  </div>
+                }
+              />
+              <Radio
+                value="CATEGORY_INCLUDING_GATES"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>
+                      All {category} tasks in this epic (including GATE)
+                      {delegationCounts != null && (
+                        <Text component="span" size="sm" c="dimmed" ml={6}>
+                          ({delegationCounts.categoryIncludingGates} {delegationCounts.categoryIncludingGates === 1 ? 'item' : 'items'})
+                        </Text>
+                      )}
+                    </Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_INCLUDING_GATES')}</Text>
+                  </div>
+                }
+              />
+              {delegationCounts?.releaseName != null && (
+                <Radio
+                  value="RELEASE_CATEGORY_INCLUDING_GATES"
+                  label={
+                    <div>
+                      <Text size="sm" fw={500}>
+                        All {category} tasks in this release (including GATE)
+                        {delegationCounts != null && (
+                          <Text component="span" size="sm" c="dimmed" ml={6}>
+                            ({(delegationCounts.releaseCategoryIncludingGates ?? 0)} {(delegationCounts.releaseCategoryIncludingGates ?? 0) === 1 ? 'item' : 'items'})
+                          </Text>
+                        )}
+                      </Text>
+                      <Text size="xs" c="dimmed">{getDelegationDescription('RELEASE_CATEGORY_INCLUDING_GATES')}</Text>
+                    </div>
+                  }
+                />
+              )}
+              <Radio
+                value="TEMPLATE_EXCLUDING_GATES"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>All future epics - {category} (excluding GATE)</Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}</Text>
+                  </div>
+                }
+              />
+              <Radio
+                value="TEMPLATE_INCLUDING_GATES"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>All future epics - {category} (including GATE)</Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_INCLUDING_GATES')}</Text>
+                  </div>
+                }
+              />
+            </Stack>
+          </Radio.Group>
+        </div>
+      ) : (
+        <div>
+          <Text size="sm" fw={600} mb="xs"><StepBadge n={2} />Scope</Text>
+          <Text size="sm" c="dimmed">{getDelegationDescription('POST_LAUNCH_OWNER')}</Text>
+        </div>
+      )}
+    </Stack>
+  );
+
   return (
     <Modal
       opened={opened}
@@ -215,198 +364,142 @@ export function DelegationModal({
       title={<Text fw={600} size="lg">Delegate Approval Task</Text>}
       size="lg"
     >
+      <style>{`@keyframes delegateScopeSwoop { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       <Stack gap="md">
-        <div>
-          <Text size="sm" c="dimmed" mb={4}>Epic</Text>
-          <Text fw={500}>{epicName}</Text>
-        </div>
-
         <div>
           <Text size="sm" c="dimmed" mb={4}>Current Accountable</Text>
           <Text fw={500}>{currentApproverEmail}</Text>
         </div>
 
-        {delegationType !== 'POST_LAUNCH_OWNER' && (
-          <div>
-            <Text size="sm" fw={600} mb="xs">Delegation Scope</Text>
-            <Radio.Group
-              value={delegationType}
-              onChange={(value) => setDelegationType(value as DelegationType)}
-            >
-              <Stack gap="xs">
-                <Radio
-                  value="SINGLE_TASK"
-                  label={
-                    <div>
-                      <Text size="sm" fw={500}>This task only</Text>
-                      <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
-                    </div>
-                  }
-                />
-                <Radio
-                  value="CATEGORY_EXCLUDING_GATES"
-                  label={
-                    <div>
-                      <Text size="sm" fw={500}>All {category} tasks in this epic (excluding GATE)</Text>
-                      <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_EXCLUDING_GATES')}</Text>
-                    </div>
-                  }
-                />
-                <Radio
-                  value="CATEGORY_INCLUDING_GATES"
-                  label={
-                    <div>
-                      <Text size="sm" fw={500}>All {category} tasks in this epic (including GATE)</Text>
-                      <Text size="xs" c="dimmed">{getDelegationDescription('CATEGORY_INCLUDING_GATES')}</Text>
-                    </div>
-                  }
-                />
-                <Radio
-                  value="TEMPLATE_EXCLUDING_GATES"
-                  label={
-                    <div>
-                      <Text size="sm" fw={500}>All future epics - {category} (excluding GATE)</Text>
-                      <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_EXCLUDING_GATES')}</Text>
-                    </div>
-                  }
-                />
-                <Radio
-                  value="TEMPLATE_INCLUDING_GATES"
-                  label={
-                    <div>
-                      <Text size="sm" fw={500}>All future epics - {category} (including GATE)</Text>
-                      <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_INCLUDING_GATES')}</Text>
-                    </div>
-                  }
-                />
-              </Stack>
-            </Radio.Group>
-          </div>
-        )}
-        
-        {delegationType === 'POST_LAUNCH_OWNER' && (
-          <div>
-            <Text size="sm" c="dimmed">{getDelegationDescription('POST_LAUNCH_OWNER')}</Text>
-          </div>
-        )}
-
         <div>
-          <Text size="sm" fw={600} mb="xs">Delegate To</Text>
-          <TextInput
-            placeholder="Search users..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.currentTarget.value)}
-            leftSection={<IconSearch size={16} />}
-            mb="sm"
-          />
-
-          {loadingUsers ? (
-            <div style={{ textAlign: 'center', padding: '20px' }}>
-              <PurpleLoader size="sm" />
-            </div>
-          ) : (
-            <div style={{ position: 'relative' }}>
-              <ScrollArea
-                h={200}
-                type="scroll"
-                scrollbarSize={14}
-                styles={{
-                  scrollbar: {
-                    backgroundColor: '#f1f1f1',
-                  },
-                  thumb: {
-                    backgroundColor: '#888 !important',
-                    minHeight: 40,
-                    '&:hover': {
-                      backgroundColor: '#555 !important',
-                    },
-                  },
-                }}
-              >
-                <div style={{ 
-                  border: '1px solid #e0e0e0', 
-                  borderRadius: '8px',
-                  padding: '4px'
-                }}>
-                  {filteredUsers.length === 0 ? (
-                    <Text size="sm" c="dimmed" ta="center" p="md">No users found</Text>
-                  ) : (
-                    <Stack gap={4}>
-                      {filteredUsers.map(user => (
-                        <div
-                          key={user.email}
-                          onClick={() => setSelectedUser(user)}
-                          style={{
-                            padding: '8px 12px',
-                            cursor: 'pointer',
-                            borderRadius: '6px',
-                            backgroundColor: selectedUser?.email === user.email ? '#f0f0ff' : 'transparent',
-                            border: selectedUser?.email === user.email ? '2px solid #6366F1' : '2px solid transparent',
-                            transition: 'all 0.2s',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (selectedUser?.email !== user.email) {
-                              e.currentTarget.style.backgroundColor = '#fafafa';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (selectedUser?.email !== user.email) {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                            }
-                          }}
-                        >
-                          <Group gap="xs">
-                            <Avatar
-                              src={user.avatar_url || undefined}
-                              alt={user.email}
-                              radius="xl"
-                              size={32}
-                              color={getAvatarColor(user.email)}
+          <Text size="lg" fw={600} mb="lg"><StepBadge n={1} />Delegate to</Text>
+          {!selectedUser ? (
+            <>
+              <TextInput
+                placeholder="Search users..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.currentTarget.value)}
+                leftSection={<IconSearch size={16} />}
+                mb="sm"
+              />
+              {loadingUsers ? (
+                <div style={{ textAlign: 'center', padding: '20px' }}>
+                  <PurpleLoader size="sm" />
+                </div>
+              ) : (
+                <div style={{ position: 'relative' }}>
+                  <ScrollArea
+                    h={360}
+                    type="scroll"
+                    scrollbarSize={14}
+                    styles={{
+                      scrollbar: { backgroundColor: '#f1f1f1' },
+                      thumb: {
+                        backgroundColor: '#888 !important',
+                        minHeight: 40,
+                        '&:hover': { backgroundColor: '#555 !important' },
+                      },
+                    }}
+                  >
+                    <div style={{ border: '1px solid #e0e0e0', borderRadius: '8px', padding: '4px' }}>
+                      {filteredUsers.length === 0 ? (
+                        <Text size="sm" c="dimmed" ta="center" p="md">No users found</Text>
+                      ) : (
+                        <Stack gap={4}>
+                          {filteredUsers.map(user => (
+                            <div
+                              key={user.email}
+                              onClick={() => setSelectedUser(user)}
+                              style={{
+                                padding: '8px 12px',
+                                cursor: 'pointer',
+                                borderRadius: '6px',
+                                backgroundColor: 'transparent',
+                                border: '2px solid transparent',
+                                transition: 'all 0.2s',
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#fafafa';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = 'transparent';
+                              }}
                             >
-                              {getInitials(user)}
-                            </Avatar>
-                            <div>
-                              <Text size="sm" fw={500}>{getUserDisplayName(user)}</Text>
-                              <Text size="xs" c="dimmed">{user.email}</Text>
+                              <Group gap="xs">
+                                <Avatar
+                                  src={user.avatar_url || undefined}
+                                  alt={user.email}
+                                  radius="xl"
+                                  size={32}
+                                  color={getAvatarColor(user.email)}
+                                >
+                                  {getInitials(user)}
+                                </Avatar>
+                                <div>
+                                  <Text size="sm" fw={500}>{getUserDisplayName(user)}</Text>
+                                  <Text size="xs" c="dimmed">{user.email}</Text>
+                                </div>
+                              </Group>
                             </div>
-                          </Group>
-                        </div>
-                      ))}
-                    </Stack>
+                          ))}
+                        </Stack>
+                      )}
+                    </div>
+                  </ScrollArea>
+                  {filteredUsers.length > 3 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 14,
+                        height: '30px',
+                        background: 'linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.95))',
+                        pointerEvents: 'none',
+                        borderRadius: '0 0 8px 8px',
+                      }}
+                    />
                   )}
                 </div>
-              </ScrollArea>
-              {filteredUsers.length > 3 && (
-                <div
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    right: 14,
-                    height: '30px',
-                    background: 'linear-gradient(to bottom, transparent, rgba(255, 255, 255, 0.95))',
-                    pointerEvents: 'none',
-                    borderRadius: '0 0 8px 8px',
-                  }}
-                />
               )}
-            </div>
+            </>
+          ) : (
+            <Group gap="xs" mb="md">
+              <Avatar
+                src={selectedUser.avatar_url || undefined}
+                alt={selectedUser.email}
+                radius="xl"
+                size={32}
+                color={getAvatarColor(selectedUser.email)}
+              >
+                {getInitials(selectedUser)}
+              </Avatar>
+              <div>
+                <Text size="sm" fw={500}>{getUserDisplayName(selectedUser)}</Text>
+                <Text size="xs" c="dimmed">{selectedUser.email}</Text>
+              </div>
+              <Button variant="subtle" size="xs" onClick={() => setSelectedUser(null)}>
+                Change
+              </Button>
+            </Group>
           )}
         </div>
 
-        <Group justify="flex-end" mt="md">
-          <Button variant="outline" onClick={onClose} disabled={submitting}>
-            Cancel
-          </Button>
-          <Button 
-            onClick={handleSubmit} 
-            loading={submitting}
-            disabled={!selectedUser}
-          >
-            Delegate
-          </Button>
-        </Group>
+        {scopeSection}
       </Stack>
+
+      <Group justify="flex-end" mt="xl">
+        <Button variant="outline" onClick={onClose} disabled={submitting}>
+          Cancel
+        </Button>
+        <Button
+          onClick={handleSubmit}
+          loading={submitting}
+          disabled={!selectedUser}
+        >
+          Delegate
+        </Button>
+      </Group>
     </Modal>
   );
 }

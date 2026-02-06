@@ -1,8 +1,8 @@
 "use client";
 import { PurpleLoader } from '../../PurpleLoader';
 import React, { useState, useMemo, useRef, useEffect } from "react";
-import { Drawer, Stack, Group, TextInput, MultiSelect, Select, Checkbox, Button, Textarea } from "@mantine/core";
-import { IconTrash, IconMail, IconPencil, IconGripVertical, IconUpload, IconList, IconArrowUp, IconArrowDown, IconArrowsSort } from "@tabler/icons-react";
+import { Drawer, Stack, Group, TextInput, MultiSelect, Select, Checkbox, Button, Textarea, Avatar } from "@mantine/core";
+import { IconTrash, IconMail, IconPencil, IconUserCircle, IconGripVertical, IconUpload, IconList, IconArrowUp, IconArrowDown, IconArrowsSort } from "@tabler/icons-react";
 import type { AppSettings } from "@/lib/settings-db";
 import { ROLES } from "@/lib/constants/settings";
 
@@ -11,6 +11,7 @@ type User = {
   email: string;
   first_name?: string;
   last_name?: string;
+  avatar_url?: string | null;
   roles?: string[];
   role?: string;
   is_active?: boolean;
@@ -48,6 +49,7 @@ type Props = {
   activeSubSection?: string;
   draggedPodIndex: number | null;
   setDraggedPodIndex: (index: number | null) => void;
+  isSuperAdmin?: boolean;
 };
 
 export default function UserManagementSection(props: Props) {
@@ -80,6 +82,7 @@ export default function UserManagementSection(props: Props) {
     activeSubSection = "users",
     draggedPodIndex,
     setDraggedPodIndex,
+    isSuperAdmin = false,
   } = props;
 
   const [newUser, setNewUser] = useState({ email: "", first_name: "", last_name: "", roles: [] as string[], is_active: true });
@@ -435,9 +438,10 @@ export default function UserManagementSection(props: Props) {
                 <table className="min-w-full divide-y divide-purple-200 table-fixed" style={{ minWidth: '900px' }}>
               <colgroup>
                 <col className="w-12" />
+                <col className="w-12" />
                 <col className="w-auto" />
                 <col className="w-auto" />
-                <col className="w-auto" />
+                <col className="w-40" />
                 <col className="w-auto" />
                 <col className="w-32" />
                 <col className="w-20" />
@@ -453,8 +457,9 @@ export default function UserManagementSection(props: Props) {
                         if (e.target.checked) setSelectedUserIds(new Set(sortedUsers.map((u) => u.id)));
                         else setSelectedUserIds(new Set());
                       }}
-                    />
+                      />
                   </th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-purple-900 w-12" title="Photo" />
                   {(["firstName", "lastName", "email", "role", "lastLoggedIn"] as SortKey[]).map((key) => (
                     <th
                       key={key}
@@ -493,9 +498,18 @@ export default function UserManagementSection(props: Props) {
                         }}
                       />
                     </td>
+                    <td className="px-2 py-3 w-12">
+                      {user.avatar_url ? (
+                        <Avatar src={user.avatar_url} alt={user.email} radius="xl" size={32} />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center" title="No photo">
+                          <IconUserCircle className="w-6 h-6 text-purple-400" />
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-sm text-gray-900">{user.first_name || "—"}</td>
                     <td className="px-4 py-3 text-sm text-gray-900">{user.last_name || "—"}</td>
-                    <td className="px-4 py-3 text-sm text-gray-700">{user.email}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 max-w-0 truncate" title={user.email}>{user.email}</td>
                     <td className="px-4 py-2 text-sm align-top">
                       {editingRolesUserId === user.id ? (
                         <div ref={rolesEditRef}>
@@ -647,6 +661,7 @@ export default function UserManagementSection(props: Props) {
         <EditUserDrawer
           user={editingUser}
           opened={!!editingUserId}
+          isSuperAdmin={isSuperAdmin}
           onClose={() => setEditingUserId(null)}
           onSave={async (patch) => {
             const res = await fetch(`/api/users/${editingUser.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
@@ -983,7 +998,18 @@ function PodMappingTable({
   );
 }
 
-function EditUserDrawer({ user, opened, onClose, onSave, onDelete }: { user: User; opened: boolean; onClose: () => void; onSave: (patch: any) => Promise<void>; onDelete: () => Promise<void> }) {
+function ImpersonateForm({ email }: { email: string }) {
+  return (
+    <form action="/api/admin/impersonate" method="post" className="inline">
+      <input type="hidden" name="email" value={email} />
+      <Button type="submit" variant="outline" color="amber" leftSection={<IconUserCircle size={16} />}>
+        Impersonate
+      </Button>
+    </form>
+  );
+}
+
+function EditUserDrawer({ user, opened, onClose, onSave, onDelete, isSuperAdmin = false }: { user: User; opened: boolean; onClose: () => void; onSave: (patch: any) => Promise<void>; onDelete: () => Promise<void>; isSuperAdmin?: boolean }) {
   const [patch, setPatch] = useState({ email: user.email || "", first_name: user.first_name || "", last_name: user.last_name || "", roles: user.roles || [user.role || "OTHER"], is_active: user.is_active !== false });
   return (
     <Drawer opened={opened} onClose={onClose} title="Edit User" position="right" size="xl" padding="lg">
@@ -1005,7 +1031,12 @@ function EditUserDrawer({ user, opened, onClose, onSave, onDelete }: { user: Use
         </Group>
         <Checkbox label="Active" checked={patch.is_active} onChange={(e) => setPatch({ ...patch, is_active: e.target.checked })} />
         <Group justify="space-between" mt="xl">
-          <Button variant="outline" color="red" leftSection={<IconTrash size={16} />} onClick={async () => { if (confirm("Are you sure you want to delete this user? This cannot be undone.")) { await onDelete(); } }}>Delete</Button>
+          <Group>
+            <Button variant="outline" color="red" leftSection={<IconTrash size={16} />} onClick={async () => { if (confirm("Are you sure you want to delete this user? This cannot be undone.")) { await onDelete(); } }}>Delete</Button>
+            {isSuperAdmin && user.email && (
+              <ImpersonateForm email={user.email} />
+            )}
+          </Group>
           <Group>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button onClick={() => onSave(patch)}>Save Changes</Button>

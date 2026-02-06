@@ -474,8 +474,12 @@ export async function notifySuperAdminsOfFeedback(payload: {
             return;
         }
 
+        const authorEmailLower = payload.authorEmail?.toLowerCase();
         const validSlackIds: string[] = [];
         for (const u of superAdmins) {
+            if (authorEmailLower && u.email?.toLowerCase() === authorEmailLower) {
+                continue;
+            }
             let handle = u.slack_handle;
             if (!handle || !isSlackUserId(handle)) {
                 if (u.email) handle = (await syncUserSlackHandle(u.email)) ?? undefined;
@@ -488,7 +492,9 @@ export async function notifySuperAdminsOfFeedback(payload: {
         }
 
         if (validSlackIds.length === 0) {
-            console.warn('[notifySuperAdminsOfFeedback] No super admins with valid Slack handles. Sync handles in User Management or set slack_handle.');
+            console.warn(
+                '[notifySuperAdminsOfFeedback] No recipients: either no super admins with valid Slack handles, or the feedback author is the only super admin. Sync handles in User Management if needed.'
+            );
             return;
         }
 

@@ -55,8 +55,9 @@ export async function POST(request: NextRequest) {
         // Use service role key for admin operations
         const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const anonKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-        if (!supabaseKey || !supabaseUrl) {
+        if (!supabaseKey || !supabaseUrl || !anonKey) {
             console.error('Missing Supabase credentials');
             return NextResponse.json(
                 { error: 'Server configuration error' },
@@ -64,23 +65,17 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false,
-            },
+        // Use anon client for signUp so Supabase sends confirmation email when "Confirm email" is enabled
+        const supabaseAuth = createClient(supabaseUrl, anonKey, {
+            auth: { autoRefreshToken: false, persistSession: false },
         });
-
-        // Create auth user
-        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+        const { data: authData, error: authError } = await supabaseAuth.auth.signUp({
             email,
             password,
-            email_confirm: true, // Auto-confirm email for internal users
         });
 
         if (authError) {
             console.error('Auth error:', authError);
-            // Handle specific errors
             if (authError.message.includes('already registered') || authError.message.includes('already exists')) {
                 return NextResponse.json(
                     { error: 'An account with this email already exists. Please sign in instead.' },
@@ -99,6 +94,10 @@ export async function POST(request: NextRequest) {
                 { status: 500 }
             );
         }
+
+        const supabaseAdmin = createClient(supabaseUrl, supabaseKey, {
+            auth: { autoRefreshToken: false, persistSession: false },
+        });
 
         // Extract name from email (before @)
         const emailName = email.split('@')[0];
@@ -149,8 +148,8 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            requiresConfirmation: false, // We auto-confirm internal users
-            message: 'Account created successfully',
+            requiresConfirmation: true,
+            message: 'Account created. Please check your email to confirm your address, then sign in.',
         });
 
     } catch (error: any) {

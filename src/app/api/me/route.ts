@@ -5,6 +5,7 @@ import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { isSuperAdmin } from "@/lib/auth-helpers";
+import { getEffectiveUserEmail, getImpersonatedEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -114,35 +115,43 @@ async function getHandler(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    // Check for custom lr_session cookie (used by magic link)
     const session = await getSession();
     const sessionEmail = session?.email;
-    
-    // Use email from Supabase auth or from lr_session cookie
-    const userEmail = user?.email || sessionEmail;
+    const realUserEmail = (user?.email || sessionEmail)?.toLowerCase();
 
-    if (!userEmail) {
+    if (!realUserEmail) {
         return new NextResponse("Unauthorized", { status: 401 });
     }
+
+    const impersonateCookie = req.cookies.get(IMPERSONATE_COOKIE_NAME)?.value;
+    const effectiveEmail = await getEffectiveUserEmail(realUserEmail, impersonateCookie);
 
     const { data: profile, error } = await supabase
         .from("app_user")
         .select("*")
-        .eq("email", userEmail)
+        .eq("email", effectiveEmail)
         .single();
 
     if (error) {
-        // Handle case where user profile doesn't exist yet
         if (error.code === 'PGRST116') {
             return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
         }
         return NextResponse.json({ error: "Failed to fetch profile", details: error.message }, { status: 500 });
     }
 
-    const email = (profile as any)?.email;
+    const isImpersonating = effectiveEmail !== realUserEmail;
+    const impersonationPayload = isImpersonating ? await getImpersonatedEmail(impersonateCookie) : null;
+    const impersonationStartedAt = impersonationPayload?.iat != null
+        ? new Date(impersonationPayload.iat * 1000).toISOString()
+        : undefined;
+
     return NextResponse.json({
         user: profile,
-        isSuperAdmin: isSuperAdmin(email),
+        isSuperAdmin: isSuperAdmin(realUserEmail),
+        ...(isImpersonating && {
+            impersonating: true,
+            impersonationStartedAt,
+        }),
     });
 }
 

@@ -62,6 +62,8 @@ Remove custom storage adapter and let Supabase SSR handle it automatically.
 - Email confirmation should use `token_hash` + `type` parameters
 - OAuth should use `code` parameter (PKCE flow)
 
+**Production:** For hosted Supabase, enable "Confirm email" in Dashboard → Authentication → Providers → Email so signups require verification before sign-in. Local config is in `supabase/config.toml` (`enable_confirmations = true`).
+
 #### 3. **Over-Complicated Cookie Handling**
 
 **Current Implementation:**

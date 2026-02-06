@@ -5,8 +5,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
-import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
-import { SegmentedControl } from '@mantine/core';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
@@ -20,7 +18,6 @@ interface HeaderProps {
 
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
-    const { scope, setScope } = useEpicScope();
     const { flags: featureFlags } = useFeatureFlags();
     const [userRoles, setUserRoles] = useState<string[]>([]);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
@@ -74,6 +71,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     // Primary navigation tabs
     const primaryTabs = [
         { link: '/', label: 'Home' },
+        { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: '/feedback', label: 'Feedback' },
@@ -201,34 +199,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                             </nav>
                     </div>
 
-                    {/* Right side: Scope Toggle, Search and User Avatar */}
+                    {/* Right side: Search and User Avatar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                                <SegmentedControl
-                                    value={scope}
-                                    onChange={(value) => setScope(value as 'all' | 'my')}
-                                    data={[
-                                        { label: 'All scope', value: 'all' },
-                                        { label: 'My scope', value: 'my' },
-                                    ]}
-                                    size="sm"
-                                    styles={{
-                                        root: {
-                                            backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                                        },
-                                        indicator: {
-                                            backgroundColor: 'var(--color-accent, #C3B497)',
-                                        },
-                                        label: {
-                                            color: 'var(--nav-text, #FFFFFF)',
-                                            fontSize: 'var(--font-size-sm, 12px)',
-                                            fontWeight: 'var(--font-weight-medium, 500)',
-                                            padding: '4px 12px',
-                                        },
-                                    }}
-                                />
-                            </div>
                         <div style={{
                                 position: 'relative',
                                 width: '280px'

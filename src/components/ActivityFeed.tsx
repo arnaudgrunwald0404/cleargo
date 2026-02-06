@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { Card, Text, Stack, Group, Avatar, Badge, ScrollArea, Box } from '@mantine/core';
 import { PurpleLoader } from './PurpleLoader';
-import { IconBolt, IconFolderCheck, IconCalendar, IconMessage } from '@tabler/icons-react';
+import { IconBolt, IconFolderCheck, IconCalendar, IconMessage, IconMessageCircle, IconCircleX, IconAlertTriangle } from '@tabler/icons-react';
 import { useRouter } from 'next/navigation';
 import { ActivityFeedItem } from '@/app/api/activity-feed/route';
 
@@ -41,6 +41,12 @@ export function ActivityFeed() {
                 return <IconCalendar size={16} color="#10B981" />;
             case 'feedback_added':
                 return <IconMessage size={16} color="#F59E0B" />;
+            case 'comment_added':
+                return <IconMessageCircle size={16} color="#0D9488" />;
+            case 'rating_red':
+                return <IconCircleX size={16} color="#DC2626" />;
+            case 'rating_yellow':
+                return <IconAlertTriangle size={16} color="#D97706" />;
             default:
                 return <IconBolt size={16} color="#6B7280" />;
         }
@@ -56,6 +62,12 @@ export function ActivityFeed() {
                 return 'green';
             case 'feedback_added':
                 return 'yellow';
+            case 'comment_added':
+                return 'teal';
+            case 'rating_red':
+                return 'red';
+            case 'rating_yellow':
+                return 'orange';
             default:
                 return 'gray';
         }
@@ -110,14 +122,19 @@ export function ActivityFeed() {
         if (activity.type === 'feedback_added' && activity.epic_id) {
             return `/epics/${activity.epic_id}`;
         }
-        
-        // Criterion status changes -> epic detail page (if epic_id is available)
-        if (activity.type === 'criterion_change' && activity.epic_id) {
+
+        // Comment activities -> epic detail page (if epic_id is available)
+        if (activity.type === 'comment_added' && activity.epic_id) {
             return `/epics/${activity.epic_id}`;
         }
         
-        // Criterion changes without epic_id -> criteria admin page
-        if (activity.type === 'criterion_change' && activity.entity_type === 'criterion') {
+        // Criterion status changes and Red/Yellow ratings -> epic detail (if epic_id available)
+        if ((activity.type === 'criterion_change' || activity.type === 'rating_red' || activity.type === 'rating_yellow') && activity.epic_id) {
+            return `/epics/${activity.epic_id}`;
+        }
+
+        // Criterion / rating changes without epic_id -> criteria admin page
+        if ((activity.type === 'criterion_change' || activity.type === 'rating_red' || activity.type === 'rating_yellow') && activity.entity_type === 'criterion') {
             return '/admin/criteria';
         }
         

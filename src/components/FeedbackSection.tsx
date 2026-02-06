@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Button, Textarea, Group, Text, ActionIcon, Select, Badge } from '@mantine/core';
+import { Button, Textarea, Group, Text, ActionIcon, Select, Badge, Radio, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend, IconPencil } from '@tabler/icons-react';
@@ -32,6 +32,10 @@ const FEEDBACK_STATUS_OPTIONS = [
   { value: 'no_go', label: 'No Go ;(' },
 ];
 
+const DEFAULT_STATUS_FILTER = FEEDBACK_STATUS_OPTIONS.filter(
+  (o) => o.value !== 'completed' && o.value !== 'no_go'
+).map((o) => o.value);
+
 function feedbackStatusLabel(status: string | undefined): string {
   if (!status) return 'Unread';
   const opt = FEEDBACK_STATUS_OPTIONS.find((o) => o.value === status);
@@ -57,6 +61,7 @@ export function FeedbackSection({ epicId, currentUserEmail, isSuperAdmin = false
   const [editingText, setEditingText] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string[]>(DEFAULT_STATUS_FILTER);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<number>(0);
 
@@ -300,6 +305,11 @@ export function FeedbackSection({ epicId, currentUserEmail, isSuperAdmin = false
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
+  const filteredFeedbacks = useMemo(
+    () => feedbacks.filter((f) => statusFilter.includes((f.status ?? 'unread'))),
+    [feedbacks, statusFilter]
+  );
+
   const getUserDisplay = (feedback: FeedbackItem): string => {
     if (!feedback.created_by) return 'Unknown';
     const { first_name, last_name, email } = feedback.created_by;
@@ -310,73 +320,111 @@ export function FeedbackSection({ epicId, currentUserEmail, isSuperAdmin = false
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <h2 className="text-xl font-semibold text-gray-900 mb-4">Feedback</h2>
-      
+    <div>
+  
       {/* Add Feedback Form */}
-      <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
-        {!epicId && (
-          <Group gap="sm" mb="sm" align="flex-end">
-            <Select
-              label="Type"
-              value={feedbackType}
-              onChange={(value) => setFeedbackType((value as any) || 'TOOL')}
-              data={[
-                { value: 'EPIC', label: 'Feedback on Epics' },
-                { value: 'PROCESS', label: 'Feedback on the process' },
-                { value: 'TOOL', label: 'Feedback on the tool' },
-              ]}
-              w={260}
-            />
-            {feedbackType === 'EPIC' && (
-              <Select
-                label="Epic (optional)"
-                placeholder={epicOptionsLoading ? 'Loading epics...' : 'Select an epic'}
-                searchable
-                clearable
-                value={selectedEpicId}
-                onChange={setSelectedEpicId}
-                data={epicOptions}
-                w={420}
-              />
-            )}
+      <div className="mb-6 p-4 rounded-lg border border-gray-200" style={{ backgroundColor: 'var(--color-tab-panel-bg)' }}>
+    {!epicId && (
+      <div className="mb-4">
+        <Radio.Group
+          label="I would like to give feedback on…"
+          value={feedbackType}
+          onChange={(value) => setFeedbackType((value as 'EPIC' | 'PROCESS' | 'TOOL') || 'TOOL')}
+        >
+          <Group mt="xs" gap="lg">
+            <Radio value="TOOL" label="ClearGO tool" />
+            <Radio value="PROCESS" label="ClearGO process" />
+            <Radio value="EPIC" label="an epic or release" />
           </Group>
+        </Radio.Group>
+        {feedbackType === 'EPIC' && (
+          <Select
+            label="Epic (optional)"
+            placeholder={epicOptionsLoading ? 'Loading epics...' : 'Select an epic'}
+            searchable
+            clearable
+            value={selectedEpicId}
+            onChange={setSelectedEpicId}
+            data={epicOptions}
+            mt="sm"
+            w="100%"
+            style={{ maxWidth: 420 }}
+          />
         )}
-        <Textarea
-          placeholder="Share feedback on an epic, the process, or the tool…"
-          value={newFeedback}
-          onChange={(e) => setNewFeedback(e.currentTarget.value)}
-          minRows={3}
-          maxRows={6}
-          disabled={submitting}
-          mb="sm"
-        />
-        <Group justify="flex-end">
-          <Button
-            leftSection={<IconSend size={16} />}
-            onClick={handleSubmitFeedback}
-            loading={submitting}
-            disabled={!newFeedback.trim() || submitting}
-          >
-            Post Feedback
-          </Button>
-        </Group>
       </div>
+    )}
+    <Textarea
+      placeholder="Share feedback on an epic, the process, or the tool…"
+      value={newFeedback}
+      onChange={(e) => setNewFeedback(e.currentTarget.value)}
+      minRows={3}
+      maxRows={6}
+      disabled={submitting}
+      mb="sm"
+    />
+    <Group justify="flex-end">
+      <Button
+        leftSection={<IconSend size={16} />}
+        onClick={handleSubmitFeedback}
+        loading={submitting}
+        disabled={!newFeedback.trim() || submitting}
+      >
+        Post Feedback
+      </Button>
+    </Group>
+  </div>
+  <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      {/* Status filter pills */}
+      <Group gap="sm" mb="md" wrap="wrap" align="center">
+        <Text size="sm" fw={500} c="dimmed">
+          Status filter: 
+        </Text>
+        <Group gap="xs" wrap="wrap">
+        {FEEDBACK_STATUS_OPTIONS.map((opt) => {
+          const selected = statusFilter.includes(opt.value);
+          return (
+            <UnstyledButton
+              key={opt.value}
+              onClick={() => {
+                setStatusFilter((prev) =>
+                  selected ? prev.filter((v) => v !== opt.value) : [...prev, opt.value]
+                );
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              <Badge
+                variant={selected ? 'filled' : 'outline'}
+                color="gray"
+                size="md"
+                style={{
+                  fontWeight: selected ? 600 : 400,
+                  borderRadius: 9999,
+                }}
+              >
+                {opt.label}
+              </Badge>
+            </UnstyledButton>
+          );
+        })}
+        </Group>
+      </Group>
 
       {/* Feedback List */}
       {loading ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>
           <PurpleLoader size="sm" />
         </div>
-      ) : feedbacks.length === 0 ? (
+      ) : filteredFeedbacks.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '40px' }}>
           <Text size="sm" c="dimmed">
-            No feedback yet. Be the first to provide feedback!
+            {feedbacks.length === 0
+              ? 'No feedback yet. Be the first to provide feedback!'
+              : 'No feedback matches the selected statuses.'}
           </Text>
         </div>
       ) : (
         <div className="space-y-4">
-          {feedbacks.map((feedback) => (
+          {filteredFeedbacks.map((feedback) => (
             <div
               key={feedback.id}
               style={{
@@ -477,6 +525,7 @@ export function FeedbackSection({ epicId, currentUserEmail, isSuperAdmin = false
           ))}
         </div>
       )}
+    </div>
     </div>
   );
 }
