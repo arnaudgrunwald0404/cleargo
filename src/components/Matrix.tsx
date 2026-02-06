@@ -30,6 +30,7 @@ type MatrixItem = {
     lastComment?: {
         comment_text: string;
         created_at: string;
+        updated_at?: string | null;
         created_by?: {
             email: string;
             first_name?: string;
@@ -94,21 +95,23 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
     ];
     const naLight = {
         value: 'NOT_APPLICABLE',
-        color: '#6b7280', // gray
-        greyColor: '#d1d5db',
-        label: 'N/A',
+        color: 'var(--nav-bg, #37352A)', // same dark as nav bar when selected
+        greyColor: 'transparent',
+        label: 'n/a',
         definition: 'Not applicable; neutral to readiness score'
     };
     const lights = showNotApplicable ? [...baseLights, naLight] : baseLights;
 
     const buttonSize = isMobile ? 32 : 24;
     const gap = isMobile ? '12px' : '8px';
+    const isNaLight = (light: typeof baseLights[0] | typeof naLight) => light.value === 'NOT_APPLICABLE';
 
     return (
         <div style={{ display: 'flex', gap, alignItems: 'center' }}>
             {lights.map((light) => {
                 const isSelected = currentStatus === light.value;
                 const isNotSet = currentStatus === 'NOT_SET';
+                const showLabelInCircle = isNaLight(light);
                 
                 return (
                     <Tooltip
@@ -148,6 +151,9 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
                                 opacity: disabled ? 0.5 : 1,
                                 boxShadow: isSelected ? `0 0 8px ${light.color}66` : 'none',
                                 transform: isSelected ? 'scale(1.1)' : 'scale(1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                             }}
                             onMouseEnter={(e) => {
                                 if (!disabled && !isSelected) {
@@ -161,7 +167,21 @@ function TrafficLight({ currentStatus, onStatusChange, disabled, definitions, is
                                     e.currentTarget.style.transform = 'scale(1)';
                                 }
                             }}
-                        />
+                        >
+                            {showLabelInCircle && (
+                                <span
+                                    style={{
+                                        fontSize: isMobile ? 10 : 8,
+                                        fontWeight: 600,
+                                        color: isSelected ? '#fff' : '#6b7280',
+                                        lineHeight: 1,
+                                        textTransform: 'lowercase',
+                                    }}
+                                >
+                                    n/a
+                                </span>
+                            )}
+                        </button>
                     </Tooltip>
                 );
             })}
@@ -933,6 +953,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         setCommentsModalOpen(false);
         setSelectedItemForComments(null);
         setPendingStatusChange(null);
+        onUpdate();
     };
 
     const handleCloseCommentsWithoutComment = () => {
@@ -1377,30 +1398,30 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         </div>
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">
-                            {/* Desktop Table View - hidden on mobile */}
-                            <div className="hidden md:block border-2 rounded-lg overflow-hidden bg-gray-50" style={{ borderColor: 'var(--table-steel)' }}>
-                            <table className="min-w-full table-fixed w-full" style={{ borderColor: 'var(--table-steel)' }}>
+                            {/* Desktop Table View - hidden on mobile - matches /Epics and Home table styling */}
+                            <div className="hidden md:block rounded-lg overflow-hidden" style={{ border: '1px solid #E5E7EB', backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)' }}>
+                            <table className="min-w-full table-fixed w-full" style={{ borderCollapse: 'collapse' }}>
                                 <colgroup>
                                     <col style={{ width: 'auto' }} />
-                                    <col style={{ width: '120px' }} />
+                                    <col style={{ width: showNotApplicable ? '148px' : '120px' }} />
                                     <col style={{ width: '150px' }} />
                                     <col style={{ width: '120px' }} />
                                     <col style={{ width: '100px' }} />
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '40px' }} />
                                 </colgroup>
-                                <thead style={{ backgroundColor: 'var(--table-steel)', color: 'var(--table-header-text-platinum)', borderBottom: '1px solid var(--table-steel)' }}>
+                                <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                     <tr>
-                                        <th className="px-4 py-2 text-left text-xs font-medium">Criterion</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium normal-case" style={{ width: '120px', textTransform: 'none' }}>Go/No-Go Score</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '150px' }}>Accountable</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '120px' }}>Due On</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '100px' }}>Sources</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium">Comments</th>
-                                        <th className="px-4 py-2 text-left text-xs font-medium" style={{ width: '40px' }}></th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
+                                        <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Comments</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '40px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}></th>
                                     </tr>
                                 </thead>
-                                <tbody className="bg-white">
+                                <tbody className="bg-white" style={{ borderTop: '1px solid #E5E7EB' }}>
                                     {allItems.map((item, index) => {
                                         const isOverall = showOverall && index === 0;
                                         const isSignoff = item.criterion.label?.toLowerCase().includes('signoff');
@@ -1416,7 +1437,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                         }
                                         
                                         return (
-                                            <tr key={item.id} className={`hover:bg-gray-50 transition-colors border-b ${item.notRequired ? 'opacity-60' : ''} ${isOverall && !isSignoff ? 'cursor-pointer' : ''}`} style={{ backgroundColor: '#FFFFFF', borderColor: 'var(--table-steel)' }} onClick={isOverall && !isSignoff ? () => toggleCategory(cat) : undefined}>
+                                            <tr key={item.id} className={`!bg-white hover:bg-gray-50 transition-colors ${item.notRequired ? 'opacity-60' : ''} ${isOverall && !isSignoff ? 'cursor-pointer' : ''}`} style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }} onClick={isOverall && !isSignoff ? () => toggleCategory(cat) : undefined}>
                                         <td className="px-4 py-3">
                                             <div className={`font-medium flex items-center gap-2 text-sm ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
                                                 {isOverall && !isSignoff && (
@@ -1442,7 +1463,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: '120px' }}>
+                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
                                             {item.notRequired ? (
                                                 <div className="text-xs font-medium text-gray-500">Not required</div>
                                             ) : (
@@ -1674,28 +1695,21 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                         >
                                                             <div className="flex items-center gap-1.5">
                                                                 <div 
-                                                                    className="text-xs text-gray-600 line-clamp-2 flex-1"
+                                                                    className="text-xs text-gray-700 line-clamp-2 flex-1 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
                                                                     style={{
                                                                         wordBreak: "break-word",
                                                                         opacity: optimisticComments[item.id] ? 0.7 : 1,
                                                                     }}
-                                                                >
-                                                                    {(() => {
-                                                                        // Strip HTML tags and get plain text preview
-                                                                        const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
-                                                                        const preview = textContent.length > 100 
-                                                                            ? textContent.substring(0, 100) + '...'
-                                                                            : textContent;
-                                                                        return preview;
-                                                                    })()}
-                                                                </div>
+                                                                    dangerouslySetInnerHTML={{ __html: item.lastComment.comment_text }}
+                                                                />
                                                                 {optimisticComments[item.id] && (
                                                                     <span className="text-xs text-blue-500 font-medium flex-shrink-0">Saving...</span>
                                                                 )}
                                                             </div>
                                                             <div className="text-xs text-gray-400 mt-1">
                                                                 {(() => {
-                                                                    const date = new Date(item.lastComment.created_at);
+                                                                    const ts = item.lastComment.updated_at ?? item.lastComment.created_at;
+                                                                    const date = new Date(ts);
                                                                     const now = new Date();
                                                                     const diffMs = now.getTime() - date.getTime();
                                                                     const diffMins = Math.floor(diffMs / 60000);
@@ -1819,26 +1833,22 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                     // Render comment preview
                                     const renderCommentPreview = () => {
                                         if (item.lastComment) {
-                                            const textContent = item.lastComment.comment_text.replace(/<[^>]*>/g, '');
-                                            const preview = textContent.length > 100 
-                                                ? textContent.substring(0, 100) + '...'
-                                                : textContent;
-                                            
-                                            const date = new Date(item.lastComment.created_at);
+                                            const ts = item.lastComment.updated_at ?? item.lastComment.created_at;
+                                            const date = new Date(ts);
                                             const now = new Date();
                                             const diffMs = now.getTime() - date.getTime();
                                             const diffMins = Math.floor(diffMs / 60000);
                                             const diffHours = Math.floor(diffMs / 3600000);
                                             const diffDays = Math.floor(diffMs / 86400000);
-                                            
+
                                             let timeAgo = 'Just now';
                                             if (diffMins >= 1 && diffMins < 60) timeAgo = `${diffMins}m ago`;
                                             else if (diffHours < 24) timeAgo = `${diffHours}h ago`;
                                             else if (diffDays < 7) timeAgo = `${diffDays}d ago`;
                                             else timeAgo = date.toLocaleDateString();
-                                            
+
                                             const isOptimistic = optimisticComments[item.id];
-                                            
+
                                             return (
                                                 <button
                                                     onClick={(e) => {
@@ -1849,11 +1859,10 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 >
                                                     <div className="flex items-center gap-1.5">
                                                         <div 
-                                                            className="text-xs text-gray-600 line-clamp-2 break-words flex-1"
+                                                            className="text-xs text-gray-700 line-clamp-2 break-words flex-1 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
                                                             style={{ opacity: isOptimistic ? 0.7 : 1 }}
-                                                        >
-                                                            {preview}
-                                                        </div>
+                                                            dangerouslySetInnerHTML={{ __html: item.lastComment.comment_text }}
+                                                        />
                                                         {isOptimistic && (
                                                             <span className="text-xs text-blue-500 font-medium flex-shrink-0">Saving...</span>
                                                         )}
@@ -1880,7 +1889,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                         <div 
                                             key={item.id} 
                                             className={`bg-white border rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
-                                            style={{ borderColor: 'var(--table-steel)' }}
+                                            style={{ border: '1px solid #E5E7EB' }}
                                         >
                                             {/* Header: Criterion name */}
                                             <div className="mb-3">
@@ -1910,7 +1919,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                             </div>
                                             
                                             {/* Go/No-Go score section */}
-                                            <div className="mb-3">
+                                            <div className={showNotApplicable && !item.criterion.gate ? 'mb-4' : 'mb-3'}>
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Go/No-Go Score</div>
                                                 {item.notRequired ? (
                                                     <div className="text-xs font-medium text-gray-500">Not required</div>

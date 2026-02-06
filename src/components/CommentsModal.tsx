@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
-import { IconTrash, IconSend, IconPaperclip, IconX } from '@tabler/icons-react';
+import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil } from '@tabler/icons-react';
 import { RichText, type RichTextMentionHandle } from './admin/RichText';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
@@ -28,6 +28,7 @@ interface Comment {
   id: string;
   comment_text: string;
   created_at: string;
+  updated_at?: string | null;
   status_at_comment?: string | null;
   previous_status?: string | null;
   created_by?: {
@@ -101,6 +102,10 @@ export function CommentsModal({
   const [savingDataSourceValues, setSavingDataSourceValues] = useState(false);
   const [activeTab, setActiveTab] = useState<string>(initialTab);
   const [ahaFieldsMap, setAhaFieldsMap] = useState<Record<string, string>>({});
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const editRichTextRef = useRef<RichTextMentionHandle>(null);
   const baseContentRef = useRef<string>('');
   const isInitialLoadRef = useRef<boolean>(false);
   const lastContentRebuildRef = useRef<number>(0);
@@ -498,7 +503,11 @@ export function CommentsModal({
   }, [mentionDropdownOpen]);
 
   useEffect(() => {
-    if (!opened) setMentionDropdownOpen(false);
+    if (!opened) {
+      setMentionDropdownOpen(false);
+      setEditingCommentId(null);
+      setEditDraft('');
+    }
   }, [opened]);
 
   // Post new comment with attachments
@@ -675,6 +684,47 @@ export function CommentsModal({
       await fetchComments();
     } catch (error: any) {
       alert(`Failed to delete comment: ${error.message}`);
+    }
+  };
+
+  const handleStartEdit = (comment: Comment) => {
+    setEditingCommentId(comment.id);
+    setEditDraft(comment.comment_text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditDraft('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCommentId) return;
+    const textContent = editDraft.replace(/<[^>]*>/g, '').trim();
+    if (!textContent) {
+      notifications.show({ title: 'Comment cannot be empty', message: 'Enter some text or cancel.', color: 'red' });
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const mentionedUserIds = getMentionedUserIdsFromHtml(editDraft);
+      const res = await fetch(`/api/epics/${epicId}/criteria/${taskId}/comments/${editingCommentId}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment_text: editDraft, mentioned_user_ids: mentionedUserIds }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to update comment');
+      }
+      await fetchComments();
+      setEditingCommentId(null);
+      setEditDraft('');
+      notifications.show({ title: 'Comment updated', message: '', color: 'green' });
+    } catch (error: any) {
+      notifications.show({ title: 'Error', message: error.message || 'Failed to update comment', color: 'red' });
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -2062,31 +2112,63 @@ export function CommentsModal({
                               )}
                             </Group>
                             <Text size="xs" c="dimmed" style={{ lineHeight: 1.2 }}>
-                              {formatTimestamp(comment.created_at)}
+                              {formatTimestamp(comment.updated_at ?? comment.created_at)}
+                              {comment.updated_at && comment.updated_at !== comment.created_at && ' (edited)'}
                             </Text>
                           </div>
                         </div>
                         {comment.created_by?.email === currentUserEmail && !isOptimistic && (
-                          <ActionIcon
-                            variant="subtle"
-                            color="red"
-                            size="sm"
-                            onClick={() => handleDeleteComment(comment.id)}
-                            title="Delete comment"
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
+                          <Group gap={4}>
+                            <ActionIcon
+                              variant="subtle"
+                              color="gray"
+                              size="sm"
+                              onClick={() => handleStartEdit(comment)}
+                              title="Edit comment"
+                            >
+                              <IconPencil size={14} />
+                            </ActionIcon>
+                            <ActionIcon
+                              variant="subtle"
+                              color="red"
+                              size="sm"
+                              onClick={() => handleDeleteComment(comment.id)}
+                              title="Delete comment"
+                            >
+                              <IconTrash size={14} />
+                            </ActionIcon>
+                          </Group>
                         )}
                       </Group>
-                      <div 
-                        className="text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
-                        dangerouslySetInnerHTML={{ __html: comment.comment_text }}
-                        style={{
-                          whiteSpace: "pre-wrap",
-                          wordBreak: "break-word",
-                          lineHeight: 1.4,
-                        }}
-                      />
+                      {editingCommentId === comment.id ? (
+                        <>
+                          <RichText
+                            ref={editRichTextRef}
+                            value={editDraft}
+                            onChange={setEditDraft}
+                            placeholder="Edit your comment..."
+                            rows={4}
+                          />
+                          <Group gap="xs" mt="xs">
+                            <Button size="xs" variant="default" onClick={handleSaveEdit} loading={savingEdit}>
+                              Save
+                            </Button>
+                            <Button size="xs" variant="subtle" color="gray" onClick={handleCancelEdit} disabled={savingEdit}>
+                              Cancel
+                            </Button>
+                          </Group>
+                        </>
+                      ) : (
+                        <div 
+                          className="text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                          dangerouslySetInnerHTML={{ __html: comment.comment_text }}
+                          style={{
+                            whiteSpace: "pre-wrap",
+                            wordBreak: "break-word",
+                            lineHeight: 1.4,
+                          }}
+                        />
+                      )}
                       {/* Show attachments if any */}
                       {comment.attachments && comment.attachments.length > 0 && (
                         <Group gap="xs" mt="xs">

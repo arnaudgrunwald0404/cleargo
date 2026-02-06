@@ -47,10 +47,20 @@ export async function POST(
         id,
         comment_text,
         created_at,
+        updated_at,
         created_by:app_user!criterion_comment_created_by_fkey(email, first_name, last_name)
       `)
       .in('launch_criterion_status_id', realStatusIds)
       .order('created_at', { ascending: false });
+
+    // Re-sort by last activity (updated_at or created_at) so "last comment" is most recently edited
+    if (comments && comments.length > 1) {
+      comments.sort((a: any, b: any) => {
+        const aAt = a.updated_at ? new Date(a.updated_at).getTime() : new Date(a.created_at).getTime();
+        const bAt = b.updated_at ? new Date(b.updated_at).getTime() : new Date(b.created_at).getTime();
+        return bAt - aAt;
+      });
+    }
 
     if (commentsError) {
       console.error('Error fetching comments:', commentsError);
@@ -88,7 +98,8 @@ export async function POST(
           lastComments.set(statusId, {
             comment_text: comment.comment_text,
             created_at: comment.created_at,
-            created_by: comment.created_by, // Already includes user info from join
+            updated_at: comment.updated_at ?? undefined,
+            created_by: comment.created_by,
           });
         }
       });

@@ -26,10 +26,23 @@ function isSlackUserId(handle: string): boolean {
 }
 
 /**
+ * Safe JSON for notification_log.payload (avoids circular refs / non-JSON values).
+ */
+function safePayload(payload: any): Record<string, unknown> | null {
+    if (payload == null) return null;
+    try {
+        return JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
+    } catch {
+        return { _raw: String(payload) };
+    }
+}
+
+/**
  * Log notification to database.
  * Uses admin client so logging succeeds from cron/jobs (no user session) and is not blocked by RLS.
+ * On FK or other insert errors, retries without user_id/epic_id so a row is always written when possible.
  */
-async function logNotification(data: {
+export async function logNotification(data: {
     user_id?: string;
     launch_id?: string;
     type: string;
@@ -40,26 +53,41 @@ async function logNotification(data: {
     slack_ts?: string;
     slack_channel?: string;
 }) {
+    let supabase;
     try {
-        const supabase = createAdminClient();
-        const { error } = await supabase.from('notification_log').insert({
-            user_id: data.user_id || null,
-            epic_id: data.launch_id || null,
-            type: data.type,
-            payload: data.payload,
-            delivery_channel: data.delivery_channel,
-            status: data.status,
-            error: data.error || null,
-            slack_ts: data.slack_ts || null,
-            slack_channel: data.slack_channel || null,
-            sent_at: new Date().toISOString(),
-        });
-
-        if (error) {
-            console.error('Failed to log notification:', error);
-        }
+        supabase = createAdminClient();
     } catch (err) {
-        console.error('Error logging notification:', err);
+        console.error(
+            'notification_log: cannot create admin client (missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_SECRET_KEY?). Log skipped.',
+            err
+        );
+        return;
+    }
+
+    const row = {
+        user_id: data.user_id || null,
+        epic_id: data.launch_id || null,
+        type: data.type,
+        payload: safePayload(data.payload),
+        delivery_channel: data.delivery_channel,
+        status: data.status,
+        error: data.error || null,
+        slack_ts: data.slack_ts || null,
+        slack_channel: data.slack_channel || null,
+        sent_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase.from('notification_log').insert(row);
+
+    if (error) {
+        console.error('notification_log insert failed:', error.code, error.message, error.details);
+        if (error.code === '23503' || error.code === '23502') {
+            const fallback = { ...row, user_id: null, epic_id: null };
+            const { error: retryError } = await supabase.from('notification_log').insert(fallback);
+            if (retryError) {
+                console.error('notification_log retry (without FKs) also failed:', retryError.code, retryError.message);
+            }
+        }
     }
 }
 
@@ -399,6 +427,57 @@ export async function syncUserSlackHandle(email: string): Promise<string | null>
     } catch (err: any) {
         console.error(`Error looking up Slack user for ${email}:`, err);
         return null;
+    }
+}
+
+/**
+ * Send a multi-recipient Slack message to all super admins with the content of newly submitted feedback.
+ * Does not throw; logs errors so feedback creation can still succeed.
+ */
+export async function notifySuperAdminsOfFeedback(payload: {
+    feedbackId: string;
+    feedbackText: string;
+    feedbackType?: string;
+    epicId?: string | null;
+    epicName?: string | null;
+    authorEmail?: string;
+}): Promise<void> {
+    try {
+        const supabase = createAdminClient();
+        const { data: superAdmins, error: fetchError } = await supabase
+            .from('app_user')
+            .select('id, email, slack_handle')
+            .contains('roles', ['SUPERADMIN']);
+
+        if (fetchError || !superAdmins?.length) return;
+
+        const validSlackIds: string[] = [];
+        for (const u of superAdmins) {
+            let handle = u.slack_handle;
+            if (!handle || !isSlackUserId(handle)) {
+                if (u.email) handle = (await syncUserSlackHandle(u.email)) ?? undefined;
+            }
+            if (handle && isSlackUserId(handle)) validSlackIds.push(handle);
+        }
+
+        if (validSlackIds.length === 0) return;
+
+        const client = getSlackClient();
+        const channel = await client.openMultiUserConversation(validSlackIds.slice(0, 8));
+
+        const typeLabel = payload.feedbackType ? ` (${payload.feedbackType})` : '';
+        const epicPart = payload.epicName
+            ? `\n*Epic:* ${payload.epicName}`
+            : payload.epicId
+              ? `\n*Epic ID:* ${payload.epicId}`
+              : '';
+        const authorPart = payload.authorEmail ? `\n*From:* ${payload.authorEmail}` : '';
+        const text =
+            `:inbox_tray: *New feedback submitted*${typeLabel}${epicPart}${authorPart}\n\n${payload.feedbackText}`;
+
+        await client.postMessage({ channel, text });
+    } catch (err: any) {
+        console.error('Failed to notify super admins of feedback:', err);
     }
 }
 

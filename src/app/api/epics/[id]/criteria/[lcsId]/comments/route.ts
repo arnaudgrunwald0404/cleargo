@@ -33,6 +33,7 @@ export async function GET(
         id,
         comment_text,
         created_at,
+        updated_at,
         status_at_comment,
         previous_status,
         mentioned_user_ids,
