@@ -9,6 +9,8 @@
   --font-heading: "Atkinson Hyperlegible", system-ui, -apple-system, sans-serif;
   --font-body: "Public Sans", Inter, system-ui, -apple-system, sans-serif;
   --font-mono: "Fira Code", "Courier New", monospace;
+  /* Header nav uses Marcellus (injected by next/font on body) */
+  --font-marcellus: "Marcellus", serif;
 
   /* Font sizes - Base scale */
   --font-size-xs: 12px;
@@ -91,10 +93,14 @@
   --color-gray-900: #111827;
   --color-black: #000000;
 
-  /* Accent color (Brass) - used for logo, name, primary buttons, and key labels */
+  /* Accent color (Brass) - used for name, primary buttons, and key labels */
   --color-accent: #C3B497;
   --color-accent-hover: #B0A086;
   --color-accent-bg: rgba(195, 180, 151, 0.2); /* Brass with 20% opacity for backgrounds */
+  /* Copper - logo background (white icon/text on copper); brighter accent */
+  --color-copper: #C77B3C;
+  --color-copper-hover: #B86B2E;
+  --color-copper-bg: rgba(199, 123, 60, 0.2);
   /* Cast Iron - text on brass, nav, and accent for selected states */
   --color-cast-iron: #37352A;
   --color-cast-iron-border: #C9C6BF;   /* light tint for selected card border */
