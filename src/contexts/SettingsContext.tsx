@@ -16,7 +16,6 @@ interface SettingsContextType {
     
     // Users
     users: any[];
-    pendingUsers: any[];
     usersLoading: boolean;
     fetchUsers: () => Promise<void>;
     
@@ -96,7 +95,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [error, setError] = useState<string | null>(null);
     
     const [users, setUsers] = useState<any[]>([]);
-    const [pendingUsers, setPendingUsers] = useState<any[]>([]);
     const [usersLoading, setUsersLoading] = useState(false);
     
     const [pods, setPods] = useState<string[]>([]);
@@ -184,10 +182,8 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         try {
             const data = await getUsers();
             setUsers(data.users || []);
-            setPendingUsers(data.pendingUsers || []);
         } catch (error: any) {
             console.error("Failed to fetch users:", error);
-            setPendingUsers([]);
         } finally {
             setUsersLoading(false);
         }
@@ -424,7 +420,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 setSettings,
                 autoSaveSettings,
                 users,
-                pendingUsers,
                 usersLoading,
                 fetchUsers,
                 pods,

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 type FeatureFlagsContextType = {
   flags: string[];
@@ -10,7 +11,12 @@ type FeatureFlagsContextType = {
 
 const FeatureFlagsContext = createContext<FeatureFlagsContextType | undefined>(undefined);
 
+function isPublicPage(pathname: string | null) {
+  return pathname === "/login" || (pathname?.startsWith("/setup-password") ?? false);
+}
+
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [flags, setFlags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,8 +37,13 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (isPublicPage(pathname)) {
+      setFlags([]);
+      setLoading(false);
+      return;
+    }
     fetchFlags();
-  }, [fetchFlags]);
+  }, [pathname, fetchFlags]);
 
   return (
     <FeatureFlagsContext.Provider value={{ flags, loading, refetch: fetchFlags }}>
