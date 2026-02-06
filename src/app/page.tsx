@@ -39,11 +39,20 @@ export default async function HomePage({
   // Check both Supabase auth and custom lr_session cookie
   if ((error || !user?.email) && !sessionEmail) {
     const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
+    let useMarketing = false;
     if (marketingUrl) {
-      // External marketing website
+      try {
+        const marketingOrigin = new URL(marketingUrl).origin;
+        const appOrigin = new URL(appUrl).origin;
+        useMarketing = marketingOrigin !== appOrigin;
+      } catch {
+        useMarketing = false;
+      }
+    }
+    if (useMarketing && marketingUrl) {
       redirect(marketingUrl);
     } else {
-      // Internal login page
       redirect('/login');
     }
   }

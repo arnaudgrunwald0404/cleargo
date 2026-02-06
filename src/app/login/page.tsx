@@ -77,20 +77,26 @@ function LoginForm() {
     }
   }, [code, redirectTo]);
 
-  // Check if already authenticated - but skip if we have a code (let callback handle it)
+  // Check if already authenticated - but skip if we have a code (let callback handle it).
+  // Only redirect after the server confirms the session (GET /api/me) to avoid a redirect loop
+  // when the client has a stale session but the server has no valid cookie.
   useEffect(() => {
     if (code || !supabase) {
-      // Don't check auth if we have a code or if supabase client wasn't created
       return;
     }
+    let cancelled = false;
     const checkAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.push(redirectTo);
+      if (!session || cancelled) return;
+      const res = await fetch('/api/me', { credentials: 'same-origin' });
+      if (cancelled) return;
+      if (res.ok) {
+        window.location.replace(redirectTo);
       }
     };
     checkAuth();
-  }, [supabase, router, redirectTo, code]);
+    return () => { cancelled = true; };
+  }, [supabase, redirectTo, code]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
@@ -267,13 +273,16 @@ function LoginForm() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-white lg:bg-transparent">
-      {/* Left Panel - Marketing Content with Dark Theme (60%) */}
-      <div className="hidden lg:flex lg:w-3/6 bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 relative overflow-y-auto">
-        {/* Decorative elements */}
-        <div className="absolute inset-0 opacity-30">
-          <div className="absolute top-20 left-20 w-72 h-72 bg-indigo-500 rounded-full blur-[128px]" />
-          <div className="absolute bottom-20 right-20 w-96 h-96 bg-purple-600 rounded-full blur-[128px]" />
-          <div className="absolute top-1/2 left-1/3 w-64 h-64 bg-blue-500 rounded-full blur-[100px]" />
+      {/* Left Panel - Marketing Content with Dark Theme (60%) - Cast Iron / Brass palette */}
+      <div
+        className="hidden lg:flex lg:w-3/6 relative overflow-y-auto"
+        style={{ background: 'linear-gradient(to bottom right, var(--color-cast-iron), #2d2b23, var(--color-cast-iron))' }}
+      >
+        {/* Decorative elements - brass, copper, alloy */}
+        <div className="absolute inset-0 opacity-25">
+          <div className="absolute top-20 left-20 w-72 h-72 rounded-full blur-[128px]" style={{ backgroundColor: 'var(--color-copper)' }} />
+          <div className="absolute bottom-20 right-20 w-96 h-96 rounded-full blur-[128px]" style={{ backgroundColor: 'var(--color-conditional-alloy)' }} />
+          <div className="absolute top-1/2 left-1/3 w-64 h-64 rounded-full blur-[100px]" style={{ backgroundColor: 'var(--color-accent)' }} />
         </div>
         
         {/* Grid pattern overlay */}
@@ -289,8 +298,8 @@ function LoginForm() {
         <div className="relative z-10 w-full px-12 py-16">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-16">
-            <div className="w-12 h-12 bg-gradient-to-br from-indigo-400 to-purple-500 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/30">
-              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(to bottom right, var(--color-accent), var(--color-accent-hover))', boxShadow: '0 10px 15px -3px rgba(195, 180, 151, 0.3)' }}>
+              <svg className="w-7 h-7" fill="none" stroke="var(--color-cast-iron)" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
@@ -299,12 +308,12 @@ function LoginForm() {
      
           {/* Hero Section */}
           <div className="mb-16">
-            <Title order={1} style={{ fontSize: '44px', fontWeight: 800, lineHeight: 1.2, color: '#FFFFFF', marginBottom: '24px' }}>
-            Launch with <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
+            <Title order={1} style={{ fontSize: '44px', fontWeight: 800, lineHeight: 1.2, color: '#FFFFFF', marginBottom: '24px', fontFamily: 'var(--font-marcellus), serif' }}>
+            Launch with <span style={{ background: 'linear-gradient(to right, var(--color-accent), #FF8A65)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>
               Confidence.
               </span>
             </Title>
-             <div style={{ color: '#CBD5E1', lineHeight: 1.8, marginBottom: '12px', fontSize: '22px' }}>
+             <div style={{ color: 'var(--color-gray-400)', lineHeight: 1.8, marginBottom: '12px', fontSize: '22px' }}>
                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                  <li style={{ marginBottom: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                    <span style={{ fontSize: '24px', lineHeight: '1' }}>🎯</span>
@@ -333,8 +342,8 @@ function LoginForm() {
          
 
           {/* Footer */}
-          <div className="mt-auto pt-12 border-t border-slate-700/50">
-            <p className="text-sm text-slate-500">
+          <div className="mt-auto pt-12 border-t" style={{ borderColor: 'rgba(255,255,255,0.15)' }}>
+            <p className="text-sm" style={{ color: 'var(--color-gray-500)' }}>
               © {new Date().getFullYear()} ClearCompany. Internal Use Only.
             </p>
           </div>
@@ -346,17 +355,17 @@ function LoginForm() {
         {/* Mobile Header - Compact */}
         <div className="lg:hidden mb-6 sm:mb-8 pt-4">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center shadow-lg shadow-indigo-500/30">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(to bottom right, var(--color-accent), var(--color-accent-hover))', boxShadow: '0 10px 15px -3px rgba(195, 180, 151, 0.25)' }}>
+              <svg className="w-6 h-6" fill="none" stroke="var(--color-cast-iron)" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <span className="text-2xl font-bold text-gray-900 tracking-tight">ClearGO</span>
+            <span className="text-2xl font-bold tracking-tight" style={{ color: 'var(--color-gray-900)' }}>ClearGO</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            Launch with <span className="bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">Confidence.</span>
+          <h1 className="text-2xl sm:text-3xl font-bold mb-2" style={{ color: 'var(--color-gray-900)', fontFamily: 'var(--font-marcellus), serif' }}>
+            Launch with <span style={{ background: 'linear-gradient(to right, var(--color-accent), var(--color-accent-hover))', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>Confidence.</span>
           </h1>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm" style={{ color: 'var(--color-gray-600)' }}>
             Sign in to access your launch readiness dashboard
           </p>
         </div>
@@ -461,19 +470,19 @@ function LoginForm() {
                     });
                   }
                 }}
-                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:shadow-lg hover:border-[var(--color-accent)] transition-all duration-200 text-left group active:scale-[0.98]"
               >
                 <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0" style={{ background: 'linear-gradient(to bottom right, var(--color-accent), var(--color-accent-hover))' }}>
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="var(--color-cast-iron)" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Log in with Google SSO</h3>
-                    <p className="text-xs sm:text-sm text-gray-500">Quick and secure single sign-on</p>
+                    <h3 className="text-base sm:text-lg font-semibold mb-0.5 sm:mb-1" style={{ color: 'var(--color-gray-900)' }}>Log in with Google SSO</h3>
+                    <p className="text-xs sm:text-sm" style={{ color: 'var(--color-gray-500)' }}>Quick and secure single sign-on</p>
                   </div>
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 transition-colors flex-shrink-0 group-hover:opacity-80" style={{ color: 'var(--color-gray-400)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -486,35 +495,35 @@ function LoginForm() {
                   setEmailFormExpanded(true);
                   setMode("signin");
                 }}
-                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:border-indigo-500 hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98]"
+                className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl hover:shadow-lg transition-all duration-200 text-left group active:scale-[0.98] hover:border-[var(--color-accent)]"
               >
                 <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0">
-                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform flex-shrink-0" style={{ background: 'linear-gradient(to bottom right, var(--color-accent), var(--color-accent-hover))' }}>
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7" fill="none" stroke="var(--color-cast-iron)" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-0.5 sm:mb-1">Log in with Email and Password</h3>
-                    <p className="text-xs sm:text-sm text-gray-500">Sign in with your email and password</p>
+                    <h3 className="text-base sm:text-lg font-semibold mb-0.5 sm:mb-1" style={{ color: 'var(--color-gray-900)' }}>Log in with Email and Password</h3>
+                    <p className="text-xs sm:text-sm" style={{ color: 'var(--color-gray-500)' }}>Sign in with your email and password</p>
                   </div>
-                  <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400 group-hover:text-indigo-600 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 sm:w-5 sm:h-5 transition-colors flex-shrink-0 group-hover:opacity-80" style={{ color: 'var(--color-gray-400)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
               </button>
 
               {/* Choice 3: Magic Link - Disabled */}
-              <div className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl opacity-50 cursor-not-allowed text-left bg-gray-50">
+              <div className="w-full p-4 sm:p-6 border-2 border-gray-200 rounded-xl opacity-50 cursor-not-allowed text-left" style={{ backgroundColor: 'var(--color-gray-100)' }}>
                 <div className="flex items-center gap-3 sm:gap-4">
-                  <div className="w-12 h-12 sm:w-14 sm:h-14 bg-gray-300 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <svg className="w-6 h-6 sm:w-7 sm:h-7 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-lg flex items-center justify-center flex-shrink-0" style={{ backgroundColor: 'var(--color-gray-300)' }}>
+                    <svg className="w-6 h-6 sm:w-7 sm:h-7" style={{ color: 'var(--color-gray-500)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                     </svg>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-base sm:text-lg font-semibold text-gray-500 mb-0.5 sm:mb-1">Send me a Magic Link</h3>
-                    <p className="text-xs sm:text-sm text-gray-400">Coming soon</p>
+                    <h3 className="text-base sm:text-lg font-semibold mb-0.5 sm:mb-1" style={{ color: 'var(--color-gray-500)' }}>Send me a Magic Link</h3>
+                    <p className="text-xs sm:text-sm" style={{ color: 'var(--color-gray-400)' }}>Coming soon</p>
                   </div>
                 </div>
               </div>
@@ -525,7 +534,7 @@ function LoginForm() {
           {selectedMethod === "email" && emailFormExpanded && (
             <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-center justify-between mb-4 sm:mb-6">
-                <h2 className="text-xl sm:text-2xl font-bold text-gray-900">
+                <h2 className="text-xl sm:text-2xl font-bold" style={{ color: 'var(--color-gray-900)' }}>
                   {mode === "signin" && "Welcome back"}
                   {mode === "signup" && "Create your account"}
                   {mode === "reset" && "Reset your password"}
@@ -536,7 +545,8 @@ function LoginForm() {
                     setEmailFormExpanded(false);
                     setMessage(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 -mr-1"
+                  className="transition-colors p-1 -mr-1 hover:opacity-70"
+                  style={{ color: 'var(--color-gray-400)' }}
                   aria-label="Close"
                 >
                   <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -548,11 +558,12 @@ function LoginForm() {
               {/* Message */}
               {message && (
                 <div
-                  className={`p-4 rounded-lg text-sm ${
+                  className="p-4 rounded-lg text-sm"
+                  style={
                     message.type === "error"
-                      ? "bg-red-50 text-red-700 border border-red-200"
-                      : "bg-green-50 text-green-700 border border-green-200"
-                  }`}
+                      ? { backgroundColor: 'var(--color-error-light)', color: 'var(--color-error-dark)', border: '1px solid var(--color-error-base)' }
+                      : { backgroundColor: 'var(--color-success-light)', color: 'var(--color-success-dark)', border: '1px solid var(--color-success-base)' }
+                  }
                 >
                   {message.text}
                 </div>
@@ -567,7 +578,7 @@ function LoginForm() {
                 <div className="space-y-4 sm:space-y-5">
                   {/* Email */}
                   <div>
-                    <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label htmlFor="email" className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-gray-700)' }}>
                       Work Email
                     </label>
                     <input
@@ -577,9 +588,10 @@ function LoginForm() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="you@clearcompany.com"
-                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border rounded-lg transition-all text-base focus:outline-none focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent"
+                      style={{ borderColor: 'var(--color-gray-200)', color: 'var(--color-gray-900)' }}
                     />
-                    <p className="mt-1.5 text-xs text-gray-400">
+                    <p className="mt-1.5 text-xs" style={{ color: 'var(--color-gray-400)' }}>
                       Only @clearcompany.com addresses allowed
                     </p>
                   </div>
@@ -587,7 +599,7 @@ function LoginForm() {
                   {/* Password */}
                   {mode !== "reset" && (
                     <div>
-                      <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      <label htmlFor="password" className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-gray-700)' }}>
                         Password
                       </label>
                       <input
@@ -598,10 +610,11 @@ function LoginForm() {
                         required
                         minLength={8}
                         placeholder="••••••••"
-                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
+                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border rounded-lg focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-all text-base"
+                        style={{ borderColor: 'var(--color-gray-200)', color: 'var(--color-gray-900)' }}
                       />
                       {mode === "signup" && (
-                        <p className="mt-1.5 text-xs text-gray-400">
+                        <p className="mt-1.5 text-xs" style={{ color: 'var(--color-gray-400)' }}>
                           Must be at least 8 characters
                         </p>
                       )}
@@ -611,7 +624,7 @@ function LoginForm() {
                   {/* Confirm Password (signup only) */}
                   {mode === "signup" && (
                     <div>
-                      <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1.5">
+                      <label htmlFor="confirmPassword" className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-gray-700)' }}>
                         Confirm Password
                       </label>
                       <input
@@ -622,7 +635,8 @@ function LoginForm() {
                         required
                         minLength={8}
                         placeholder="••••••••"
-                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
+                        className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border rounded-lg focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-all text-base"
+                        style={{ borderColor: 'var(--color-gray-200)', color: 'var(--color-gray-900)' }}
                       />
                     </div>
                   )}
@@ -636,7 +650,8 @@ function LoginForm() {
                           setMode("reset");
                           setMessage(null);
                         }}
-                        className="text-sm text-indigo-600 hover:text-indigo-700 font-medium py-1"
+                        className="text-sm font-medium py-1 hover:opacity-90"
+                        style={{ color: 'var(--color-accent-hover)' }}
                       >
                         Forgot password?
                       </button>
@@ -647,7 +662,8 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 sm:py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] text-base"
+                    className="w-full font-semibold py-3 sm:py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] text-base hover:opacity-95"
+                    style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-cast-iron)', boxShadow: '0 10px 15px -3px rgba(195, 180, 151, 0.25)' }}
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -671,28 +687,30 @@ function LoginForm() {
               {/* Mode toggle */}
               <div className="mt-6 text-center">
                 {mode === "signin" && (
-                  <p className="text-gray-600">
+                  <p style={{ color: 'var(--color-gray-600)' }}>
                     Don&apos;t have an account?{" "}
                     <button
                       onClick={() => {
                         setMode("signup");
                         setMessage(null);
                       }}
-                      className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                      className="font-semibold hover:opacity-90"
+                      style={{ color: 'var(--color-accent-hover)' }}
                     >
                       Sign up
                     </button>
                   </p>
                 )}
                 {mode === "signup" && (
-                  <p className="text-gray-600">
+                  <p style={{ color: 'var(--color-gray-600)' }}>
                     Already have an account?{" "}
                     <button
                       onClick={() => {
                         setMode("signin");
                         setMessage(null);
                       }}
-                      className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                      className="font-semibold hover:opacity-90"
+                      style={{ color: 'var(--color-accent-hover)' }}
                     >
                       Sign in
                     </button>
@@ -704,7 +722,8 @@ function LoginForm() {
                       setMode("signin");
                       setMessage(null);
                     }}
-                    className="text-indigo-600 hover:text-indigo-700 font-semibold"
+                    className="font-semibold hover:opacity-90"
+                    style={{ color: 'var(--color-accent-hover)' }}
                   >
                     ← Back to sign in
                   </button>
@@ -718,8 +737,8 @@ function LoginForm() {
             <div className="space-y-4 sm:space-y-6 animate-in fade-in slide-in-from-top-2 duration-300">
               <div className="flex items-start justify-between mb-4 sm:mb-6 gap-2">
                 <div className="flex-1 min-w-0">
-                  <h2 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1 sm:mb-2">Launch with Magic Link</h2>
-                  <p className="text-sm sm:text-base text-gray-500">
+                  <h2 className="text-xl sm:text-2xl font-bold mb-1 sm:mb-2" style={{ color: 'var(--color-gray-900)' }}>Launch with Magic Link</h2>
+                  <p className="text-sm sm:text-base" style={{ color: 'var(--color-gray-500)' }}>
                     Enter your email and we'll send you a secure, passwordless sign-in link. No password needed!
                   </p>
                 </div>
@@ -729,7 +748,8 @@ function LoginForm() {
                     setMode("signin");
                     setMessage(null);
                   }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 -mt-1 flex-shrink-0"
+                  className="transition-colors p-1 -mt-1 flex-shrink-0 hover:opacity-70"
+                  style={{ color: 'var(--color-gray-400)' }}
                   aria-label="Close"
                 >
                   <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -741,11 +761,12 @@ function LoginForm() {
               {/* Message */}
               {message && (
                 <div
-                  className={`p-4 rounded-lg text-sm ${
+                  className="p-4 rounded-lg text-sm"
+                  style={
                     message.type === "error"
-                      ? "bg-red-50 text-red-700 border border-red-200"
-                      : "bg-green-50 text-green-700 border border-green-200"
-                  }`}
+                      ? { backgroundColor: 'var(--color-error-light)', color: 'var(--color-error-dark)', border: '1px solid var(--color-error-base)' }
+                      : { backgroundColor: 'var(--color-success-light)', color: 'var(--color-success-dark)', border: '1px solid var(--color-success-base)' }
+                  }
                 >
                   {message.text}
                 </div>
@@ -756,7 +777,7 @@ function LoginForm() {
                 <div className="space-y-4 sm:space-y-5">
                   {/* Email */}
                   <div>
-                    <label htmlFor="magic-email" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    <label htmlFor="magic-email" className="block text-sm font-medium mb-1.5" style={{ color: 'var(--color-gray-700)' }}>
                       Work Email
                     </label>
                     <input
@@ -766,9 +787,10 @@ function LoginForm() {
                       onChange={(e) => setEmail(e.target.value)}
                       required
                       placeholder="you@clearcompany.com"
-                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all text-base text-gray-900 placeholder-gray-400"
+                      className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border rounded-lg focus:ring-2 focus:ring-[var(--color-accent)] focus:border-transparent transition-all text-base"
+                      style={{ borderColor: 'var(--color-gray-200)', color: 'var(--color-gray-900)' }}
                     />
-                    <p className="mt-1.5 text-xs text-gray-400">
+                    <p className="mt-1.5 text-xs" style={{ color: 'var(--color-gray-400)' }}>
                       Only @clearcompany.com addresses allowed
                     </p>
                   </div>
@@ -777,7 +799,8 @@ function LoginForm() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-indigo-500/25 hover:shadow-indigo-500/40 active:scale-[0.98] text-base"
+                    className="w-full font-semibold py-3 px-4 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] text-base hover:opacity-95"
+                    style={{ backgroundColor: 'var(--color-accent)', color: 'var(--color-cast-iron)', boxShadow: '0 10px 15px -3px rgba(195, 180, 151, 0.25)' }}
                   >
                     {loading ? (
                       <span className="flex items-center justify-center gap-2">
@@ -796,8 +819,8 @@ function LoginForm() {
 
               {/* Tip */}
               <div className="mt-6 text-center">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                  <p className="text-xs text-blue-800">
+                <div className="rounded-lg p-3" style={{ backgroundColor: 'var(--color-info-light)', border: '1px solid var(--color-blue-300)' }}>
+                  <p className="text-xs" style={{ color: 'var(--color-blue-800)' }}>
                     <strong>💡 Tip:</strong> Magic links are faster and more secure. Check your email (including spam) after clicking send.
                   </p>
                 </div>
@@ -814,7 +837,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-white">
+        <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--color-white)' }}>
           <PurpleLoader size="md" />
         </div>
       }

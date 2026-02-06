@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Roboto_Mono } from "next/font/google";
+import { Inter, Roboto_Mono, Marcellus } from "next/font/google";
 import "./globals.css";
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
@@ -25,6 +25,12 @@ const geistSans = Inter({
 
 const geistMono = Roboto_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+const marcellus = Marcellus({
+  weight: "400",
+  variable: "--font-marcellus",
   subsets: ["latin"],
 });
 
@@ -89,7 +95,7 @@ export default async function RootLayout({
         <ColorSchemeScript />
       </head>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} ${marcellus.variable} antialiased`}
       >
         <MantineProvider theme={theme}>
           <FeatureFlagsProvider>
