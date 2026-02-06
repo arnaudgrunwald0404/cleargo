@@ -30,19 +30,18 @@ export async function GET(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   
-  // Permission check: users.read
+  // Permission check: look up current user by email (case-insensitive so e.g. mpaiva@ClearCompany.com matches app_user)
   const { data: me, error: userError } = await supabase
     .from("app_user")
     .select("roles")
-    .eq("email", user.email)
-    .single();
+    .ilike("email", user.email)
+    .maybeSingle();
   
-  // Handle case where user doesn't exist in app_user table
-  if (userError && userError.code === 'PGRST116') {
-    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-  }
   if (userError) {
     return NextResponse.json({ error: "Failed to fetch user profile", details: userError.message }, { status: 500 });
+  }
+  if (!me) {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
   
   const { canRolesPerform } = await import("@/lib/permissions");

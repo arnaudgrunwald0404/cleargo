@@ -116,15 +116,18 @@ export function DelegationModal({
     }
   };
 
-  const filteredUsers = Array.isArray(users) ? users.filter(user => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase();
-    return (
-      user.email.toLowerCase().includes(query) ||
-      fullName.includes(query)
-    );
-  }) : [];
+  const filteredUsers = Array.isArray(users)
+    ? users
+        .filter((user) => {
+          const query = searchQuery.trim().toLowerCase();
+          if (!query) return true;
+          const email = (user.email || '').toLowerCase();
+          const fullName = `${user.first_name || ''} ${user.last_name || ''}`.toLowerCase().replace(/\s+/g, ' ').trim();
+          const queryNorm = query.replace(/\s+/g, ' ').trim();
+          return email.includes(queryNorm) || fullName.includes(queryNorm);
+        })
+        .sort((a, b) => (a.email || '').localeCompare(b.email || '', undefined, { sensitivity: 'base' }))
+    : [];
 
   const handleSubmit = async () => {
     if (!selectedUser) {
