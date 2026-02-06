@@ -112,13 +112,11 @@ export function ScorecardDetail({
   }
 
   return (
-    <Stack gap="md">
-      <Card withBorder padding="md">
+    <Stack gap="lg">
+      <Card withBorder padding="md" radius="md" bg="white" style={{ borderColor: '#E5E7EB' }}>
         <Group justify="space-between" mb="md">
           <div>
-            <Text size="lg" fw={500}>
-              Scorecard
-            </Text>
+            <Text size="lg" fw={600} c="dark">Scorecard</Text>
             <Text size="sm" c="dimmed">
               {new Date(scorecard.snapshot_date).toLocaleDateString()}
             </Text>
@@ -145,7 +143,7 @@ export function ScorecardDetail({
                   onClick={handleMarkReviewed}
                   loading={markingReviewed}
                 >
-                  Mark Reviewed
+                  Mark reviewed
                 </Button>
               </Tooltip>
             )}
@@ -156,32 +154,30 @@ export function ScorecardDetail({
         </Group>
       </Card>
 
-      <Card withBorder padding="md">
-        <Text size="md" fw={500} mb="md">
-          Metric Results
-        </Text>
+      <Card withBorder padding="md" radius="md" bg="white" style={{ borderColor: '#E5E7EB' }}>
+        <Text size="md" fw={600} c="dark" mb="md">Metric results</Text>
         {scorecard.metric_results.length === 0 ? (
           <Text size="sm" c="dimmed">
             No metrics configured
           </Text>
         ) : (
-          <Table striped highlightOnHover>
+          <Table style={{ borderCollapse: 'collapse' }}>
             <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Metric</Table.Th>
-                <Table.Th>Actual</Table.Th>
-                <Table.Th>Expected</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Source</Table.Th>
+              <Table.Tr style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
+                <Table.Th style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', padding: '12px 16px' }}>Metric</Table.Th>
+                <Table.Th style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', padding: '12px 16px' }}>Actual</Table.Th>
+                <Table.Th style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', padding: '12px 16px' }}>Expected</Table.Th>
+                <Table.Th style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', padding: '12px 16px' }}>Status</Table.Th>
+                <Table.Th style={{ fontSize: 12, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280', padding: '12px 16px' }}>Source</Table.Th>
               </Table.Tr>
             </Table.Thead>
-            <Table.Tbody>
+            <Table.Tbody style={{ borderTop: '1px solid #E5E7EB' }}>
               {scorecard.metric_results.map((result: MetricResult) => (
-                <Table.Tr key={result.metricId}>
-                  <Table.Td>
-                    <Text fw={500}>{result.metricName}</Text>
+                <Table.Tr key={result.metricId} style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
+                  <Table.Td style={{ padding: '12px 16px' }}>
+                    <Text fw={500} size="sm">{result.metricName}</Text>
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ padding: '12px 16px' }}>
                     {result.actual === null ? (
                       <Text size="sm" c="dimmed">No data</Text>
                     ) : typeof result.actual === 'boolean' ? (
@@ -190,19 +186,19 @@ export function ScorecardDetail({
                       <Text size="sm">{result.actual}</Text>
                     )}
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ padding: '12px 16px' }}>
                     {result.expected === null ? (
                       <Text size="sm" c="dimmed">—</Text>
                     ) : (
                       <Text size="sm">{result.expected}</Text>
                     )}
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ padding: '12px 16px' }}>
                     <Badge color={getStatusColor(result.status)}>
                       {getStatusLabel(result.status)}
                     </Badge>
                   </Table.Td>
-                  <Table.Td>
+                  <Table.Td style={{ padding: '12px 16px' }}>
                     <Tooltip label={`Data source: ${result.source}`}>
                       <Badge
                         variant="outline"
@@ -225,8 +221,6 @@ export function ScorecardDetail({
           </Table>
         )}
       </Card>
-
-      {/* Benchmark comparison has been removed; scorecards are now based solely on metric results and thresholds */}
     </Stack>
   );
 }

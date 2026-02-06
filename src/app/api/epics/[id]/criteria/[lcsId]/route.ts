@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase/server';
 import { recomputeEpicReadiness } from '@/lib/readiness';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { isEnabled, FEATURE_NOT_APPLICABLE } from '@/lib/flags';
-import { getFeatureFlags } from '@/lib/settings-db';
+import { getFeatureFlags, getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export async function PATCH(
     req: NextRequest,

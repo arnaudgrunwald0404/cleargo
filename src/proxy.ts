@@ -3,9 +3,6 @@ import { updateSession } from '@/lib/supabase/middleware';
 import { rateLimit } from '@/lib/rate-limit';
 import { NextResponse } from 'next/server';
 
-// Public routes that don't require authentication
-const PUBLIC_ROUTES = ['/login', '/auth/callback', '/auth/signout', '/api/auth/signup', '/reset-password', '/setup-password'];
-
 export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
     
@@ -78,32 +75,12 @@ export async function proxy(request: NextRequest) {
         return response;
     }
 
-    // Check if route is public
-    const isPublicRoute = PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'));
-    
     // Update session and check authentication
     const response = await updateSession(request);
     
-    // For protected routes, check if user is authenticated
-    if (!isPublicRoute) {
-        // Check for both Supabase auth cookies AND lr_session cookie
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-        const projectRef = supabaseUrl.match(/https:\/\/([^.]+)\.supabase\.co/)?.[1] || '';
-        const authCookieName = projectRef ? `sb-${projectRef}-auth-token` : null;
-        
-        const hasAuthCookie = authCookieName 
-            ? request.cookies.has(authCookieName) || request.cookies.has(`${authCookieName}.0`)
-            : request.cookies.getAll().some(c => c.name.includes('auth-token'));
-        
-        const hasLrSession = request.cookies.has('lr_session');
-        
-        if (!hasAuthCookie && !hasLrSession) {
-            // Redirect to login page
-            const loginUrl = new URL('/login', request.url);
-            loginUrl.searchParams.set('redirect', pathname);
-            return NextResponse.redirect(loginUrl);
-        }
-    }
+    // Auth redirect is handled by server-rendered pages (e.g. page.tsx, epics/page.tsx), not here.
+    // Redirecting in Edge middleware can cause ERR_TOO_MANY_REDIRECTS on Netlify when the Edge
+    // runtime doesn't see the same cookies as the Node server.
 
     // Apply CORS headers
     const allowedOrigins = [

@@ -16,12 +16,10 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     
     const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
     const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
-    const isSuccessMeasurementExpanded =
-        pathname?.startsWith("/admin/settings/success-measurement") ||
-        pathname?.startsWith("/settings/success-measurement");
+    const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement");
     
     return (
-        <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+        <main className="min-h-screen" style={{ background: 'var(--color-platinum)' }}>
                 <div style={{
                     maxWidth: 'var(--page-container-max-width)',
                     margin: '0 auto',
@@ -164,7 +162,7 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                     </li>
                                     <li>
                                         <Link
-                                            href="/settings/success-measurement/metrics"
+                                            href="/admin/settings/success-measurement/metrics"
                                             className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
                                                 isSuccessMeasurementExpanded
                                                     ? "bg-indigo-50 text-indigo-700 font-medium"
@@ -192,9 +190,9 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                             <ul className="ml-4 mt-1 space-y-1">
                                                 <li>
                                                     <Link
-                                                        href="/settings/success-measurement/metrics"
+                                                        href="/admin/settings/success-measurement/metrics"
                                                         className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/settings/success-measurement/metrics")
+                                                            isActive("/admin/settings/success-measurement/metrics")
                                                                 ? "bg-indigo-50 text-indigo-700 font-medium"
                                                                 : "text-gray-600 hover:bg-gray-50"
                                                         }`}
@@ -204,14 +202,26 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                                                 </li>
                                                 <li>
                                                     <Link
-                                                        href="/settings/success-measurement/dashboards"
+                                                        href="/admin/settings/success-measurement/dashboards"
                                                         className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/settings/success-measurement/dashboards")
+                                                            isActive("/admin/settings/success-measurement/dashboards")
                                                                 ? "bg-indigo-50 text-indigo-700 font-medium"
                                                                 : "text-gray-600 hover:bg-gray-50"
                                                         }`}
                                                     >
                                                         Dashboards
+                                                    </Link>
+                                                </li>
+                                                <li>
+                                                    <Link
+                                                        href="/admin/settings/success-measurement/scorecards"
+                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
+                                                            isActive("/admin/settings/success-measurement/scorecards")
+                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
+                                                                : "text-gray-600 hover:bg-gray-50"
+                                                        }`}
+                                                    >
+                                                        Scorecards
                                                     </Link>
                                                 </li>
                                             </ul>

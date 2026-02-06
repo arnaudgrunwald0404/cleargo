@@ -7,6 +7,7 @@ import { PurpleLoader } from "@/components/PurpleLoader";
 
 export default function FeedbackPage() {
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
@@ -19,6 +20,7 @@ export default function FeedbackPage() {
           const data = await res.json();
           const email = data?.user?.email;
           if (typeof email === "string") setCurrentUserEmail(email);
+          setIsSuperAdmin(Boolean(data?.isSuperAdmin));
         }
       } catch (e) {
         // If this fails, the page still renders; delete button will just not show.
@@ -32,7 +34,7 @@ export default function FeedbackPage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <div className="min-h-screen">
       <div
         style={{
           maxWidth: "var(--page-container-max-width)",
@@ -66,7 +68,7 @@ export default function FeedbackPage() {
             <PurpleLoader size="sm" />
           </div>
         ) : (
-          <FeedbackSection currentUserEmail={currentUserEmail} />
+          <FeedbackSection currentUserEmail={currentUserEmail} isSuperAdmin={isSuperAdmin} />
         )}
       </div>
     </div>

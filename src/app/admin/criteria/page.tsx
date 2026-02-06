@@ -4,7 +4,7 @@ import { CriteriaManager } from "@/components/admin/CriteriaManager";
 
 export default function CriteriaAdminPage() {
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <main className="min-h-screen">
       <div style={{
         maxWidth: 'var(--page-container-max-width)',
         margin: '0 auto',

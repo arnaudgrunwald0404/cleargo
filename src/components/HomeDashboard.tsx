@@ -48,7 +48,7 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
   return (
     <div className="min-h-screen pb-8" style={{ 
       fontFamily: 'var(--font-body)',
-      backgroundColor: 'var(--color-gray-50)'
+      backgroundColor: 'var(--color-platinum)'
     }}>
       <div style={{
         maxWidth: 'var(--page-container-max-width)',

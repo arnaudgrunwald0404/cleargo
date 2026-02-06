@@ -2,7 +2,7 @@
 
 :root {
   /* Base colors – app background is light white gold */
-  --background: var(--color-white-gold);
+  --background: var(--color-platinum);
   --foreground: #171717;
 
   /* Typography */
@@ -63,6 +63,7 @@
   /* Primary */
   --color-white: #FFFFFF;
   --color-platinum: #FAF8F5;
+  --color-tab-panel-bg: #E8E6E1;
   --color-cast-iron: #37352A;
   /* Signature accents */
   --color-alloy: #FFA680;
@@ -239,7 +240,7 @@
 }
 
 body {
-  background: var(--background);
+  background: var(--background) !important;
   color: var(--foreground);
   font-family: var(--font-body);
   overflow-x: hidden;
@@ -341,4 +342,18 @@ body {
   background: var(--table-steel) !important;
   color: var(--table-header-text-platinum) !important;
   border-color: var(--table-steel) !important;
+}
+
+/* @mention chips in comments: copper, bold (editor and read-only display) */
+.mention,
+span[data-mention-user-id] {
+  color: var(--color-copper) !important;
+  font-weight: var(--font-weight-bold) !important;
+}
+
+/* Ensure mentions in comment body always show copper + bold (overrides container text color) */
+.comment-content .mention,
+.comment-content span[data-mention-user-id] {
+  color: var(--color-copper) !important;
+  font-weight: var(--font-weight-bold) !important;
 }

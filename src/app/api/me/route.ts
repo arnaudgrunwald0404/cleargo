@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { getSession } from "@/lib/auth";
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
+import { isSuperAdmin } from "@/lib/auth-helpers";
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -138,7 +139,11 @@ async function getHandler(req: NextRequest) {
         return NextResponse.json({ error: "Failed to fetch profile", details: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ user: profile });
+    const email = (profile as any)?.email;
+    return NextResponse.json({
+        user: profile,
+        isSuperAdmin: isSuperAdmin(email),
+    });
 }
 
 export const GET = withRateLimit(getHandler, RATE_LIMITS.light);

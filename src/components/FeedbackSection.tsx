@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Button, Textarea, Group, Text, ActionIcon, Select, Badge } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
-import { IconTrash, IconSend } from '@tabler/icons-react';
+import { IconTrash, IconSend, IconPencil } from '@tabler/icons-react';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 interface FeedbackItem {
@@ -11,6 +12,8 @@ interface FeedbackItem {
   feedback_text: string;
   feedback_type?: 'EPIC' | 'PROCESS' | 'TOOL' | string;
   created_at: string;
+  status?: string;
+  status_updated_at?: string | null;
   epic?: { id: string; name: string } | { id: string; name: string }[] | null;
   created_by?: {
     email: string;
@@ -19,12 +22,29 @@ interface FeedbackItem {
   };
 }
 
+const FEEDBACK_STATUS_OPTIONS = [
+  { value: 'unread', label: 'Unread' },
+  { value: 'received', label: 'Received' },
+  { value: 'need_more_info', label: 'Need More Info' },
+  { value: 'considering', label: 'Considering' },
+  { value: 'in_progress', label: 'Go ;)' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'no_go', label: 'No Go ;(' },
+];
+
+function feedbackStatusLabel(status: string | undefined): string {
+  if (!status) return 'Unread';
+  const opt = FEEDBACK_STATUS_OPTIONS.find((o) => o.value === status);
+  return opt?.label ?? status;
+}
+
 interface FeedbackSectionProps {
   epicId?: string;
   currentUserEmail: string;
+  isSuperAdmin?: boolean;
 }
 
-export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionProps) {
+export function FeedbackSection({ epicId, currentUserEmail, isSuperAdmin = false }: FeedbackSectionProps) {
   const [feedbacks, setFeedbacks] = useState<FeedbackItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [newFeedback, setNewFeedback] = useState('');
@@ -33,6 +53,10 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
   const [epicOptions, setEpicOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEpicId, setSelectedEpicId] = useState<string | null>(epicId || null);
   const [submitting, setSubmitting] = useState(false);
+  const [editingFeedbackId, setEditingFeedbackId] = useState<string | null>(null);
+  const [editingText, setEditingText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastFetchRef = useRef<number>(0);
 
@@ -204,6 +228,73 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
     }
   };
 
+  const handleStartEdit = (feedback: FeedbackItem) => {
+    setEditingFeedbackId(feedback.id);
+    setEditingText(feedback.feedback_text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingFeedbackId(null);
+    setEditingText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingFeedbackId || !editingText.trim()) return;
+
+    setSavingEdit(true);
+    try {
+      const base = epicId ? `/api/epics/${epicId}/feedback` : `/api/feedback`;
+      const res = await fetch(`${base}/${editingFeedbackId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ feedback_text: editingText.trim() }),
+      });
+
+      if (!res.ok) {
+        const error = await res.json();
+        throw new Error(error.error || 'Failed to update feedback');
+      }
+
+      setEditingFeedbackId(null);
+      setEditingText('');
+      await fetchFeedbacks();
+    } catch (error: any) {
+      alert(`Failed to update feedback: ${error.message}`);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleStatusChange = async (feedbackId: string, newStatus: string) => {
+    setUpdatingStatusId(feedbackId);
+    try {
+      const res = await fetch(`/api/feedback/${feedbackId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Failed to update status');
+      }
+      const data = await res.json();
+      await fetchFeedbacks();
+      if (data.slack_notification_sent) {
+        notifications.show({
+          title: 'Slack notification sent',
+          message: 'The feedback author has been notified via Slack.',
+          color: 'green',
+        });
+      }
+    } catch (error: any) {
+      alert(`Failed to update status: ${error.message}`);
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
+
   const formatTimestamp = (timestamp: string): string => {
     const date = new Date(timestamp);
     return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -314,21 +405,74 @@ export function FeedbackSection({ epicId, currentUserEmail }: FeedbackSectionPro
                     {formatTimestamp(feedback.created_at)}
                   </Text>
                 </div>
-                {feedback.created_by?.email === currentUserEmail && (
-                  <ActionIcon
-                    variant="subtle"
-                    color="red"
-                    size="sm"
-                    onClick={() => handleDeleteFeedback(feedback.id)}
-                    title="Delete feedback"
-                  >
-                    <IconTrash size={16} />
-                  </ActionIcon>
-                )}
+                <Group gap="sm" align="center">
+                  {isSuperAdmin ? (
+                    <Select
+                      size="xs"
+                      w={140}
+                      value={feedback.status ?? 'unread'}
+                      onChange={(value) => value && handleStatusChange(feedback.id, value)}
+                      data={FEEDBACK_STATUS_OPTIONS}
+                      disabled={updatingStatusId === feedback.id}
+                    />
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      {feedbackStatusLabel(feedback.status)}
+                      {feedback.status_updated_at != null && (
+                        <> · {formatTimestamp(feedback.status_updated_at)}</>
+                      )}
+                    </Text>
+                  )}
+                  {feedback.created_by?.email === currentUserEmail && (
+                    <Group gap="xs">
+                      {editingFeedbackId !== feedback.id ? (
+                        <ActionIcon
+                          variant="subtle"
+                          color="gray"
+                          size="sm"
+                          onClick={() => handleStartEdit(feedback)}
+                          title="Edit feedback"
+                        >
+                          <IconPencil size={16} />
+                        </ActionIcon>
+                      ) : null}
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        size="sm"
+                        onClick={() => handleDeleteFeedback(feedback.id)}
+                        title="Delete feedback"
+                      >
+                        <IconTrash size={16} />
+                      </ActionIcon>
+                    </Group>
+                  )}
+                </Group>
               </Group>
-              <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {feedback.feedback_text}
-              </Text>
+              {editingFeedbackId === feedback.id ? (
+                <div className="mt-2">
+                  <Textarea
+                    value={editingText}
+                    onChange={(e) => setEditingText(e.currentTarget.value)}
+                    minRows={3}
+                    maxRows={6}
+                    disabled={savingEdit}
+                    mb="sm"
+                  />
+                  <Group gap="xs">
+                    <Button size="xs" onClick={handleSaveEdit} loading={savingEdit} disabled={!editingText.trim()}>
+                      Save
+                    </Button>
+                    <Button size="xs" variant="subtle" onClick={handleCancelEdit} disabled={savingEdit}>
+                      Cancel
+                    </Button>
+                  </Group>
+                </div>
+              ) : (
+                <Text size="sm" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                  {feedback.feedback_text}
+                </Text>
+              )}
             </div>
           ))}
         </div>

@@ -49,8 +49,9 @@ export default function EpicDetailPage() {
     const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
-    const [criterionFilter, setCriterionFilter] = useState<'all' | 'overdue' | 'too_soon'>('all');
-    const [showFilters, setShowFilters] = useState(false);
+    const [filterMyTasks, setFilterMyTasks] = useState(false);
+    const [filterOverdue, setFilterOverdue] = useState(false);
+    const [filterDueSoon, setFilterDueSoon] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [activeTab, setActiveTab] = useState<string>('readiness');
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
@@ -1566,104 +1567,97 @@ export default function EpicDetailPage() {
                     })()}
                 </div>
 
-                <div style={{ marginTop: 'var(--spacing-8)', marginBottom: 0 }}>
+                <div style={{ marginTop: 'var(--spacing-8)', marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--spacing-2)', borderBottom: '1px solid var(--color-gray-900)' }}>
                     <EpicDetailTabs
                         activeTab={activeTab}
                         onTabChange={(value) => setActiveTab(value)}
                     />
+                    {matrix.length > 0 && (
+                        <Group gap="sm" align="center">
+                            <span className="font-medium text-gray-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--font-size-sm)' }}>Filters</span>
+                            <Badge
+                                variant={filterMyTasks ? 'filled' : 'outline'}
+                                color="gray"
+                                style={{
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)',
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                                onClick={() => setFilterMyTasks((v) => !v)}
+                            >
+                                My tasks
+                            </Badge>
+                            <Badge
+                                variant={filterOverdue ? 'filled' : 'outline'}
+                                color="gray"
+                                style={{
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)',
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                                onClick={() => setFilterOverdue((v) => !v)}
+                            >
+                                Overdue
+                            </Badge>
+                            <Badge
+                                variant={filterDueSoon ? 'filled' : 'outline'}
+                                color="gray"
+                                style={{
+                                    cursor: 'pointer',
+                                    fontFamily: 'var(--font-body)',
+                                    fontSize: 'var(--font-size-sm)'
+                                }}
+                                onClick={() => setFilterDueSoon((v) => !v)}
+                            >
+                                Due soon
+                            </Badge>
+                        </Group>
+                    )}
                 </div>
 
+                <div style={{
+                    borderLeft: '1px solid var(--color-gray-900)',
+                    borderRight: '1px solid var(--color-gray-900)',
+                    borderBottom: '1px solid var(--color-gray-900)',
+                    borderTop: 'none',
+                    borderRadius: '0 0 var(--radius-md) var(--radius-md)',
+                    marginTop: 0,
+                    marginBottom: 'var(--spacing-8)',
+                    position: 'relative',
+                    zIndex: 1,
+                    backgroundColor: '#E8E6E1',
+                    paddingBottom: 'var(--spacing-8)'
+                }}>
                 <Tabs
                     value={activeTab}
                     onChange={(value) => setActiveTab(value || 'readiness')}
-                    className="mb-8"
                     variant="pills"
+                    style={{ backgroundColor: '#E8E6E1' }}
                     styles={{
                         list: {
                             display: 'none'
+                        },
+                        panel: {
+                            backgroundColor: '#E8E6E1'
                         }
                     }}
                 >
                     <Tabs.List style={{ display: 'none' }}>
                         <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
                         <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
-                        <Tabs.Tab value="adoption">Success Config</Tabs.Tab>
+                        <Tabs.Tab value="adoption">Success Metrics</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
                     </Tabs.List>
 
                     <Tabs.Panel value="readiness" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
                         <div style={{
-                            borderLeft: '1px solid var(--color-gray-900)',
-                            borderRight: '1px solid var(--color-gray-900)',
-                            borderBottom: '1px solid var(--color-gray-900)',
-                            borderTop: 'none',
-                            borderRadius: '0 0 var(--radius-md) var(--radius-md)',
                             padding: 0,
                             marginTop: 0,
-                            position: 'relative',
-                            zIndex: 1
+                            paddingTop: 'var(--spacing-4)',
+                            paddingLeft: 'var(--spacing-4)',
+                            paddingRight: 'var(--spacing-4)',
                         }}>
-                            <div className="flex justify-between items-center mb-4" style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)' }}>
-                                {matrix.length > 0 && (
-                                    <>
-                                        {showFilters ? (
-                                            <Group gap="xs">
-                                                <Badge
-                                                    variant={criterionFilter === 'all' ? 'filled' : 'outline'}
-                                                    style={{
-                                                        cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)',
-                                                        fontSize: 'var(--font-size-sm)'
-                                                    }}
-                                                    onClick={() => setCriterionFilter('all')}
-                                                >
-                                                    All
-                                                </Badge>
-                                                <Badge
-                                                    variant={criterionFilter === 'overdue' ? 'filled' : 'outline'}
-                                                    color="red"
-                                                    style={{
-                                                        cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)',
-                                                        fontSize: 'var(--font-size-sm)'
-                                                    }}
-                                                    onClick={() => setCriterionFilter('overdue')}
-                                                >
-                                                    Criterion Overdue
-                                                </Badge>
-                                                <Badge
-                                                    variant={criterionFilter === 'too_soon' ? 'filled' : 'outline'}
-                                                    color="orange"
-                                                    style={{
-                                                        cursor: 'pointer',
-                                                        fontFamily: 'var(--font-body)',
-                                                        fontSize: 'var(--font-size-sm)'
-                                                    }}
-                                                    onClick={() => setCriterionFilter('too_soon')}
-                                                >
-                                                    Criterion Due Soon
-                                                </Badge>
-                                                <Button
-                                                    size="xs"
-                                                    variant="subtle"
-                                                    onClick={() => setShowFilters(false)}
-                                                >
-                                                    Hide Filters
-                                                </Button>
-                                            </Group>
-                                        ) : (
-                                            <Button
-                                                size="xs"
-                                                variant="subtle"
-                                                onClick={() => setShowFilters(true)}
-                                            >
-                                                Show Filters
-                                            </Button>
-                                        )}
-                                    </>
-                                )}
-                            </div>
                             {matrix.length === 0 ? (
                                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
                                     <div>
@@ -1727,32 +1721,26 @@ export default function EpicDetailPage() {
                                         };
 
                                         const filteredMatrix = matrix.filter((item: any) => {
-                                            if (criterionFilter === 'all') return true;
+                                            const passesMyTasks = !filterMyTasks || (currentUserEmail && item.approverEmail && item.approverEmail.toLowerCase() === currentUserEmail.toLowerCase());
 
-                                            // Get due date - use stored or calculate if needed
                                             const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
-                                            if (!dueDate) {
-                                                return false;
+                                            const due = dueDate ? new Date(dueDate) : null;
+                                            if (due) due.setHours(0, 0, 0, 0);
+                                            const status = item.status || 'NOT_SET';
+                                            const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
+                                            const isOverdue = due ? due.getTime() < today.getTime() && isIncomplete : false;
+                                            const isDueSoon = due ? due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime() && isIncomplete : false;
+
+                                            let passesDate = true;
+                                            if (filterOverdue && filterDueSoon) {
+                                                passesDate = isOverdue || isDueSoon;
+                                            } else if (filterOverdue) {
+                                                passesDate = isOverdue;
+                                            } else if (filterDueSoon) {
+                                                passesDate = isDueSoon;
                                             }
 
-                                            const due = new Date(dueDate);
-                                            due.setHours(0, 0, 0, 0);
-
-                                            if (criterionFilter === 'overdue') {
-                                                // Show items that are overdue AND not completed
-                                                const isOverdue = due.getTime() < today.getTime();
-                                                const status = item.status || 'NOT_SET';
-                                                const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
-                                                return isOverdue && isIncomplete;
-                                            } else if (criterionFilter === 'too_soon') {
-                                                // Show items due within 14 days AND not completed
-                                                const isDueSoon = due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime();
-                                                const status = item.status || 'NOT_SET';
-                                                const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
-                                                return isDueSoon && isIncomplete;
-                                            }
-
-                                            return true;
+                                            return passesMyTasks && passesDate;
                                         });
 
                                         const suggestedItems = isEnabled(FEATURE_AI_PRUNING, featureFlags)
@@ -1779,19 +1767,20 @@ export default function EpicDetailPage() {
                         </div>
                     </Tabs.Panel>
 
-                    <Tabs.Panel value="decisions" pt="md">
-                        {/* Lazy load decisions only when decisions tab is active */}
-                        {activeTab === 'decisions' && (
-                            <DecisionList
-                                epicId={epic.id}
-                                refreshTrigger={refreshDecisions}
-                                onRefresh={() => setRefreshDecisions(prev => prev + 1)}
-                            />
-                        )}
+                    <Tabs.Panel value="decisions" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                        <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
+                            {activeTab === 'decisions' && (
+                                <DecisionList
+                                    epicId={epic.id}
+                                    refreshTrigger={refreshDecisions}
+                                    onRefresh={() => setRefreshDecisions(prev => prev + 1)}
+                                />
+                            )}
+                        </div>
                     </Tabs.Panel>
 
-                    <Tabs.Panel value="adoption" pt="md">
-                        {/* HEART Metrics Dashboard - AI-powered success metrics */}
+                    <Tabs.Panel value="adoption" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                        <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
                         {activeTab === 'adoption' && (
                             <Stack gap="xl">
                                 <HeartDashboard
@@ -1815,13 +1804,15 @@ export default function EpicDetailPage() {
                                 )}
                             </Stack>
                         )}
+                        </div>
                     </Tabs.Panel>
 
-                    <Tabs.Panel value="scorecard" pt="md">
-                        {/* Lazy load scorecard only when tab is active */}
+                    <Tabs.Panel value="scorecard" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                        <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
                         {activeTab === 'scorecard' && (
                             <ScorecardPageContent epicId={epic.id} />
                         )}
+                        </div>
                     </Tabs.Panel>
 
                     <Tabs.Panel value="retro" pt="md">
@@ -1831,6 +1822,7 @@ export default function EpicDetailPage() {
                         )}
                     </Tabs.Panel>
                 </Tabs>
+                </div>
 
             </div>
             {showFieldsSidebar && epic && <EpicFieldsSidebar epic={epic} ahaFieldsToLoad={epicDetailCache.getSettings()?.aha_fields_to_load ?? undefined} />}

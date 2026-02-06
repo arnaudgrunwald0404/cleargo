@@ -139,7 +139,20 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             }
             valid.push(r);
         }
-        if (valid.length === 0) return;
+        if (valid.length === 0) {
+            for (const r of payload.recipients) {
+                await logNotification({
+                    user_id: r.id,
+                    launch_id: payload.launch_id,
+                    type: payload.type,
+                    payload: payload.metadata,
+                    delivery_channel: 'slack',
+                    status: 'pending',
+                    error: 'Skipped: no valid Slack recipient (missing Slack handle or notifications disabled)',
+                });
+            }
+            return;
+        }
         if (valid.length === 1) {
             payload.recipient = valid[0];
             delete payload.recipients;
@@ -157,16 +170,19 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         const channel = await client.openMultiUserConversation(slackIds);
         const response = await client.postMessage({ channel, ...message });
         console.log('Slack MPDM notification sent:', { type: payload.type, channel, ts: response.ts });
-        await logNotification({
-            user_id: valid[0].id,
-            launch_id: payload.launch_id,
-            type: payload.type,
-            payload: { ...payload.metadata, multi_recipient: true, recipient_ids: valid.map((r) => r.id) },
-            delivery_channel: 'slack',
-            status: 'sent',
-            slack_ts: response.ts,
-            slack_channel: channel,
-        });
+        const logPayload = { ...payload.metadata, multi_recipient: true, recipient_ids: valid.map((r) => r.id) };
+        for (const r of valid) {
+            await logNotification({
+                user_id: r.id,
+                launch_id: payload.launch_id,
+                type: payload.type,
+                payload: logPayload,
+                delivery_channel: 'slack',
+                status: 'sent',
+                slack_ts: response.ts,
+                slack_channel: channel,
+            });
+        }
         return;
     }
 
@@ -449,7 +465,14 @@ export async function notifySuperAdminsOfFeedback(payload: {
             .select('id, email, slack_handle')
             .contains('roles', ['SUPERADMIN']);
 
-        if (fetchError || !superAdmins?.length) return;
+        if (fetchError) {
+            console.error('[notifySuperAdminsOfFeedback] Super admins query failed:', fetchError.message, fetchError.details);
+            return;
+        }
+        if (!superAdmins?.length) {
+            console.warn('[notifySuperAdminsOfFeedback] No super admins found (roles contains SUPERADMIN). Check app_user.roles.');
+            return;
+        }
 
         const validSlackIds: string[] = [];
         for (const u of superAdmins) {
@@ -457,10 +480,17 @@ export async function notifySuperAdminsOfFeedback(payload: {
             if (!handle || !isSlackUserId(handle)) {
                 if (u.email) handle = (await syncUserSlackHandle(u.email)) ?? undefined;
             }
-            if (handle && isSlackUserId(handle)) validSlackIds.push(handle);
+            if (handle && isSlackUserId(handle)) {
+                validSlackIds.push(handle);
+            } else {
+                console.warn('[notifySuperAdminsOfFeedback] Super admin has no Slack handle:', u.email);
+            }
         }
 
-        if (validSlackIds.length === 0) return;
+        if (validSlackIds.length === 0) {
+            console.warn('[notifySuperAdminsOfFeedback] No super admins with valid Slack handles. Sync handles in User Management or set slack_handle.');
+            return;
+        }
 
         const client = getSlackClient();
         const channel = await client.openMultiUserConversation(validSlackIds.slice(0, 8));
@@ -476,8 +506,9 @@ export async function notifySuperAdminsOfFeedback(payload: {
             `:inbox_tray: *New feedback submitted*${typeLabel}${epicPart}${authorPart}\n\n${payload.feedbackText}`;
 
         await client.postMessage({ channel, text });
+        console.log('[notifySuperAdminsOfFeedback] Slack message sent to', validSlackIds.length, 'super admin(s), feedbackId:', payload.feedbackId);
     } catch (err: any) {
-        console.error('Failed to notify super admins of feedback:', err);
+        console.error('[notifySuperAdminsOfFeedback] Failed:', err?.message ?? err, err?.stack);
     }
 }
 

@@ -192,17 +192,28 @@ export async function POST(
         }
       }
 
+      let slackNotification: { sent: boolean; recipient_count: number; error?: string } | undefined;
       if (recipients.length > 0) {
-        await sendSlackNotification({
-          type: 'criterion_comment_or_attachment',
-          priority: 'medium',
-          ...(recipients.length === 1
-            ? { recipient: recipients[0] }
-            : { recipients }),
-          launch_id: epicId,
-          metadata,
-        });
+        try {
+          await sendSlackNotification({
+            type: 'criterion_comment_or_attachment',
+            priority: 'medium',
+            ...(recipients.length === 1
+              ? { recipient: recipients[0] }
+              : { recipients }),
+            launch_id: epicId,
+            metadata,
+          });
+          slackNotification = { sent: true, recipient_count: recipients.length };
+        } catch (sendError: any) {
+          console.error('Failed to send Slack notification for comment:', sendError);
+          slackNotification = { sent: false, recipient_count: recipients.length, error: sendError?.message || 'Failed to send' };
+        }
       }
+      return NextResponse.json(
+        { comment, ...(slackNotification && { slack_notification: slackNotification }) },
+        { status: 201 }
+      );
     } catch (notificationError: any) {
       console.error('Failed to send Slack notification for comment:', notificationError);
     }

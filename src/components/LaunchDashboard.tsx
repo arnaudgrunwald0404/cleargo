@@ -42,16 +42,16 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                             </th>
                         </tr>
                     </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
+                    <tbody className="!bg-white divide-y divide-gray-200" style={{ backgroundColor: '#FFFFFF' }}>
                         {initialEpics.length === 0 ? (
-                            <tr>
+                            <tr className="!bg-white" style={{ backgroundColor: '#FFFFFF' }}>
                                 <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                                     No epics found. Create one to get started.
                                 </td>
                             </tr>
                         ) : (
                             initialEpics.map((epic) => (
-                                <tr key={epic.id} className="hover:bg-gray-50">
+                                <tr key={epic.id} className="!bg-white hover:bg-gray-50" style={{ backgroundColor: '#FFFFFF' }}>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <div className="text-sm font-medium text-gray-900">{epic.name}</div>
                                         {epic.product_id && (

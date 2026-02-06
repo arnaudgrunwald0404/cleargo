@@ -188,16 +188,14 @@ export function HeartSetupWizard({
   // Choose method step
   if (step === 'choose') {
     return (
-      <Card withBorder padding="lg">
-        <Stack gap="lg">
-          <div>
-            <Text size="lg" fw={600} mb="xs">
-              Set Up HEART Metrics
+      <Card style={{ backgroundColor: 'transparent' }}>
+        <Stack gap="none">
+          <Paper radius="md" style={{ backgroundColor: 'transparent' }}>
+            <Text size="lg" fw={600} c="dark">
+              Configure HEART Metrics
             </Text>
-            <Text size="sm" c="dimmed">
-              How would you like to configure HEART metrics for "{epicName}"?
-            </Text>
-          </div>
+            
+          </Paper>
 
           {error && (
             <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
@@ -211,16 +209,18 @@ export function HeartSetupWizard({
             </Alert>
           )}
 
-          <Paper withBorder p="md" bg="blue.0">
+          <Paper  p="md" radius="md" style={{ backgroundColor: 'var(--color-platinum)', borderColor: 'var(--color-gray-300)' }}>
             <Group gap="xs" mb="xs">
-              <ThemeIcon size="sm" color="blue">
+           
+          
+          <ThemeIcon size="sm" style={{ backgroundColor: 'var(--color-brass)', color: 'var(--color-cast-iron)' }}>
                 <IconBulb size={14} />
               </ThemeIcon>
-              <Text size="sm" fw={600}>
+              <Text size="md" fw={600} c="dark">
                 Add context for the AI (optional)
               </Text>
             </Group>
-            <Text size="xs" c="dimmed" mb="sm">
+            <Text size="sm" c="dimmed" mb="sm">
               Give the AI direction on what to look for in Pendo—for example, event names, product area, or success criteria. This helps it pick the right metrics.
             </Text>
             <Textarea
@@ -230,8 +230,9 @@ export function HeartSetupWizard({
               minRows={2}
               maxRows={4}
               autosize
+              color="dark.gray"
             />
-            <Text size="xs" c="dimmed" mt="xs">
+            <Text size="sm" c="dimmed" mt="xs">
               Whatever you type here is passed to the AI when you click <strong>Fully Automatic</strong> or <strong>AI-Assisted</strong> below. Manual setup does not use this.
             </Text>
           </Paper>
@@ -241,7 +242,9 @@ export function HeartSetupWizard({
             <Paper
               withBorder
               p="md"
-              style={{ cursor: 'pointer' }}
+              radius="md"
+              bg="white"
+              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
               onClick={() => handleMethodSelect('auto')}
             >
               <Group>
@@ -250,7 +253,7 @@ export function HeartSetupWizard({
                 </ThemeIcon>
                 <div style={{ flex: 1 }}>
                   <Group gap="xs">
-                    <Text fw={600}>Fully Automatic</Text>
+                    <Text fw={600} c="dark">Fully Automatic</Text>
                     <Badge size="xs" color="green">Recommended</Badge>
                     {userContext.trim() && (
                       <Badge size="xs" color="blue" variant="light">Uses your context above</Badge>
@@ -271,7 +274,9 @@ export function HeartSetupWizard({
             <Paper
               withBorder
               p="md"
-              style={{ cursor: 'pointer' }}
+              radius="md"
+              bg="white"
+              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
               onClick={() => handleMethodSelect('ai_assisted')}
             >
               <Group>
@@ -280,7 +285,7 @@ export function HeartSetupWizard({
                 </ThemeIcon>
                 <div style={{ flex: 1 }}>
                   <Group gap="xs">
-                    <Text fw={600}>AI-Assisted</Text>
+                    <Text fw={600} c="dark">AI-Assisted</Text>
                     {userContext.trim() && (
                       <Badge size="xs" color="blue" variant="light">Uses your context above</Badge>
                     )}
@@ -299,7 +304,9 @@ export function HeartSetupWizard({
             <Paper
               withBorder
               p="md"
-              style={{ cursor: 'pointer' }}
+              radius="md"
+              bg="white"
+              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
               onClick={() => handleMethodSelect('manual')}
             >
               <Group>
@@ -307,7 +314,7 @@ export function HeartSetupWizard({
                   <IconHandStop size={24} />
                 </ThemeIcon>
                 <div style={{ flex: 1 }}>
-                  <Text fw={600}>Manual</Text>
+                  <Text fw={600} c="dark">Manual</Text>
                   <Text size="sm" c="dimmed">
                     Configure each HEART category yourself by selecting Pendo events and setting targets.
                   </Text>

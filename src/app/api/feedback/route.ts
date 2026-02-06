@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
+import { notifySuperAdminsOfFeedback } from "@/lib/slack/notifications";
 
 export const dynamic = "force-dynamic";
 
@@ -14,25 +15,42 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { data: feedbacks, error } = await supabase
+    let list: any[] = [];
+    const { data: withStatus, error: errWithStatus } = await supabase
       .from("feedback")
-      .select(`
-        id,
-        feedback_text,
-        feedback_type,
-        created_at,
-        created_by_id,
-        epic:epic_id (
-          id,
-          name
-        ),
-        created_by:app_user!created_by_id(email, first_name, last_name, avatar_url)
-      `)
+      .select("id, feedback_text, feedback_type, created_at, created_by_id, status, status_updated_at, status_updated_by_id, epic_id")
       .order("created_at", { ascending: false });
 
-    if (error) throw error;
+    if (!errWithStatus) {
+      list = withStatus || [];
+    } else {
+      const { data: withoutStatus, error: errWithout } = await supabase
+        .from("feedback")
+        .select("id, feedback_text, feedback_type, created_at, created_by_id, epic_id")
+        .order("created_at", { ascending: false });
+      if (errWithout) throw errWithout;
+      list = (withoutStatus || []).map((f: any) => ({ ...f, status: "unread", status_updated_at: null, status_updated_by_id: null }));
+    }
 
-    return NextResponse.json(feedbacks || []);
+    const userIds = [...new Set(list.flatMap((f: any) => [f.created_by_id, f.status_updated_by_id].filter(Boolean)))];
+    const epicIds = [...new Set(list.map((f: any) => f.epic_id).filter(Boolean))];
+
+    const [usersRes, epicsRes] = await Promise.all([
+      userIds.length ? supabase.from("app_user").select("id, email, first_name, last_name, avatar_url").in("id", userIds) : { data: [] },
+      epicIds.length ? supabase.from("epic").select("id, name").in("id", epicIds) : { data: [] },
+    ]);
+
+    const usersById = new Map((usersRes.data || []).map((u: any) => [u.id, u]));
+    const epicsById = new Map((epicsRes.data || []).map((e: any) => [e.id, e]));
+
+    const result = list.map((f: any) => ({
+      ...f,
+      epic: f.epic_id ? epicsById.get(f.epic_id) ?? null : null,
+      created_by: f.created_by_id ? usersById.get(f.created_by_id) ?? null : null,
+      status_updated_by: f.status_updated_by_id ? usersById.get(f.status_updated_by_id) ?? null : null,
+    }));
+
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error("Error fetching feedback:", error);
     return NextResponse.json({ error: error.message || "Failed to fetch feedback" }, { status: 500 });
@@ -89,6 +107,16 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    await notifySuperAdminsOfFeedback({
+      feedbackId: feedback.id,
+      feedbackText: feedback.feedback_text,
+      feedbackType: normalizedType || undefined,
+      epicId: feedback.epic_id ?? undefined,
+      authorEmail: userEmail,
+    }).catch((e) => {
+      console.error('Feedback created but super admin notification failed:', e?.message ?? e);
+    });
 
     return NextResponse.json(feedback, { status: 201 });
   } catch (error: any) {

@@ -506,7 +506,7 @@ export default function MeetingsPage() {
 
     if (loading || checkingConnection) {
         return (
-            <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50 flex items-center justify-center">
+            <div className="min-h-screen flex items-center justify-center">
                 <div className="text-center">
                     <PurpleLoader size="lg" className="mb-4" />
                     <p className="text-gray-600">Loading...</p>
@@ -516,7 +516,7 @@ export default function MeetingsPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+        <div className="min-h-screen">
             <div style={{
               maxWidth: 'var(--page-container-max-width)',
               margin: '0 auto',

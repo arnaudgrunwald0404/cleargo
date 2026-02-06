@@ -1,9 +1,9 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
-import { Table, Badge, Text, Group, Paper, Button } from '@mantine/core';
+import { Table, Badge, Text, Group, Paper, Button, Radio, Textarea, Stack } from '@mantine/core';
 import { UserDisplay } from './UserDisplay';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { PurpleLoader } from './PurpleLoader';
-import DecisionModal from './DecisionModal';
+import { notifications } from '@mantine/notifications';
 
 interface Decision {
     id: string;
@@ -30,7 +30,10 @@ interface DecisionListProps {
 export default function DecisionList({ epicId, refreshTrigger, onRefresh }: DecisionListProps) {
     const [decisions, setDecisions] = useState<Decision[]>([]);
     const [loading, setLoading] = useState(true);
-    const [decisionModalOpen, setDecisionModalOpen] = useState(false);
+    const [decisionType, setDecisionType] = useState<string | null>('GO_NO_GO_MEETING');
+    const [verdict, setVerdict] = useState<string | null>('GO');
+    const [notes, setNotes] = useState('');
+    const [submitting, setSubmitting] = useState(false);
     const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const lastFetchRef = useRef<number>(0);
 
@@ -75,11 +78,41 @@ export default function DecisionList({ epicId, refreshTrigger, onRefresh }: Deci
         };
     }, [epicId, refreshTrigger, fetchDecisions]);
 
-    const handleDecisionSuccess = () => {
-        if (onRefresh) {
-            onRefresh();
+    const handleSaveDecision = async () => {
+        if (!decisionType || !verdict) return;
+
+        setSubmitting(true);
+        try {
+            const res = await fetch(`/api/epics/${epicId}/decisions`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    decision_type: decisionType,
+                    verdict,
+                    notes,
+                }),
+            });
+
+            if (!res.ok) throw new Error('Failed to log decision');
+
+            notifications.show({
+                title: 'Decision logged',
+                message: 'The decision has been saved.',
+                color: 'green',
+            });
+            if (onRefresh) onRefresh();
+            setNotes('');
+            fetchDecisions();
+        } catch (error) {
+            console.error(error);
+            notifications.show({
+                title: 'Error',
+                message: 'Failed to log decision',
+                color: 'red',
+            });
+        } finally {
+            setSubmitting(false);
         }
-        setDecisionModalOpen(false);
     };
 
     if (loading) {
@@ -92,76 +125,103 @@ export default function DecisionList({ epicId, refreshTrigger, onRefresh }: Deci
     }
 
     return (
-        <div className="space-y-4">
-            <Group justify="space-between" align="center">
-                <Text size="lg" fw={600}>Decision History</Text>
-                <Button 
-                    size="sm"
-                    onClick={() => setDecisionModalOpen(true)}
-                >
-                    Log Decision
-                </Button>
-            </Group>
+        <div className="space-y-6">
+            <Paper withBorder p="md" radius="md">
+                <Text size="sm" fw={600} mb="sm" c="dark">Log a decision</Text>
+                <Text size="xs" c="dimmed" mb="md">Select the decision type and verdict, add optional notes, then save.</Text>
+                <Stack gap="md">
+                    <Radio.Group
+                        label="Decision type"
+                        value={decisionType ?? ''}
+                        onChange={setDecisionType}
+                        required
+                    >
+                        <Group mt="xs" gap="md">
+                            <Radio value="GO_NO_GO_MEETING" label="Go/No-Go Meeting" />
+                            <Radio value="ADHOC_CHECK" label="Ad-hoc Check" />
+                            <Radio value="FINAL_APPROVAL" label="Final Approval" />
+                        </Group>
+                    </Radio.Group>
+                    <Radio.Group
+                        label="Verdict"
+                        value={verdict ?? ''}
+                        onChange={setVerdict}
+                        required
+                    >
+                        <Group mt="xs" gap="md">
+                            <Radio value="GO" label="GO" />
+                            <Radio value="CONDITIONAL_GO" label="CONDITIONAL GO" />
+                            <Radio value="NO_GO" label="NO GO" />
+                        </Group>
+                    </Radio.Group>
+                    <Textarea
+                        label="Notes (optional)"
+                        placeholder="Add context, conditions, or reasoning..."
+                        minRows={3}
+                        value={notes}
+                        onChange={(e) => setNotes(e.currentTarget.value)}
+                    />
+                    <Group justify="flex-end">
+                        <Button onClick={handleSaveDecision} loading={submitting}>Save decision</Button>
+                    </Group>
+                </Stack>
+            </Paper>
 
-            {decisions.length === 0 ? (
-                <Paper withBorder p="md" radius="md">
-                    <Text size="sm" c="dimmed">No decisions logged yet.</Text>
-                </Paper>
-            ) : (
-                <Paper withBorder p="md" radius="md">
-                    <Table>
-                <Table.Thead>
-                    <Table.Tr>
-                        <Table.Th>Date</Table.Th>
-                        <Table.Th>Type</Table.Th>
-                        <Table.Th>Verdict</Table.Th>
-                        <Table.Th>Logged By</Table.Th>
-                        <Table.Th>Notes</Table.Th>
-                    </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                    {decisions.map((decision) => (
-                        <Table.Tr key={decision.id}>
-                            <Table.Td>{new Date(decision.taken_at).toLocaleString()}</Table.Td>
-                            <Table.Td>
-                                <Badge variant="light" color="gray">{decision.decision_type.replace(/_/g, ' ')}</Badge>
-                            </Table.Td>
-                            <Table.Td>
-                                <Badge
-                                    color={
-                                        decision.verdict === 'GO' ? 'green' :
-                                            decision.verdict === 'NO_GO' ? 'red' : 'yellow'
-                                    }
-                                >
-                                    {decision.verdict.replace(/_/g, ' ')}
-                                </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                                <UserDisplay
-                                    email={decision.creator?.email}
-                                    firstName={decision.creator?.first_name}
-                                    lastName={decision.creator?.last_name}
-                                    avatarUrl={decision.creator?.avatar_url}
-                                    name={decision.creator?.name}
-                                    size="sm"
-                                />
-                            </Table.Td>
-                            <Table.Td>
-                                <Text size="sm" lineClamp={2} title={decision.notes}>{decision.notes || '-'}</Text>
-                            </Table.Td>
-                        </Table.Tr>
-                    ))}
-                </Table.Tbody>
-            </Table>
-        </Paper>
-            )}
-
-            <DecisionModal
-                epicId={epicId}
-                opened={decisionModalOpen}
-                onClose={() => setDecisionModalOpen(false)}
-                onSuccess={handleDecisionSuccess}
-            />
+            <div>
+                <Text size="lg" fw={600} mb="sm">Decision history</Text>
+                {decisions.length === 0 ? (
+                    <Paper withBorder p="md" radius="md">
+                        <Text size="sm" c="dimmed">No decisions logged yet.</Text>
+                    </Paper>
+                ) : (
+                    <Paper withBorder p="md" radius="md">
+                        <Table>
+                            <Table.Thead>
+                                <Table.Tr>
+                                    <Table.Th>Date</Table.Th>
+                                    <Table.Th>Type</Table.Th>
+                                    <Table.Th>Verdict</Table.Th>
+                                    <Table.Th>Logged By</Table.Th>
+                                    <Table.Th>Notes</Table.Th>
+                                </Table.Tr>
+                            </Table.Thead>
+                            <Table.Tbody>
+                                {decisions.map((decision) => (
+                                    <Table.Tr key={decision.id}>
+                                        <Table.Td>{new Date(decision.taken_at).toLocaleString()}</Table.Td>
+                                        <Table.Td>
+                                            <Badge variant="light" color="gray">{decision.decision_type.replace(/_/g, ' ')}</Badge>
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Badge
+                                                color={
+                                                    decision.verdict === 'GO' ? 'green' :
+                                                        decision.verdict === 'NO_GO' ? 'red' : 'yellow'
+                                                }
+                                            >
+                                                {decision.verdict.replace(/_/g, ' ')}
+                                            </Badge>
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <UserDisplay
+                                                email={decision.creator?.email}
+                                                firstName={decision.creator?.first_name}
+                                                lastName={decision.creator?.last_name}
+                                                avatarUrl={decision.creator?.avatar_url}
+                                                name={decision.creator?.name}
+                                                size="sm"
+                                            />
+                                        </Table.Td>
+                                        <Table.Td>
+                                            <Text size="sm" lineClamp={2} title={decision.notes}>{decision.notes || '-'}</Text>
+                                        </Table.Td>
+                                    </Table.Tr>
+                                ))}
+                            </Table.Tbody>
+                        </Table>
+                    </Paper>
+                )}
+            </div>
         </div>
     );
 }

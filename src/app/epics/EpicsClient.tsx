@@ -962,14 +962,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     if (loading) {
         return (
-            <div className="pt-24 p-8 flex items-center justify-center">
+            <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }} className="pt-24 p-8 flex items-center justify-center">
                 <PurpleLoader size="md" />
             </div>
         );
     }
 
     return (
-        <>
+        <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
             <ScopeFilterBanner />
             <div style={{
               maxWidth: 'var(--page-container-max-width)',
@@ -1061,16 +1061,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             router.push(`/epics?${params.toString()}`, { scroll: false });
                                         }}
                                         className={`
-                                            flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all
+                                            flex-shrink-0 w-64 p-4 rounded-lg border-2 cursor-pointer transition-all !bg-white
                                             ${isSelected 
                                                 ? 'shadow-md border-[2px]' 
-                                                : 'border-[#E5E7EB] bg-white hover:shadow-sm hover:border-[var(--color-cast-iron-border)]'
+                                                : 'border-[#E5E7EB] hover:shadow-sm hover:border-[var(--color-cast-iron-border)]'
                                             }
                                         `}
                                         style={{ 
+                                            backgroundColor: '#FFFFFF',
                                             ...(isSelected ? {
-                                                borderColor: 'var(--color-cast-iron-border, #C9C6BF)',
-                                                backgroundColor: 'var(--color-white, #FFFFFF)'
+                                                borderColor: 'var(--color-cast-iron-border, #C9C6BF)'
                                             } : {}),
                                             fontFamily: 'var(--font-body)',
                                             transition: 'var(--transition-base)'
@@ -1636,7 +1636,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                                 {Array.from({ length: 5 }).map((_, index) => (
-                                                    <tr key={`skeleton-row-${index}`} style={{ borderBottom: "1px solid #E5E7EB" }}>
+                                                    <tr key={`skeleton-row-${index}`} className="!bg-white" style={{ backgroundColor: '#FFFFFF', borderBottom: "1px solid #E5E7EB" }}>
                                                         <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div>
                                                         </td>
@@ -1795,7 +1795,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                                 {group.epics.map(epic => (
                                                 <tr 
-                                                    key={epic.id} 
+                                                    key={epic.id}
+                                                    className="!bg-white"
                                                     style={{ 
                                                         backgroundColor: "#FFFFFF",
                                                         borderBottom: "1px solid #E5E7EB",
@@ -2063,7 +2064,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             </Modal>
 
         </div>
-        </>
+        </div>
     );
 }
 

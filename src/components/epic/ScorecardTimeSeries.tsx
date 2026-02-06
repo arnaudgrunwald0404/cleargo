@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Group, Stack, Text, Badge, Loader, Tooltip } from '@mantine/core';
+import { Card, Group, Stack, Text, Badge } from '@mantine/core';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { EpicScorecard } from '@/lib/success/types';
 
@@ -170,31 +170,33 @@ export function ScorecardTimeSeries({ epicId }: Props) {
     return { dates: dateStrings, series: seriesArr };
   }, [epic?.target_launch_date, scorecards]);
 
+  const hasMetricsAndData = !loading && series.length > 0 && dates.length > 0;
+  if (!hasMetricsAndData) {
+    return null;
+  }
+
   return (
-    <Card withBorder padding="md">
+    <Card withBorder padding="md" radius="md" bg="white" style={{ borderColor: '#E5E7EB' }}>
       <Group justify="space-between" mb="sm">
         <div>
-          <Text size="md" fw={500}>Trends (Launch → +180d)</Text>
+          <Text size="md" fw={600} c="dark">Success metrics over time</Text>
           <Text size="sm" c="dimmed">
-            {epic?.target_launch_date ? `${new Date(epic.target_launch_date).toLocaleDateString()} → ${dates.length ? new Date(dates[dates.length - 1]).toLocaleDateString() : ''}` : 'No launch date set'}
+            {epic?.target_launch_date && dates.length
+              ? `${new Date(epic.target_launch_date).toLocaleDateString()} → +120 days (from Success Metrics)`
+              : ''}
           </Text>
         </div>
-        {loading && <Loader size="sm" />}
       </Group>
 
-      {series.length === 0 ? (
-        <Text size="sm" c="dimmed">No numeric metric data available yet.</Text>
-      ) : (
-        <Stack gap="xs">
-          <LineChart width={800} height={260} series={series} dates={dates} />
-          <Group gap="xs" wrap="wrap">
-            {series.map(s => (
-              <Badge key={s.key} color="gray" variant="light" leftSection={<span style={{ width: 10, height: 2, background: s.color, display: 'inline-block' }} />}>{s.key}</Badge>
-            ))}
-          </Group>
-          <Text size="xs" c="dimmed">Only numeric metrics are plotted. Values are shown for days with a generated scorecard.</Text>
-        </Stack>
-      )}
+      <Stack gap="xs">
+        <LineChart width={800} height={260} series={series} dates={dates} />
+        <Group gap="xs" wrap="wrap">
+          {series.map(s => (
+            <Badge key={s.key} color="gray" variant="light" leftSection={<span style={{ width: 10, height: 2, background: s.color, display: 'inline-block' }} />}>{s.key}</Badge>
+          ))}
+        </Group>
+        <Text size="xs" c="dimmed">Numeric metrics configured in the Success Metrics tab, plotted for days with a generated scorecard (window: launch −90d to +120d).</Text>
+      </Stack>
     </Card>
   );
 }

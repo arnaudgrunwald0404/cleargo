@@ -53,7 +53,7 @@ function StatusTrafficLight({
     status: string;
     itemId: string;
     epicId: string;
-    onStatusUpdate: () => void;
+    onStatusUpdate: () => void | Promise<void>;
     isSaving: boolean;
     showNotApplicable?: boolean;
     isGate?: boolean;
@@ -87,12 +87,13 @@ function StatusTrafficLight({
     ];
     const naLight = {
         value: 'NOT_APPLICABLE',
-        color: '#6b7280',
-        greyColor: '#d1d5db',
-        label: 'N/A',
+        color: 'var(--nav-bg, #37352A)', // same dark as nav bar when selected
+        greyColor: 'transparent',
+        label: 'n/a',
         definition: 'Not applicable; neutral to readiness score',
     };
     const lights = showNotApplicable && !isGate ? [...baseLights, naLight] : baseLights;
+    const isNaLight = (light: typeof baseLights[0] | typeof naLight) => light.value === 'NOT_APPLICABLE';
 
     const handleStatusChange = async (newStatus: string) => {
         if (newStatus === status || isUpdating) return;
@@ -152,12 +153,12 @@ function StatusTrafficLight({
                     }
                     
                     // Success after retry
-                    setOptimisticStatus(null);
                     if (typeof window !== 'undefined') {
                         localStorage.removeItem(getCacheKey(false));
                         localStorage.removeItem(getCacheKey(true));
                     }
-                    onStatusUpdate();
+                    await onStatusUpdate();
+                    setOptimisticStatus(null);
                     return;
                 }
                 
@@ -165,14 +166,14 @@ function StatusTrafficLight({
                 throw new Error(errorData.error || 'Failed to update Go/No-Go score');
             }
             
-            setOptimisticStatus(null);
             // Clear cache when status changes to ensure fresh data
-            // Note: We keep release schedule and epic release map cache since they don't change often
             if (typeof window !== 'undefined') {
-                localStorage.removeItem(getCacheKey(false)); // Clear pending cache
-                localStorage.removeItem(getCacheKey(true)); // Clear all cache
+                localStorage.removeItem(getCacheKey(false));
+                localStorage.removeItem(getCacheKey(true));
             }
-            onStatusUpdate();
+            // Keep showing optimistic N/A until refetch completes so the UI doesn't flicker
+            await onStatusUpdate();
+            setOptimisticStatus(null);
         } catch (error: any) {
             console.error('Failed to update Go/No-Go score:', error);
             notifications.show({
@@ -193,6 +194,7 @@ function StatusTrafficLight({
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             {lights.map((light) => {
                 const isSelected = currentStatus === light.value;
+                const showLabelInCircle = isNaLight(light);
                 
                 return (
                     <Tooltip
@@ -227,6 +229,9 @@ function StatusTrafficLight({
                                 opacity: (isSaving || isUpdating) ? 0.5 : 1,
                                 boxShadow: isSelected ? `0 0 8px ${light.color}66` : 'none',
                                 transform: isSelected ? 'scale(1.1)' : 'scale(1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
                             }}
                             onMouseEnter={(e) => {
                                 if (!isSaving && !isUpdating && !isSelected) {
@@ -240,7 +245,21 @@ function StatusTrafficLight({
                                     e.currentTarget.style.transform = 'scale(1)';
                                 }
                             }}
-                        />
+                        >
+                            {showLabelInCircle && (
+                                <span
+                                    style={{
+                                        fontSize: 8,
+                                        fontWeight: 600,
+                                        color: isSelected ? '#fff' : '#6b7280',
+                                        lineHeight: 1,
+                                        textTransform: 'lowercase',
+                                    }}
+                                >
+                                    n/a
+                                </span>
+                            )}
+                        </button>
                     </Tooltip>
                 );
             })}
@@ -1232,7 +1251,8 @@ export function MyTasks() {
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                     {group.items.map(item => (
                                         <tr 
-                                            key={item.id} 
+                                            key={item.id}
+                                            className="!bg-white"
                                             style={{ 
                                                 backgroundColor: "#FFFFFF",
                                                 borderBottom: "1px solid #E5E7EB",

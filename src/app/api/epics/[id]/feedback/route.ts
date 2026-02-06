@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
+import { notifySuperAdminsOfFeedback } from '@/lib/slack/notifications';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,23 +20,27 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Fetch feedback with user info
-    // Use created_by_id foreign key to join with app_user table
     const { data: feedbacks, error } = await supabase
       .from('feedback')
-      .select(`
-        id,
-        feedback_text,
-        created_at,
-        created_by_id,
-        created_by:app_user!created_by_id(email, first_name, last_name, avatar_url)
-      `)
+      .select('id, feedback_text, created_at, created_by_id, status, status_updated_at')
       .eq('epic_id', epicId)
       .order('created_at', { ascending: false });
 
     if (error) throw error;
 
-    return NextResponse.json(feedbacks || []);
+    const list = feedbacks || [];
+    const userIds = [...new Set(list.map((f: any) => f.created_by_id).filter(Boolean))];
+    const { data: users } = userIds.length
+      ? await supabase.from('app_user').select('id, email, first_name, last_name, avatar_url').in('id', userIds)
+      : { data: [] };
+    const usersById = new Map((users || []).map((u: any) => [u.id, u]));
+
+    const result = list.map((f: any) => ({
+      ...f,
+      created_by: f.created_by_id ? usersById.get(f.created_by_id) ?? null : null,
+    }));
+
+    return NextResponse.json(result);
   } catch (error: any) {
     console.error('Error fetching feedback:', error);
     return NextResponse.json(
@@ -92,6 +97,16 @@ export async function POST(
       .single();
 
     if (error) throw error;
+
+    await notifySuperAdminsOfFeedback({
+      feedbackId: feedback.id,
+      feedbackText: feedback.feedback_text,
+      feedbackType: 'EPIC',
+      epicId: epicId,
+      authorEmail: userEmail,
+    }).catch((e) => {
+      console.error('Feedback created but super admin notification failed:', e?.message ?? e);
+    });
 
     return NextResponse.json(feedback, { status: 201 });
   } catch (error: any) {

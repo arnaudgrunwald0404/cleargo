@@ -24,6 +24,30 @@ function getMentionedUserIdsFromHtml(html: string): string[] {
   return ids;
 }
 
+/** Trim mention spans so only the @name part is inside the span; move trailing text out so it isn't highlighted. */
+function sanitizeMentionSpansInHtml(html: string): string {
+  if (!html) return html;
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const spans = doc.querySelectorAll('span[data-mention-user-id]');
+  spans.forEach((span) => {
+    const text = span.textContent || '';
+    const overflowMatch = text.match(/\s+[a-z][\s\S]*$|\s*[,.]\s*[\s\S]*$/);
+    if (overflowMatch) {
+      const overflowStart = text.length - overflowMatch[0].length;
+      const mentionPart = text.slice(0, overflowStart).trimEnd();
+      const overflow = text.slice(overflowStart);
+      span.textContent = mentionPart;
+      const after = doc.createTextNode(overflow);
+      if (span.nextSibling) {
+        span.parentNode?.insertBefore(after, span.nextSibling);
+      } else {
+        span.parentNode?.appendChild(after);
+      }
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 interface Comment {
   id: string;
   comment_text: string;
@@ -112,6 +136,7 @@ export function CommentsModal({
 
   const richTextRef = useRef<RichTextMentionHandle>(null);
   const [mentionDropdownOpen, setMentionDropdownOpen] = useState(false);
+  const [mentionSource, setMentionSource] = useState<'new' | 'edit'>('new');
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionUsers, setMentionUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const [mentionUsersLoading, setMentionUsersLoading] = useState(false);
@@ -465,15 +490,21 @@ export function CommentsModal({
     }
   };
 
-  const handleMentionTrigger = useCallback((query: string) => {
+  const handleMentionTrigger = useCallback((query: string, source: 'new' | 'edit' = 'new') => {
+    if (query.includes(' ')) {
+      setMentionDropdownOpen(false);
+      return;
+    }
+    setMentionSource(source);
     setMentionQuery(query);
     setMentionDropdownOpen(true);
     if (mentionUsers.length === 0 && !mentionUsersLoading) {
       setMentionUsersLoading(true);
       fetch('/api/users', { credentials: 'include' })
-        .then((res) => (res.ok ? res.json() : []))
-        .then((users: Array<{ id: string; email: string; first_name?: string; last_name?: string; name?: string }>) => {
-          const list = (Array.isArray(users) ? users : []).map((u) => ({
+        .then((res) => (res.ok ? res.json() : { users: [] }))
+        .then((data: { users?: Array<{ id: string; email: string; first_name?: string; last_name?: string; name?: string }> }) => {
+          const raw = Array.isArray(data?.users) ? data.users : [];
+          const list = raw.map((u) => ({
             id: u.id,
             email: u.email || '',
             name: u.name || (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}`.trim() : u.first_name || u.last_name || u.email || ''),
@@ -578,8 +609,26 @@ export function CommentsModal({
           throw new Error(error.error || 'Failed to post comment');
         }
 
-        const comment = await commentRes.json();
+        const data = await commentRes.json();
+        const comment = data.comment ?? data;
         const commentId = comment.id;
+        const slackNotification = data.slack_notification as { sent: boolean; recipient_count: number; error?: string } | undefined;
+        if (slackNotification?.sent && slackNotification.recipient_count > 0) {
+          const n = slackNotification.recipient_count;
+          notifications.show({
+            title: 'Comment posted',
+            message: n === 1
+              ? 'The criterion owner has been notified via Slack.'
+              : `The criterion owner and ${n - 1} other${(n - 1) === 1 ? '' : 's'} have been notified via Slack.`,
+            color: 'green',
+          });
+        } else if (slackNotification && !slackNotification.sent && slackNotification.recipient_count > 0) {
+          notifications.show({
+            title: 'Comment posted',
+            message: `Slack notification could not be sent: ${slackNotification.error || 'Unknown error'}.`,
+            color: 'yellow',
+          });
+        }
 
         // Upload attachments if any
         let attachmentError: string | null = null;
@@ -689,7 +738,7 @@ export function CommentsModal({
 
   const handleStartEdit = (comment: Comment) => {
     setEditingCommentId(comment.id);
-    setEditDraft(comment.comment_text);
+    setEditDraft(sanitizeMentionSpansInHtml(comment.comment_text));
   };
 
   const handleCancelEdit = () => {
@@ -2142,13 +2191,41 @@ export function CommentsModal({
                       </Group>
                       {editingCommentId === comment.id ? (
                         <>
-                          <RichText
-                            ref={editRichTextRef}
-                            value={editDraft}
-                            onChange={setEditDraft}
-                            placeholder="Edit your comment..."
-                            rows={4}
-                          />
+                          <div style={{ position: 'relative' }}>
+                            <RichText
+                              ref={editRichTextRef}
+                              value={editDraft}
+                              onChange={setEditDraft}
+                              placeholder="Edit your comment... Use @ to mention someone."
+                              rows={4}
+                              onMentionTrigger={(q) => handleMentionTrigger(q, 'edit')}
+                            />
+                            {mentionDropdownOpen && mentionSource === 'edit' && (
+                              <div style={{ position: 'absolute', left: 4, right: 4, top: '100%', marginTop: 4, zIndex: 20, background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 220, overflow: 'auto' }}>
+                                {mentionUsersLoading ? (
+                                  <Text size="sm" c="dimmed" p="xs">Loading...</Text>
+                                ) : mentionFiltered.length === 0 ? (
+                                  <Text size="sm" c="dimmed" p="xs">No users found</Text>
+                                ) : (
+                                  mentionFiltered.map((user) => (
+                                    <button
+                                      key={user.id}
+                                      type="button"
+                                      onClick={() => {
+                                        editRichTextRef.current?.insertMention({ id: user.id, name: user.name });
+                                        setMentionDropdownOpen(false);
+                                      }}
+                                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px', border: 'none', background: 'none', cursor: 'pointer', fontSize: 14 }}
+                                      onMouseDown={(e) => e.preventDefault()}
+                                    >
+                                      <Text size="sm" fw={500}>{user.name}</Text>
+                                      {user.email && <Text size="xs" c="dimmed">{user.email}</Text>}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            )}
+                          </div>
                           <Group gap="xs" mt="xs">
                             <Button size="xs" variant="default" onClick={handleSaveEdit} loading={savingEdit}>
                               Save
@@ -2160,8 +2237,8 @@ export function CommentsModal({
                         </>
                       ) : (
                         <div 
-                          className="text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
-                          dangerouslySetInnerHTML={{ __html: comment.comment_text }}
+                          className="comment-content text-xs text-gray-700 [&_strong]:font-bold [&_em]:italic [&_ul]:list-disc [&_ul]:ml-4 [&_ol]:list-decimal [&_ol]:ml-4 [&_li]:mb-1 [&_p]:mb-1 [&_a]:text-blue-600 [&_a]:underline [&_a:hover]:text-blue-800"
+                          dangerouslySetInnerHTML={{ __html: sanitizeMentionSpansInHtml(comment.comment_text) }}
                           style={{
                             whiteSpace: "pre-wrap",
                             wordBreak: "break-word",
@@ -2219,9 +2296,9 @@ export function CommentsModal({
                   placeholder="Type your comment here... Use @ to mention someone."
                   rows={6}
                   autoFocus={activeTab === 'comments'}
-                  onMentionTrigger={handleMentionTrigger}
+                  onMentionTrigger={(q) => handleMentionTrigger(q, 'new')}
                 />
-                {mentionDropdownOpen && (
+                {mentionDropdownOpen && mentionSource === 'new' && (
                   <div style={{ position: 'absolute', left: 4, right: 4, top: '100%', marginTop: 4, zIndex: 20, background: 'var(--mantine-color-body)', border: '1px solid var(--mantine-color-default-border)', borderRadius: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 220, overflow: 'auto' }}>
                     {mentionUsersLoading ? (
                       <Text size="sm" c="dimmed" p="xs">Loading...</Text>

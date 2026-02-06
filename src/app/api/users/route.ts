@@ -48,7 +48,11 @@ export async function GET(req: NextRequest) {
   
   const rules = await getEffectivePermissionRules();
   const roles = (me?.roles as string[]) || [];
-  const canRead = canRolesPerformWithRules(roles, "users.read", rules) || canRolesPerformWithRules(roles, "criteria.delegate", rules);
+  const canRead =
+    canRolesPerformWithRules(roles, "users.read", rules) ||
+    canRolesPerformWithRules(roles, "criteria.delegate", rules) ||
+    // Allow accountables (PMM, PM, ENG, PRODUCT) to load user list for delegate dropdown even if DB override removed them from users.read
+    roles.some((r) => ["PMM", "PM", "ENG", "PRODUCT"].includes(String(r).toUpperCase()));
   if (!canRead) return forbid();
 
   // Get users from app_user table

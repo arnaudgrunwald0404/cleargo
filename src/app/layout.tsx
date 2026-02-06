@@ -102,7 +102,9 @@ export default async function RootLayout({
             <EpicScopeProvider>
               <Notifications />
               <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-              <TableScopeWrapper>{children}</TableScopeWrapper>
+              <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
+                <TableScopeWrapper>{children}</TableScopeWrapper>
+              </div>
             </EpicScopeProvider>
           </FeatureFlagsProvider>
         </MantineProvider>

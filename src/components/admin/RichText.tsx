@@ -77,6 +77,7 @@ const RichTextInner = forwardRef<RichTextMentionHandle, RichTextProps>(function 
             const span = document.createElement("span");
             span.setAttribute("data-mention-user-id", user.id);
             span.setAttribute("class", "mention");
+            span.setAttribute("contenteditable", "false");
             span.textContent = `@${user.name}`;
             range.deleteContents();
             range.insertNode(span);
@@ -379,6 +380,11 @@ const RichTextInner = forwardRef<RichTextMentionHandle, RichTextProps>(function 
                 className="relative rounded-b-lg overflow-hidden"
                 style={fillHeight ? { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } : undefined}
             >
+                <style>{`.rich-text-editor-content .mention,
+.rich-text-editor-content span[data-mention-user-id] {
+    color: var(--color-copper) !important;
+    font-weight: var(--font-weight-bold) !important;
+}`}</style>
                 {compactLists && (
                     <style>{`.rich-text-compact-editor p { margin: 0; }
 .rich-text-compact-editor ul, .rich-text-compact-editor ol { margin: 0.25rem 0 0 0; }
@@ -395,7 +401,7 @@ const RichTextInner = forwardRef<RichTextMentionHandle, RichTextProps>(function 
                         setIsFocused(true);
                     }}
                     onBlur={() => setIsFocused(false)}
-                    className={`px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? 'rich-text-compact-editor [&_li]:mb-0 [&_li_p]:my-0 [&_li_p]:mb-0 [&_p]:my-0 [&_p]:mb-0' : '[&_li]:mb-1 [&_p]:my-1'}`}
+                    className={`rich-text-editor-content px-3 py-2 text-sm text-gray-900 min-h-[120px] focus:outline-none [&_ul]:list-disc [&_ul]:ml-4 ${compactLists ? '[&_ul]:my-0' : '[&_ul]:my-2'} [&_ol]:list-decimal [&_ol]:ml-4 ${compactLists ? '[&_ol]:my-0' : '[&_ol]:my-2'} ${compactLists ? 'rich-text-compact-editor [&_li]:mb-0 [&_li_p]:my-0 [&_li_p]:mb-0 [&_p]:my-0 [&_p]:mb-0' : '[&_li]:mb-1 [&_p]:my-1'}`}
                     style={{
                         minHeight: fillHeight ? 120 : `${rows * 20}px`,
                         whiteSpace: "pre-wrap",

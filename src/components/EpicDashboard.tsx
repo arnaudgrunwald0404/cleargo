@@ -108,9 +108,9 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                             </th>
                         </tr>
                     </thead>
-                    <tbody style={{ backgroundColor: 'var(--table-bg)' }}>
+                    <tbody className="!bg-white" style={{ backgroundColor: '#FFFFFF' }}>
                         {initialEpics.length === 0 ? (
-                            <tr>
+                            <tr className="!bg-white" style={{ backgroundColor: '#FFFFFF' }}>
                                 <td colSpan={6} style={{
                                     padding: 'var(--spacing-12) var(--spacing-6)',
                                     textAlign: 'center',
@@ -124,13 +124,15 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                         ) : (
                             initialEpics.map((epic) => (
                                 <tr 
-                                    key={epic.id} 
+                                    key={epic.id}
+                                    className="!bg-white"
                                     style={{
+                                        backgroundColor: '#FFFFFF',
                                         borderBottom: `1px solid var(--table-border)`,
                                         transition: 'var(--transition-fast)'
                                     }}
                                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--table-row-hover)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'var(--table-bg)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#FFFFFF'}
                                 >
                                     <td style={{
                                         padding: 'var(--table-cell-padding)',

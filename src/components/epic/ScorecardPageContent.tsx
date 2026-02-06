@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Stack, Select } from '@mantine/core';
+import { Stack, Paper, Select } from '@mantine/core';
 import { ScorecardList } from './ScorecardList';
 import { ScorecardDetail } from './ScorecardDetail';
 import { ScorecardTimeSeries } from './ScorecardTimeSeries';
@@ -107,7 +107,7 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
   }
 
   return (
-    <Stack gap="md">
+    <Stack gap="lg">
       <ScorecardList
         epicId={epicId}
         scorecards={scorecards}
@@ -115,9 +115,9 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       />
 
       {scorecards.length > 0 && (
-        <div>
+        <Paper withBorder p="md" radius="md" bg="white" style={{ borderColor: 'var(--color-gray-300)' }}>
           <Select
-            label="Select Scorecard Date"
+            label="Select scorecard date"
             placeholder="Choose a date..."
             data={scorecards.map(sc => ({
               value: sc.snapshot_date,
@@ -125,9 +125,8 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
             }))}
             value={selectedDate || null}
             onChange={(value) => setSelectedDate(value)}
-            mb="md"
           />
-        </div>
+        </Paper>
       )}
 
       {selectedDate && (

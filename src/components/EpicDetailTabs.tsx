@@ -7,8 +7,8 @@ interface EpicDetailTabsProps {
 
 const tabs = [
     { value: 'readiness', label: 'Readiness' },
-    { value: 'decisions', label: 'Decisions Log' },
-    { value: 'adoption', label: 'Success Config' },
+    { value: 'decisions', label: 'Decisions' },
+    { value: 'adoption', label: 'Success Metrics' },
     { value: 'scorecard', label: 'Scorecard' },
     { value: 'retro', label: 'Retro' },
 ];
@@ -21,7 +21,6 @@ export function EpicDetailTabs({ activeTab, onTabChange }: EpicDetailTabsProps) 
                 alignItems: 'flex-end',
                 gap: 0,
                 marginBottom: 0,
-                borderBottom: '1px solid var(--color-gray-900)',
                 paddingBottom: 0,
             }}
             aria-label="Epic detail tabs"
@@ -39,13 +38,13 @@ export function EpicDetailTabs({ activeTab, onTabChange }: EpicDetailTabsProps) 
                             padding: 'var(--spacing-3) var(--spacing-5)',
                             borderRadius: isActive ? 'var(--radius-base) var(--radius-base) 0 0' : 0,
                             transition: 'var(--transition-base)',
-                            backgroundColor: 'var(--color-white)',
+                            backgroundColor: isActive ? 'var(--color-tab-panel-bg)' : 'var(--color-platinum)',
                             border: 'none',
                             borderBottom: isActive ? 'none' : '1px solid var(--color-gray-900)',
                             borderTop: isActive ? '1px solid var(--color-gray-900)' : 'none',
                             borderLeft: isActive ? '1px solid var(--color-gray-900)' : 'none',
                             borderRight: isActive ? '1px solid var(--color-gray-900)' : 'none',
-                            color: isActive ? 'var(--color-accent)' : 'var(--color-gray-900)',
+                            color: isActive ? 'var(--color-gray-900)' : 'var(--color-gray-900)',
                             boxShadow: isActive ? 'none' : 'none',
                             cursor: 'pointer',
                             position: 'relative',
@@ -60,13 +59,26 @@ export function EpicDetailTabs({ activeTab, onTabChange }: EpicDetailTabsProps) 
                         }}
                         onMouseLeave={(e) => {
                             if (!isActive) {
-                                e.currentTarget.style.backgroundColor = 'var(--color-white)';
+                                e.currentTarget.style.backgroundColor = 'var(--color-platinum)';
                             }
                         }}
                         aria-selected={isActive}
                         role="tab"
                     >
                         {tab.label}
+                        {isActive && (
+                            <span
+                                aria-hidden
+                                style={{
+                                    position: 'absolute',
+                                    bottom: -1,
+                                    left: 0,
+                                    right: 0,
+                                    height: 1,
+                                    backgroundColor: 'var(--color-tab-panel-bg)',
+                                }}
+                            />
+                        )}
                     </button>
                 );
             })}
