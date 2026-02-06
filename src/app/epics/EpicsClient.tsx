@@ -985,7 +985,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             <Box mb="sm">
                 <Group align="center" gap="md">
                     <Title style={{ 
-                        fontFamily: 'var(--font-heading)', 
+                        fontFamily: 'var(--font-marcellus), serif', 
                         color: 'var(--color-gray-900)', 
                         fontSize: 'var(--font-size-page-title)', 
                         fontWeight: 'var(--font-weight-bold)',
