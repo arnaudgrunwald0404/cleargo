@@ -1,3 +1,6 @@
+/** Link included in invite/remind emails. No token; users sign in on the app. */
+export const INVITE_EMAIL_LINK = "https://cleargo.netlify.app/";
+
 export const ROLES = [
   "CPO",
   "CSM",

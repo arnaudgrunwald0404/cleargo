@@ -10,6 +10,7 @@ import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail, getRemindEmail } from "@/lib/email/templates";
 import { getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
+import { INVITE_EMAIL_LINK } from "@/lib/constants/settings";
 
 const inviteSchema = z.object({
   type: z.enum(["invite", "remind"]).default("invite"),
@@ -172,10 +173,7 @@ export async function POST(
     // Mark token as sent in database before sending email
     await markTokenSent(jti, targetUser.email, expiresAt);
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-    const inviteLink = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
+    const inviteLink = INVITE_EMAIL_LINK;
 
     // Check if Resend API key is configured
     if (!process.env.RESEND_API_KEY) {

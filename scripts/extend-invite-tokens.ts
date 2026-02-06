@@ -5,6 +5,7 @@ import { markTokenSent } from '../src/lib/tokenStore';
 import { resend, EMAIL_SENDER } from '../src/lib/email/client';
 import { getInviteEmail } from '../src/lib/email/templates';
 import { getSettings } from '../src/lib/settings-db';
+import { INVITE_EMAIL_LINK } from '../src/lib/constants/settings';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: '.env.local' });
@@ -38,7 +39,6 @@ async function main() {
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
 
   // Get all unused tokens (not yet used)
   console.log('📋 Fetching unused invitation tokens...');
@@ -124,8 +124,7 @@ async function main() {
       // Mark new token as sent
       await markTokenSent(newJti, token.email, newExpiresAt);
 
-      // Generate new invite link
-      const inviteLink = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(newToken)}`;
+      const inviteLink = INVITE_EMAIL_LINK;
 
       // Get user's first name if available
       const { data: user } = await supabase

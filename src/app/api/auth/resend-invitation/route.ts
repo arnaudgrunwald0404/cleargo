@@ -6,6 +6,7 @@ import { markTokenSent, canSendEmail } from "@/lib/tokenStore";
 import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail } from "@/lib/email/templates";
 import { getSettings } from "@/lib/settings-db";
+import { INVITE_EMAIL_LINK } from "@/lib/constants/settings";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 
 const resendInvitationSchema = z.object({
@@ -101,10 +102,7 @@ export async function POST(req: NextRequest) {
     // Mark token as sent in database
     await markTokenSent(jti, user.email, expiresAt);
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-    const inviteLink = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
+    const inviteLink = INVITE_EMAIL_LINK;
 
     // Get email templates from settings
     const settings = await getSettings();

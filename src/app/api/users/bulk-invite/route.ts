@@ -10,6 +10,7 @@ import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail, getRemindEmail } from "@/lib/email/templates";
 import { getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
+import { INVITE_EMAIL_LINK } from "@/lib/constants/settings";
 
 const bulkInviteSchema = z.object({
   userIds: z.array(z.string().uuid()),
@@ -144,10 +145,6 @@ export async function POST(req: NextRequest) {
   // Get email templates from settings
   const settings = await getSettings();
 
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-
   const results: Array<{
     userId: string;
     email: string;
@@ -208,7 +205,7 @@ export async function POST(req: NextRequest) {
       // Mark token as sent in database before sending email
       await markTokenSent(jti, targetUser.email, expiresAt);
       
-      const inviteLink = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(token)}`;
+      const inviteLink = INVITE_EMAIL_LINK;
 
       // Get custom template for this email type
       const customTemplate = emailType === "remind"

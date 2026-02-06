@@ -8,6 +8,7 @@ import { markTokenSent } from "@/lib/tokenStore";
 import { resend, EMAIL_SENDER } from "@/lib/email/client";
 import { getInviteEmail } from "@/lib/email/templates";
 import { getSettings } from "@/lib/settings-db";
+import { INVITE_EMAIL_LINK } from "@/lib/constants/settings";
 import { z } from "zod";
 
 const extendTokensSchema = z.object({
@@ -122,10 +123,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const baseUrl =
-      process.env.NEXT_PUBLIC_APP_URL ||
-      `${req.nextUrl.protocol}//${req.nextUrl.host}`;
-
     // Get email settings
     const settings = await getSettings();
     const customTemplate = {
@@ -172,8 +169,7 @@ export async function POST(req: NextRequest) {
         // Mark new token as sent
         await markTokenSent(newJti, token.email, newExpiresAt);
 
-        // Generate new invite link
-        const inviteLink = `${baseUrl}/api/auth/verify?token=${encodeURIComponent(newToken)}`;
+        const inviteLink = INVITE_EMAIL_LINK;
 
         // Send new invitation email if requested
         if (sendEmails) {
