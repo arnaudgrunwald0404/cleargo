@@ -26,6 +26,10 @@ type MyItem = {
         label: string;
         category: string;
         gate?: boolean;
+        sort_order?: number;
+        status_definition_go?: string | null;
+        status_definition_conditional?: string | null;
+        status_definition_no_go?: string | null;
     };
 };
 
@@ -36,47 +40,49 @@ type ReleaseGroup = {
 };
 
 // Traffic light (Go/No-Go score) for My Items
-function StatusTrafficLight({ 
-    status, 
-    itemId, 
-    epicId, 
+function StatusTrafficLight({
+    status,
+    itemId,
+    epicId,
     onStatusUpdate,
     isSaving,
     showNotApplicable = false,
     isGate = false,
-}: { 
-    status: string; 
+    definitions,
+}: {
+    status: string;
     itemId: string;
     epicId: string;
     onStatusUpdate: () => void;
     isSaving: boolean;
     showNotApplicable?: boolean;
     isGate?: boolean;
+    definitions?: { go?: string | null; conditional?: string | null; no_go?: string | null };
 }) {
     const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
-    
+
     const baseLights = [
-        { 
-            value: 'GO', 
-            color: '#10b981', // green
+        {
+            value: 'GO',
+            color: '#10b981',
             greyColor: '#d1d5db',
             label: 'GO',
-            definition: 'Meets all requirements'
+            definition: (definitions?.go?.trim()) || 'Meets all requirements',
         },
-        { 
-            value: 'CONDITIONAL', 
-            color: 'var(--color-conditional-alloy, #FFA680)', // Alloy - middle traffic light
+        {
+            value: 'CONDITIONAL',
+            color: 'var(--color-conditional-alloy, #FFA680)',
             greyColor: '#d1d5db',
             label: 'CONDITIONAL',
-            definition: 'Meets requirements with conditions'
+            definition: (definitions?.conditional?.trim()) || 'Meets requirements with conditions',
         },
-        { 
-            value: 'NO_GO', 
-            color: '#ef4444', // red
+        {
+            value: 'NO_GO',
+            color: '#ef4444',
             greyColor: '#d1d5db',
             label: 'NO GO',
-            definition: 'Does not meet requirements'
+            definition: (definitions?.no_go?.trim()) || 'Does not meet requirements',
         },
     ];
     const naLight = {
@@ -84,7 +90,7 @@ function StatusTrafficLight({
         color: '#6b7280',
         greyColor: '#d1d5db',
         label: 'N/A',
-        definition: 'Not applicable; neutral to readiness score'
+        definition: 'Not applicable; neutral to readiness score',
     };
     const lights = showNotApplicable && !isGate ? [...baseLights, naLight] : baseLights;
 
@@ -752,7 +758,25 @@ export function MyTasks() {
             }
         }
 
+        // Fallback: top-level aha_release_name in aha_fields (legacy or alternate storage)
+        const topLevel = fields?.aha_release_name ?? epic?.aha_release_name;
+        if (topLevel && typeof topLevel === 'string' && topLevel.trim()) {
+            return topLevel.trim();
+        }
+
         return null;
+    };
+
+    /** Normalize date to YYYY-MM-DD for matching release schedule. */
+    const normalizeDateStr = (d: string | null | undefined): string | null => {
+        if (d == null || typeof d !== 'string' || !d.trim()) return null;
+        try {
+            const date = new Date(d.trim());
+            if (isNaN(date.getTime())) return null;
+            return date.toISOString().slice(0, 10);
+        } catch {
+            return null;
+        }
     };
 
     // Group items by release and sort by release date
@@ -760,9 +784,12 @@ export function MyTasks() {
     const releaseGroups: ReleaseGroup[] = useMemo(() => {
         // Create a map of release names to dates from release schedule
         const releaseDateMap = new Map<string, string | null>();
+        const releaseNameByDate = new Map<string, string>();
         releaseSchedule.forEach(release => {
             if (release.release_name) {
                 releaseDateMap.set(release.release_name, release.launch_date);
+                const normDate = normalizeDateStr(release.launch_date);
+                if (normDate) releaseNameByDate.set(normDate, release.release_name);
             }
         });
 
@@ -771,7 +798,11 @@ export function MyTasks() {
         const ungroupedItems: MyItem[] = [];
 
         items.forEach(item => {
-            const releaseName = epicReleaseMap.get(item.launch.id);
+            let releaseName = epicReleaseMap.get(item.launch.id) ?? null;
+            if (!releaseName && item.launch.target_launch_date) {
+                const normDate = normalizeDateStr(item.launch.target_launch_date);
+                releaseName = normDate ? (releaseNameByDate.get(normDate) ?? null) : null;
+            }
             if (releaseName) {
                 if (!releaseGroupsMap.has(releaseName)) {
                     releaseGroupsMap.set(releaseName, []);
@@ -782,12 +813,21 @@ export function MyTasks() {
             }
         });
 
-        // Convert to array and sort by release date
-        const groups: ReleaseGroup[] = Array.from(releaseGroupsMap.entries()).map(([releaseName, items]) => ({
-            releaseName,
-            releaseDate: releaseDateMap.get(releaseName) || null,
-            items
-        }));
+        // Convert to array; sort items within each group by epic name then criterion order (as on epic detail page)
+        const groups: ReleaseGroup[] = Array.from(releaseGroupsMap.entries()).map(([releaseName, items]) => {
+            const sorted = [...items].sort((a, b) => {
+                const nameCmp = (a.launch?.name ?? '').localeCompare(b.launch?.name ?? '');
+                if (nameCmp !== 0) return nameCmp;
+                const orderA = a.criterion?.sort_order ?? 0;
+                const orderB = b.criterion?.sort_order ?? 0;
+                return orderA - orderB;
+            });
+            return {
+                releaseName,
+                releaseDate: releaseDateMap.get(releaseName) || null,
+                items: sorted
+            };
+        });
 
         // Sort release groups by date (descending - most recent first), with null dates at the end
         groups.sort((a, b) => {
@@ -809,10 +849,17 @@ export function MyTasks() {
         // Only add ungrouped items if we've finished loading release names
         // This prevents showing items as "Ungrouped" prematurely while still fetching
         if (ungroupedItems.length > 0 && !isLoadingReleaseNames) {
+            const sortedUngrouped = [...ungroupedItems].sort((a, b) => {
+                const nameCmp = (a.launch?.name ?? '').localeCompare(b.launch?.name ?? '');
+                if (nameCmp !== 0) return nameCmp;
+                const orderA = a.criterion?.sort_order ?? 0;
+                const orderB = b.criterion?.sort_order ?? 0;
+                return orderA - orderB;
+            });
             releasesToShow.push({
                 releaseName: 'Ungrouped',
                 releaseDate: null,
-                items: ungroupedItems
+                items: sortedUngrouped
             });
         }
 
@@ -1238,7 +1285,7 @@ export function MyTasks() {
                                                 }}>{item.criterion.category}</div>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
-                                                <StatusTrafficLight 
+                                                <StatusTrafficLight
                                                     status={item.status}
                                                     itemId={item.id}
                                                     epicId={item.launch.id}
@@ -1246,6 +1293,11 @@ export function MyTasks() {
                                                     isSaving={savingItems.has(item.id)}
                                                     showNotApplicable={showNotApplicable}
                                                     isGate={item.criterion?.gate === true}
+                                                    definitions={{
+                                                        go: item.criterion?.status_definition_go,
+                                                        conditional: item.criterion?.status_definition_conditional,
+                                                        no_go: item.criterion?.status_definition_no_go,
+                                                    }}
                                                 />
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
