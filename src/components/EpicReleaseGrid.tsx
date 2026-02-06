@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import Link from 'next/link';
-import { Card, Title, Text, Box, Tooltip } from '@mantine/core';
+import { Card, Title, Text, Box, Tooltip, ActionIcon } from '@mantine/core';
+import { IconRefresh } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
 import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
 import { useEpicScope } from '@/lib/contexts/EpicScopeContext';
@@ -24,34 +26,35 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
   const [releases, setReleases] = useState<Release[]>([]);
   const [epics, setEpics] = useState<Epic[]>([]);
   const [loading, setLoading] = useState(true);
+  const [syncingReleaseName, setSyncingReleaseName] = useState<string | null>(null);
+
+  const fetchData = useCallback(async () => {
+    try {
+      const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
+      const [releasesRes, epicsRes] = await Promise.all([
+        fetch('/api/releases', { credentials: 'include' }),
+        fetch(endpoint, { credentials: 'include' }),
+      ]);
+
+      if (releasesRes.ok) {
+        const releasesData = await releasesRes.json();
+        setReleases(Array.isArray(releasesData) ? releasesData : []);
+      }
+
+      if (epicsRes.ok) {
+        const epicsData = await epicsRes.json();
+        setEpics(Array.isArray(epicsData) ? epicsData : []);
+      }
+    } catch (error) {
+      console.error('Error fetching data for grid:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [isMyScope]);
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        const endpoint = isMyScope ? '/api/epics/my-scope' : '/api/epics';
-        const [releasesRes, epicsRes] = await Promise.all([
-          fetch('/api/releases', { credentials: 'include' }),
-          fetch(endpoint, { credentials: 'include' }),
-        ]);
-
-        if (releasesRes.ok) {
-          const releasesData = await releasesRes.json();
-          setReleases(Array.isArray(releasesData) ? releasesData : []);
-        }
-
-        if (epicsRes.ok) {
-          const epicsData = await epicsRes.json();
-          setEpics(Array.isArray(epicsData) ? epicsData : []);
-        }
-      } catch (error) {
-        console.error('Error fetching data for grid:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-  }, [scope]);
+  }, [fetchData, scope]);
 
   // Extract release name from epic's aha_fields
   const getReleaseName = (epic: Epic): string | null => {
@@ -219,12 +222,65 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
                   style={{
                     minHeight: '60px',
                     display: 'flex',
-                    alignItems: 'flex-start',
-                    justifyContent: 'center',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'flex-start',
                     width: '100%',
                     marginBottom: '4px',
+                    gap: '4px',
                   }}
                 >
+                  <Tooltip label="Sync epics for this release" position="top" withArrow>
+                    <ActionIcon
+                      size="sm"
+                      variant="subtle"
+                      color="blue"
+                      loading={syncingReleaseName === release.release_name}
+                      disabled={syncingReleaseName === release.release_name}
+                      onClick={async () => {
+                        if (!confirm(`Sync epics for release "${release.release_name}"?`)) return;
+                        setSyncingReleaseName(release.release_name);
+                        try {
+                          const existingAhaIds = releaseEpics
+                            .map((e) => e.aha_id)
+                            .filter((id): id is string => Boolean(id));
+                          const res = await fetch(
+                            `/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`,
+                            {
+                              method: 'POST',
+                              credentials: 'include',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                releaseName: release.release_name,
+                                existingAhaIds,
+                              }),
+                            }
+                          );
+                          if (!res.ok) {
+                            const err = await res.json();
+                            throw new Error(err.error || 'Failed to sync epics');
+                          }
+                          const result = await res.json();
+                          notifications.show({
+                            title: 'Sync Complete',
+                            message: `Created: ${result.results?.created ?? 0}, Updated: ${result.results?.updated ?? 0}`,
+                            color: 'green',
+                          });
+                          await fetchData();
+                        } catch (e: unknown) {
+                          notifications.show({
+                            title: 'Sync Failed',
+                            message: e instanceof Error ? e.message : 'Failed to sync epics',
+                            color: 'red',
+                          });
+                        } finally {
+                          setSyncingReleaseName(null);
+                        }
+                      }}
+                    >
+                      <IconRefresh size={16} />
+                    </ActionIcon>
+                  </Tooltip>
                   <Tooltip
                     label={
                       <div>

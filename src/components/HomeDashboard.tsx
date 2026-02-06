@@ -27,12 +27,16 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
       if (!userEmail) {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user?.email) {
-        const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
-        if (marketingUrl) {
-          window.location.href = marketingUrl;
-        } else {
-          router.push('/login');
-        }
+          const marketingUrl = process.env.NEXT_PUBLIC_MARKETING_URL;
+          const isExternal =
+            marketingUrl &&
+            typeof window !== 'undefined' &&
+            new URL(marketingUrl).origin !== window.location.origin;
+          if (isExternal) {
+            window.location.href = marketingUrl;
+          } else {
+            router.push('/login');
+          }
         }
       }
     };
@@ -61,7 +65,7 @@ export function HomeDashboard({ userEmail, firstName, enableActivityFeed = true,
             order={1} 
             className="text-4xl font-bold mb-2"
             style={{ 
-              fontFamily: 'var(--font-heading)',
+              fontFamily: 'var(--font-marcellus), serif',
               color: 'var(--color-gray-900)',
               fontSize: 'var(--font-size-4xl)',
               fontWeight: 'var(--font-weight-bold)'

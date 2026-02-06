@@ -21,9 +21,15 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
   const [shouldShow, setShouldShow] = useState(!!serverEmail);
   const [isLoading, setIsLoading] = useState(true);
 
+  const isPublicPage = pathname === '/login' || pathname?.includes('/setup-password');
+
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        if (isPublicPage) {
+          setIsLoading(false);
+          return;
+        }
         // First check if server provided email (from layout.tsx)
         if (serverEmail) {
           setShouldShow(true);
@@ -98,10 +104,9 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
     };
 
     checkAuth();
-  }, [serverEmail, serverRole, serverImageUrl]);
+  }, [serverEmail, serverRole, serverImageUrl, isPublicPage]);
 
   // Hide header on login page
-  const isPublicPage = pathname === '/login' || pathname?.includes('/setup-password');
   
   // Update body padding when header visibility changes
   useEffect(() => {

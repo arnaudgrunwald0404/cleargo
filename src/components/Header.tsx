@@ -117,7 +117,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                 }}>
                     {/* Left side: Logo and Primary Navigation Tabs */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-                        {/* Logo - Purple rounded square with lightning bolt and ClearGO text */}
+                        {/* Logo - white on copper rounded square with lightning bolt and ClearGO text */}
                         <Link 
                             href="/" 
                             style={{
@@ -131,7 +131,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                 width: '40px',
                                 height: '40px',
                                 borderRadius: 'var(--radius-md, 8px)',
-                                backgroundColor: 'var(--color-accent, #C3B497)',
+                                backgroundColor: 'var(--color-copper, #C77B3C)',
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center'
@@ -141,7 +141,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     height="24"
                                     viewBox="0 0 24 24"
                                     fill="none"
-                                    stroke="var(--color-cast-iron, #37352A)"
+                                    stroke="var(--color-white, #FFFFFF)"
                                     strokeWidth="2.5"
                                     strokeLinecap="round"
                                     strokeLinejoin="round"

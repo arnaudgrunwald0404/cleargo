@@ -119,7 +119,7 @@ export function WelcomePage() {
       <Container size="xl" style={{ paddingTop: '128px', paddingBottom: '128px' }}>
         <SimpleGrid cols={{ base: 1, md: 2 }} spacing="xl" style={{ alignItems: 'center' }}>
           <Stack gap="xl">
-            <Title order={1} style={{ fontSize: '48px', fontWeight: 800, lineHeight: 1.2 }}>
+            <Title order={1} style={{ fontSize: '48px', fontWeight: 800, lineHeight: 1.2, fontFamily: 'var(--font-marcellus), serif' }}>
               Launch with Confidence.{' '}
               <span style={{ color: '#228BE6' }}>Not Spreadsheets.</span>
             </Title>
