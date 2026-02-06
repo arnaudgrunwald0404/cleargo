@@ -10,6 +10,12 @@ import { createMockSupabaseClient, createMockAuthUser } from '../../__tests__/te
 jest.mock('../../supabase/server', () => ({
   createClient: jest.fn(),
 }));
+jest.mock('../../settings-db', () => ({
+  getSettings: jest.fn().mockResolvedValue({ allowlisted_domains: [] }),
+}));
+jest.mock('../../slack/notifications', () => ({
+  syncUserSlackHandle: jest.fn().mockResolvedValue(undefined),
+}));
 
 describe('getUser', () => {
   let mockSupabase: any;

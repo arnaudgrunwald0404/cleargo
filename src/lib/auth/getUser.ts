@@ -1,6 +1,11 @@
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { getSettings } from '@/lib/settings-db';
+import { syncUserSlackHandle } from '@/lib/slack/notifications';
 import type { Role } from './roles';
 import type { Role as SystemRole } from '@/lib/roles-constants';
+
+const DEFAULT_AUTO_PROVISION_ROLE = 'PMM';
 
 /**
  * Get current user with roles
@@ -11,6 +16,8 @@ import type { Role as SystemRole } from '@/lib/roles-constants';
  * - PMM -> PMM
  * - SUPPORT -> CS
  * - CPO -> EXEC (also ADMIN)
+ * If the user is authenticated but has no app_user row and their email domain
+ * is allowlisted, an app_user is created automatically (no approval required).
  */
 export async function getUser(): Promise<{ id: string; roles: Role[] }> {
   const supabase = createClient();
@@ -20,15 +27,69 @@ export async function getUser(): Promise<{ id: string; roles: Role[] }> {
     throw new Error('Unauthorized');
   }
 
+  const emailLower = user.email.toLowerCase();
+
   // Get user roles from app_user table
-  const { data: appUser, error: userError } = await supabase
+  let appUser: { roles: string[] | null; role?: string } | null = null;
+  let userError: { code?: string } | null = null;
+  const { data: appUserData, error: appUserError } = await supabase
     .from('app_user')
     .select('roles, role')
-    .eq('email', user.email.toLowerCase())
+    .eq('email', emailLower)
     .single();
 
-  if (userError || !appUser) {
-    // Default to empty roles if user not found
+  appUser = appUserData;
+  userError = appUserError;
+
+  if (!appUser && userError?.code === 'PGRST116') {
+    const domain = user.email?.split('@')[1]?.toLowerCase();
+    if (domain) {
+      const settings = await getSettings();
+      const allowlisted = settings.allowlisted_domains?.some(
+        (d) => d?.toLowerCase().trim() === domain
+      );
+      if (allowlisted) {
+        const firstName = (user.user_metadata?.first_name as string) || null;
+        const lastName = (user.user_metadata?.last_name as string) || null;
+        const fullName = [firstName, lastName].filter(Boolean).join(' ').trim() || null;
+        const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (secretKey) {
+          const adminClient = createAdminClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            secretKey
+          );
+          const { error: insertError } = await adminClient
+            .from('app_user')
+            .insert({
+              id: user.id,
+              email: emailLower,
+              first_name: firstName,
+              last_name: lastName,
+              name: fullName,
+              roles: [DEFAULT_AUTO_PROVISION_ROLE],
+              is_active: true,
+            });
+          if (insertError) {
+            if (insertError.code !== '23505') {
+              console.error('[getUser] Auto-provision insert failed:', insertError);
+            }
+          } else {
+            syncUserSlackHandle(emailLower).catch((err) => {
+              console.error(`Failed to sync Slack handle for ${emailLower}:`, err);
+            });
+          }
+        }
+        const { data: created } = await supabase
+          .from('app_user')
+          .select('roles, role')
+          .eq('email', emailLower)
+          .single();
+        if (created) appUser = created;
+      }
+    }
+  }
+
+  if (!appUser) {
     return { id: user.id, roles: [] };
   }
 
