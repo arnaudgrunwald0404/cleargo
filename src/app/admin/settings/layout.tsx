@@ -1,12 +1,106 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
+import { useMediaQuery } from "@mantine/hooks";
+import { Drawer, Burger, Button } from "@mantine/core";
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
+
+const MOBILE_BREAKPOINT = "(max-width: 768px)";
+
+function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
+    const pathname = usePathname();
+    const isActive = (path: string) => {
+        if (path === "/admin/settings" && pathname === "/admin/settings") return true;
+        if (path !== "/admin/settings" && pathname?.startsWith(path)) return true;
+        return false;
+    };
+    const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
+    const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
+    const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement");
+
+    const linkProps = (path: string, active: boolean) => ({
+        href: path,
+        onClick: onNavigate,
+        className: `block w-full text-left px-4 py-2 rounded-lg transition-colors ${active ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`,
+    });
+    const linkPropsSm = (path: string, active: boolean) => ({
+        href: path,
+        onClick: onNavigate,
+        className: `block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${active ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-600 hover:bg-gray-50"}`,
+    });
+
+    return (
+        <nav>
+            <ul className="space-y-1">
+                <li>
+                    <Link
+                        href="/admin/settings/users/users"
+                        onClick={onNavigate}
+                        className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isUsersExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
+                    >
+                        <span>User Management</span>
+                        <svg className={`w-4 h-4 transition-transform ${isUsersExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </Link>
+                    {isUsersExpanded && (
+                        <ul className="ml-4 mt-1 space-y-1">
+                            <li><Link {...linkPropsSm("/admin/settings/users/users", isActive("/admin/settings/users/users"))}>Users</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/users/pm-mapping", isActive("/admin/settings/users/pm-mapping"))}>PM Mapping</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/users/domains", isActive("/admin/settings/users/domains"))}>Domains</Link></li>
+                        </ul>
+                    )}
+                </li>
+                <li><Link {...linkProps("/admin/settings/permissions", isActive("/admin/settings/permissions"))}>Permissions</Link></li>
+                <li><Link {...linkProps("/admin/settings/releases", isActive("/admin/settings/releases"))}>Release Schedule</Link></li>
+                <li><Link {...linkProps("/admin/settings/launch-stages", isActive("/admin/settings/launch-stages"))}>Launch Stages</Link></li>
+                <li><Link {...linkProps("/admin/settings/criteria", isActive("/admin/settings/criteria"))}>ClearGO Criteria</Link></li>
+                <li><Link {...linkProps("/admin/settings/email-templates", isActive("/admin/settings/email-templates"))}>Email Templates</Link></li>
+                <li>
+                    <Link href="/admin/settings/success-measurement/metrics" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isSuccessMeasurementExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                        <span>Success measurement</span>
+                        <svg className={`w-4 h-4 transition-transform ${isSuccessMeasurementExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </Link>
+                    {isSuccessMeasurementExpanded && (
+                        <ul className="ml-4 mt-1 space-y-1">
+                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/metrics", isActive("/admin/settings/success-measurement/metrics"))}>Metrics</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/dashboards", isActive("/admin/settings/success-measurement/dashboards"))}>Dashboards</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/scorecards", isActive("/admin/settings/success-measurement/scorecards"))}>Scorecards</Link></li>
+                        </ul>
+                    )}
+                </li>
+                <li><Link {...linkProps("/admin/settings/performance", isActive("/admin/settings/performance"))}>Performance</Link></li>
+                <li>
+                    <Link href="/admin/settings/integrations/aha" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isIntegrationsExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                        <span>Integrations</span>
+                        <svg className={`w-4 h-4 transition-transform ${isIntegrationsExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </Link>
+                    {isIntegrationsExpanded && (
+                        <ul className="ml-4 mt-1 space-y-1">
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/aha", isActive("/admin/settings/integrations/aha"))}>Aha</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/slack", isActive("/admin/settings/integrations/slack"))}>Slack</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/calendar", isActive("/admin/settings/integrations/calendar"))}>Calendar</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/jira", isActive("/admin/settings/integrations/jira"))}>Jira</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
+                        </ul>
+                    )}
+                </li>
+                <li><Link {...linkProps("/admin/settings/general", isActive("/admin/settings/general"))}>Other Settings</Link></li>
+            </ul>
+        </nav>
+    );
+}
 
 function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     const pathname = usePathname();
+    const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
+    const [drawerOpen, setDrawerOpen] = useState(false);
     const { error } = useSettings();
+
+    useEffect(() => {
+        setDrawerOpen(false);
+    }, [pathname]);
     
     const isActive = (path: string) => {
         if (path === "/admin/settings" && pathname === "/admin/settings") return true;
@@ -35,320 +129,34 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                             {error}
                         </div>
                     )}
-                    <div className="flex gap-6">
-                        {/* Sidebar Navigation */}
-                        <div className="w-64 flex-shrink-0 sticky top-20 self-start">
-                            <nav>
-                                <ul className="space-y-1">
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/users/users"
-                                            className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
-                                                isUsersExpanded
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            <span>User Management</span>
-                                            <svg
-                                                className={`w-4 h-4 transition-transform ${isUsersExpanded ? "rotate-90" : ""}`}
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                            </svg>
-                                        </Link>
-                                        {isUsersExpanded && (
-                                            <ul className="ml-4 mt-1 space-y-1">
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/users/users"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/users/users")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Users
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/users/pm-mapping"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/users/pm-mapping")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        PM Mapping
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/users/domains"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/users/domains")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Domains
-                                                    </Link>
-                                                </li>
-                                            </ul>
-                                        )}
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/permissions"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/permissions")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Permissions
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/releases"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/releases")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Release Schedule
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/launch-stages"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/launch-stages")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Launch Stages
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/criteria"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/criteria")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            ClearGO Criteria
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/email-templates"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/email-templates")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Email Templates
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/success-measurement/metrics"
-                                            className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
-                                                isSuccessMeasurementExpanded
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            <span>Success measurement</span>
-                                            <svg
-                                                className={`w-4 h-4 transition-transform ${
-                                                    isSuccessMeasurementExpanded ? "rotate-90" : ""
-                                                }`}
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path
-                                                    strokeLinecap="round"
-                                                    strokeLinejoin="round"
-                                                    strokeWidth={2}
-                                                    d="M9 5l7 7-7 7"
-                                                />
-                                            </svg>
-                                        </Link>
-                                        {isSuccessMeasurementExpanded && (
-                                            <ul className="ml-4 mt-1 space-y-1">
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/success-measurement/metrics"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/success-measurement/metrics")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Metrics
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/success-measurement/dashboards"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/success-measurement/dashboards")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Dashboards
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/success-measurement/scorecards"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/success-measurement/scorecards")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Scorecards
-                                                    </Link>
-                                                </li>
-                                            </ul>
-                                        )}
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/performance"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/performance")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Performance
-                                        </Link>
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/integrations/aha"
-                                            className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${
-                                                isIntegrationsExpanded
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            <span>Integrations</span>
-                                            <svg
-                                                className={`w-4 h-4 transition-transform ${isIntegrationsExpanded ? "rotate-90" : ""}`}
-                                                fill="none"
-                                                stroke="currentColor"
-                                                viewBox="0 0 24 24"
-                                            >
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                            </svg>
-                                        </Link>
-                                        {isIntegrationsExpanded && (
-                                            <ul className="ml-4 mt-1 space-y-1">
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/aha"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/aha")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Aha
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/slack"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/slack")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Slack
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/email"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/email")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Email
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/calendar"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/calendar")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Calendar
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/jira"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/jira")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Jira
-                                                    </Link>
-                                                </li>
-                                                <li>
-                                                    <Link
-                                                        href="/admin/settings/integrations/pendo"
-                                                        className={`block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${
-                                                            isActive("/admin/settings/integrations/pendo")
-                                                                ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                                : "text-gray-600 hover:bg-gray-50"
-                                                        }`}
-                                                    >
-                                                        Pendo
-                                                    </Link>
-                                                </li>
-                                            </ul>
-                                        )}
-                                    </li>
-                                    <li>
-                                        <Link
-                                            href="/admin/settings/general"
-                                            className={`block w-full text-left px-4 py-2 rounded-lg transition-colors ${
-                                                isActive("/admin/settings/general")
-                                                    ? "bg-indigo-50 text-indigo-700 font-medium"
-                                                    : "text-gray-700 hover:bg-gray-50"
-                                            }`}
-                                        >
-                                            Other Settings
-                                        </Link>
-                                    </li>
-                                </ul>
-                            </nav>
+                    <div className={`flex gap-6 ${isMobile ? "flex-col" : ""}`}>
+                        {/* Mobile: menu button row + drawer */}
+                        {isMobile && (
+                            <>
+                                <div className="flex-shrink-0">
+                                    <Button
+                                        variant="light"
+                                        leftSection={<Burger opened={drawerOpen} size="sm" />}
+                                        onClick={() => setDrawerOpen(true)}
+                                        aria-label="Open settings menu"
+                                    >
+                                        Settings menu
+                                    </Button>
+                                </div>
+                                <Drawer
+                                    opened={drawerOpen}
+                                    onClose={() => setDrawerOpen(false)}
+                                    title="Settings"
+                                    position="left"
+                                    size="280px"
+                                >
+                                    <SettingsNav onNavigate={() => setDrawerOpen(false)} />
+                                </Drawer>
+                            </>
+                        )}
+                        {/* Desktop: Sidebar Navigation */}
+                        <div className="hidden md:block w-64 flex-shrink-0 sticky top-20 self-start">
+                            <SettingsNav />
                         </div>
 
                         {/* Main Content */}

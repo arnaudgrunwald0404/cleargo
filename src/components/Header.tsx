@@ -3,12 +3,16 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useMediaQuery } from '@mantine/hooks';
+import { Menu, Burger, Box } from '@mantine/core';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
+
+const MOBILE_BREAKPOINT = '(max-width: 768px)';
 
 interface HeaderProps {
     email?: string | null;
@@ -18,8 +22,10 @@ interface HeaderProps {
 
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
+    const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
     const { flags: featureFlags } = useFeatureFlags();
     const [userRoles, setUserRoles] = useState<string[]>([]);
+    const [menuOpen, setMenuOpen] = useState(false);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
     const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
     const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
@@ -62,6 +68,10 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
         fetchUserRoles();
     }, []);
+
+    useEffect(() => {
+        setMenuOpen(false);
+    }, [pathname]);
 
     // Hide header on setup-password page
     if (pathname?.includes('/setup-password')) {
@@ -113,9 +123,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     alignItems: 'center',
                     height: '100%'
                 }}>
-                    {/* Left side: Logo and Primary Navigation Tabs */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
-                        {/* Logo - white on copper rounded square with lightning bolt and ClearGO text */}
+                    {/* Left side: Logo and Primary Navigation Tabs (desktop) or Logo + Menu (mobile) */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '32px' }}>
                         <Link 
                             href="/" 
                             style={{
@@ -157,7 +166,41 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                             </span>
                         </Link>
 
-                        <nav style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '100%' }}>
+                        {isMobile ? (
+                            <Menu opened={menuOpen} onChange={setMenuOpen} width={280} position="bottom-start" shadow="md">
+                                <Menu.Target>
+                                    <Burger
+                                        opened={menuOpen}
+                                        onClick={() => setMenuOpen((o) => !o)}
+                                        size="sm"
+                                        color="var(--nav-text, #FFFFFF)"
+                                        aria-label="Open navigation menu"
+                                    />
+                                </Menu.Target>
+                                <Menu.Dropdown>
+                                    <Box p="xs" style={{ borderBottom: '1px solid var(--mantine-color-gray-2)' }}>
+                                        <EpicSearch fetchEpics={true} className="header-search" />
+                                    </Box>
+                                    {primaryTabs.map((tab) => {
+                                        const active = isActive(tab.link);
+                                        return (
+                                            <Menu.Item
+                                                key={tab.link}
+                                                component={Link}
+                                                href={tab.link}
+                                                style={{
+                                                    fontWeight: active ? 700 : 500,
+                                                    backgroundColor: active ? 'var(--color-gray-100)' : undefined
+                                                }}
+                                            >
+                                                {tab.label}
+                                            </Menu.Item>
+                                        );
+                                    })}
+                                </Menu.Dropdown>
+                            </Menu>
+                        ) : (
+                            <nav style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '100%' }}>
                                 {primaryTabs.map((tab) => {
                                     const active = isActive(tab.link);
                                     return (
@@ -197,18 +240,16 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     );
                                 })}
                             </nav>
+                        )}
                     </div>
 
-                    {/* Right side: Search and User Avatar */}
+                    {/* Right side: Search (desktop only) and User Avatar */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                        <div style={{
-                                position: 'relative',
-                                width: '280px'
-                            }}>
+                        {!isMobile && (
+                            <div style={{ position: 'relative', width: '280px' }}>
                                 <EpicSearch fetchEpics={true} className="header-search" />
                             </div>
-
-                        {/* User Avatar */}
+                        )}
                         <UserAvatar email={email} role={role} imageUrl={imageUrl} />
                     </div>
                 </div>

@@ -1399,8 +1399,9 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">
                             {/* Desktop Table View - hidden on mobile - matches /Epics and Home table styling */}
-                            <div className="hidden md:block rounded-lg overflow-hidden" style={{ border: '1px solid #E5E7EB', backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)' }}>
-                            <table className="min-w-full table-fixed w-full" style={{ borderCollapse: 'collapse' }}>
+                            <div className="hidden md:block rounded-lg" style={{ border: '1px solid #E5E7EB', backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)' }}>
+                            <div className="overflow-x-auto overflow-y-visible">
+                            <table className="min-w-full table-fixed w-full" style={{ borderCollapse: 'collapse', minWidth: '700px' }}>
                                 <colgroup>
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: showNotApplicable ? '148px' : '120px' }} />
@@ -1785,6 +1786,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                 </tbody>
                             </table>
                             </div>
+                            </div>
                             
                             {/* Mobile Card View - visible on mobile */}
                             <div className="block md:hidden space-y-3">
@@ -1888,7 +1890,7 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                     return (
                                         <div 
                                             key={item.id} 
-                                            className={`bg-white border rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
+                                            className={`matrix-mobile-card bg-white border rounded-lg p-4 ${item.notRequired ? 'opacity-60' : ''} relative`}
                                             style={{ border: '1px solid #E5E7EB' }}
                                         >
                                             {/* Header: Criterion name */}
@@ -2031,81 +2033,6 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 <div className="text-sm">{renderDueDate()}</div>
                                             </div>
                                             
-                                            {/* Sources Section */}
-                                            <div 
-                                                className="mb-3 cursor-pointer"
-                                                onClick={() => {
-                                                    handleOpenComments(item);
-                                                }}
-                                            >
-                                                <div className="text-xs font-medium text-gray-700 mb-2">Sources</div>
-                                                {(() => {
-                                                    const dataSources = item.criterion.data_sources;
-                                                    if (!dataSources || dataSources.length === 0) {
-                                                        return <span className="text-sm text-gray-400">-</span>;
-                                                    }
-                                                    
-                                                    // Show all data sources, with empty circles for absent ones
-                                                    return (
-                                                        <div className="flex items-center gap-2 flex-wrap">
-                                                            {dataSources.map((source, idx) => {
-                                                                const hasData = hasDataSourceData(item, source, idx);
-                                                                const IconComponent = getDataSourceIcon(source.type);
-                                                                const ticketCount = jiraTicketCounts[`${item.id}-${idx}`];
-                                                                const tooltipLabel = getDataSourceTooltip(source, ticketCount);
-                                                                
-                                                                // For Jira sources, show favicon if hasData is true (meaning we have epic key or saved URL)
-                                                                const isJiraSource = source.type === 'jira_jql';
-                                                                // Use Google's favicon service as fallback if jiraDomain not loaded yet
-                                                                const jiraFaviconUrl = jiraDomain 
-                                                                    ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
-                                                                    : 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
-                                                                
-                                                                return (
-                                                                    <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
-                                                                        {hasData ? (
-                                                                            <div className="text-gray-600 hover:text-gray-900 transition-colors" style={{ display: 'inline-flex', alignItems: 'center' }}>
-                                                                                {source.type === 'success_metrics_defined' ? (
-                                                                                    <span style={{ fontSize: '16px' }}>📊</span>
-                                                                                ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
-                                                                                    <img 
-                                                                                        src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 
-                                                                                        alt="Aha" 
-                                                                                        className="w-3 h-3"
-                                                                                        style={{ display: 'block' }}
-                                                                                    />
-                                                                                ) : isJiraSource ? (
-                                                                                    <img 
-                                                                                        src={jiraFaviconUrl}
-                                                                                        alt="Jira" 
-                                                                                        className="w-3 h-3"
-                                                                                        style={{ display: 'block', width: '12px', height: '12px', objectFit: 'contain' }}
-                                                                                        onError={(e) => {
-                                                                                            console.log(`Favicon failed to load, using fallback. Original URL: ${jiraFaviconUrl}`);
-                                                                                            (e.target as HTMLImageElement).src = 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
-                                                                                        }}
-                                                                                        onLoad={() => {
-                                                                                            console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
-                                                                                        }}
-                                                                                    />
-                                                                                ) : IconComponent ? (
-                                                                                    <IconComponent size={18} />
-                                                                                ) : null}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <div 
-                                                                                className="rounded-full border-2 border-gray-300"
-                                                                                style={{ width: '18px', height: '18px', minWidth: '18px', minHeight: '18px' }}
-                                                                            />
-                                                                        )}
-                                                                    </Tooltip>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                            
                                             {/* Comments Section */}
                                             <div
                                                 onClick={(e) => {
@@ -2116,54 +2043,23 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     }
                                                     handleOpenCommentsForComments(item);
                                                 }}
-                                                className="cursor-pointer"
+                                                className="matrix-card-comments cursor-pointer"
                                             >
                                                 <div className="text-xs font-medium text-gray-700 mb-2">Comments</div>
                                                 <div className="flex items-start gap-2">
                                                     <div className="flex-1 min-w-0">
                                                         {renderCommentPreview()}
                                                     </div>
-                                                    <div className="flex gap-2 flex-shrink-0">
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleOpenCommentsForComments(item);
-                                                            }}
-                                                            className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
-                                                            title="View/add comments"
-                                                        >
-                                                            <IconMessageCircle className="w-5 h-5" />
-                                                            {(item.commentCount || 0) > 0 && (
-                                                                <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-semibold">
-                                                                    {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
-                                                                </span>
-                                                            )}
-                                                        </button>
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                handleOpenAttachments(item);
-                                                            }}
-                                                            className="p-2.5 rounded hover:bg-gray-100 text-gray-600 transition-colors flex-shrink-0 relative min-w-[44px] min-h-[44px] flex items-center justify-center"
-                                                            title="Attach files"
-                                                        >
-                                                            <IconPaperclip className="w-5 h-5" />
-                                                            {(item.attachmentCount || 0) > 0 && (
-                                                                <span className="absolute -top-1 -right-1 bg-green-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-semibold">
-                                                                    {(item.attachmentCount || 0) > 99 ? '99+' : item.attachmentCount}
-                                                                </span>
-                                                            )}
-                                                        </button>
-                                                    </div>
                                                 </div>
                                             </div>
                                             
-                                            {/* Chevron indicator */}
+                                            {/* Chevron indicator - min 44px tap target for mobile */}
                                             <div className="absolute top-4 right-4">
                                                 <button
                                                     onClick={() => handleOpenComments(item)}
-                                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                                    className="text-gray-400 hover:text-gray-600 transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center -m-2 p-2"
                                                     title="Open details"
+                                                    aria-label="Open details"
                                                 >
                                                     <IconChevronRight size={20} />
                                                 </button>

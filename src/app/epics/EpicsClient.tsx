@@ -3,8 +3,9 @@ import { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser } from '@tabler/icons-react';
+import { useMediaQuery } from "@mantine/hooks";
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse } from '@mantine/core';
+import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -49,6 +50,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         status: "ALL",
         risk: "ALL"
     });
+    const isMobile = useMediaQuery("(max-width: 768px)");
+    const [filtersExpanded, setFiltersExpanded] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     
     // Sync with Aha state
@@ -942,8 +945,102 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     if (loading) {
         return (
-            <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }} className="pt-24 p-8 flex items-center justify-center">
-                <PurpleLoader size="md" />
+            <div style={{ minHeight: "100vh", background: "var(--color-platinum)", fontFamily: "var(--font-body)" }}>
+                <div
+                    style={{
+                        maxWidth: "var(--page-container-max-width)",
+                        margin: "0 auto",
+                        paddingLeft: "var(--page-container-padding-x)",
+                        paddingRight: "var(--page-container-padding-x)",
+                        paddingTop: "var(--page-container-padding-top)",
+                        paddingBottom: "var(--spacing-8)",
+                    }}
+                    className="sm:px-6 lg:px-8"
+                >
+                    <Box mb="sm">
+                        <div className="h-9 bg-gray-200 rounded w-32 mb-2 animate-pulse" />
+                    </Box>
+                    <div className="h-4 bg-gray-200 rounded w-full max-w-xl animate-pulse mb-6" style={{ maxWidth: "36rem" }} />
+                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 mb-6" style={{ scrollbarWidth: "thin" }}>
+                        {Array.from({ length: 3 }).map((_, index) => (
+                            <div
+                                key={`skeleton-${index}`}
+                                className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse"
+                            >
+                                <div className="space-y-2">
+                                    <div className="h-6 bg-gray-300 rounded w-3/4" />
+                                    <div className="h-4 bg-gray-300 rounded w-1/2" />
+                                    <div className="pt-2 space-y-1 border-t border-gray-200">
+                                        <div className="flex justify-between text-sm">
+                                            <div className="h-4 bg-gray-300 rounded w-24" />
+                                            <div className="h-4 bg-gray-300 rounded w-12" />
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <div className="h-4 bg-gray-300 rounded w-20" />
+                                            <div className="h-4 bg-gray-300 rounded w-8" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div
+                        className="rounded-lg"
+                        style={{
+                            border: "1px solid #E5E7EB",
+                            backgroundColor: "#FFFFFF",
+                            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)",
+                        }}
+                    >
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                    <tr>
+                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {col}
+                                            </th>
+                                        ))}
+                                        <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
+                                    {Array.from({ length: 6 }).map((_, index) => (
+                                        <tr key={index} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
+                                            <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
+                                            </td>
+                                            <td className="px-4 py-3 w-24">
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24">
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
+                                            </td>
+                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }
@@ -1000,8 +1097,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 </Alert>
             )}
 
-            {/* Release Cards */}
+            {/* Release Cards - hidden on mobile */}
             {releaseStats.length > 0 && (
+                <div className="hidden md:block">
                 <Box mb="md">
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: 'thin' }}>
                         {isDeterminingOrder ? (
@@ -1136,137 +1234,279 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         )}
                     </div>
                 </Box>
+                </div>
             )}
 
-            {/* Search and filters bar - always visible */}
-            <Group mb="lg" align="center" gap="sm">
-                <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>Filters:</Text>
-                <Box
-                    style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        alignItems: 'center',
-                        gap: '16px',
-                        padding: '8px 0'
-                    }}
-                >
-                <TextInput
-                    placeholder="Search epics..."
-                    value={filters.search}
-                    onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    leftSection={<IconSearch size={18} />}
-                    rightSection={
-                        filters.search ? (
-                            <ActionIcon
-                                size="sm"
-                                variant="transparent"
-                                onClick={() => setFilters({ ...filters, search: "" })}
-                            >
-                                <IconX size={14} />
-                            </ActionIcon>
-                        ) : null
-                    }
-                    style={{ minWidth: 220, maxWidth: 320 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                <Select
-                    placeholder="Tier"
-                    value={filters.tier}
-                    onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
-                    data={[
-                        { value: "ALL", label: "All Tiers" },
-                        { value: "TIER_1", label: "Tier 1" },
-                        { value: "TIER_2", label: "Tier 2" },
-                        { value: "TIER_3", label: "Tier 3" },
-                    ]}
-                    clearable
-                    style={{ minWidth: 120 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            backgroundColor: 'var(--color-gray-50)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                <Select
-                    placeholder="Status"
-                    value={filters.status}
-                    onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
-                    data={[
-                        { value: "ALL", label: "All Statuses" },
-                        { value: "Pre_Release", label: "Pre-Release" },
-                        { value: "Released_Cohort_1", label: "Released Cohort 1" },
-                        { value: "Released_GA", label: "Released GA" },
-                        { value: "Released_Retroed", label: "Released Retroed" },
-                        { value: "Cancelled", label: "Cancelled" },
-                    ]}
-                    clearable
-                    style={{ minWidth: 150 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            backgroundColor: 'var(--color-gray-50)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                <Select
-                    placeholder="Risk"
-                    value={filters.risk}
-                    onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
-                    data={[
-                        { value: "ALL", label: "All Risks" },
-                        { value: "LOW", label: "Low" },
-                        { value: "MEDIUM", label: "Medium" },
-                        { value: "HIGH", label: "High" },
-                    ]}
-                    clearable
-                    style={{ minWidth: 100 }}
-                    styles={{
-                        input: {
-                            borderRadius: 8,
-                            border: '1px solid var(--color-gray-300)',
-                            backgroundColor: 'var(--color-gray-50)',
-                            fontFamily: 'var(--font-body)'
-                        }
-                    }}
-                />
-                {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+            {/* Search and filters bar - collapsible on mobile */}
+            {isMobile ? (
+                <Box mb="lg">
                     <Button
                         variant="light"
-                        color="red"
                         size="sm"
-                        leftSection={<IconX size={16} />}
-                        onClick={() => {
-                            setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
-                            setSelectedRelease(null);
-                        }}
+                        leftSection={filtersExpanded ? <IconChevronUp size={16} /> : <IconChevronDown size={16} />}
+                        onClick={() => setFiltersExpanded((v) => !v)}
+                        style={{ fontFamily: 'var(--font-body)' }}
+                    >
+                        Filters
+                        {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                            <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
+                                on
+                            </span>
+                        )}
+                    </Button>
+                    <Collapse in={filtersExpanded}>
+                        <Box
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '12px',
+                                paddingTop: '12px'
+                            }}
+                        >
+                            <TextInput
+                                placeholder="Search epics..."
+                                value={filters.search}
+                                onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                                leftSection={<IconSearch size={18} />}
+                                rightSection={
+                                    filters.search ? (
+                                        <ActionIcon
+                                            size="sm"
+                                            variant="transparent"
+                                            onClick={() => setFilters({ ...filters, search: "" })}
+                                        >
+                                            <IconX size={14} />
+                                        </ActionIcon>
+                                    ) : null
+                                }
+                                style={{ minWidth: 0 }}
+                                styles={{
+                                    input: {
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-gray-300)',
+                                        fontFamily: 'var(--font-body)'
+                                    }
+                                }}
+                            />
+                            <Select
+                                placeholder="Tier"
+                                value={filters.tier}
+                                onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
+                                data={[
+                                    { value: "ALL", label: "All Tiers" },
+                                    { value: "TIER_1", label: "Tier 1" },
+                                    { value: "TIER_2", label: "Tier 2" },
+                                    { value: "TIER_3", label: "Tier 3" },
+                                ]}
+                                clearable
+                                style={{ width: '100%' }}
+                                styles={{
+                                    input: {
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-gray-300)',
+                                        backgroundColor: 'var(--color-gray-50)',
+                                        fontFamily: 'var(--font-body)'
+                                    }
+                                }}
+                            />
+                            <Select
+                                placeholder="Status"
+                                value={filters.status}
+                                onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
+                                data={[
+                                    { value: "ALL", label: "All Statuses" },
+                                    { value: "Pre_Release", label: "Pre-Release" },
+                                    { value: "Released_Cohort_1", label: "Released Cohort 1" },
+                                    { value: "Released_GA", label: "Released GA" },
+                                    { value: "Released_Retroed", label: "Released Retroed" },
+                                    { value: "Cancelled", label: "Cancelled" },
+                                ]}
+                                clearable
+                                style={{ width: '100%' }}
+                                styles={{
+                                    input: {
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-gray-300)',
+                                        backgroundColor: 'var(--color-gray-50)',
+                                        fontFamily: 'var(--font-body)'
+                                    }
+                                }}
+                            />
+                            <Select
+                                placeholder="Risk"
+                                value={filters.risk}
+                                onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
+                                data={[
+                                    { value: "ALL", label: "All Risks" },
+                                    { value: "LOW", label: "Low" },
+                                    { value: "MEDIUM", label: "Medium" },
+                                    { value: "HIGH", label: "High" },
+                                ]}
+                                clearable
+                                style={{ width: '100%' }}
+                                styles={{
+                                    input: {
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-gray-300)',
+                                        backgroundColor: 'var(--color-gray-50)',
+                                        fontFamily: 'var(--font-body)'
+                                    }
+                                }}
+                            />
+                            {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                                <Button
+                                    variant="light"
+                                    color="red"
+                                    size="sm"
+                                    leftSection={<IconX size={16} />}
+                                    onClick={() => {
+                                        setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
+                                        setSelectedRelease(null);
+                                    }}
+                                    style={{ fontFamily: 'var(--font-body)', fontWeight: 500 }}
+                                    styles={{
+                                        root: {
+                                            backgroundColor: 'var(--color-error-light, #FEE2E2)',
+                                            color: 'var(--color-error-dark, #991B1B)'
+                                        }
+                                    }}
+                                >
+                                    Clear Filters
+                                </Button>
+                            )}
+                        </Box>
+                    </Collapse>
+                </Box>
+            ) : (
+                <Group mb="lg" align="center" gap="sm">
+                    <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>Filters:</Text>
+                    <Box
                         style={{
-                            marginLeft: 'auto',
-                            fontFamily: 'var(--font-body)',
-                            fontWeight: 500
-                        }}
-                        styles={{
-                            root: {
-                                backgroundColor: 'var(--color-error-light, #FEE2E2)',
-                                color: 'var(--color-error-dark, #991B1B)'
-                            }
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            alignItems: 'center',
+                            gap: '16px',
+                            padding: '8px 0'
                         }}
                     >
-                        Clear Filters
-                    </Button>
-                )}
-                </Box>
-            </Group>
+                    <TextInput
+                        placeholder="Search epics..."
+                        value={filters.search}
+                        onChange={(e) => setFilters({ ...filters, search: e.target.value })}
+                        leftSection={<IconSearch size={18} />}
+                        rightSection={
+                            filters.search ? (
+                                <ActionIcon
+                                    size="sm"
+                                    variant="transparent"
+                                    onClick={() => setFilters({ ...filters, search: "" })}
+                                >
+                                    <IconX size={14} />
+                                </ActionIcon>
+                            ) : null
+                        }
+                        style={{ minWidth: 220, maxWidth: 320 }}
+                        styles={{
+                            input: {
+                                borderRadius: 8,
+                                border: '1px solid var(--color-gray-300)',
+                                fontFamily: 'var(--font-body)'
+                            }
+                        }}
+                    />
+                    <Select
+                        placeholder="Tier"
+                        value={filters.tier}
+                        onChange={(value) => setFilters({ ...filters, tier: value || "ALL" })}
+                        data={[
+                            { value: "ALL", label: "All Tiers" },
+                            { value: "TIER_1", label: "Tier 1" },
+                            { value: "TIER_2", label: "Tier 2" },
+                            { value: "TIER_3", label: "Tier 3" },
+                        ]}
+                        clearable
+                        style={{ minWidth: 120 }}
+                        styles={{
+                            input: {
+                                borderRadius: 8,
+                                border: '1px solid var(--color-gray-300)',
+                                backgroundColor: 'var(--color-gray-50)',
+                                fontFamily: 'var(--font-body)'
+                            }
+                        }}
+                    />
+                    <Select
+                        placeholder="Status"
+                        value={filters.status}
+                        onChange={(value) => setFilters({ ...filters, status: value || "ALL" })}
+                        data={[
+                            { value: "ALL", label: "All Statuses" },
+                            { value: "Pre_Release", label: "Pre-Release" },
+                            { value: "Released_Cohort_1", label: "Released Cohort 1" },
+                            { value: "Released_GA", label: "Released GA" },
+                            { value: "Released_Retroed", label: "Released Retroed" },
+                            { value: "Cancelled", label: "Cancelled" },
+                        ]}
+                        clearable
+                        style={{ minWidth: 150 }}
+                        styles={{
+                            input: {
+                                borderRadius: 8,
+                                border: '1px solid var(--color-gray-300)',
+                                backgroundColor: 'var(--color-gray-50)',
+                                fontFamily: 'var(--font-body)'
+                            }
+                        }}
+                    />
+                    <Select
+                        placeholder="Risk"
+                        value={filters.risk}
+                        onChange={(value) => setFilters({ ...filters, risk: value || "ALL" })}
+                        data={[
+                            { value: "ALL", label: "All Risks" },
+                            { value: "LOW", label: "Low" },
+                            { value: "MEDIUM", label: "Medium" },
+                            { value: "HIGH", label: "High" },
+                        ]}
+                        clearable
+                        style={{ minWidth: 100 }}
+                        styles={{
+                            input: {
+                                borderRadius: 8,
+                                border: '1px solid var(--color-gray-300)',
+                                backgroundColor: 'var(--color-gray-50)',
+                                fontFamily: 'var(--font-body)'
+                            }
+                        }}
+                    />
+                    {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                        <Button
+                            variant="light"
+                            color="red"
+                            size="sm"
+                            leftSection={<IconX size={16} />}
+                            onClick={() => {
+                                setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
+                                setSelectedRelease(null);
+                            }}
+                            style={{
+                                marginLeft: 'auto',
+                                fontFamily: 'var(--font-body)',
+                                fontWeight: 500
+                            }}
+                            styles={{
+                                root: {
+                                    backgroundColor: 'var(--color-error-light, #FEE2E2)',
+                                    color: 'var(--color-error-dark, #991B1B)'
+                                }
+                            }}
+                        >
+                            Clear Filters
+                        </Button>
+                    )}
+                    </Box>
+                </Group>
+            )}
 
           
                 
@@ -1450,13 +1690,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </div>
                                     )}
                                 </div>
-                                <div className="rounded-lg overflow-hidden" style={{ 
+                                <div className="rounded-lg" style={{ 
                                     border: "1px solid #E5E7EB",
                                     backgroundColor: "#FFFFFF",
                                     boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                                 }}>
+                                    <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -1487,14 +1728,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Tier</th>
-                                                    <th className="px-4 py-3 text-left" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Module</th>
-                                                    <th className="px-4 py-3 text-left w-28" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1506,21 +1747,21 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             PM
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-left w-32" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Date</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Status</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1545,7 +1786,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1588,22 +1829,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         <td className="px-4 py-3 w-24">
                                                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div>
                                                         </td>
-                                                        <td className="px-4 py-3 w-24">
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24">
                                                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
                                                         </td>
                                                         <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
@@ -1614,7 +1855,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -1645,14 +1886,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Tier</th>
-                                                    <th className="px-4 py-3 text-left" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Module</th>
-                                                    <th className="px-4 py-3 text-left w-28" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1664,21 +1905,21 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             PM
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-left w-32" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Date</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
                                                         letterSpacing: "0.05em",
                                                         color: "#6B7280"
                                                     }}>Status</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1703,7 +1944,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
                                                         fontSize: "12px",
                                                         fontWeight: 600,
                                                         textTransform: "uppercase",
@@ -1783,10 +2024,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             {epic.tier.replace('_', ' ')}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {getModuleFromEpic(epic) || '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
                                                             const email = epic.owner?.email || epic.owner_email;
                                                             if (!email) return <span className="text-gray-500">-</span>;
@@ -1802,10 +2043,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             );
                                                         })()}
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <span className="px-2 py-1 rounded text-xs font-medium" style={{
                                                             display: "inline-flex",
                                                             alignItems: "center",
@@ -1819,7 +2060,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             {epic.status}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex flex-col gap-1 items-center">
                                                             {epic.readiness_status ? (
                                                                 <span className={`text-xs font-medium ${
@@ -1838,7 +2079,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24">
                                                         {epic.risk_level && (
                                                             <span className={`px-2 py-1 rounded text-xs font-medium ${epic.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
                                                                 epic.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
@@ -1879,6 +2120,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </tbody>
                                     </table>
                                     )}
+                                    </div>
                                 </div>
                             </div>
                         ))}

@@ -3,7 +3,6 @@ import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getEpics } from '@/lib/epics';
 import EpicsClient from './EpicsClient';
-import { PurpleLoader } from '@/components/PurpleLoader';
 export const dynamic = 'force-dynamic';
 
 export default async function EpicsPage() {
@@ -29,8 +28,46 @@ export default async function EpicsPage() {
 
         return (
             <Suspense fallback={
-                <div className="pt-24 p-8 flex items-center justify-center min-h-screen">
-                    <PurpleLoader size="md" />
+                <div style={{ minHeight: "100vh", background: "var(--color-platinum)", fontFamily: "var(--font-body)" }}>
+                    <div style={{ maxWidth: "var(--page-container-max-width)", margin: "0 auto", paddingLeft: "var(--page-container-padding-x)", paddingRight: "var(--page-container-padding-x)", paddingTop: "var(--page-container-padding-top)", paddingBottom: "var(--spacing-8)" }} className="sm:px-6 lg:px-8">
+                        <div className="h-9 bg-gray-200 rounded w-32 mb-2 animate-pulse" />
+                        <div className="h-4 bg-gray-200 rounded w-full max-w-xl mb-6 animate-pulse" style={{ maxWidth: "36rem" }} />
+                        <div className="flex gap-4 overflow-x-auto pb-4 mb-6">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse">
+                                    <div className="h-6 bg-gray-300 rounded w-3/4 mb-2" />
+                                    <div className="h-4 bg-gray-300 rounded w-1/2 mb-3" />
+                                    <div className="pt-2 border-t border-gray-200 space-y-2">
+                                        <div className="flex justify-between"><div className="h-4 bg-gray-300 rounded w-24" /><div className="h-4 bg-gray-300 rounded w-12" /></div>
+                                        <div className="flex justify-between"><div className="h-4 bg-gray-300 rounded w-20" /><div className="h-4 bg-gray-300 rounded w-8" /></div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="rounded-lg overflow-hidden border border-gray-200 bg-white shadow-sm">
+                            <table className="min-w-full" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
+                                    <tr>
+                                        {["Name", "Tier", "Module", "PM", "Date", "Status"].map((col) => (
+                                            <th key={col} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">{col}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {[1, 2, 3, 4, 5].map((i) => (
+                                        <tr key={i} className="border-b border-gray-200">
+                                            <td className="px-4 py-3"><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: '80%' }} /></td>
+                                            <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse w-14" /></td>
+                                            <td className="px-4 py-3 hidden md:table-cell"><div className="h-4 bg-gray-200 rounded animate-pulse w-20" /></td>
+                                            <td className="px-4 py-3 hidden md:table-cell w-28"><div className="h-4 bg-gray-200 rounded animate-pulse w-20" /></td>
+                                            <td className="px-4 py-3 hidden md:table-cell w-32"><div className="h-4 bg-gray-200 rounded animate-pulse w-16" /></td>
+                                            <td className="px-4 py-3 hidden md:table-cell w-24"><div className="h-6 bg-gray-200 rounded animate-pulse w-14" /></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             }>
                 <EpicsClient initialEpics={epics || []} />

@@ -3,6 +3,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useMediaQuery } from "@mantine/hooks";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
@@ -60,6 +61,7 @@ export default function EpicDetailPage() {
     const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
+    const isMobile = useMediaQuery("(max-width: 768px)");
 
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -1155,16 +1157,27 @@ export default function EpicDetailPage() {
         }
     }
 
+    const tabOptions = [
+        { value: "readiness", label: "Readiness" },
+        { value: "decisions", label: "Decisions" },
+        { value: "adoption", label: "Success Metrics" },
+        { value: "scorecard", label: "Scorecard" },
+        { value: "retro", label: "Retro" },
+    ];
+
     return (
         <div className="flex">
-            <div className="flex-1 sm:px-6 lg:px-8" style={{
-                maxWidth: 'var(--page-container-max-width)',
-                margin: '0 auto',
-                paddingLeft: 'var(--page-container-padding-x)',
-                paddingRight: 'var(--page-container-padding-x)',
-                paddingTop: 'var(--page-container-padding-top)',
-                paddingBottom: 'var(--spacing-8)'
-            }}>
+            <div
+                className={`flex-1 sm:px-6 lg:px-8 ${isMobile ? "epic-detail-mobile" : ""}`}
+                style={{
+                    maxWidth: "var(--page-container-max-width)",
+                    margin: "0 auto",
+                    paddingLeft: "var(--page-container-padding-x)",
+                    paddingRight: "var(--page-container-padding-x)",
+                    paddingTop: "var(--page-container-padding-top)",
+                    paddingBottom: "var(--spacing-8)",
+                }}
+            >
                 <div className="mb-1">
                     <Link
                         href="/epics"
@@ -1185,8 +1198,8 @@ export default function EpicDetailPage() {
                     >← Back to Epics</Link>
                 </div>
 
-                <div className="flex justify-between items-center mb-4">
-                    <div className="flex-1">
+                <div className="epic-detail-title-row flex flex-wrap justify-between items-center gap-4 mb-4">
+                    <div className="flex-1 min-w-0">
                         <h1 style={{
                             fontFamily: 'var(--font-heading)',
                             fontSize: 'var(--font-size-page-title)',
@@ -1219,15 +1232,18 @@ export default function EpicDetailPage() {
                                 const ahaFields = (epic as any)?.aha_fields || {};
                                 const pod = (epic as any)?.pod || ahaFields?.custom_fields?.dev_backlog_pod || null;
                                 return pod ? (
-                                    <span style={{
-                                        padding: 'var(--spacing-1) var(--spacing-2)',
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        backgroundColor: 'var(--color-blue-100)',
-                                        color: 'var(--color-blue-800)',
-                                        borderRadius: 'var(--radius-base)',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>
+                                    <span
+                                        className="epic-detail-pod"
+                                        style={{
+                                            padding: 'var(--spacing-1) var(--spacing-2)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            backgroundColor: 'var(--color-blue-100)',
+                                            color: 'var(--color-blue-800)',
+                                            borderRadius: 'var(--radius-base)',
+                                            fontFamily: 'var(--font-body)'
+                                        }}
+                                    >
                                         {String(pod).trim()}
                                     </span>
                                 ) : null;
@@ -1244,7 +1260,7 @@ export default function EpicDetailPage() {
                                 size="xs"
                                 style={{ width: 150 }}
                             />
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div className="epic-detail-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 <span style={{
                                     padding: 'var(--spacing-1) var(--spacing-2)',
                                     fontSize: 'var(--font-size-xs)',
@@ -1290,7 +1306,7 @@ export default function EpicDetailPage() {
 
                         </div>
                     </div>
-                    <div className="ml-6 flex-shrink-0" style={{ alignSelf: 'center' }}>
+                    <div className="hidden md:flex ml-6 flex-shrink-0 items-center" style={{ alignSelf: 'center' }}>
                         <div style={{
                             display: 'flex',
                             gap: 'var(--spacing-2)',
@@ -1328,12 +1344,7 @@ export default function EpicDetailPage() {
                     </div>
                 </div>
 
-                <div className="mt-6" style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(5, 1fr)',
-                    gap: 'var(--spacing-6)',
-                    alignItems: 'start'
-                }}>
+                <div className="epic-detail-stats-grid mt-6 grid grid-cols-1 md:grid-cols-5 gap-6" style={{ alignItems: "start" }}>
                     {(() => {
                         const targetDate = releaseDate || epic.target_launch_date;
                         let goNoGoDate: Date | null = null;
@@ -1407,12 +1418,15 @@ export default function EpicDetailPage() {
                                         {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
                                     </div>
                                 </div>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--spacing-1)',
-                                    textAlign: 'right'
-                                }}>
+                                <div
+                                    className="epic-detail-readiness-score"
+                                    style={{
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        gap: 'var(--spacing-1)',
+                                        textAlign: 'right'
+                                    }}
+                                >
                                     <div style={{
                                         fontSize: 'var(--font-size-xs)',
                                         fontWeight: 'var(--font-weight-medium)',
@@ -1481,7 +1495,7 @@ export default function EpicDetailPage() {
                                         <div>
                                             Readiness Status
                                             <br />
-                                            <span style={{ textTransform: 'none', fontSize: '0.9em', fontWeight: 'normal' }}>aka "Are we ready to release?"</span>
+                                            <span className="readiness-status-aka" style={{ textTransform: 'none', fontSize: '0.9em', fontWeight: 'normal' }}>aka "Are we ready to release?"</span>
                                         </div>
                                         <Tooltip
                                             label={
@@ -1567,45 +1581,56 @@ export default function EpicDetailPage() {
                     })()}
                 </div>
 
-                <div style={{ marginTop: 'var(--spacing-8)', marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 'var(--spacing-2)', borderBottom: '1px solid var(--color-gray-900)' }}>
-                    <EpicDetailTabs
-                        activeTab={activeTab}
-                        onTabChange={(value) => setActiveTab(value)}
-                    />
-                    {matrix.length > 0 && activeTab === 'readiness' && (
+                <div className="epic-detail-tab-row" style={{ marginTop: "var(--spacing-8)", marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--spacing-2)", borderBottom: "1px solid var(--color-gray-900)" }}>
+                    {isMobile ? (
+                        <Select
+                            data={tabOptions}
+                            value={activeTab}
+                            onChange={(value) => setActiveTab(value ?? "readiness")}
+                            size="sm"
+                            style={{ minWidth: 160 }}
+                            styles={{ root: { flex: 1, maxWidth: 220 } }}
+                        />
+                    ) : (
+                        <EpicDetailTabs
+                            activeTab={activeTab}
+                            onTabChange={(value) => setActiveTab(value)}
+                        />
+                    )}
+                    {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
                         <Group gap="sm" align="center">
-                            <span className="font-medium text-gray-700" style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--font-size-sm)' }}>Filters</span>
+                            <span className="font-medium text-gray-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}>Filters</span>
                             <Badge
-                                variant={filterMyTasks ? 'filled' : 'outline'}
+                                variant={filterMyTasks ? "filled" : "outline"}
                                 color="gray"
                                 style={{
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)',
-                                    fontSize: 'var(--font-size-sm)'
+                                    cursor: "pointer",
+                                    fontFamily: "var(--font-body)",
+                                    fontSize: "var(--font-size-sm)",
                                 }}
                                 onClick={() => setFilterMyTasks((v) => !v)}
                             >
                                 My tasks
                             </Badge>
                             <Badge
-                                variant={filterOverdue ? 'filled' : 'outline'}
+                                variant={filterOverdue ? "filled" : "outline"}
                                 color="gray"
                                 style={{
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)',
-                                    fontSize: 'var(--font-size-sm)'
+                                    cursor: "pointer",
+                                    fontFamily: "var(--font-body)",
+                                    fontSize: "var(--font-size-sm)",
                                 }}
                                 onClick={() => setFilterOverdue((v) => !v)}
                             >
                                 Overdue
                             </Badge>
                             <Badge
-                                variant={filterDueSoon ? 'filled' : 'outline'}
+                                variant={filterDueSoon ? "filled" : "outline"}
                                 color="gray"
                                 style={{
-                                    cursor: 'pointer',
-                                    fontFamily: 'var(--font-body)',
-                                    fontSize: 'var(--font-size-sm)'
+                                    cursor: "pointer",
+                                    fontFamily: "var(--font-body)",
+                                    fontSize: "var(--font-size-sm)",
                                 }}
                                 onClick={() => setFilterDueSoon((v) => !v)}
                             >
@@ -1615,19 +1640,22 @@ export default function EpicDetailPage() {
                     )}
                 </div>
 
-                <div style={{
-                    borderLeft: '1px solid var(--color-gray-900)',
-                    borderRight: '1px solid var(--color-gray-900)',
-                    borderBottom: '1px solid var(--color-gray-900)',
-                    borderTop: 'none',
-                    borderRadius: '0 0 var(--radius-md) var(--radius-md)',
-                    marginTop: 0,
-                    marginBottom: 'var(--spacing-8)',
-                    position: 'relative',
-                    zIndex: 1,
-                    backgroundColor: '#E8E6E1',
-                    paddingBottom: 'var(--spacing-8)'
-                }}>
+                <div
+                    className="epic-detail-tab-content"
+                    style={{
+                        borderLeft: "1px solid var(--color-gray-900)",
+                        borderRight: "1px solid var(--color-gray-900)",
+                        borderBottom: "1px solid var(--color-gray-900)",
+                        borderTop: "none",
+                        borderRadius: "0 0 var(--radius-md) var(--radius-md)",
+                        marginTop: 0,
+                        marginBottom: "var(--spacing-8)",
+                        position: "relative",
+                        zIndex: 1,
+                        backgroundColor: "#E8E6E1",
+                        paddingBottom: "var(--spacing-8)",
+                    }}
+                >
                 <Tabs
                     value={activeTab}
                     onChange={(value) => setActiveTab(value || 'readiness')}
@@ -1654,10 +1682,39 @@ export default function EpicDetailPage() {
                         <div style={{
                             padding: 0,
                             marginTop: 0,
-                            paddingTop: 'var(--spacing-4)',
-                            paddingLeft: 'var(--spacing-4)',
-                            paddingRight: 'var(--spacing-4)',
+                            paddingTop: "var(--spacing-4)",
+                            paddingLeft: "var(--spacing-4)",
+                            paddingRight: "var(--spacing-4)",
                         }}>
+                            {isMobile && matrix.length > 0 && (
+                                <Group gap="sm" align="center" style={{ marginBottom: "var(--spacing-2)" }}>
+                                    <span className="font-medium text-gray-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}>Filters</span>
+                                    <Badge
+                                        variant={filterMyTasks ? "filled" : "outline"}
+                                        color="gray"
+                                        style={{ cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}
+                                        onClick={() => setFilterMyTasks((v) => !v)}
+                                    >
+                                        My tasks
+                                    </Badge>
+                                    <Badge
+                                        variant={filterOverdue ? "filled" : "outline"}
+                                        color="gray"
+                                        style={{ cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}
+                                        onClick={() => setFilterOverdue((v) => !v)}
+                                    >
+                                        Overdue
+                                    </Badge>
+                                    <Badge
+                                        variant={filterDueSoon ? "filled" : "outline"}
+                                        color="gray"
+                                        style={{ cursor: "pointer", fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}
+                                        onClick={() => setFilterDueSoon((v) => !v)}
+                                    >
+                                        Due soon
+                                    </Badge>
+                                </Group>
+                            )}
                             {matrix.length === 0 ? (
                                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-yellow-800 flex items-center justify-between gap-4">
                                     <div>

@@ -250,6 +250,15 @@ html {
   overflow-x: hidden;
 }
 
+@media (max-width: 768px) {
+  html,
+  body {
+    outline: none !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+}
+
 /* Hide scrollbar for Chrome, Safari and Opera */
 body::-webkit-scrollbar {
   display: none;
@@ -259,6 +268,104 @@ body::-webkit-scrollbar {
 body {
   -ms-overflow-style: none;  /* IE and Edge */
   scrollbar-width: none;  /* Firefox */
+}
+
+/* Epic Detail – mobile-only spacing (class applied when viewport ≤768px) */
+.epic-detail-mobile {
+  padding-left: var(--spacing-2) !important;
+  padding-right: var(--spacing-2) !important;
+  padding-top: var(--spacing-5) !important;
+  padding-bottom: var(--spacing-6) !important;
+}
+.epic-detail-mobile .epic-detail-title-row {
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+.epic-detail-mobile .epic-detail-title-row h1 {
+  font-size: var(--font-size-2xl) !important;
+}
+.epic-detail-mobile .epic-detail-stats-grid {
+  margin-top: var(--spacing-4);
+  gap: var(--spacing-3);
+  grid-template-columns: repeat(2, 1fr);
+}
+.epic-detail-mobile .epic-detail-stats-grid > div > div:nth-child(1) {
+  font-size: 11px !important;
+}
+.epic-detail-mobile .epic-detail-stats-grid > div > div:nth-child(2) {
+  font-size: 14px !important;
+}
+.epic-detail-mobile .epic-detail-readiness-score {
+  display: none !important;
+}
+.epic-detail-mobile .readiness-status-aka {
+  display: none;
+}
+.epic-detail-mobile .epic-detail-pod,
+.epic-detail-mobile .epic-detail-status {
+  display: none !important;
+}
+.epic-detail-mobile .epic-detail-tab-row {
+  margin-top: var(--spacing-4) !important;
+  border-bottom: none !important;
+}
+.epic-detail-mobile .epic-detail-tab-content {
+  margin-bottom: var(--spacing-4) !important;
+  padding-bottom: var(--spacing-2) !important;
+  background-color: var(--color-platinum) !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .mantine-Tabs-panel {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  padding-top: var(--spacing-2) !important;
+  padding-bottom: var(--spacing-2) !important;
+  background-color: var(--color-platinum) !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .mantine-Tabs-panel > div {
+  padding-top: var(--spacing-2) !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+/* Criteria area: no extra horizontal padding so card edges align with page padding (spacing-2) */
+.epic-detail-mobile .epic-detail-tab-content [class*="px-3"] {
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .bg-white.rounded-lg[class*="p-4"] {
+  padding-left: var(--spacing-2) !important;
+  padding-right: var(--spacing-2) !important;
+}
+
+/* Criteria cards on mobile: horizontal layout, no avatar, no comments */
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  flex-direction: row !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card > div:nth-child(1) {
+  flex: 1 1 100% !important;
+  margin-bottom: var(--spacing-2) !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card > div:nth-child(2),
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card > div:nth-child(3),
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card > div:nth-child(4) {
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  margin-bottom: 0 !important;
+  margin-right: var(--spacing-2) !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card > div:nth-child(4) {
+  margin-right: 0 !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .matrix-card-comments {
+  display: none !important;
+}
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card .mantine-Avatar-root,
+.epic-detail-mobile .epic-detail-tab-content .matrix-mobile-card [class*="mantine-Avatar"] {
+  display: none !important;
 }
 
 /* Status dropdown option colors */
