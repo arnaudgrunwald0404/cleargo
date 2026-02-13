@@ -21,6 +21,8 @@ import {
   NumberInput,
   MultiSelect,
   Textarea,
+  SegmentedControl,
+  Autocomplete,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -43,6 +45,7 @@ import type {
   EpicHeartMetric,
   HeartCustomMetricTemplate,
   HeartMeasurementType,
+  HeartCategoryId,
 } from '@/lib/heart/types';
 
 interface HeartDashboardProps {
@@ -271,15 +274,16 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
         onClose={() => setShowAddCustomMetric(false)}
         epicId={epicId}
         configId={dashboard?.config.id || ''}
+        existingMetrics={metrics}
         onSuccess={() => {
           setShowAddCustomMetric(false);
           fetchDashboard();
         }}
       />
 
-      {/* HEART Cards */}
+      {/* HEART Cards (5 standard categories) */}
       <Grid>
-        {metrics.map((item) => (
+        {metrics.filter(item => !item.metric?.is_custom).map((item) => (
           <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 2.4 }}>
             <HeartMetricCard
               item={item}
@@ -289,6 +293,24 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
           </Grid.Col>
         ))}
       </Grid>
+
+      {/* Standalone Custom Metrics (not aligned to HEART) */}
+      {metrics.some(item => item.metric?.is_custom) && (
+        <>
+          <Text size="sm" fw={500} c="dimmed" mt="xs">Custom Metrics</Text>
+          <Grid>
+            {metrics.filter(item => item.metric?.is_custom).map((item) => (
+              <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 3 }}>
+                <HeartMetricCard
+                  item={item}
+                  eventIdToName={dashboard?.pendoEventIdToName}
+                  releaseDate={dashboard?.launchDate || null}
+                />
+              </Grid.Col>
+            ))}
+          </Grid>
+        </>
+      )}
 
       {/* Alerts / Insights */}
       {overallStatus === 'AT_RISK' && (
@@ -377,6 +399,12 @@ function HeartMetricCard({
           <Group gap="xs" mb="xs">
             <Text size="xl">{category.icon}</Text>
             <Text size="sm" fw={500}>{category.name}</Text>
+            {metric && (!metric.pendo_event_ids || metric.pendo_event_ids.length === 0) && (
+              <Badge size="xs" color="blue" variant="light">Manual</Badge>
+            )}
+            {metric?.is_custom && (
+              <Badge size="xs" color="grape" variant="light">Custom</Badge>
+            )}
           </Group>
           
           {needsSurvey ? (
@@ -425,7 +453,7 @@ function HeartMetricCard({
               )}
               
               {/* Show Pendo events/features being tracked (names when available) */}
-              {metric.pendo_event_ids && metric.pendo_event_ids.length > 0 && (
+              {metric.pendo_event_ids && metric.pendo_event_ids.length > 0 ? (
                 <Tooltip
                   label={metric.pendo_event_ids
                     .map((id) => eventIdToName?.[id] ?? id)
@@ -440,7 +468,11 @@ function HeartMetricCard({
                       : `${metric.pendo_event_ids.length} events`}
                   </Text>
                 </Tooltip>
-              )}
+              ) : (!metric.pendo_event_ids || metric.pendo_event_ids.length === 0) ? (
+                <Text size="xs" c="dimmed" mt={2}>
+                  ✏️ Manual entry
+                </Text>
+              ) : null}
               
               {/* Show measurement period context */}
               {measurementPeriod && (
@@ -489,7 +521,7 @@ function HeartMetricCard({
                 return (
                   <Tooltip 
                     key={mp.milestone.id}
-                    label={`${mp.milestone.label || `Day ${mp.milestone.days_after_launch}`}: ${mp.milestone.target_value}% target${mp.daysRemaining !== null ? ` (${mp.daysRemaining} days left)` : ''}`}
+                    label={`${mp.milestone.label || `Day ${mp.milestone.days_after_launch}`}: ${mp.milestone.target_value}${metric?.target_unit ? ` ${metric.target_unit}` : '%'} target${mp.daysRemaining !== null ? ` (${mp.daysRemaining} days left)` : ''}`}
                     position="top"
                   >
                     <div 
@@ -519,7 +551,7 @@ function HeartMetricCard({
                   radius="xl"
                 />
                 <Text size="xs" c="dimmed" mt={4}>
-                  {currentMilestone.milestone.label || `Day ${currentMilestone.milestone.days_after_launch}`}: {currentMilestone.milestone.target_value}%
+                  {currentMilestone.milestone.label || `Day ${currentMilestone.milestone.days_after_launch}`}: {currentMilestone.milestone.target_value}{metric?.target_unit ? ` ${metric.target_unit}` : '%'}
                   {currentMilestone.daysRemaining !== null && currentMilestone.daysRemaining > 0 && (
                     <Text span c="blue" size="xs"> ({currentMilestone.daysRemaining}d left)</Text>
                   )}
@@ -540,7 +572,7 @@ function HeartMetricCard({
                 />
                 {metric.target_value && (
                   <Text size="xs" c="dimmed" mt={4}>
-                    Target: {metric.target_value}%
+                    Target: {metric.target_value}{metric.target_unit ? ` ${metric.target_unit}` : '%'}
                     {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
                   </Text>
                 )}
@@ -549,7 +581,7 @@ function HeartMetricCard({
 
             {metric && !latestSnapshot && metric.target_value && (
               <Text size="xs" c="dimmed">
-                Target: {metric.target_value}%
+                Target: {metric.target_value}{metric.target_unit ? ` ${metric.target_unit}` : '%'}
                 {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
               </Text>
             )}
@@ -722,7 +754,7 @@ function Sparkline({
 }
 
 // Add Custom Metric Modal
-const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string }[] = [
+const PENDO_MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string }[] = [
   { value: 'events_per_user', label: 'Events per User' },
   { value: 'events_per_user_per_week', label: 'Events per User per Week' },
   { value: 'unique_users_percentage', label: 'Unique Users %' },
@@ -735,17 +767,31 @@ const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string }[] = [
   { value: 'success_rate', label: 'Success Rate' },
 ];
 
+type CustomMetricDataSource = 'pendo' | 'manual';
+
+// HEART categories with labels for the selector
+const HEART_CATEGORY_OPTIONS: Array<{ value: string; label: string; icon: string }> = [
+  { value: 'none', label: 'None (Standalone Custom Metric)', icon: '📊' },
+  { value: 'happiness', label: 'Happiness', icon: '😊' },
+  { value: 'engagement', label: 'Engagement', icon: '📈' },
+  { value: 'adoption', label: 'Adoption', icon: '🚀' },
+  { value: 'retention', label: 'Retention', icon: '🔄' },
+  { value: 'task_success', label: 'Task Success', icon: '✅' },
+];
+
 function AddCustomMetricModal({
   opened,
   onClose,
   epicId,
   configId,
+  existingMetrics,
   onSuccess,
 }: {
   opened: boolean;
   onClose: () => void;
   epicId: string;
   configId: string;
+  existingMetrics: HeartMetricDisplay[];
   onSuccess: () => void;
 }) {
   const [templates, setTemplates] = useState<HeartCustomMetricTemplate[]>([]);
@@ -753,45 +799,62 @@ function AddCustomMetricModal({
   const [pendoFeatures, setPendoFeatures] = useState<Array<{ value: string; label: string; kind: string }>>([]);
   const [pendoSegments, setPendoSegments] = useState<Array<{ value: string; label: string }>>([]);
   const [pendoIdToLabel, setPendoIdToLabel] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [pendoAvailable, setPendoAvailable] = useState(false);
+  const [loadingPendo, setLoadingPendo] = useState(true);
   const [saving, setSaving] = useState(false);
   
   // Form state
+  const [heartCategory, setHeartCategory] = useState<string>('none');
+  const [dataSource, setDataSource] = useState<CustomMetricDataSource>('manual');
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [categoryLabel, setCategoryLabel] = useState('');
   const [icon, setIcon] = useState('📊');
-  const [measurementType, setMeasurementType] = useState<HeartMeasurementType | null>(null);
+
+  // Determine which HEART categories already have a metric configured
+  const configuredHeartCategories = new Set(
+    existingMetrics
+      .filter(m => m.metric && !m.metric.is_custom && m.metric.heart_category)
+      .map(m => m.metric!.heart_category!)
+  );
+
+  const isStandalone = heartCategory === 'none';
+  const selectedHeartCat = HEART_CATEGORY_OPTIONS.find(c => c.value === heartCategory);
+  const [measurementType, setMeasurementType] = useState('');
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [selectedFeatureIds, setSelectedFeatureIds] = useState<string[]>([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [targetValue, setTargetValue] = useState<number | ''>('');
+  const [targetUnit, setTargetUnit] = useState<string>('%');
   const [timeframeDays, setTimeframeDays] = useState<number | ''>('');
   const [description, setDescription] = useState('');
 
   // Combined event/feature IDs for API
   const pendoEventIds = [...selectedEventIds, ...selectedFeatureIds];
 
-  // Load templates and Pendo data
+  // Load templates (fast) immediately, then Pendo data in background
   useEffect(() => {
     if (!opened) return;
     
-    const loadData = async () => {
-      setLoading(true);
+    // Load templates quickly (doesn't depend on Pendo)
+    fetch('/api/settings/success-measurement/heart/templates?active_only=true')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setTemplates(Array.isArray(data) ? data : []))
+      .catch(() => setTemplates([]));
+    
+    // Load Pendo data in background (can be slow - don't block the form)
+    const loadPendoData = async () => {
+      setLoadingPendo(true);
       try {
-        const [templatesRes, eventsRes, featuresRes, segmentsRes] = await Promise.all([
-          fetch('/api/settings/success-measurement/heart/templates?active_only=true'),
-          fetch('/api/settings/success-measurement/pendo/events'),
+        // Use activeOnly=false to skip per-event count checks (much faster)
+        const [eventsRes, featuresRes, segmentsRes] = await Promise.all([
+          fetch('/api/settings/success-measurement/pendo/events?activeOnly=false'),
           fetch('/api/settings/success-measurement/pendo/features'),
           fetch('/api/settings/success-measurement/pendo/segments'),
         ]);
-        
-        if (templatesRes.ok) {
-          const data = await templatesRes.json();
-          setTemplates(Array.isArray(data) ? data : []);
-        }
 
         const idToLabel: Record<string, string> = {};
+        let hasAnyPendoData = false;
 
         // Process events
         if (eventsRes.ok) {
@@ -807,6 +870,7 @@ function AddCustomMetricModal({
                 };
               });
             setPendoEvents(eventOptions);
+            if (eventOptions.length > 0) hasAnyPendoData = true;
           }
         }
 
@@ -825,6 +889,7 @@ function AddCustomMetricModal({
                 };
               });
             setPendoFeatures(featureOptions);
+            if (featureOptions.length > 0) hasAnyPendoData = true;
           }
         }
 
@@ -844,14 +909,16 @@ function AddCustomMetricModal({
         }
 
         setPendoIdToLabel(idToLabel);
+        setPendoAvailable(hasAnyPendoData);
       } catch (err) {
-        console.error('Error loading data:', err);
+        console.error('Error loading Pendo data:', err);
+        setPendoAvailable(false);
       } finally {
-        setLoading(false);
+        setLoadingPendo(false);
       }
     };
     
-    loadData();
+    loadPendoData();
   }, [opened]);
 
   // When template is selected, prefill form
@@ -861,7 +928,7 @@ function AddCustomMetricModal({
       setName('');
       setCategoryLabel('');
       setIcon('📊');
-      setMeasurementType(null);
+      setMeasurementType('');
       setTargetValue('');
       setTimeframeDays('');
       setDescription('');
@@ -880,11 +947,31 @@ function AddCustomMetricModal({
     }
   }, [selectedTemplate, templates]);
 
+  const isManualSource = dataSource === 'manual';
+
   const handleSave = async () => {
-    if (!name || !categoryLabel || !measurementType || pendoEventIds.length === 0) {
+    // Validation differs by data source and HEART alignment
+    if (!name || !measurementType.trim()) {
       notifications.show({
         title: 'Validation Error',
-        message: 'Please fill in name, category, measurement type, and select at least one Pendo event',
+        message: 'Please fill in name and measurement type',
+        color: 'red',
+      });
+      return;
+    }
+    if (isStandalone && !categoryLabel) {
+      notifications.show({
+        title: 'Validation Error',
+        message: 'Standalone metrics need a category label',
+        color: 'red',
+      });
+      return;
+    }
+
+    if (!isManualSource && pendoEventIds.length === 0) {
+      notifications.show({
+        title: 'Validation Error',
+        message: 'Please select at least one Pendo event or feature, or switch to Manual Entry',
         color: 'red',
       });
       return;
@@ -896,17 +983,21 @@ function AddCustomMetricModal({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          is_custom: true,
-          custom_category_label: categoryLabel,
-          custom_icon: icon,
+          // If aligned to a HEART category, it's a regular metric, not a custom one
+          is_custom: isStandalone,
+          heart_category: isStandalone ? null : heartCategory,
+          data_source: dataSource,
+          custom_category_label: isStandalone ? categoryLabel : null,
+          custom_icon: isStandalone ? icon : null,
           template_id: selectedTemplate !== 'custom' ? selectedTemplate : null,
           name,
           description: description || null,
           measurement_type: measurementType,
-          pendo_event_ids: pendoEventIds,
-          pendo_segment_id: selectedSegmentId,
+          pendo_event_ids: isManualSource ? [] : pendoEventIds,
+          pendo_segment_id: isManualSource ? null : selectedSegmentId,
           target_value: typeof targetValue === 'number' ? targetValue : null,
           target_timeframe_days: typeof timeframeDays === 'number' ? timeframeDays : null,
+          target_unit: isManualSource ? (targetUnit || null) : '%',
         }),
       });
 
@@ -922,15 +1013,18 @@ function AddCustomMetricModal({
       });
       
       // Reset form
+      setHeartCategory('none');
+      setDataSource(pendoAvailable ? 'pendo' : 'manual');
       setSelectedTemplate(null);
       setName('');
       setCategoryLabel('');
       setIcon('📊');
-      setMeasurementType(null);
+      setMeasurementType('');
       setSelectedEventIds([]);
       setSelectedFeatureIds([]);
       setSelectedSegmentId(null);
       setTargetValue('');
+      setTargetUnit(pendoAvailable ? '%' : '');
       setTimeframeDays('');
       setDescription('');
       
@@ -950,15 +1044,40 @@ function AddCustomMetricModal({
     <Modal
       opened={opened}
       onClose={onClose}
-      title="Add Custom Metric"
+      title="Add Metric"
       size="lg"
     >
-      {loading ? (
-        <Stack align="center" py="xl">
-          <Skeleton height={200} />
-        </Stack>
-      ) : (
-        <Stack gap="md">
+      <Stack gap="md">
+          {/* HEART Category Alignment */}
+          <Select
+            label="HEART Category"
+            description="Align this metric with a HEART category, or keep it standalone"
+            data={HEART_CATEGORY_OPTIONS.map(opt => ({
+              value: opt.value,
+              label: `${opt.icon} ${opt.label}`,
+              disabled: opt.value !== 'none' && configuredHeartCategories.has(opt.value as HeartCategoryId),
+            }))}
+            value={heartCategory}
+            onChange={(v) => setHeartCategory(v || 'none')}
+            renderOption={({ option }) => {
+              const isConfigured = option.value !== 'none' && configuredHeartCategories.has(option.value as HeartCategoryId);
+              return (
+                <Group gap="xs">
+                  <Text size="sm">{option.label}</Text>
+                  {isConfigured && <Badge size="xs" color="gray" variant="light">Already configured</Badge>}
+                </Group>
+              );
+            }}
+          />
+
+          {!isStandalone && (
+            <Paper withBorder p="xs" style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderColor: 'var(--mantine-color-blue-2)' }}>
+              <Text size="xs" c="dimmed">
+                This metric will appear under the <strong>{selectedHeartCat?.icon} {selectedHeartCat?.label}</strong> card in the HEART dashboard.
+              </Text>
+            </Paper>
+          )}
+
           <Select
             label="Start from template (optional)"
             description="Select a template or create from scratch"
@@ -977,111 +1096,178 @@ function AddCustomMetricModal({
 
           <TextInput
             label="Metric Name"
-            placeholder="e.g., Revenue Impact"
+            placeholder={isStandalone ? 'e.g., Revenue Impact' : `e.g., ${selectedHeartCat?.label} Score`}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
 
-          <Group grow>
-            <TextInput
-              label="Category Label"
-              description="How this category appears in the dashboard"
-              placeholder="e.g., Revenue, Efficiency"
-              value={categoryLabel}
-              onChange={(e) => setCategoryLabel(e.target.value)}
-              required
-            />
-            <TextInput
-              label="Icon"
-              description="Emoji for this category"
-              value={icon}
-              onChange={(e) => setIcon(e.target.value)}
-              maxLength={4}
-              style={{ maxWidth: 100 }}
-            />
-          </Group>
-
-          <Select
-            label="Measurement Type"
-            placeholder="Select how to measure"
-            data={MEASUREMENT_TYPES}
-            value={measurementType}
-            onChange={(v) => setMeasurementType(v as HeartMeasurementType | null)}
-            required
-          />
+          {/* Category Label and Icon only for standalone metrics */}
+          {isStandalone && (
+            <Group grow>
+              <TextInput
+                label="Category Label"
+                description="How this category appears in the dashboard"
+                placeholder="e.g., Revenue, Efficiency"
+                value={categoryLabel}
+                onChange={(e) => setCategoryLabel(e.target.value)}
+                required
+              />
+              <TextInput
+                label="Icon"
+                description="Emoji for this category"
+                value={icon}
+                onChange={(e) => setIcon(e.target.value)}
+                maxLength={4}
+                style={{ maxWidth: 100 }}
+              />
+            </Group>
+          )}
 
           {/* Data Source Selection */}
           <Paper withBorder p="sm" bg="gray.0">
-            <Text size="sm" fw={500} mb="xs">What to Track</Text>
-            <Text size="xs" c="dimmed" mb="md">
-              Choose Track Events (custom code events) OR Features (tagged UI elements).
+            <Text size="sm" fw={500} mb="xs">Data Source</Text>
+            <Text size="xs" c="dimmed" mb="sm">
+              Choose where the data for this metric comes from.
             </Text>
-            
-            <Stack gap="sm">
-              <MultiSelect
-                label={
-                  <Group gap={4}>
-                    <Text size="sm">📊 Track Events</Text>
-                    <Text size="xs" c="dimmed">(custom pendo.track() calls)</Text>
-                  </Group>
-                }
-                placeholder="Search track events..."
-                data={pendoEvents}
-                value={selectedEventIds}
-                onChange={setSelectedEventIds}
-                searchable
-                clearable
-                maxDropdownHeight={200}
-              />
-              
-              <MultiSelect
-                label={
-                  <Group gap={4}>
-                    <Text size="sm">🏷️ Tagged Features</Text>
-                    <Text size="xs" c="dimmed">(UI elements tagged in Pendo)</Text>
-                  </Group>
-                }
-                placeholder="Search tagged features..."
-                data={pendoFeatures.map(f => ({
-                  value: f.value,
-                  label: `${f.kind === 'Page' ? '📄' : '✨'} ${f.label} (${f.kind})`,
-                }))}
-                value={selectedFeatureIds}
-                onChange={setSelectedFeatureIds}
-                searchable
-                clearable
-                maxDropdownHeight={200}
-              />
-            </Stack>
-            
-            {pendoEventIds.length > 0 && (
-              <Text size="xs" c="green" mt="sm">
-                ✓ Tracking {pendoEventIds.length} item(s)
-              </Text>
-            )}
+            <SegmentedControl
+              value={dataSource}
+              onChange={(v) => {
+                setDataSource(v as CustomMetricDataSource);
+                setMeasurementType('');
+                setTargetUnit(v === 'pendo' ? '%' : '');
+                setSelectedEventIds([]);
+                setSelectedFeatureIds([]);
+                setSelectedSegmentId(null);
+              }}
+              data={[
+                { 
+                  label: loadingPendo ? '📊 Pendo (loading...)' : `📊 Pendo${!pendoAvailable ? ' (not connected)' : ''}`,
+                  value: 'pendo',
+                  disabled: !pendoAvailable && !loadingPendo,
+                },
+                { label: '✏️ Manual Entry', value: 'manual' },
+              ]}
+              fullWidth
+            />
           </Paper>
 
-          {/* Segment filter */}
-          <Select
-            label="👥 User Segment (Optional)"
-            description="Filter to a specific cohort of users"
-            placeholder="All users"
-            data={pendoSegments}
-            value={selectedSegmentId}
-            onChange={setSelectedSegmentId}
-            clearable
-            searchable
-          />
+          {isManualSource ? (
+            <TextInput
+              label="What are you measuring?"
+              description="Describe the metric type (e.g., Unique Companies Count, Revenue Impact, NPS Score)"
+              placeholder="e.g., Unique Companies Count, Monthly Active Users, Completion Rate %"
+              value={measurementType}
+              onChange={(e) => setMeasurementType(e.currentTarget.value)}
+              required
+            />
+          ) : (
+            <Select
+              label="Measurement Type"
+              placeholder="Select how to measure"
+              data={PENDO_MEASUREMENT_TYPES}
+              value={measurementType || null}
+              onChange={(v) => setMeasurementType(v || '')}
+              required
+            />
+          )}
+
+          {!isManualSource && (
+            <>
+              {/* Pendo Data Source Selection */}
+              <Paper withBorder p="sm" bg="gray.0">
+                <Text size="sm" fw={500} mb="xs">What to Track</Text>
+                <Text size="xs" c="dimmed" mb="md">
+                  Choose Track Events (custom code events) OR Features (tagged UI elements).
+                </Text>
+                
+                <Stack gap="sm">
+                  <MultiSelect
+                    label={
+                      <Group gap={4}>
+                        <Text size="sm">📊 Track Events</Text>
+                        <Text size="xs" c="dimmed">(custom pendo.track() calls)</Text>
+                      </Group>
+                    }
+                    placeholder="Search track events..."
+                    data={pendoEvents}
+                    value={selectedEventIds}
+                    onChange={setSelectedEventIds}
+                    searchable
+                    clearable
+                    maxDropdownHeight={200}
+                  />
+                  
+                  <MultiSelect
+                    label={
+                      <Group gap={4}>
+                        <Text size="sm">🏷️ Tagged Features</Text>
+                        <Text size="xs" c="dimmed">(UI elements tagged in Pendo)</Text>
+                      </Group>
+                    }
+                    placeholder="Search tagged features..."
+                    data={pendoFeatures.map(f => ({
+                      value: f.value,
+                      label: `${f.kind === 'Page' ? '📄' : '✨'} ${f.label} (${f.kind})`,
+                    }))}
+                    value={selectedFeatureIds}
+                    onChange={setSelectedFeatureIds}
+                    searchable
+                    clearable
+                    maxDropdownHeight={200}
+                  />
+                </Stack>
+                
+                {pendoEventIds.length > 0 && (
+                  <Text size="xs" c="green" mt="sm">
+                    ✓ Tracking {pendoEventIds.length} item(s)
+                  </Text>
+                )}
+              </Paper>
+
+              {/* Segment filter */}
+              <Select
+                label="👥 User Segment (Optional)"
+                description="Filter to a specific cohort of users"
+                placeholder="All users"
+                data={pendoSegments}
+                value={selectedSegmentId}
+                onChange={setSelectedSegmentId}
+                clearable
+                searchable
+              />
+            </>
+          )}
+
+          {isManualSource && (
+            <>
+              <Paper withBorder p="sm" style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderColor: 'var(--mantine-color-blue-2)' }}>
+                <Text size="sm" fw={500} mb="xs">Manual Entry</Text>
+                <Text size="xs" c="dimmed">
+                  You'll record values for this metric manually over time. Use this for data from 
+                  external systems, spreadsheets, surveys, or any source outside Pendo.
+                </Text>
+              </Paper>
+
+              <Autocomplete
+                label="Target Unit"
+                description="What unit are you tracking? Type your own or pick a suggestion."
+                placeholder="e.g., %, Users, Organizations, Score"
+                data={['%', 'Users', 'Organizations', 'Companies', 'Count', 'Score', 'Points', 'Responses']}
+                value={targetUnit}
+                onChange={(v) => setTargetUnit(v)}
+              />
+            </>
+          )}
 
           <Group grow>
             <NumberInput
-              label="Target Value (%)"
-              placeholder="e.g., 75"
+              label={isManualSource ? `Target Value${targetUnit ? ` (${targetUnit})` : ''}` : 'Target Value (%)'}
+              placeholder={isManualSource ? 'e.g., 50, 1000, 95' : 'e.g., 75'}
               value={targetValue}
               onChange={(v) => setTargetValue(typeof v === 'number' ? v : '')}
               min={0}
-              max={100}
+              {...(!isManualSource ? { max: 100 } : {})}
             />
             <NumberInput
               label="Timeframe (days)"
@@ -1095,7 +1281,9 @@ function AddCustomMetricModal({
 
           <Textarea
             label="Description (optional)"
-            placeholder="What does this metric measure?"
+            placeholder={isManualSource 
+              ? "Describe what this metric measures and where the data comes from..."
+              : "What does this metric measure?"}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={2}
@@ -1110,7 +1298,6 @@ function AddCustomMetricModal({
             </Button>
           </Group>
         </Stack>
-      )}
     </Modal>
   );
 }

@@ -24,6 +24,7 @@ export interface HeartCategory {
 // ============================================================================
 
 export type HeartMeasurementType =
+  // Pendo-calculated types
   | 'events_per_user'           // Engagement: total events / unique users
   | 'events_per_user_per_week'  // Engagement: events per user per week
   | 'unique_users_percentage'   // Adoption: unique users / total eligible users
@@ -35,7 +36,17 @@ export type HeartMeasurementType =
   | 'completion_rate'           // Task Success: completions / starts
   | 'success_rate'              // Task Success: successes / attempts
   | 'survey_score'              // Happiness: average survey response
-  | 'nps_score';                // Happiness: Net Promoter Score
+  | 'nps_score'                 // Happiness: Net Promoter Score
+  // Manual-entry types (free-text stored as string, these are fallback constants)
+  | 'manual_numeric'            // Manual: user-entered numeric value (count, amount, etc.)
+  | 'manual_percentage'         // Manual: user-entered percentage value
+  | (string & {});              // Allow any custom string for manual measurement descriptions
+
+// ============================================================================
+// Data Source Types
+// ============================================================================
+
+export type HeartDataSource = 'pendo' | 'manual';
 
 // ============================================================================
 // Setup Methods
@@ -88,6 +99,7 @@ export interface EpicHeartMetric {
   pendo_app_id: string | null;
   target_value: number | null;
   target_timeframe_days: number | null;
+  target_unit: string | null; // e.g. '%', 'Users', 'Organizations', 'Score'
   ai_suggested: boolean;
   ai_rationale: string | null;
   is_active: boolean;
@@ -245,6 +257,7 @@ export interface CreateEpicHeartMetricDTO {
   pendo_app_id?: string | null;
   target_value?: number | null;
   target_timeframe_days?: number | null;
+  target_unit?: string | null;
   ai_suggested?: boolean;
   ai_rationale?: string | null;
 }
@@ -258,7 +271,11 @@ export interface UpdateEpicHeartMetricDTO {
   pendo_app_id?: string | null;
   target_value?: number | null;
   target_timeframe_days?: number | null;
+  target_unit?: string | null;
   is_active?: boolean;
+  // Custom metric fields
+  custom_category_label?: string | null;
+  custom_icon?: string | null;
 }
 
 export interface CreateHeartSurveyDTO {

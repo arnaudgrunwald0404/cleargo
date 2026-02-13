@@ -12,23 +12,26 @@ import {
   MultiSelect,
   NumberInput,
   Textarea,
+  TextInput,
+  Autocomplete,
   Badge,
   Accordion,
   Loader,
   Alert,
   Divider,
   Tabs,
+  SegmentedControl,
 } from '@mantine/core';
-import { IconAlertCircle, IconCheck, IconPlus } from '@tabler/icons-react';
+import { IconAlertCircle, IconCheck, IconPlus, IconTrash } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
-import type { HeartCategoryId, HeartMeasurementType, EpicHeartMetric } from '@/lib/heart/types';
+import type { HeartCategoryId, HeartMeasurementType, HeartDataSource, EpicHeartMetric } from '@/lib/heart/types';
 
 interface HeartManualConfigFormProps {
   epicId: string;
   configId: string;
   existingMetrics?: EpicHeartMetric[];
   onSave: () => void;
-  onCancel: () => void;
+  onCancel: () => void | Promise<void>;
 }
 
 // HEART category definitions
@@ -37,7 +40,8 @@ const HEART_CATEGORIES: Array<{
   name: string;
   icon: string;
   description: string;
-  measurementTypes: Array<{ value: HeartMeasurementType; label: string }>;
+  pendoMeasurementTypes: Array<{ value: HeartMeasurementType; label: string }>;
+  manualPlaceholder: string;
   requiresSurvey?: boolean;
 }> = [
   {
@@ -45,10 +49,11 @@ const HEART_CATEGORIES: Array<{
     name: 'Happiness',
     icon: '😊',
     description: 'User satisfaction with the feature (requires survey)',
-    measurementTypes: [
+    pendoMeasurementTypes: [
       { value: 'survey_score', label: 'Survey Score (1-5 rating)' },
       { value: 'nps_score', label: 'Net Promoter Score (NPS)' },
     ],
+    manualPlaceholder: 'e.g., NPS Score, CSAT Rating, Survey Avg Score',
     requiresSurvey: true,
   },
   {
@@ -56,42 +61,46 @@ const HEART_CATEGORIES: Array<{
     name: 'Engagement',
     icon: '📊',
     description: 'How frequently and deeply users engage with the feature',
-    measurementTypes: [
+    pendoMeasurementTypes: [
       { value: 'events_per_user', label: 'Events per User (total)' },
       { value: 'events_per_user_per_week', label: 'Events per User per Week' },
     ],
+    manualPlaceholder: 'e.g., Sessions per User, Weekly Active Users, Feature Interactions',
   },
   {
     id: 'adoption',
     name: 'Adoption',
     icon: '🚀',
     description: 'Percentage of eligible users who have tried the feature',
-    measurementTypes: [
+    pendoMeasurementTypes: [
       { value: 'unique_users_percentage', label: 'Unique Users (% of eligible)' },
       { value: 'unique_users_count', label: 'Unique Users (count)' },
       { value: 'unique_companies_count', label: 'Unique Companies (count)' },
     ],
+    manualPlaceholder: 'e.g., Unique Companies Count, Adoption Rate %, Users Activated',
   },
   {
     id: 'retention',
     name: 'Retention',
     icon: '🔄',
     description: 'Whether users return to use the feature again',
-    measurementTypes: [
+    pendoMeasurementTypes: [
       { value: 'return_rate_7_days', label: 'Return Rate (7 days)' },
       { value: 'return_rate_14_days', label: 'Return Rate (14 days)' },
       { value: 'return_rate_30_days', label: 'Return Rate (30 days)' },
     ],
+    manualPlaceholder: 'e.g., 30-Day Return Rate, Monthly Retention %, Churn Rate',
   },
   {
     id: 'task_success',
     name: 'Task Success',
     icon: '✅',
     description: 'Whether users complete key workflows successfully',
-    measurementTypes: [
+    pendoMeasurementTypes: [
       { value: 'completion_rate', label: 'Completion Rate (completions / starts)' },
       { value: 'success_rate', label: 'Success Rate (successes / attempts)' },
     ],
+    manualPlaceholder: 'e.g., Completion Rate, Success Rate %, Error Rate',
   },
 ];
 
@@ -104,14 +113,28 @@ interface MilestoneFormData {
 interface MetricFormData {
   category: HeartCategoryId;
   existingMetricId: string | null; // Track if this is an existing metric for updates
+  dataSource: HeartDataSource;
   name: string;
-  measurementType: HeartMeasurementType | null;
+  measurementType: string; // Pendo types use predefined values; manual uses free text
   pendoEventIds: string[];
   pendoSegmentId: string | null;
   targetValue: number | null;
   targetTimeframeDays: number | null;
+  targetUnit: string; // e.g. '%', 'Users', 'Organizations', 'Score'
   description: string;
   milestones: MilestoneFormData[];
+}
+
+interface CustomMetricFormData {
+  metricId: string; // existing metric ID from DB
+  name: string;
+  categoryLabel: string;
+  icon: string;
+  measurementType: string;
+  targetUnit: string;
+  description: string;
+  milestones: MilestoneFormData[];
+  deleted: boolean; // track if user wants to delete this metric
 }
 
 // Default milestone presets
@@ -120,6 +143,19 @@ const DEFAULT_MILESTONES: MilestoneFormData[] = [
   { days: 90, target: 60, label: '3 Months' },
   { days: 180, target: 80, label: '6 Months' },
 ];
+
+/**
+ * Determine data source from an existing metric's measurement_type and pendo_event_ids
+ */
+function inferDataSource(metric: EpicHeartMetric): HeartDataSource {
+  if (metric.measurement_type === 'manual_numeric' || metric.measurement_type === 'manual_percentage') {
+    return 'manual';
+  }
+  if (!metric.pendo_event_ids || metric.pendo_event_ids.length === 0) {
+    return 'manual';
+  }
+  return 'pendo';
+}
 
 export function HeartManualConfigForm({
   epicId,
@@ -131,9 +167,10 @@ export function HeartManualConfigForm({
   const [pendoEvents, setPendoEvents] = useState<Array<{ value: string; label: string }>>([]);
   const [pendoSegments, setPendoSegments] = useState<Array<{ value: string; label: string }>>([]);
   const [loadingPendo, setLoadingPendo] = useState(true);
+  const [pendoAvailable, setPendoAvailable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<HeartCategoryId>('engagement');
+  const [activeCategory, setActiveCategory] = useState<HeartCategoryId | 'custom'>('engagement');
   
   // Track which categories have been configured
   const [configuredCategories, setConfiguredCategories] = useState<Set<HeartCategoryId>>(
@@ -167,12 +204,14 @@ export function HeartManualConfigForm({
       initial[cat.id] = {
         category: cat.id,
         existingMetricId: existing?.id || null,
+        dataSource: existing ? inferDataSource(existing) : 'manual',
         name: existing?.name || `${cat.name} Metric`,
-        measurementType: existing?.measurement_type || cat.measurementTypes[0].value,
+        measurementType: existing?.measurement_type || '',
         pendoEventIds: existing?.pendo_event_ids || [],
         pendoSegmentId: existing?.pendo_segment_id || null,
         targetValue: existing?.target_value || null,
         targetTimeframeDays: existing?.target_timeframe_days || null,
+        targetUnit: existing?.target_unit || (existing ? inferDataSource(existing) === 'pendo' ? '%' : '' : ''),
         description: existing?.description || '',
         milestones,
       };
@@ -180,23 +219,59 @@ export function HeartManualConfigForm({
     return initial as Record<HeartCategoryId, MetricFormData>;
   });
 
+  // Custom (standalone) metrics form data
+  const [customMetrics, setCustomMetrics] = useState<CustomMetricFormData[]>(() => {
+    return existingMetrics
+      .filter(m => m.is_custom && !m.heart_category)
+      .map(m => {
+        let milestones: MilestoneFormData[] = [];
+        if (m.milestones && m.milestones.length > 0) {
+          milestones = m.milestones.map(ms => ({
+            days: ms.days_after_launch,
+            target: ms.target_value,
+            label: ms.label || `Day ${ms.days_after_launch}`,
+          }));
+        } else if (m.target_value && m.target_timeframe_days) {
+          milestones = [{
+            days: m.target_timeframe_days,
+            target: m.target_value,
+            label: m.target_timeframe_days <= 30 ? '1 Month' :
+                   m.target_timeframe_days <= 90 ? '3 Months' :
+                   `${m.target_timeframe_days} Days`,
+          }];
+        }
+        return {
+          metricId: m.id,
+          name: m.name,
+          categoryLabel: m.custom_category_label || 'Custom',
+          icon: m.custom_icon || '📊',
+          measurementType: m.measurement_type || '',
+          targetUnit: m.target_unit || '',
+          description: m.description || '',
+          milestones,
+          deleted: false,
+        };
+      });
+  });
+
   // Separate lists for events, features, and segments
   const [pendoFeatures, setPendoFeatures] = useState<Array<{ value: string; label: string; kind: string }>>([]);
   // Map of Pendo IDs/names to display labels (for showing names instead of cryptic IDs)
   const [pendoIdToLabel, setPendoIdToLabel] = useState<Record<string, string>>({});
 
-  // Fetch Pendo events, features, and segments
+  // Fetch Pendo events, features, and segments (non-blocking)
   useEffect(() => {
     const fetchPendoData = async () => {
       setLoadingPendo(true);
       try {
         const [eventsRes, featuresRes, segmentsRes] = await Promise.all([
-          fetch('/api/settings/success-measurement/pendo/events?activeOnly=true&days=14'),
-          fetch('/api/settings/success-measurement/pendo/features?activeOnly=true&days=14'),
-          fetch('/api/settings/success-measurement/pendo/segments?activeOnly=true&days=14'),
+          fetch('/api/settings/success-measurement/pendo/events?activeOnly=false'),
+          fetch('/api/settings/success-measurement/pendo/features?activeOnly=false'),
+          fetch('/api/settings/success-measurement/pendo/segments?activeOnly=false'),
         ]);
 
         const idToLabel: Record<string, string> = {};
+        let hasAnyData = false;
 
         // Process events (Track Events - custom pendo.track() calls)
         if (eventsRes.ok) {
@@ -213,6 +288,7 @@ export function HeartManualConfigForm({
                 };
               });
             setPendoEvents(eventOptions);
+            if (eventOptions.length > 0) hasAnyData = true;
           }
         }
 
@@ -231,6 +307,7 @@ export function HeartManualConfigForm({
                 };
               });
             setPendoFeatures(featureOptions);
+            if (featureOptions.length > 0) hasAnyData = true;
           }
         }
 
@@ -250,8 +327,11 @@ export function HeartManualConfigForm({
             );
           }
         }
+
+        setPendoAvailable(hasAnyData);
       } catch (err) {
         console.error('Error fetching Pendo data:', err);
+        setPendoAvailable(false);
       } finally {
         setLoadingPendo(false);
       }
@@ -279,26 +359,40 @@ export function HeartManualConfigForm({
     });
   };
 
+  const updateCustomMetric = (index: number, updates: Partial<CustomMetricFormData>) => {
+    setCustomMetrics(prev => prev.map((m, i) => i === index ? { ...m, ...updates } : m));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
 
     try {
-      // Get categories to save (ones that are enabled and have events selected, or happiness)
+      // Get categories to save (ones that are enabled and have valid config)
       const categoriesToSave = HEART_CATEGORIES.filter(cat => {
         if (!configuredCategories.has(cat.id)) return false;
         if (cat.requiresSurvey) return false; // Skip happiness for now
         const data = formData[cat.id];
-        return data.pendoEventIds.length > 0;
+        
+        // Pendo source needs events selected
+        if (data.dataSource === 'pendo') {
+          return data.pendoEventIds.length > 0;
+        }
+        // Manual source needs a measurement type description and name
+        return !!data.measurementType.trim() && !!data.name.trim();
       });
 
-      if (categoriesToSave.length === 0) {
-        setError('Please configure at least one metric with Pendo events selected.');
+      // Check custom metrics that need saving (not deleted, have valid data)
+      const customToSave = customMetrics.filter(m => !m.deleted && !!m.name.trim() && !!m.measurementType.trim());
+      const customToDelete = customMetrics.filter(m => m.deleted);
+
+      if (categoriesToSave.length === 0 && customToSave.length === 0 && customToDelete.length === 0) {
+        setError('Please configure at least one metric category. For Pendo metrics, select events. For manual metrics, set a name and measurement type.');
         setSaving(false);
         return;
       }
 
-      // Validate milestones (at least 1, max 3)
+      // Validate milestones (at least 1, max 3) for HEART categories
       for (const cat of categoriesToSave) {
         const data = formData[cat.id];
         if (data.milestones.length === 0) {
@@ -313,10 +407,25 @@ export function HeartManualConfigForm({
         }
       }
 
+      // Validate milestones for custom metrics
+      for (const cm of customToSave) {
+        if (cm.milestones.length === 0) {
+          setError(`Custom metric "${cm.name}" requires at least 1 milestone target.`);
+          setSaving(false);
+          return;
+        }
+        if (cm.milestones.length > 3) {
+          setError(`Custom metric "${cm.name}" can have at most 3 milestone targets.`);
+          setSaving(false);
+          return;
+        }
+      }
+
       let created = 0;
       let updated = 0;
+      let deleted = 0;
 
-      // Create or update metrics for each configured category
+      // Create or update metrics for each configured HEART category
       for (const cat of categoriesToSave) {
         const data = formData[cat.id];
         const isUpdate = !!data.existingMetricId;
@@ -333,14 +442,16 @@ export function HeartManualConfigForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             heart_category: cat.id,
+            data_source: data.dataSource,
             name: data.name,
             description: data.description || null,
             measurement_type: data.measurementType,
-            pendo_event_ids: data.pendoEventIds,
-            pendo_segment_id: data.pendoSegmentId,
+            pendo_event_ids: data.dataSource === 'pendo' ? data.pendoEventIds : [],
+            pendo_segment_id: data.dataSource === 'pendo' ? data.pendoSegmentId : null,
             // Use first milestone for legacy single-target fields
             target_value: primaryMilestone?.target ?? data.targetValue,
             target_timeframe_days: primaryMilestone?.days ?? data.targetTimeframeDays,
+            target_unit: data.dataSource === 'pendo' ? '%' : (data.targetUnit || null),
             // Include full milestones array
             milestones: data.milestones.map(m => ({
               days_after_launch: m.days,
@@ -362,13 +473,58 @@ export function HeartManualConfigForm({
         }
       }
 
+      // Save custom metrics (all are updates since they already exist)
+      for (const cm of customToSave) {
+        const primaryMilestone = cm.milestones.length > 0 ? cm.milestones[0] : null;
+        
+        const res = await fetch(`/api/epics/${epicId}/heart/metrics/${cm.metricId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: cm.name,
+            description: cm.description || null,
+            measurement_type: cm.measurementType,
+            target_value: primaryMilestone?.target ?? null,
+            target_timeframe_days: primaryMilestone?.days ?? null,
+            target_unit: cm.targetUnit || null,
+            custom_category_label: cm.categoryLabel,
+            custom_icon: cm.icon,
+            milestones: cm.milestones.map(m => ({
+              days_after_launch: m.days,
+              target_value: m.target,
+              label: m.label,
+            })),
+          }),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || `Failed to update custom metric "${cm.name}"`);
+        }
+        updated++;
+      }
+
+      // Delete custom metrics marked for deletion
+      for (const cm of customToDelete) {
+        const res = await fetch(`/api/epics/${epicId}/heart/metrics/${cm.metricId}`, {
+          method: 'DELETE',
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || `Failed to delete custom metric "${cm.name}"`);
+        }
+        deleted++;
+      }
+
       const messages = [];
       if (created > 0) messages.push(`${created} created`);
       if (updated > 0) messages.push(`${updated} updated`);
+      if (deleted > 0) messages.push(`${deleted} deleted`);
 
       notifications.show({
         title: 'Metrics Saved',
-        message: `HEART metrics: ${messages.join(', ')}.`,
+        message: `Metrics: ${messages.join(', ')}.`,
         color: 'green',
       });
 
@@ -380,24 +536,25 @@ export function HeartManualConfigForm({
     }
   };
 
-  if (loadingPendo) {
-    return (
-      <Card withBorder padding="lg">
-        <Stack align="center" gap="md" py="xl">
-          <Loader size="lg" />
-          <Text>Loading Pendo data...</Text>
-        </Stack>
-      </Card>
-    );
-  }
+  // Check if any configured category or custom metric has valid data to save
+  const hasValidHeartConfig = HEART_CATEGORIES.some(cat => {
+    if (!configuredCategories.has(cat.id)) return false;
+    if (cat.requiresSurvey) return false;
+    const data = formData[cat.id];
+    if (data.dataSource === 'pendo') return data.pendoEventIds.length > 0;
+    return !!data.measurementType.trim() && !!data.name.trim();
+  });
+  const hasCustomChanges = customMetrics.some(m => !m.deleted && !!m.name.trim() && !!m.measurementType.trim())
+    || customMetrics.some(m => m.deleted);
+  const hasValidConfig = hasValidHeartConfig || hasCustomChanges;
 
   return (
     <Card withBorder padding="lg">
       <Stack gap="lg">
         <div>
-          <Text size="lg" fw={600}>Configure HEART Metrics</Text>
+          <Text size="lg" fw={600}>Configure Metrics</Text>
           <Text size="sm" c="dimmed">
-            Select Pendo events for each HEART category you want to track.
+            Set up HEART category metrics using Pendo events or manual entry, and manage any custom metrics you&apos;ve added.
           </Text>
         </div>
 
@@ -407,22 +564,274 @@ export function HeartManualConfigForm({
           </Alert>
         )}
 
-        {pendoEvents.length === 0 && (
-          <Alert icon={<IconAlertCircle size={16} />} color="yellow" title="No Pendo Events">
-            No Pendo events found. Please ensure your Pendo integration is configured in Settings.
+        {!loadingPendo && !pendoAvailable && (
+          <Alert icon={<IconAlertCircle size={16} />} color="blue" title="Pendo Not Connected">
+            No Pendo events found. You can still configure metrics using <strong>Manual Entry</strong> for 
+            data you track outside Pendo. To use Pendo-sourced metrics, configure your Pendo integration in Settings.
           </Alert>
         )}
 
-        <Tabs value={activeCategory} onChange={(value) => setActiveCategory(value as HeartCategoryId)}>
+        <Tabs value={activeCategory} onChange={(value) => setActiveCategory(value as HeartCategoryId | 'custom')}>
           <Tabs.List>
             {HEART_CATEGORIES.map((cat) => (
               <Tabs.Tab key={cat.id} value={cat.id}>
                 {cat.name}
               </Tabs.Tab>
             ))}
+            {customMetrics.length > 0 && (
+              <Tabs.Tab value="custom">
+                ✨ Custom ({customMetrics.filter(m => !m.deleted).length})
+              </Tabs.Tab>
+            )}
           </Tabs.List>
         </Tabs>
 
+        {activeCategory === 'custom' ? (
+          /* ========= CUSTOM METRICS TAB ========= */
+          <Stack gap="md">
+            {customMetrics.filter(m => !m.deleted).length === 0 ? (
+              <Paper p="lg" withBorder>
+                <Text size="sm" c="dimmed" ta="center">
+                  All custom metrics have been marked for deletion. Save to confirm, or cancel to keep them.
+                </Text>
+              </Paper>
+            ) : (
+              <Accordion variant="separated" multiple defaultValue={customMetrics.filter(m => !m.deleted).map((_, i) => `custom-${i}`)}>
+                {customMetrics.map((cm, idx) => {
+                  if (cm.deleted) return null;
+                  return (
+                    <Accordion.Item key={cm.metricId} value={`custom-${idx}`}>
+                      <Accordion.Control>
+                        <Group gap="sm">
+                          <Text size="xl">{cm.icon}</Text>
+                          <div>
+                            <Group gap="xs">
+                              <Text fw={500}>{cm.name || 'Unnamed Custom Metric'}</Text>
+                              <Badge size="xs" color="violet" variant="light">{cm.categoryLabel}</Badge>
+                              <Badge size="xs" color="blue" variant="light">Manual</Badge>
+                            </Group>
+                            <Text size="xs" c="dimmed">{cm.measurementType || 'No measurement type set'}</Text>
+                          </div>
+                        </Group>
+                      </Accordion.Control>
+                      <Accordion.Panel>
+                        <Stack gap="md">
+                          <Group gap="sm">
+                            <TextInput
+                              label="Metric Name"
+                              placeholder="e.g., Revenue Impact"
+                              value={cm.name}
+                              onChange={(e) => updateCustomMetric(idx, { name: e.currentTarget.value })}
+                              required
+                              style={{ flex: 1 }}
+                            />
+                            <TextInput
+                              label="Category Label"
+                              placeholder="e.g., Revenue"
+                              value={cm.categoryLabel}
+                              onChange={(e) => updateCustomMetric(idx, { categoryLabel: e.currentTarget.value })}
+                              style={{ width: 160 }}
+                            />
+                            <TextInput
+                              label="Icon"
+                              placeholder="📊"
+                              value={cm.icon}
+                              onChange={(e) => updateCustomMetric(idx, { icon: e.currentTarget.value })}
+                              style={{ width: 70 }}
+                            />
+                          </Group>
+
+                          <TextInput
+                            label="What are you measuring?"
+                            description="Describe the metric type (e.g., Monthly Recurring Revenue, NPS Score)"
+                            placeholder="e.g., Monthly Recurring Revenue"
+                            value={cm.measurementType}
+                            onChange={(e) => updateCustomMetric(idx, { measurementType: e.currentTarget.value })}
+                            required
+                          />
+
+                          <Autocomplete
+                            label="Target Unit"
+                            description="What unit are you tracking?"
+                            placeholder="e.g., $, %, Users, Score"
+                            data={['%', '$', 'Users', 'Organizations', 'Companies', 'Count', 'Score', 'Points', 'Responses']}
+                            value={cm.targetUnit}
+                            onChange={(value) => updateCustomMetric(idx, { targetUnit: value })}
+                          />
+
+                          <Divider label="Milestone Targets" labelPosition="left" />
+                          
+                          <Text size="xs" c="dimmed" mb="xs">
+                            Set target values at different time horizons
+                          </Text>
+
+                          {cm.milestones.length > 0 ? (
+                            <Stack gap="xs">
+                              {cm.milestones.map((milestone, mIdx) => {
+                                const autoLabel = milestone.days <= 30 ? '1 Month' :
+                                  milestone.days <= 60 ? '2 Months' :
+                                  milestone.days <= 90 ? '3 Months' :
+                                  milestone.days <= 120 ? '4 Months' :
+                                  milestone.days <= 150 ? '5 Months' :
+                                  milestone.days <= 180 ? '6 Months' :
+                                  milestone.days <= 270 ? '9 Months' :
+                                  milestone.days <= 365 ? '1 Year' :
+                                  `${Math.round(milestone.days / 30)} Months`;
+                                
+                                return (
+                                  <Paper key={mIdx} withBorder p="xs" bg="gray.0">
+                                    <Group gap="xs">
+                                      <NumberInput
+                                        size="xs"
+                                        placeholder="Days"
+                                        value={milestone.days}
+                                        onChange={(value) => {
+                                          const days = typeof value === 'number' ? value : 30;
+                                          const newLabel = days <= 30 ? '1 Month' :
+                                            days <= 60 ? '2 Months' :
+                                            days <= 90 ? '3 Months' :
+                                            days <= 120 ? '4 Months' :
+                                            days <= 150 ? '5 Months' :
+                                            days <= 180 ? '6 Months' :
+                                            days <= 270 ? '9 Months' :
+                                            days <= 365 ? '1 Year' :
+                                            `${Math.round(days / 30)} Months`;
+                                          const newMilestones = [...cm.milestones];
+                                          newMilestones[mIdx] = { ...milestone, days, label: newLabel };
+                                          updateCustomMetric(idx, { milestones: newMilestones });
+                                        }}
+                                        min={1}
+                                        max={365}
+                                        style={{ width: 70 }}
+                                      />
+                                      <Text size="xs" c="dimmed">days →</Text>
+                                      <NumberInput
+                                        size="xs"
+                                        placeholder="Target"
+                                        value={milestone.target}
+                                        onChange={(value) => {
+                                          const newMilestones = [...cm.milestones];
+                                          newMilestones[mIdx] = { ...milestone, target: typeof value === 'number' ? value : 0 };
+                                          updateCustomMetric(idx, { milestones: newMilestones });
+                                        }}
+                                        min={0}
+                                        style={{ width: 90 }}
+                                      />
+                                      {cm.targetUnit && (
+                                        <Text size="xs" c="dimmed">{cm.targetUnit}</Text>
+                                      )}
+                                      <Badge size="xs" variant="light" color="blue">
+                                        {autoLabel}
+                                      </Badge>
+                                      {cm.milestones.length > 1 && (
+                                        <Button
+                                          size="xs"
+                                          variant="subtle"
+                                          color="red"
+                                          onClick={() => {
+                                            const newMilestones = cm.milestones.filter((_, i) => i !== mIdx);
+                                            updateCustomMetric(idx, { milestones: newMilestones });
+                                          }}
+                                          style={{ marginLeft: 'auto' }}
+                                        >
+                                          Remove
+                                        </Button>
+                                      )}
+                                    </Group>
+                                  </Paper>
+                                );
+                              })}
+                            </Stack>
+                          ) : (
+                            <Text size="xs" c="dimmed" ta="center" py="xs">
+                              No milestones set. Add at least 1 milestone.
+                            </Text>
+                          )}
+
+                          <Group gap="xs" mt="xs">
+                            {cm.milestones.length < 3 && (
+                              <Button
+                                size="xs"
+                                variant="light"
+                                leftSection={<IconPlus size={14} />}
+                                onClick={() => {
+                                  const lastDay = cm.milestones.length > 0
+                                    ? Math.max(...cm.milestones.map(m => m.days)) + 30
+                                    : 30;
+                                  const newMilestones = [...cm.milestones, {
+                                    days: lastDay,
+                                    target: 0,
+                                    label: `Day ${lastDay}`,
+                                  }];
+                                  updateCustomMetric(idx, { milestones: newMilestones });
+                                }}
+                              >
+                                Add Milestone
+                              </Button>
+                            )}
+                            <Text size="xs" c="dimmed">
+                              {cm.milestones.length}/3 milestones {cm.milestones.length === 0 && '(at least 1 required)'}
+                            </Text>
+                          </Group>
+
+                          <Textarea
+                            label="Description (Optional)"
+                            description="Describe what this metric tracks and where the data comes from"
+                            placeholder="e.g., Monthly revenue impact tracked from Salesforce..."
+                            value={cm.description}
+                            onChange={(e) => updateCustomMetric(idx, { description: e.target.value })}
+                            autosize
+                            minRows={2}
+                          />
+
+                          <Divider />
+
+                          <Button
+                            size="xs"
+                            variant="light"
+                            color="red"
+                            leftSection={<IconTrash size={14} />}
+                            onClick={() => updateCustomMetric(idx, { deleted: true })}
+                          >
+                            Delete this custom metric
+                          </Button>
+                        </Stack>
+                      </Accordion.Panel>
+                    </Accordion.Item>
+                  );
+                })}
+              </Accordion>
+            )}
+
+            {/* Show deleted metrics with undo option */}
+            {customMetrics.some(m => m.deleted) && (
+              <Paper p="sm" withBorder bg="red.0" style={{ borderColor: 'var(--mantine-color-red-3)' }}>
+                <Stack gap="xs">
+                  <Text size="sm" fw={500} c="red.8">Metrics marked for deletion:</Text>
+                  {customMetrics.filter(m => m.deleted).map((cm, idx) => {
+                    const realIdx = customMetrics.indexOf(cm);
+                    return (
+                      <Group key={cm.metricId} gap="xs">
+                        <Text size="sm" c="red.7" style={{ textDecoration: 'line-through' }}>
+                          {cm.icon} {cm.name}
+                        </Text>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          color="blue"
+                          onClick={() => updateCustomMetric(realIdx, { deleted: false })}
+                        >
+                          Undo
+                        </Button>
+                      </Group>
+                    );
+                  })}
+                  <Text size="xs" c="dimmed">These will be permanently deleted when you save.</Text>
+                </Stack>
+              </Paper>
+            )}
+          </Stack>
+        ) : (
         <Accordion variant="separated" multiple defaultValue={[activeCategory]}>
           {HEART_CATEGORIES.filter((cat) => cat.id === activeCategory).map((cat) => {
             const isConfigured = configuredCategories.has(cat.id);
@@ -436,8 +845,11 @@ export function HeartManualConfigForm({
                     <div>
                       <Group gap="xs">
                         <Text fw={500}>{cat.name}</Text>
-                        {isConfigured && data.pendoEventIds.length > 0 && (
+                        {isConfigured && (data.dataSource === 'manual' ? !!data.measurementType : data.pendoEventIds.length > 0) && (
                           <Badge size="xs" color="green">Configured</Badge>
+                        )}
+                        {isConfigured && data.dataSource === 'manual' && (
+                          <Badge size="xs" color="blue" variant="light">Manual</Badge>
                         )}
                         {cat.requiresSurvey && (
                           <Badge size="xs" color="yellow" variant="light">Survey Required</Badge>
@@ -459,106 +871,188 @@ export function HeartManualConfigForm({
                     <Stack gap="md">
                       {/* Data Source Selection */}
                       <Paper withBorder p="sm" bg="gray.0">
-                        <Text size="sm" fw={500} mb="xs">What to Track</Text>
-                        <Text size="xs" c="dimmed" mb="md">
-                          Choose Track Events (custom code events) OR Features (tagged UI elements). 
-                          You can select multiple of the same type.
+                        <Text size="sm" fw={500} mb="xs">Data Source</Text>
+                        <Text size="xs" c="dimmed" mb="sm">
+                          Choose where the data for this metric comes from.
                         </Text>
-                        
-                        <Stack gap="sm">
-                          <MultiSelect
-                            label={
-                              <Group gap={4}>
-                                <Text size="sm">📊 Track Events</Text>
-                                <Text size="xs" c="dimmed">(custom pendo.track() calls)</Text>
-                              </Group>
+                        <SegmentedControl
+                          value={data.dataSource}
+                          onChange={(value) => {
+                            const newSource = value as HeartDataSource;
+                            const catDef = HEART_CATEGORIES.find(c => c.id === cat.id)!;
+                            // Reset measurement type when switching data source
+                            const newMeasurementType = newSource === 'pendo'
+                              ? catDef.pendoMeasurementTypes[0]?.value || ''
+                              : ''; // Manual: start empty, user types their own
+                            updateFormData(cat.id, { 
+                              dataSource: newSource,
+                              measurementType: newMeasurementType,
+                              targetUnit: newSource === 'pendo' ? '%' : '',
+                              // Clear Pendo-specific data when switching to manual
+                              ...(newSource === 'manual' ? { pendoEventIds: [], pendoSegmentId: null } : {}),
+                            });
+                            if (newSource === 'manual') {
+                              toggleCategory(cat.id, true);
                             }
-                            description="Events fired by your code when specific actions happen"
-                            placeholder="Search track events..."
-                            data={pendoEvents}
-                            value={data.pendoEventIds.filter(id => 
-                              pendoEvents.some(e => e.value === id)
-                            )}
-                            onChange={(value) => {
-                              // Merge with any selected features
-                              const featureIds = data.pendoEventIds.filter(id => 
-                                pendoFeatures.some(f => f.value === id)
-                              );
-                              updateFormData(cat.id, { pendoEventIds: [...value, ...featureIds] });
-                              if (value.length > 0 || featureIds.length > 0) {
-                                toggleCategory(cat.id, true);
-                              }
-                            }}
-                            searchable
-                            clearable
-                            maxDropdownHeight={200}
-                          />
-                          
-                          <MultiSelect
-                            label={
-                              <Group gap={4}>
-                                <Text size="sm">🏷️ Tagged Features</Text>
-                                <Text size="xs" c="dimmed">(UI elements tagged in Pendo)</Text>
-                              </Group>
-                            }
-                            description="Clicks/views on tagged buttons, pages, or UI elements"
-                            placeholder="Search tagged features..."
-                            data={pendoFeatures.map(f => ({
-                              value: f.value,
-                              label: `${f.kind === 'Page' ? '📄' : '✨'} ${f.label} (${f.kind})`,
-                            }))}
-                            value={data.pendoEventIds.filter(id => 
-                              pendoFeatures.some(f => f.value === id)
-                            )}
-                            onChange={(value) => {
-                              // Merge with any selected events
-                              const eventIds = data.pendoEventIds.filter(id => 
-                                pendoEvents.some(e => e.value === id)
-                              );
-                              updateFormData(cat.id, { pendoEventIds: [...eventIds, ...value] });
-                              if (value.length > 0 || eventIds.length > 0) {
-                                toggleCategory(cat.id, true);
-                              }
-                            }}
-                            searchable
-                            clearable
-                            maxDropdownHeight={200}
-                          />
-                        </Stack>
-                        
-                        {data.pendoEventIds.length > 0 && (
-                          <Text size="xs" c="green" mt="sm">
-                            ✓ Tracking {data.pendoEventIds.length} item(s)
-                          </Text>
-                        )}
+                          }}
+                          data={[
+                            { 
+                              label: loadingPendo ? '📊 Pendo (loading...)' : `📊 Pendo${!pendoAvailable ? ' (not connected)' : ''}`,
+                              value: 'pendo',
+                              disabled: !pendoAvailable && !loadingPendo,
+                            },
+                            { label: '✏️ Manual Entry', value: 'manual' },
+                          ]}
+                          fullWidth
+                        />
                       </Paper>
 
-                      <Select
-                        label="Measurement Type"
-                        description="How should this metric be calculated?"
-                        data={cat.measurementTypes}
-                        value={data.measurementType}
-                        onChange={(value) => updateFormData(cat.id, { 
-                          measurementType: value as HeartMeasurementType 
-                        })}
-                      />
+                      {data.dataSource === 'pendo' ? (
+                        /* ========= PENDO DATA SOURCE ========= */
+                        <>
+                          <Paper withBorder p="sm" bg="gray.0">
+                            <Text size="sm" fw={500} mb="xs">What to Track</Text>
+                            <Text size="xs" c="dimmed" mb="md">
+                              Choose Track Events (custom code events) OR Features (tagged UI elements). 
+                              You can select multiple of the same type.
+                            </Text>
+                            
+                            {loadingPendo ? (
+                              <Group gap="xs" py="md" justify="center">
+                                <Loader size="sm" />
+                                <Text size="sm" c="dimmed">Loading Pendo events...</Text>
+                              </Group>
+                            ) : (
+                              <Stack gap="sm">
+                                <MultiSelect
+                                  label={
+                                    <Group gap={4}>
+                                      <Text size="sm">📊 Track Events</Text>
+                                      <Text size="xs" c="dimmed">(custom pendo.track() calls)</Text>
+                                    </Group>
+                                  }
+                                  description="Events fired by your code when specific actions happen"
+                                  placeholder="Search track events..."
+                                  data={pendoEvents}
+                                  value={data.pendoEventIds.filter(id => 
+                                    pendoEvents.some(e => e.value === id)
+                                  )}
+                                  onChange={(value) => {
+                                    // Merge with any selected features
+                                    const featureIds = data.pendoEventIds.filter(id => 
+                                      pendoFeatures.some(f => f.value === id)
+                                    );
+                                    updateFormData(cat.id, { pendoEventIds: [...value, ...featureIds] });
+                                    if (value.length > 0 || featureIds.length > 0) {
+                                      toggleCategory(cat.id, true);
+                                    }
+                                  }}
+                                  searchable
+                                  clearable
+                                  maxDropdownHeight={200}
+                                />
+                                
+                                <MultiSelect
+                                  label={
+                                    <Group gap={4}>
+                                      <Text size="sm">🏷️ Tagged Features</Text>
+                                      <Text size="xs" c="dimmed">(UI elements tagged in Pendo)</Text>
+                                    </Group>
+                                  }
+                                  description="Clicks/views on tagged buttons, pages, or UI elements"
+                                  placeholder="Search tagged features..."
+                                  data={pendoFeatures.map(f => ({
+                                    value: f.value,
+                                    label: `${f.kind === 'Page' ? '📄' : '✨'} ${f.label} (${f.kind})`,
+                                  }))}
+                                  value={data.pendoEventIds.filter(id => 
+                                    pendoFeatures.some(f => f.value === id)
+                                  )}
+                                  onChange={(value) => {
+                                    // Merge with any selected events
+                                    const eventIds = data.pendoEventIds.filter(id => 
+                                      pendoEvents.some(e => e.value === id)
+                                    );
+                                    updateFormData(cat.id, { pendoEventIds: [...eventIds, ...value] });
+                                    if (value.length > 0 || eventIds.length > 0) {
+                                      toggleCategory(cat.id, true);
+                                    }
+                                  }}
+                                  searchable
+                                  clearable
+                                  maxDropdownHeight={200}
+                                />
+                              </Stack>
+                            )}
+                            
+                            {data.pendoEventIds.length > 0 && (
+                              <Text size="xs" c="green" mt="sm">
+                                ✓ Tracking {data.pendoEventIds.length} item(s)
+                              </Text>
+                            )}
+                          </Paper>
 
-                      {/* Segment filter - available for all metrics, not just adoption */}
-                      <Select
-                        label="👥 User Segment (Optional)"
-                        description="Filter to a specific cohort of users (e.g., Enterprise, New Users)"
-                        placeholder="All users"
-                        data={pendoSegments}
-                        value={data.pendoSegmentId}
-                        onChange={(value) => updateFormData(cat.id, { pendoSegmentId: value })}
-                        clearable
-                        searchable
-                      />
+                          <Select
+                            label="Measurement Type"
+                            description="How should this metric be calculated?"
+                            data={cat.pendoMeasurementTypes}
+                            value={data.measurementType || null}
+                            onChange={(value) => updateFormData(cat.id, { 
+                              measurementType: value || ''
+                            })}
+                          />
+
+                          {/* Segment filter - available for Pendo metrics */}
+                          <Select
+                            label="👥 User Segment (Optional)"
+                            description="Filter to a specific cohort of users (e.g., Enterprise, New Users)"
+                            placeholder="All users"
+                            data={pendoSegments}
+                            value={data.pendoSegmentId}
+                            onChange={(value) => updateFormData(cat.id, { pendoSegmentId: value })}
+                            clearable
+                            searchable
+                          />
+                        </>
+                      ) : (
+                        /* ========= MANUAL DATA SOURCE ========= */
+                        <>
+                          <Paper withBorder p="sm" style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderColor: 'var(--mantine-color-blue-2)' }}>
+                            <Text size="sm" fw={500} mb="xs">Manual Entry Metric</Text>
+                            <Text size="xs" c="dimmed">
+                              You'll record values for this metric manually over time. Use this for data from 
+                              external systems, spreadsheets, surveys, or any source outside Pendo.
+                            </Text>
+                          </Paper>
+
+                          <TextInput
+                            label="What are you measuring?"
+                            description="Describe the metric type (e.g., Unique Companies Count, Adoption Rate %, NPS Score)"
+                            placeholder={cat.manualPlaceholder}
+                            value={data.measurementType}
+                            onChange={(e) => updateFormData(cat.id, { 
+                              measurementType: e.currentTarget.value 
+                            })}
+                            required
+                          />
+
+                          <Autocomplete
+                            label="Target Unit"
+                            description="What unit are you tracking? Type your own or pick a suggestion."
+                            placeholder="e.g., %, Users, Organizations, Score"
+                            data={['%', 'Users', 'Organizations', 'Companies', 'Count', 'Score', 'Points', 'Responses']}
+                            value={data.targetUnit}
+                            onChange={(value) => updateFormData(cat.id, { targetUnit: value })}
+                          />
+                        </>
+                      )}
 
                       <Divider label="Milestone Targets" labelPosition="left" />
                       
                       <Text size="xs" c="dimmed" mb="xs">
-                        Set targets at different time horizons (e.g., 30% at 1 month, 60% at 3 months)
+                        {data.dataSource === 'manual'
+                          ? 'Set target values at different time horizons (e.g., 50 companies at 1 month, 200 at 3 months)'
+                          : 'Set targets at different time horizons (e.g., 30% at 1 month, 60% at 3 months)'}
                       </Text>
 
                       {/* Milestone list */}
@@ -613,10 +1107,13 @@ export function HeartManualConfigForm({
                                       updateFormData(cat.id, { milestones: newMilestones });
                                     }}
                                     min={0}
-                                    max={100}
-                                    style={{ width: 70 }}
+                                    // No max for manual - could be count, score, etc.
+                                    {...(data.dataSource === 'pendo' ? { max: 100 } : {})}
+                                    style={{ width: data.dataSource === 'manual' ? 90 : 70 }}
                                   />
-                                  <Text size="xs" c="dimmed">%</Text>
+                                  {(data.dataSource === 'pendo' || data.targetUnit) && (
+                                    <Text size="xs" c="dimmed">{data.dataSource === 'pendo' ? '%' : data.targetUnit}</Text>
+                                  )}
                                   <Badge size="xs" variant="light" color="blue">
                                     {autoLabel}
                                   </Badge>
@@ -658,7 +1155,7 @@ export function HeartManualConfigForm({
                                 : 30;
                               const newMilestones = [...data.milestones, { 
                                 days: lastDay, 
-                                target: 50, 
+                                target: data.dataSource === 'pendo' ? 50 : 0, 
                                 label: `Day ${lastDay}` 
                               }];
                               updateFormData(cat.id, { milestones: newMilestones });
@@ -667,7 +1164,7 @@ export function HeartManualConfigForm({
                             Add Milestone
                           </Button>
                         )}
-                        {data.milestones.length === 0 && (
+                        {data.milestones.length === 0 && data.dataSource === 'pendo' && (
                           <Button
                             size="xs"
                             variant="light"
@@ -686,8 +1183,12 @@ export function HeartManualConfigForm({
 
                       <Textarea
                         label="Description (Optional)"
-                        description="Notes about why this metric matters"
-                        placeholder="This metric tracks..."
+                        description={data.dataSource === 'manual' 
+                          ? "Describe what this metric tracks and where the data comes from"
+                          : "Notes about why this metric matters"}
+                        placeholder={data.dataSource === 'manual'
+                          ? "e.g., Adoption rate from our internal analytics dashboard, updated weekly..."
+                          : "This metric tracks..."}
                         value={data.description}
                         onChange={(e) => updateFormData(cat.id, { description: e.target.value })}
                         autosize
@@ -700,6 +1201,7 @@ export function HeartManualConfigForm({
             );
           })}
         </Accordion>
+        )}
 
         <Group justify="flex-end" mt="md">
           <Button variant="subtle" onClick={onCancel}>
@@ -708,7 +1210,7 @@ export function HeartManualConfigForm({
           <Button 
             onClick={handleSave} 
             loading={saving}
-            disabled={pendoEvents.length === 0}
+            disabled={!hasValidConfig}
           >
             Save Metrics
           </Button>

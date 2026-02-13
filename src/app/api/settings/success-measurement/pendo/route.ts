@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { resolveRole } from '@/lib/roles';
 import { z } from 'zod';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+import { invalidatePendoCache } from '@/lib/integrations/pendo/cache';
 
 const pendoConfigSchema = z.object({
   api_key_encrypted: z.string().min(1, 'API key is required'),
@@ -188,6 +189,9 @@ export async function POST(req: NextRequest) {
       result = data;
     }
 
+    // Invalidate Pendo API cache since the integration changed
+    await invalidatePendoCache().catch(() => {});
+
     return NextResponse.json({
       integration: {
         id: result.id,
@@ -229,6 +233,9 @@ export async function DELETE(req: NextRequest) {
       .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all
 
     if (error) throw error;
+
+    // Clear all cached Pendo data since integration is gone
+    await invalidatePendoCache().catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

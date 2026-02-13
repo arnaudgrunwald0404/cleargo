@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { resolveRole } from '@/lib/roles';
 import { getPendoIntegration } from '@/lib/integrations/pendo/service';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+import {
+  buildCacheKey,
+  getOrFetchPendo,
+  PENDO_CACHE_TTL,
+} from '@/lib/integrations/pendo/cache';
 
 /**
  * Decrypt API key (placeholder - implement actual decryption)
@@ -46,6 +51,7 @@ export async function GET(req: NextRequest) {
     const activeOnly = url.searchParams.get('activeOnly') !== 'false';
     const daysParam = Number(url.searchParams.get('days') || 3);
     const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 3;
+    const forceRefresh = url.searchParams.get('refresh') === 'true';
 
     try {
       const apiKey = decryptApiKey(integration.api_key_encrypted);
@@ -54,32 +60,52 @@ export async function GET(req: NextRequest) {
         environment: integration.environment,
       });
 
-      let segments = await client.getSegments();
+      // Build cache key from all params that affect the result
+      const cacheKey = buildCacheKey('segments', {
+        activeOnly: String(activeOnly),
+        days: String(days),
+      });
 
-      if (activeOnly) {
-        const today = new Date();
-        const start = new Date(today);
-        start.setDate(start.getDate() - days);
-        const startDate = start.toISOString().split('T')[0];
-        const endDate = today.toISOString().split('T')[0];
+      const { data: segments, fromCache } = await getOrFetchPendo<
+        Array<{ id: string; name: string }>
+      >({
+        cacheKey,
+        ttlSeconds: PENDO_CACHE_TTL.segments,
+        forceRefresh,
+        fetchFn: async () => {
+          let segs = await client.getSegments();
 
-        const checks = await Promise.all(
-          segments.map(async (segment) => {
-            const count = await client.getTotalUniqueVisitors({
-              startDate,
-              endDate,
-              segmentId: segment.id,
-            });
-            return { segment, count };
-          })
-        );
+          if (activeOnly) {
+            const today = new Date();
+            const start = new Date(today);
+            start.setDate(start.getDate() - days);
+            const startDate = start.toISOString().split('T')[0];
+            const endDate = today.toISOString().split('T')[0];
 
-        segments = checks.filter(c => c.count > 0).map(c => c.segment);
-      }
+            const checks = await Promise.all(
+              segs.map(async (segment) => {
+                const count = await client.getTotalUniqueVisitors({
+                  startDate,
+                  endDate,
+                  segmentId: segment.id,
+                });
+                return { segment, count };
+              })
+            );
+
+            segs = checks.filter(c => c.count > 0).map(c => c.segment);
+          }
+
+          return segs;
+        },
+      });
+
+      console.log(`Returning ${segments.length} Pendo segments to client (fromCache: ${fromCache})`);
 
       return NextResponse.json({
         segments,
         count: segments.length,
+        cached: fromCache,
       });
     } catch (error: any) {
       console.error('Error fetching Pendo segments:', error);
@@ -100,4 +126,3 @@ export async function GET(req: NextRequest) {
     );
   }
 }
-

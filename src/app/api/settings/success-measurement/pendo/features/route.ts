@@ -3,6 +3,11 @@ import { createClient } from '@/lib/supabase/server';
 import { resolveRole } from '@/lib/roles';
 import { getPendoIntegration } from '@/lib/integrations/pendo/service';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+import {
+  buildCacheKey,
+  getOrFetchPendo,
+  PENDO_CACHE_TTL,
+} from '@/lib/integrations/pendo/cache';
 
 /**
  * Decrypt API key (placeholder - implement actual decryption)
@@ -67,6 +72,7 @@ export async function GET(req: NextRequest) {
     const activeOnly = url.searchParams.get('activeOnly') !== 'false';
     const daysParam = Number(url.searchParams.get('days') || 3);
     const days = Number.isFinite(daysParam) && daysParam > 0 ? daysParam : 3;
+    const forceRefresh = url.searchParams.get('refresh') === 'true';
 
     try {
       const apiKey = decryptApiKey(integration.api_key_encrypted);
@@ -75,51 +81,75 @@ export async function GET(req: NextRequest) {
         environment: integration.environment,
       });
 
-      let features = await client.getFeatures();
-      
-      // Filter by app if specified
-      if (appId) {
-        features = features.filter(f => f.appId === appId);
-      }
+      // Build cache key from all params that affect the result
+      const cacheKey = buildCacheKey('features', {
+        appId,
+        activeOnly: String(activeOnly),
+        days: String(days),
+      });
 
-      if (activeOnly) {
-        const today = new Date();
-        const start = new Date(today);
-        start.setDate(start.getDate() - days);
-        const startDate = start.toISOString().split('T')[0];
-        const endDate = today.toISOString().split('T')[0];
+      const { data: simplifiedFeatures, fromCache } = await getOrFetchPendo<
+        Array<{
+          id: string;
+          name: string;
+          appId: string;
+          kind: string;
+          group: string | null;
+          createdAt: string | null;
+          hasSelectors: boolean;
+        }>
+      >({
+        cacheKey,
+        ttlSeconds: PENDO_CACHE_TTL.features,
+        forceRefresh,
+        fetchFn: async () => {
+          let features = await client.getFeatures();
+          
+          // Filter by app if specified
+          if (appId) {
+            features = features.filter(f => f.appId === appId);
+          }
 
-        const checks = await Promise.all(
-          features.map(async (feature) => {
-            const count = await client.getEventCount({
-              eventId: feature.id,
-              startDate,
-              endDate,
-            });
-            return { feature, count };
-          })
-        );
+          if (activeOnly) {
+            const today = new Date();
+            const start = new Date(today);
+            start.setDate(start.getDate() - days);
+            const startDate = start.toISOString().split('T')[0];
+            const endDate = today.toISOString().split('T')[0];
 
-        features = checks.filter(c => c.count > 0).map(c => c.feature);
-      }
+            const checks = await Promise.all(
+              features.map(async (feature) => {
+                const count = await client.getEventCount({
+                  eventId: feature.id,
+                  startDate,
+                  endDate,
+                });
+                return { feature, count };
+              })
+            );
+
+            features = checks.filter(c => c.count > 0).map(c => c.feature);
+          }
+
+          // Transform to a simpler format for the UI
+          return features.map(f => ({
+            id: f.id,
+            name: f.name,
+            appId: f.appId,
+            kind: f.kind,
+            group: f.group,
+            createdAt: f.createdAt ? new Date(f.createdAt).toISOString() : null,
+            hasSelectors: f.elementPathRules.length > 0 || f.eventPropertyConfigurations.length > 0,
+          }));
+        },
+      });
       
-      console.log(`Returning ${features.length} Pendo features to client`);
-      
-      // Transform to a simpler format for the UI
-      const simplifiedFeatures = features.map(f => ({
-        id: f.id,
-        name: f.name,
-        appId: f.appId,
-        kind: f.kind,
-        group: f.group,
-        createdAt: f.createdAt ? new Date(f.createdAt).toISOString() : null,
-        // Include selector info for debugging/display
-        hasSelectors: f.elementPathRules.length > 0 || f.eventPropertyConfigurations.length > 0,
-      }));
+      console.log(`Returning ${simplifiedFeatures.length} Pendo features to client (fromCache: ${fromCache})`);
       
       return NextResponse.json({ 
         features: simplifiedFeatures,
         count: simplifiedFeatures.length,
+        cached: fromCache,
       });
     } catch (error: any) {
       console.error('Error fetching Pendo features:', error);

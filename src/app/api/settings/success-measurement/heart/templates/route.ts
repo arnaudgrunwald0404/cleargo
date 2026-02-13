@@ -31,9 +31,9 @@ export async function GET(req: NextRequest) {
     const { data, error } = await query;
 
     if (error) {
-      // Handle table not existing gracefully
-      if (error.code === 'PGRST205' || error.message?.includes('does not exist')) {
-        console.warn('Table heart_custom_metric_templates does not exist. Migration may not have been applied.');
+      // Handle table not existing or permission denied gracefully
+      if (error.code === 'PGRST205' || error.code === '42501' || error.message?.includes('does not exist') || error.message?.includes('permission denied')) {
+        console.warn(`Table heart_custom_metric_templates not accessible (${error.code}): ${error.message}. Returning empty array.`);
         return NextResponse.json([]);
       }
       console.error('Error fetching custom metric templates:', error);

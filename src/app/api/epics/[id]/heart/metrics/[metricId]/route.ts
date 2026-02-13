@@ -97,7 +97,11 @@ export async function PATCH(
     if (body.pendo_app_id !== undefined) dto.pendo_app_id = body.pendo_app_id;
     if (body.target_value !== undefined) dto.target_value = body.target_value;
     if (body.target_timeframe_days !== undefined) dto.target_timeframe_days = body.target_timeframe_days;
+    if (body.target_unit !== undefined) dto.target_unit = body.target_unit;
     if (body.is_active !== undefined) dto.is_active = body.is_active;
+    // Custom metric fields
+    if (body.custom_category_label !== undefined) dto.custom_category_label = body.custom_category_label;
+    if (body.custom_icon !== undefined) dto.custom_icon = body.custom_icon;
     
     // Update metric
     const metric = await updateEpicHeartMetric(metricId, dto);

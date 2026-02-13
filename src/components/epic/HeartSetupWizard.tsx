@@ -221,7 +221,7 @@ export function HeartSetupWizard({
               </Text>
             </Group>
             <Text size="sm" c="dimmed" mb="sm">
-              Give the AI direction on what to look for in Pendo—for example, event names, product area, or success criteria. This helps it pick the right metrics.
+              Give the AI direction on what to look for—for example, event names, product area, or success criteria. This helps it pick the right metrics.
             </Text>
             <Textarea
               placeholder="e.g. Look for events related to the new reporting dashboard; prefer events under Product Analytics. We care most about adoption in the first 30 days."
@@ -316,10 +316,10 @@ export function HeartSetupWizard({
                 <div style={{ flex: 1 }}>
                   <Text fw={600} c="dark">Manual</Text>
                   <Text size="sm" c="dimmed">
-                    Configure each HEART category yourself by selecting Pendo events and setting targets.
+                    Configure each HEART category yourself. Use Pendo events, manual entry, or external data sources.
                   </Text>
                   <Text size="xs" c="dimmed" mt="xs">
-                    Best for: Full control, specific requirements
+                    Best for: Full control, custom data sources, no Pendo dependency
                   </Text>
                 </div>
               </Group>
@@ -338,28 +338,33 @@ export function HeartSetupWizard({
           <Loader size="lg" />
           <div style={{ textAlign: 'center' }}>
             <Text size="lg" fw={500}>
-              {selectedMethod === 'auto' ? 'Configuring HEART Metrics...' : 'Analyzing Feature...'}
+              {selectedMethod === 'manual' ? 'Setting Up Configuration...' :
+               selectedMethod === 'auto' ? 'Configuring HEART Metrics...' : 'Analyzing Feature...'}
             </Text>
             <Text size="sm" c="dimmed" mt="xs">
-              {selectedMethod === 'auto'
+              {selectedMethod === 'manual'
+                ? 'Creating your HEART metrics configuration...'
+                : selectedMethod === 'auto'
                 ? 'AI is analyzing your feature and setting up metrics automatically.'
-                : 'AI is reviewing your feature description and Pendo events.'}
+                : 'AI is reviewing your feature description and available data.'}
             </Text>
           </div>
-          <Stack gap="xs" mt="md">
-            <Group gap="xs">
-              <IconCheck size={16} color="green" />
-              <Text size="sm">Fetching epic details</Text>
-            </Group>
-            <Group gap="xs">
-              <IconCheck size={16} color="green" />
-              <Text size="sm">Loading Pendo events</Text>
-            </Group>
-            <Group gap="xs">
-              <Loader size={16} />
-              <Text size="sm">Generating recommendations...</Text>
-            </Group>
-          </Stack>
+          {selectedMethod !== 'manual' && (
+            <Stack gap="xs" mt="md">
+              <Group gap="xs">
+                <IconCheck size={16} color="green" />
+                <Text size="sm">Fetching epic details</Text>
+              </Group>
+              <Group gap="xs">
+                <IconCheck size={16} color="green" />
+                <Text size="sm">Loading data sources</Text>
+              </Group>
+              <Group gap="xs">
+                <Loader size={16} />
+                <Text size="sm">Generating recommendations...</Text>
+              </Group>
+            </Stack>
+          )}
         </Stack>
       </Card>
     );
@@ -491,7 +496,16 @@ export function HeartSetupWizard({
             color: 'green',
           });
         }}
-        onCancel={() => setStep('choose')}
+        onCancel={async () => {
+          // Delete the config that was created so user can start fresh
+          try {
+            await fetch(`/api/epics/${epicId}/heart`, { method: 'DELETE' });
+          } catch (err) {
+            console.error('Failed to clean up HEART config on cancel:', err);
+          }
+          setConfig(null);
+          setStep('choose');
+        }}
       />
     );
   }

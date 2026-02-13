@@ -76,10 +76,23 @@ export async function POST(
     const body = await req.json();
     const isCustom = body.is_custom === true;
     
-    // Validate required fields based on whether it's custom or HEART
-    if (!body.name || !body.measurement_type || !body.pendo_event_ids) {
+    // Determine if this is a manual (non-Pendo) metric via explicit data_source flag
+    // or by checking if pendo_event_ids are provided
+    const isManualDataSource = body.data_source === 'manual' || 
+      (!body.pendo_event_ids || body.pendo_event_ids.length === 0);
+    
+    // Validate required fields
+    if (!body.name || !body.measurement_type) {
       return NextResponse.json(
-        { error: 'Missing required fields: name, measurement_type, pendo_event_ids' },
+        { error: 'Missing required fields: name, measurement_type' },
+        { status: 400 }
+      );
+    }
+    
+    // Pendo event IDs are required only for explicitly Pendo-sourced metrics
+    if (body.data_source === 'pendo' && (!body.pendo_event_ids || body.pendo_event_ids.length === 0)) {
+      return NextResponse.json(
+        { error: 'Pendo-sourced metrics require at least one event or feature in pendo_event_ids' },
         { status: 400 }
       );
     }
@@ -109,6 +122,16 @@ export async function POST(
           { status: 400 }
         );
       }
+      
+      // Check for duplicate - only one metric per HEART category
+      const existingMetrics = await getEpicHeartMetrics(config.id);
+      const duplicate = existingMetrics.find(m => m.heart_category === body.heart_category && !m.is_custom);
+      if (duplicate) {
+        return NextResponse.json(
+          { error: `A metric is already configured for ${body.heart_category}. Use Edit Metrics to modify it.` },
+          { status: 409 }
+        );
+      }
     }
     
     // Build the insert object - use direct supabase insert to support custom fields
@@ -117,11 +140,12 @@ export async function POST(
       name: body.name,
       description: body.description || null,
       measurement_type: body.measurement_type,
-      pendo_event_ids: body.pendo_event_ids,
+      pendo_event_ids: body.pendo_event_ids || [],
       pendo_segment_id: body.pendo_segment_id || null,
       pendo_app_id: body.pendo_app_id || null,
       target_value: body.target_value || null,
       target_timeframe_days: body.target_timeframe_days || null,
+      target_unit: body.target_unit || '%',
       ai_suggested: body.ai_suggested || false,
       ai_rationale: body.ai_rationale || null,
     };
