@@ -43,12 +43,6 @@ export async function PATCH(
 
         const body = await req.json();
 
-        // Only allow status = 'Cancelled' (override); all other statuses are computed from dates
-        const updates = { ...body };
-        if (updates.status !== undefined && updates.status !== 'Cancelled') {
-            delete updates.status;
-        }
-
         // Load current epic to compare changes
         const current = await getEpic(id);
         if (!current) {
@@ -71,8 +65,22 @@ export async function PATCH(
         }
         
         const roles = (me?.roles as string[]) || [];
-
         const rules = await getEffectivePermissionRules();
+
+        // Check permission for status updates
+        // Only allow status = 'Cancelled' for non-admins; admins/CPOs can set any status
+        const updates = { ...body };
+        if (updates.status !== undefined) {
+            if (updates.status !== 'Cancelled') {
+                // Check if user has permission to update status (admins/CPOs only)
+                const canUpdateStatus = canRolesPerformWithRules(roles, 'launch.status.update', rules);
+                if (!canUpdateStatus) {
+                    // Remove status from updates - only allow "Cancelled" for non-admins
+                    delete updates.status;
+                }
+            }
+        }
+
         if (typeof body.tier !== 'undefined' && body.tier !== current.tier) {
             const ok = canRolesPerformWithRules(roles, 'launch.tier.update', rules);
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic tier' }, { status: 403 });

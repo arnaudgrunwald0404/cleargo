@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useSearchParams, useRouter } from "next/navigation";
 import { PurpleLoader } from "@/components/PurpleLoader";
@@ -35,7 +35,10 @@ function LoginForm() {
   
   // Only create Supabase client if we don't have a code (to prevent it from trying to exchange)
   // If we have a code, we'll redirect immediately before the client initializes
-  const supabase = code ? null : createClient();
+  // Memoize to prevent recreating on every render
+  const supabase = useMemo(() => {
+    return code ? null : createClient();
+  }, [code]);
 
   const [selectedMethod, setSelectedMethod] = useState<"sso" | "email" | "magic" | null>(null);
   const [emailFormExpanded, setEmailFormExpanded] = useState(false);
@@ -46,6 +49,7 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<{ type: "error" | "success"; text: string } | null>(null);
   const [tokenRedirected, setTokenRedirected] = useState(false);
+  const [authCheckCompleted, setAuthCheckCompleted] = useState(false);
 
   // Pre-fill email from query params
   useEffect(() => {
@@ -80,23 +84,40 @@ function LoginForm() {
   // Check if already authenticated - but skip if we have a code (let callback handle it).
   // Only redirect after the server confirms the session (GET /api/me) to avoid a redirect loop
   // when the client has a stale session but the server has no valid cookie.
+  // CRITICAL: Only run once to prevent infinite redirect loops
   useEffect(() => {
-    if (code || !supabase) {
+    if (code || !supabase || authCheckCompleted) {
       return;
     }
     let cancelled = false;
     const checkAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session || cancelled) return;
-      const res = await fetch('/api/me', { credentials: 'same-origin' });
-      if (cancelled) return;
-      if (res.ok) {
-        window.location.replace(redirectTo);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session || cancelled) {
+          setAuthCheckCompleted(true);
+          return;
+        }
+        const res = await fetch('/api/me', { credentials: 'same-origin' });
+        if (cancelled) {
+          setAuthCheckCompleted(true);
+          return;
+        }
+        if (res.ok) {
+          setAuthCheckCompleted(true);
+          window.location.replace(redirectTo);
+        } else {
+          // If /api/me fails, clear the stale session to prevent loops
+          await supabase.auth.signOut();
+          setAuthCheckCompleted(true);
+        }
+      } catch (error) {
+        console.error('Auth check error:', error);
+        setAuthCheckCompleted(true);
       }
     };
     checkAuth();
     return () => { cancelled = true; };
-  }, [supabase, redirectTo, code]);
+  }, [code, supabase, redirectTo, authCheckCompleted]);
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();

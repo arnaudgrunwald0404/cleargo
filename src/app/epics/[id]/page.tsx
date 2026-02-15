@@ -41,6 +41,7 @@ export default function EpicDetailPage() {
     const [refreshDecisions, setRefreshDecisions] = useState(0);
     const [updatingTier, setUpdatingTier] = useState(false);
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
+    const [updatingStatus, setUpdatingStatus] = useState(false);
     const [pmOwner, setPmOwner] = useState<{ name?: string; email?: string; avatar_url?: string } | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
@@ -62,6 +63,19 @@ export default function EpicDetailPage() {
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const isMobile = useMediaQuery("(max-width: 768px)");
+
+    // Memoize status options based on admin status
+    const statusOptions = useMemo(() => {
+        const options = [
+            { value: 'Pre_Release', label: 'Pre Release', disabled: !isAdmin },
+            { value: 'Released_Cohort_1', label: 'Released Cohort 1', disabled: !isAdmin },
+            { value: 'Released_GA', label: 'Released GA', disabled: !isAdmin },
+            { value: 'Released_Retroed', label: 'Released Retroed', disabled: !isAdmin },
+            { value: 'Cancelled', label: 'Cancelled', disabled: false },
+        ];
+        console.log('Status options updated, isAdmin:', isAdmin, 'options:', options.map(o => ({ value: o.value, disabled: o.disabled })));
+        return options;
+    }, [isAdmin]);
 
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -114,6 +128,19 @@ export default function EpicDetailPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (user?.email) {
                 setCurrentUserEmail(user.email);
+                
+                // Check if user is admin and set isAdmin state
+                const { data: me } = await supabase
+                    .from('app_user')
+                    .select('roles')
+                    .eq('email', user.email)
+                    .single();
+                const userRoles = (me?.roles as string[]) || [];
+                const adminStatus = userRoles.includes('SUPERADMIN') ||
+                    userRoles.includes('PRODUCT_OPS') ||
+                    userRoles.includes('CPO');
+                console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
+                setIsAdmin(adminStatus);
             }
 
             // Use shared rate-limit-aware fetch utility
@@ -957,11 +984,11 @@ export default function EpicDetailPage() {
                     .eq('email', user.email)
                     .single();
                 const userRoles = (me?.roles as string[]) || [];
-                setIsAdmin(
-                    userRoles.includes('SUPERADMIN') ||
+                const adminStatus = userRoles.includes('SUPERADMIN') ||
                     userRoles.includes('PRODUCT_OPS') ||
-                    userRoles.includes('CPO')
-                );
+                    userRoles.includes('CPO');
+                console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
+                setIsAdmin(adminStatus);
             }
         } catch (error) {
             console.error('Error fetching success data:', error);
@@ -1102,6 +1129,65 @@ export default function EpicDetailPage() {
             });
         } finally {
             setUpdatingTier(false);
+        }
+    }
+
+    async function handleStatusUpdate(newStatus: string | null) {
+        console.log('handleStatusUpdate called with:', newStatus, 'current status:', epic?.status);
+        if (!newStatus || !epic || newStatus === epic.status) {
+            console.log('Early return: newStatus=', newStatus, 'epic=', epic, 'newStatus === epic.status', epic ? newStatus === epic.status : false);
+            return;
+        }
+
+        // Only allow "Cancelled" to be set manually for non-admins
+        // Admins/CPOs can set any status
+        if (newStatus !== 'Cancelled' && !isAdmin) {
+            notifications.show({
+                title: 'Invalid status',
+                message: 'Only "Cancelled" can be set manually. Other statuses are computed from launch dates.',
+                color: 'orange',
+            });
+            return;
+        }
+
+        setUpdatingStatus(true);
+        try {
+            console.log('Sending PATCH request to update status:', newStatus);
+            const res = await fetch(`/api/epics/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            console.log('Response status:', res.status, 'ok:', res.ok);
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to update status' }));
+                console.error('API error:', errorData);
+                throw new Error(errorData.error || `HTTP ${res.status}: Failed to update status`);
+            }
+
+            const updatedEpic = await res.json();
+            console.log('Updated epic:', updatedEpic);
+            setEpic(updatedEpic);
+
+            notifications.show({
+                title: 'Status updated',
+                message: `Epic status has been updated to ${newStatus}`,
+                color: 'green',
+            });
+
+            // Reload data to ensure consistency
+            await loadData();
+        } catch (error: any) {
+            console.error('Error updating status:', error);
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to update status',
+                color: 'red',
+            });
+        } finally {
+            setUpdatingStatus(false);
         }
     }
 
@@ -1261,23 +1347,33 @@ export default function EpicDetailPage() {
                                 style={{ width: 150 }}
                             />
                             <div className="epic-detail-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{
-                                    padding: 'var(--spacing-1) var(--spacing-2)',
-                                    fontSize: 'var(--font-size-xs)',
-                                    fontWeight: 'var(--font-weight-medium)',
-                                    backgroundColor: 'var(--color-gray-100)',
-                                    color: 'var(--color-gray-700)',
-                                    borderRadius: 'var(--radius-base)',
-                                    fontFamily: 'var(--font-body)'
-                                }}>
-                                    {epic.status}
-                                </span>
+                                <Select
+                                    value={epic.status}
+                                    onChange={handleStatusUpdate}
+                                    data={statusOptions}
+                                    disabled={updatingStatus}
+                                    size="xs"
+                                    style={{ width: 150 }}
+                                    styles={{
+                                        input: {
+                                            padding: 'var(--spacing-1) var(--spacing-2)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            backgroundColor: epic.status === 'Cancelled' ? 'var(--color-red-100)' : 'var(--color-gray-100)',
+                                            color: epic.status === 'Cancelled' ? 'var(--color-red-800)' : 'var(--color-gray-700)',
+                                            borderRadius: 'var(--radius-base)',
+                                            fontFamily: 'var(--font-body)',
+                                            border: 'none',
+                                        },
+                                    }}
+                                />
                                 <Tooltip
                                     label={
                                         <div style={{ maxWidth: '300px' }}>
                                             <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is status determined?</div>
                                             <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                Status is derived from launch date, GA date, and retro completion. Only Cancelled is set manually.
+                                                Status is normally derived from launch date, GA date, and retro completion.
+                                                {isAdmin ? ' Admins/CPOs can manually override any status.' : ' Only Cancelled can be set manually.'}
                                                 <br /><br />
                                                 <strong>Pre_Release:</strong> Before target launch date
                                                 <br />
