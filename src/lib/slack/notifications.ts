@@ -532,7 +532,7 @@ export async function notifySuperAdminsOfFeedback(payload: {
             if (validSlackIds.includes(admin.slack_handle || '')) {
                 await logNotification({
                     user_id: admin.id,
-                    launch_id: payload.epicId || null,
+                    launch_id: payload.epicId || undefined,
                     type: 'feedback_submission',
                     payload: notificationMetadata,
                     delivery_channel: 'slack',
