@@ -46,30 +46,49 @@ export class SlackClient {
 
     /**
      * Post a message to a Slack channel or user
+     * Includes retry logic for rate limiting (429 errors)
      */
-    async postMessage(message: SlackMessage): Promise<SlackPostMessageResponse> {
+    async postMessage(message: SlackMessage, retries = 3): Promise<SlackPostMessageResponse> {
         const forbidden = getForbiddenChannels();
         if (isChannelForbiddenWithSet(message.channel, forbidden)) {
             console.warn(`Slack: skipping postMessage to forbidden channel ${message.channel}`);
             return { ok: true };
         }
-        const response = await fetch(`${SLACK_API_BASE}/chat.postMessage`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${this.botToken}`,
-            },
-            body: JSON.stringify(message),
-        });
 
-        const data = await response.json();
+        for (let attempt = 0; attempt <= retries; attempt++) {
+            const response = await fetch(`${SLACK_API_BASE}/chat.postMessage`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${this.botToken}`,
+                },
+                body: JSON.stringify(message),
+            });
 
-        if (!data.ok) {
+            const data = await response.json();
+
+            if (data.ok) {
+                return data as SlackPostMessageResponse;
+            }
+
+            // Handle rate limiting (429) with retry
+            if (data.error === 'rate_limited' && attempt < retries) {
+                const retryAfter = response.headers.get('Retry-After');
+                const waitTime = retryAfter 
+                    ? parseInt(retryAfter, 10) * 1000 
+                    : Math.min(1000 * Math.pow(2, attempt), 10000); // Exponential backoff, max 10s
+                
+                console.warn(`Slack rate limited, waiting ${waitTime}ms before retry (attempt ${attempt + 1}/${retries + 1})`);
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                continue;
+            }
+
+            // For other errors or final attempt, throw
             console.error('Slack API error:', data.error);
             throw new Error(`Slack API error: ${data.error}`);
         }
 
-        return data as SlackPostMessageResponse;
+        throw new Error('Slack API: Max retries exceeded');
     }
 
     /**

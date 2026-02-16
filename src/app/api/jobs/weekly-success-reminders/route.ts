@@ -33,8 +33,17 @@ export async function GET(request: NextRequest) {
     let remindersFailed = 0;
     const results: Array<{ epicId: string; success: boolean; error?: string }> = [];
 
+    // Helper function to add delay between notifications
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    let notificationCount = 0;
     for (const epic of epicsNeedingReview) {
       if (!epic.postLaunchOwnerEmail) continue;
+
+      // Add delay between notifications to avoid rate limiting (500ms between each)
+      if (notificationCount > 0) {
+        await delay(500);
+      }
 
       try {
         // Sync Slack handle for the owner
@@ -75,21 +84,26 @@ export async function GET(request: NextRequest) {
           });
 
           remindersSent++;
+          notificationCount++;
           results.push({
             epicId: epic.epicId,
             success: true,
           });
+          console.log(`Sent success review reminder for epic ${epic.epicId} (${notificationCount} sent)`);
         } catch (error: any) {
           remindersFailed++;
+          notificationCount++;
           results.push({
             epicId: epic.epicId,
             success: false,
             error: error.message || 'Unknown error',
           });
+          console.error(`Failed to send review reminder for epic ${epic.epicId}:`, error);
         }
       } catch (error: any) {
         console.error(`Error sending review reminder for epic ${epic.epicId}:`, error);
         remindersFailed++;
+        notificationCount++;
         results.push({
           epicId: epic.epicId,
           success: false,

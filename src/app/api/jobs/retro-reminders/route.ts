@@ -36,8 +36,17 @@ export async function GET(request: NextRequest) {
     let remindersFailed = 0;
     const results: Array<{ epicId: string; dayMarker: number; success: boolean; error?: string }> = [];
 
+    // Helper function to add delay between notifications
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    let notificationCount = 0;
     for (const epic of epicsWithDueRetros) {
       for (const dayMarker of epic.dueRetros) {
+        // Add delay between notifications to avoid rate limiting (500ms between each)
+        if (notificationCount > 0) {
+          await delay(500);
+        }
+        
         try {
           // Sync Slack handle for the owner
           await syncUserSlackHandle(epic.postLaunchOwnerEmail);
@@ -84,24 +93,29 @@ export async function GET(request: NextRequest) {
             });
 
             remindersSent++;
+            notificationCount++;
             results.push({
               epicId: epic.epicId,
               dayMarker,
               success: true,
             });
+            console.log(`Sent retro reminder for epic ${epic.epicId}, T+${dayMarker} (${notificationCount} sent)`);
           } catch (error: any) {
             remindersFailed++;
+            notificationCount++;
             results.push({
               epicId: epic.epicId,
               dayMarker,
               success: false,
               error: error.message || 'Unknown error',
             });
+            console.error(`Failed to send retro reminder for epic ${epic.epicId}, T+${dayMarker}:`, error);
           }
 
         } catch (error: any) {
           console.error(`Error sending retro reminder for epic ${epic.epicId}, T+${dayMarker}:`, error);
           remindersFailed++;
+          notificationCount++;
           results.push({
             epicId: epic.epicId,
             dayMarker,

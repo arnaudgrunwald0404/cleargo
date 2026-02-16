@@ -18,6 +18,25 @@ const notificationLabels: Record<NotificationType, string> = {
   nudge_daily_after_due: 'Daily After Due Date',
 };
 
+// All notification types with human-readable labels
+const allNotificationTypes = [
+  { key: 'criteria_assignment', label: 'Criteria Assignment', category: 'Assignment' },
+  { key: 'criteria_nudge', label: 'Criteria Nudge', category: 'Reminder' },
+  { key: 'retro_reminder', label: 'Retro Reminder', category: 'Reminder' },
+  { key: 'success_review_reminder', label: 'Success Review Reminder', category: 'Reminder' },
+  { key: 'stale_criterion', label: 'Stale Criterion', category: 'Alert' },
+  { key: 'launch_risk_alert', label: 'Launch Risk Alert', category: 'Alert' },
+  { key: 'go_no_go_decision', label: 'Go/No-Go Decision', category: 'Alert' },
+  { key: 'leadership_digest', label: 'Leadership Digest', category: 'Digest' },
+  { key: 'launch_status_change', label: 'Launch Status Change', category: 'Update' },
+  { key: 'criterion_update', label: 'Criterion Update', category: 'Update' },
+  { key: 'launch_created', label: 'Launch Created', category: 'Update' },
+  { key: 'delegation', label: 'Delegation', category: 'Assignment' },
+  { key: 'scorecard_alert', label: 'Scorecard Alert', category: 'Alert' },
+  { key: 'escalation_alert', label: 'Escalation Alert', category: 'Alert' },
+  { key: 'criterion_comment_or_attachment', label: 'Criterion Comment/Attachment', category: 'Update' },
+] as const;
+
 export default function NotificationsSection({ settings, setSettings, onSave }: Props) {
   // Slack notification settings
   const slackNudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
@@ -39,7 +58,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
 
   // Create a stable string representation of notification settings for comparison
   const getSettingsKey = () => {
-    return JSON.stringify({
+    const allNotificationFlags: Record<string, boolean> = {
       slack_nudge_1_week_before: settings.slack_nudge_1_week_before ?? true,
       slack_nudge_on_due_date: settings.slack_nudge_on_due_date ?? true,
       slack_nudge_daily_after_due: settings.slack_nudge_daily_after_due ?? true,
@@ -48,7 +67,17 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
       email_nudge_daily_after_due: (settings as any).email_nudge_daily_after_due ?? true,
       slack_notifications_enabled: (settings as any).slack_notifications_enabled ?? true,
       email_notifications_enabled: (settings as any).email_notifications_enabled ?? true,
+    };
+
+    // Add all notification type flags
+    allNotificationTypes.forEach(notifType => {
+      const slackKey = `slack_${notifType.key}`;
+      const emailKey = `email_${notifType.key}`;
+      allNotificationFlags[slackKey] = (settings[slackKey as keyof AppSettings] ?? true) as boolean;
+      allNotificationFlags[emailKey] = (settings[emailKey as keyof AppSettings] ?? true) as boolean;
     });
+
+    return JSON.stringify(allNotificationFlags);
   };
 
   // Update prevValuesRef when settings change after a save
@@ -61,16 +90,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
       prevValuesRef.current = currentKey;
       pendingSaveRef.current = null;
     }
-  }, [
-    settings.slack_nudge_1_week_before,
-    settings.slack_nudge_on_due_date,
-    settings.slack_nudge_daily_after_due,
-    (settings as any).email_nudge_1_week_before,
-    (settings as any).email_nudge_on_due_date,
-    (settings as any).email_nudge_daily_after_due,
-    (settings as any).slack_notifications_enabled,
-    (settings as any).email_notifications_enabled,
-  ]);
+  }, [settings]);
 
   // Persist notification settings to API when they change (debounced)
   useEffect(() => {
@@ -121,16 +141,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
         pendingSaveRef.current = null;
       }
     };
-  }, [
-    settings.slack_nudge_1_week_before,
-    settings.slack_nudge_on_due_date,
-    settings.slack_nudge_daily_after_due,
-    (settings as any).email_nudge_1_week_before,
-    (settings as any).email_nudge_on_due_date,
-    (settings as any).email_nudge_daily_after_due,
-    (settings as any).slack_notifications_enabled,
-    (settings as any).email_notifications_enabled,
-  ]);
+  }, [settings, onSave]);
 
   const handleSlackToggle = (type: NotificationType, checked: boolean) => {
     const keyMap: Record<NotificationType, keyof AppSettings> = {
@@ -230,7 +241,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
         </div>
 
         {/* Criteria Notification Matrix */}
-        <div className="border border-gray-200 rounded-lg overflow-hidden">
+        <div className="border border-gray-200 rounded-lg overflow-hidden mb-6">
           <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
             <h3 className="text-sm font-semibold text-gray-900">Criteria Notification Settings</h3>
             <p className="text-xs text-gray-600 mt-1">
@@ -279,6 +290,78 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
                     </td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* All Notification Types Matrix */}
+        <div className="border border-gray-200 rounded-lg overflow-hidden">
+          <div className="bg-gray-50 border-b border-gray-200 px-4 py-3">
+            <h3 className="text-sm font-semibold text-gray-900">All Notification Types</h3>
+            <p className="text-xs text-gray-600 mt-1">
+              Enable or disable specific notification types for Slack and Email channels.
+            </p>
+          </div>
+          
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+            <table className="w-full">
+              <thead className="sticky top-0 bg-gray-50 z-10">
+                <tr className="border-b border-gray-200">
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Category
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Notification Type
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider w-32">
+                    Slack
+                  </th>
+                  <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider w-32">
+                    Email
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {allNotificationTypes.map((notifType) => {
+                  const slackKey = `slack_${notifType.key}` as keyof AppSettings;
+                  const emailKey = `email_${notifType.key}` as keyof AppSettings;
+                  const slackValue = (settings[slackKey] ?? true) as boolean;
+                  const emailValue = (settings[emailKey] ?? true) as boolean;
+
+                  return (
+                    <tr key={notifType.key} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-xs text-gray-500 font-medium">
+                        {notifType.category}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        {notifType.label}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={slackValue && slackNotificationsEnabled}
+                          disabled={!slackNotificationsEnabled}
+                          onChange={(e) => {
+                            setSettings({ ...settings, [slackKey]: e.target.checked } as any);
+                          }}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <input
+                          type="checkbox"
+                          checked={emailValue && emailNotificationsEnabled}
+                          disabled={!emailNotificationsEnabled}
+                          onChange={(e) => {
+                            setSettings({ ...settings, [emailKey]: e.target.checked } as any);
+                          }}
+                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

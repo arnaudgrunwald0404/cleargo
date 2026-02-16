@@ -13,7 +13,61 @@ export interface EmailNotificationPayload {
     epicId?: string;
 }
 
+/**
+ * Check if an email notification type is enabled
+ */
+async function isEmailNotificationTypeEnabled(type: EmailNotificationType): Promise<boolean> {
+    const { getSettings } = await import('@/lib/settings-db');
+    const settings = await getSettings();
+    
+    // Check system flag first
+    if (settings.email_notifications_enabled === false) {
+        return false;
+    }
+    
+    // Check type-specific flag
+    const flagKey = `email_${type}` as keyof typeof settings;
+    const flagValue = settings[flagKey];
+    
+    // Default to true if flag is undefined (backward compatibility)
+    return flagValue !== false;
+}
+
 export async function sendEmailNotification(payload: EmailNotificationPayload) {
+    // Check if this notification type is enabled
+    if (!(await isEmailNotificationTypeEnabled(payload.type))) {
+        let userId = payload.userId;
+        let epicId = payload.epicId;
+
+        // Look up user_id from email if not provided
+        if (!userId) {
+            try {
+                const supabase = createAdminClient();
+                const { data: user } = await supabase
+                    .from('app_user')
+                    .select('id')
+                    .ilike('email', payload.recipientEmail.trim())
+                    .maybeSingle();
+                if (user) {
+                    userId = user.id;
+                }
+            } catch (err) {
+                // Ignore lookup errors
+            }
+        }
+
+        await logNotification({
+            user_id: userId,
+            launch_id: epicId,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'email',
+            status: 'pending',
+            error: `Skipped: notification type '${payload.type}' is disabled in Settings`,
+        });
+        return;
+    }
+
     let userId = payload.userId;
     let epicId = payload.epicId;
 

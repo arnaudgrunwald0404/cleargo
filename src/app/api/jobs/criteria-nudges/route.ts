@@ -289,12 +289,20 @@ export async function GET(request: NextRequest) {
         const notificationsSent: any[] = [];
         const errors: any[] = [];
 
+        // Helper function to add delay between notifications
+        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
         // Process each nudge type
         for (const [nudgeType, criteria] of groupedByNudgeType.entries()) {
             // Group by epic, due date, and assignee
             const grouped = groupCriteriaByEpicDueDateAndAssignee(criteria);
 
+            let notificationCount = 0;
             for (const [key, group] of grouped.entries()) {
+                // Add delay between notifications to avoid rate limiting (500ms between each)
+                if (notificationCount > 0) {
+                    await delay(500);
+                }
                 if (!group.assignee_slack_handle) {
                     // Try to sync Slack handle before skipping
                     console.log(`Attempting to sync Slack handle for ${group.assignee_email}...`);
@@ -359,8 +367,9 @@ export async function GET(request: NextRequest) {
                         criteria_count: group.criteria.length,
                     });
 
+                    notificationCount++;
                     console.log(
-                        `Sent ${nudgeType} nudge to ${group.assignee_email} for ${group.criteria.length} criteria in ${group.epic_name}`
+                        `Sent ${nudgeType} nudge to ${group.assignee_email} for ${group.criteria.length} criteria in ${group.epic_name} (${notificationCount}/${grouped.size})`
                     );
                 } catch (error: any) {
                     console.error(`Failed to send nudge to ${group.assignee_email}:`, error);
@@ -370,6 +379,7 @@ export async function GET(request: NextRequest) {
                         nudge_type: nudgeType,
                         error: error.message,
                     });
+                    notificationCount++;
                 }
             }
         }

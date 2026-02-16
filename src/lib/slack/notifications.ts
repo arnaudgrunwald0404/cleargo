@@ -112,9 +112,43 @@ export async function canReceiveSlackNotification(email: string): Promise<boolea
 }
 
 /**
+ * Check if a notification type is enabled for Slack
+ */
+async function isSlackNotificationTypeEnabled(type: SlackNotificationType): Promise<boolean> {
+    const { getSettings } = await import('@/lib/settings-db');
+    const settings = await getSettings();
+    
+    // Check system flag first
+    if (settings.slack_notifications_enabled === false) {
+        return false;
+    }
+    
+    // Check type-specific flag
+    const flagKey = `slack_${type}` as keyof typeof settings;
+    const flagValue = settings[flagKey];
+    
+    // Default to true if flag is undefined (backward compatibility)
+    return flagValue !== false;
+}
+
+/**
  * Send a notification to Slack
  */
 export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<void> {
+    // Check if this notification type is enabled
+    if (!(await isSlackNotificationTypeEnabled(payload.type))) {
+        await logNotification({
+            user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
+            launch_id: payload.launch_id,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'slack',
+            status: 'pending',
+            error: `Skipped: notification type '${payload.type}' is disabled in Settings`,
+        });
+        return;
+    }
+
     if (payload.recipients && payload.recipients.length >= 2) {
         const valid: SlackUser[] = [];
         for (const r of payload.recipients) {
