@@ -511,8 +511,37 @@ export async function notifySuperAdminsOfFeedback(payload: {
         const text =
             `:inbox_tray: *New feedback submitted*${typeLabel}${epicPart}${authorPart}\n\n${payload.feedbackText}`;
 
-        await client.postMessage({ channel, text });
+        const response = await client.postMessage({ channel, text });
         console.log('[notifySuperAdminsOfFeedback] Slack message sent to', validSlackIds.length, 'super admin(s), feedbackId:', payload.feedbackId);
+
+        // Log notification for each super admin recipient
+        const notificationMetadata = {
+            feedback_id: payload.feedbackId,
+            feedback_type: payload.feedbackType,
+            epic_id: payload.epicId,
+            epic_name: payload.epicName,
+            author_email: payload.authorEmail,
+            multi_recipient: true,
+            recipient_count: validSlackIds.length,
+        };
+
+        for (const admin of superAdmins) {
+            if (authorEmailLower && admin.email?.toLowerCase() === authorEmailLower) {
+                continue;
+            }
+            if (validSlackIds.includes(admin.slack_handle || '')) {
+                await logNotification({
+                    user_id: admin.id,
+                    launch_id: payload.epicId || null,
+                    type: 'feedback_submission',
+                    payload: notificationMetadata,
+                    delivery_channel: 'slack',
+                    status: 'sent',
+                    slack_ts: response.ts,
+                    slack_channel: channel,
+                });
+            }
+        }
     } catch (err: any) {
         console.error('[notifySuperAdminsOfFeedback] Failed:', err?.message ?? err, err?.stack);
     }

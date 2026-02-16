@@ -16,10 +16,6 @@ export default function SlackIntegrationSection({ settings, setSettings, onSave 
   // Note: Slack settings may need to be added to AppSettings interface if they don't exist yet
   const slackDefaultChannel = (settings as any).slack_default_channel || '';
   const slackChannels = (settings as any).slack_channels || {};
-  const slackNudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
-  const slackNudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
-  const slackNudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
-  const slackNotificationTestEmail = settings.slack_notification_test_email ?? '';
   
   // Slack theme configuration
   const slackTheme: SlackThemeConfig = (settings as any).slack_theme || defaultSlackTheme;
@@ -32,6 +28,11 @@ export default function SlackIntegrationSection({ settings, setSettings, onSave 
 
   // Persist Slack settings to API when they change (debounced)
   const isFirstRun = useRef(true);
+  
+  // Create stable stringified values for dependencies (always defined, never undefined)
+  const slackChannelsStr = JSON.stringify(slackChannels);
+  const slackThemeStr = JSON.stringify(slackTheme);
+  
   useEffect(() => {
     if (!onSave) return;
     if (isFirstRun.current) {
@@ -45,13 +46,9 @@ export default function SlackIntegrationSection({ settings, setSettings, onSave 
     }, SLACK_SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [
-    (settings as any).slack_default_channel,
-    JSON.stringify((settings as any).slack_channels),
-    settings.slack_nudge_1_week_before,
-    settings.slack_nudge_on_due_date,
-    settings.slack_nudge_daily_after_due,
-    settings.slack_notification_test_email,
-    JSON.stringify((settings as any).slack_theme),
+    slackDefaultChannel,
+    slackChannelsStr,
+    slackThemeStr,
     onSave,
   ]);
 
@@ -97,93 +94,6 @@ export default function SlackIntegrationSection({ settings, setSettings, onSave 
             placeholder="#launch-readiness"
           />
           <p className="text-xs text-gray-500 mt-1">Default channel for launch notifications (e.g., #launch-readiness)</p>
-        </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-purple-900 mb-2">Slack Configuration</h3>
-          <p className="text-xs text-purple-800 mb-2">
-            Slack integration requires environment variables to be configured:
-          </p>
-          <ul className="text-xs text-purple-700 space-y-1 list-disc list-inside">
-            <li><code className="bg-purple-100 px-1 rounded">SLACK_BOT_TOKEN</code> - Bot User OAuth Token</li>
-            <li><code className="bg-purple-100 px-1 rounded">SLACK_SIGNING_SECRET</code> - Signing Secret</li>
-            <li><code className="bg-purple-100 px-1 rounded">SLACK_APP_ID</code> - App ID</li>
-          </ul>
-          <p className="text-xs text-purple-700 mt-3">
-            See the <strong>Slack Integration Setup Guide</strong> in the documentation for detailed setup instructions.
-          </p>
-        </div>
-        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
-          <h3 className="text-sm font-semibold text-gray-700 mb-2">Webhook Endpoints</h3>
-          <div className="space-y-2 text-xs text-gray-600">
-            <div>
-              <strong>Events:</strong>{' '}
-              <code className="bg-gray-100 px-1 rounded">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/slack/events` : '/api/integrations/slack/events'}
-              </code>
-            </div>
-            <div>
-              <strong>Interactions:</strong>{' '}
-              <code className="bg-gray-100 px-1 rounded">
-                {typeof window !== 'undefined' ? `${window.location.origin}/api/integrations/slack/interactions` : '/api/integrations/slack/interactions'}
-              </code>
-            </div>
-          </div>
-        </div>
-
-        <div className="border-t border-gray-200 pt-4 mt-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3">Criteria Notification Settings</h3>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Nudge Frequency</label>
-              <div className="space-y-2">
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={slackNudge1WeekBefore}
-                    onChange={(e) => setSettings({ ...settings, slack_nudge_1_week_before: e.target.checked } as any)}
-                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm text-gray-700">Nudge 1 week before due date</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={slackNudgeOnDueDate}
-                    onChange={(e) => setSettings({ ...settings, slack_nudge_on_due_date: e.target.checked } as any)}
-                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm text-gray-700">Nudge on due date</span>
-                </label>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={slackNudgeDailyAfter}
-                    onChange={(e) => setSettings({ ...settings, slack_nudge_daily_after_due: e.target.checked } as any)}
-                    className="mr-2 h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-                  />
-                  <span className="text-sm text-gray-700">Nudge daily after due date</span>
-                </label>
-              </div>
-            </div>
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600">
-                <strong>Slack notifications</strong> are controlled per user in <strong>User Management</strong>: use the &quot;Slack&quot; checkbox on each user to allow them to receive Slack DMs.
-              </p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email notification filter (optional)</label>
-                <textarea
-                  value={slackNotificationTestEmail}
-                  onChange={(e) => setSettings({ ...settings, slack_notification_test_email: e.target.value } as any)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Leave empty to send to all&#10;Or list emails separated by commas or new lines"
-                  rows={3}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  If set, only these email addresses receive actual email notifications. All notifications are logged. Leave empty for no filter.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         <div className="border-t border-gray-200 pt-4 mt-4">

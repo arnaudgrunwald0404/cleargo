@@ -40,6 +40,11 @@ export interface AppSettings {
     slack_nudge_daily_after_due?: boolean;
     slack_notification_test_email?: string; // For email notifications
     slack_notification_test_slack_handle?: string; // For Slack notifications (Slack user ID, e.g., U12345678)
+    email_nudge_1_week_before?: boolean;
+    email_nudge_on_due_date?: boolean;
+    email_nudge_daily_after_due?: boolean;
+    slack_notifications_enabled?: boolean; // System flag: Enable/disable all Slack notifications
+    email_notifications_enabled?: boolean; // System flag: Enable/disable all email notifications
     slack_theme?: import('./slack/theme').SlackThemeConfig; // Slack notification theme customization
     jira_domain?: string | null; // Jira domain (e.g., "clearco.atlassian.net")
     jira_api_token?: string | null; // Jira API token for authentication

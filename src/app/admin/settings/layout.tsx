@@ -19,6 +19,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
     const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
     const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
     const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement");
+    const isNotificationsExpanded = pathname?.startsWith("/admin/settings/notifications") || pathname?.startsWith("/admin/settings/email-templates");
 
     const linkProps = (path: string, active: boolean) => ({
         href: path,
@@ -55,7 +56,18 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                 <li><Link {...linkProps("/admin/settings/releases", isActive("/admin/settings/releases"))}>Release Schedule</Link></li>
                 <li><Link {...linkProps("/admin/settings/launch-stages", isActive("/admin/settings/launch-stages"))}>Launch Stages</Link></li>
                 <li><Link {...linkProps("/admin/settings/criteria", isActive("/admin/settings/criteria"))}>ClearGO Criteria</Link></li>
-                <li><Link {...linkProps("/admin/settings/email-templates", isActive("/admin/settings/email-templates"))}>Email Templates</Link></li>
+                <li>
+                    <Link href="/admin/settings/notifications" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isNotificationsExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                        <span>Notifications</span>
+                        <svg className={`w-4 h-4 transition-transform ${isNotificationsExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                    </Link>
+                    {isNotificationsExpanded && (
+                        <ul className="ml-4 mt-1 space-y-1">
+                            <li><Link {...linkPropsSm("/admin/settings/notifications", isActive("/admin/settings/notifications"))}>Notification Settings</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/email-templates", isActive("/admin/settings/email-templates"))}>Email Templates</Link></li>
+                        </ul>
+                    )}
+                </li>
                 <li>
                     <Link href="/admin/settings/success-measurement/metrics" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isSuccessMeasurementExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
                         <span>Success measurement</span>

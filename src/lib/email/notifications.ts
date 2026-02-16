@@ -1,5 +1,7 @@
 import { resend, EMAIL_SENDER } from './client';
 import { getLaunchStatusChangeEmail, getRiskAlertEmail } from './templates';
+import { logNotification } from '../slack/notifications';
+import { createAdminClient } from '@/lib/supabase/server';
 
 export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert';
 
@@ -7,9 +9,39 @@ export interface EmailNotificationPayload {
     type: EmailNotificationType;
     recipientEmail: string;
     metadata: Record<string, any>;
+    userId?: string;
+    epicId?: string;
 }
 
 export async function sendEmailNotification(payload: EmailNotificationPayload) {
+    let userId = payload.userId;
+    let epicId = payload.epicId;
+
+    // Extract epic ID from metadata if not provided
+    if (!epicId && payload.metadata.epicUrl) {
+        const epicUrlMatch = payload.metadata.epicUrl.match(/\/epics\/([a-f0-9-]+)/);
+        if (epicUrlMatch) {
+            epicId = epicUrlMatch[1];
+        }
+    }
+
+    // Look up user_id from email if not provided
+    if (!userId) {
+        try {
+            const supabase = createAdminClient();
+            const { data: user } = await supabase
+                .from('app_user')
+                .select('id')
+                .ilike('email', payload.recipientEmail.trim())
+                .maybeSingle();
+            if (user) {
+                userId = user.id;
+            }
+        } catch (err) {
+            console.warn('Could not look up user_id for email notification:', err);
+        }
+    }
+
     try {
         let emailContent;
 
@@ -42,8 +74,28 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
         });
 
         console.log('Email sent:', data);
-    } catch (error) {
+
+        // Log successful notification to database
+        await logNotification({
+            user_id: userId,
+            launch_id: epicId,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'email',
+            status: 'sent',
+        });
+    } catch (error: any) {
         console.error('Failed to send email:', error);
-        // Don't throw, just log
+
+        // Log failed notification to database
+        await logNotification({
+            user_id: userId,
+            launch_id: epicId,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'email',
+            status: 'failed',
+            error: error.message || String(error),
+        });
     }
 }
