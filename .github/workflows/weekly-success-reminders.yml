@@ -13,11 +13,12 @@ jobs:
     steps:
       - name: Trigger weekly success review reminders
         env:
-          BASE_URL: ${{ secrets.APP_BASE_URL || secrets.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app' }}
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
+          BASE_URL="${BASE_URL:-https://cleargo.netlify.app}"
           if [ -z "$BASE_URL" ]; then
-            echo "APP_BASE_URL or NEXT_PUBLIC_APP_URL secret not set" >&2
+            echo "APP_BASE_URL secret not set" >&2
             exit 1
           fi
           if [ -z "$CRON_SECRET" ]; then
