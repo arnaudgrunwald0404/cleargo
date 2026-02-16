@@ -9,6 +9,8 @@ import { SignJWT } from 'jose';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient, isChannelForbidden } from '@/lib/slack/client';
 import { generateDigestNarrative } from '@/lib/ai/client';
+import { buildLeadershipDigestMessage } from '@/lib/slack/templates';
+import { getSlackTheme } from '@/lib/slack/theme';
 import {
     getLastNReleases,
     getNextNReleases,
@@ -118,88 +120,34 @@ export async function GET(request: NextRequest) {
         }
         const dmChannel = await client.openConversation(slackUser.user.id);
 
-        // Build summary of epic-level data for the draft
-        const buildEpicSummary = () => {
-            const lines: string[] = [];
-            
-            if (lastReleasesAnalytics.length > 0) {
-                lines.push('*📚 Last Releases:*');
-                lastReleasesAnalytics.forEach((r) => {
-                    const launchDateStr = r.launch_date
-                        ? new Date(r.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                        : 'Date TBD';
-                    lines.push(`• ${r.release_name} (${launchDateStr}): ${r.average_readiness}% avg readiness, ${r.metrics_count} metrics`);
-                    if (r.high_risk_epics && r.high_risk_epics.length > 0) {
-                        const highRiskNames = r.high_risk_epics.slice(0, 3).map(e => e.name).join(', ');
-                        lines.push(`  High risk: ${highRiskNames}${r.high_risk_epics.length > 3 ? '...' : ''}`);
-                    }
-                });
-            }
-            
-            if (nextReleasesAnalytics.length > 0) {
-                lines.push('\n*🚀 Next Releases:*');
-                nextReleasesAnalytics.forEach((r) => {
-                    const launchDateStr = r.launch_date
-                        ? new Date(r.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-                        : 'Date TBD';
-                    const breakdown = r.readiness_breakdown;
-                    const totalEpics = breakdown.go + breakdown.conditional_go + breakdown.no_go + breakdown.not_evaluated;
-                    lines.push(`• ${r.release_name} (${launchDateStr}): ${r.readiness_status}`);
-                    if (totalEpics > 0) {
-                        lines.push(`  ${breakdown.go} Go, ${breakdown.conditional_go} Conditional, ${breakdown.no_go} No-Go, ${breakdown.not_evaluated} Not evaluated`);
-                    }
-                    if (r.high_risk_epics && r.high_risk_epics.length > 0) {
-                        const highRiskNames = r.high_risk_epics.slice(0, 3).map(e => e.name).join(', ');
-                        lines.push(`  High risk: ${highRiskNames}${r.high_risk_epics.length > 3 ? '...' : ''}`);
-                    }
-                    if (r.total_criteria_overdue && r.total_criteria_overdue > 0) {
-                        lines.push(`  ${r.total_criteria_overdue} criteria overdue`);
-                    }
-                });
-            }
-            
-            return lines.join('\n');
-        };
+        // Build the full digest message using the same function as the final digest
+        const theme = await getSlackTheme();
+        const digestMessage = buildLeadershipDigestMessage(
+            {
+                week_of: weekOf,
+                narrative: narrative ?? null,
+                last_releases: lastReleasesAnalytics,
+                next_releases: nextReleasesAnalytics,
+            },
+            theme
+        );
 
+        // Build draft blocks: add draft header, then all digest content, then approval buttons
         const blocks: Array<{ type: string; text?: { type: string; text: string }; elements?: unknown[] }> = [
             {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: '*Weekly Release Readiness Digest – Draft*\nReview the narrative below. Approve to post the full digest to the channel.',
+                    text: '*📋 Weekly Release Readiness Digest – Draft*\nReview the content below. Approve to post the full digest to the channel.',
                 },
             },
         ];
-        
-        // Add narrative section
-        if (narrative?.trim()) {
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*Narrative:*\n${narrative.trim()}`,
-                },
-            });
-        } else {
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: '*Narrative:*\n_No narrative generated (LLM not configured or failed)._',
-                },
-            });
-        }
-        
-        // Always include epic-level summary
-        const epicSummary = buildEpicSummary();
-        if (epicSummary) {
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*Epic Summary:*\n${epicSummary}`,
-                },
-            });
+
+        // Add all digest blocks (skip only the header, keep "Week of" context and everything else)
+        const digestBlocks = digestMessage.blocks;
+        // Skip first block (header), keep everything else including "Week of" context, narrative, and all release details
+        for (let i = 1; i < digestBlocks.length; i++) {
+            blocks.push(digestBlocks[i] as any);
         }
         if (approveUrl) {
             const editUrl = `${approveUrl}${approveUrl.includes('?') ? '&' : '?'}edit=1`;
