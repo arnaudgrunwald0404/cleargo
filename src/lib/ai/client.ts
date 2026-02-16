@@ -130,9 +130,15 @@ export interface DigestNarrativeInput {
  * We are getting ready for the next release with [items] and things are looking good so far."
  */
 export async function generateDigestNarrative(data: DigestNarrativeInput): Promise<string | null> {
-    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+    const hasGoogleKey = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    
+    if (!hasGeminiKey && !hasGoogleKey) {
+        console.warn('generateDigestNarrative: Neither GEMINI_API_KEY nor GOOGLE_GENERATIVE_AI_API_KEY is set');
         return null;
     }
+    
+    console.log('generateDigestNarrative: API key found, attempting to generate narrative...');
 
     try {
         const lastSummary = data.last_releases
@@ -170,8 +176,13 @@ Data for this week (${data.week_of}):
         });
 
         return text?.trim() || null;
-    } catch (error) {
-        console.error('Error in generateDigestNarrative:', error);
+    } catch (error: any) {
+        console.error('Error in generateDigestNarrative:', {
+            message: error?.message,
+            name: error?.name,
+            stack: error?.stack,
+            cause: error?.cause,
+        });
         return null;
     }
 }
