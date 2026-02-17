@@ -476,6 +476,28 @@ export function CommentsModal({
           
           return merged;
         });
+
+        // Mark all fetched comments as read when modal opens
+        if (commentsWithAttachments.length > 0) {
+          const commentIds = commentsWithAttachments
+            .map((c: Comment) => c.id)
+            .filter((id: string) => !id.startsWith('temp-'));
+          
+          if (commentIds.length > 0) {
+            // Mark as read asynchronously (don't block UI)
+            fetch('/api/comments/mark-read', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ comment_ids: commentIds }),
+              credentials: 'include',
+            }).catch((error) => {
+              console.error('Failed to mark comments as read:', error);
+              // Don't show error to user - this is a background operation
+            });
+          }
+        }
       }
 
       // Fetch standalone attachments (not attached to comments)
@@ -937,8 +959,14 @@ export function CommentsModal({
       
       if (data) {
         baseContent = data.current_status_notes || '';
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:939',message:'Base content before strip',data:{baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         // Strip any previously added data source content to prevent duplication
         baseContent = stripDataSourceContent(baseContent);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:941',message:'Base content after strip',data:{baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         baseContentRef.current = baseContent;
         // Load data source values if column exists
         if (data.data_source_values) {
@@ -1069,19 +1097,76 @@ export function CommentsModal({
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;');
 
+  // Helper function to convert URLs in plain text to clickable links
+  const convertUrlsToLinks = (text: string): string => {
+    if (!text) return text;
+    // URL regex pattern - matches http:// and https:// URLs
+    // Matches URLs that are not already inside HTML tags
+    const urlRegex = /(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi;
+    const parts: Array<{ type: 'text' | 'url'; content: string }> = [];
+    let lastIndex = 0;
+    let match;
+    let hasUrls = false;
+    
+    while ((match = urlRegex.exec(text)) !== null) {
+      hasUrls = true;
+      // Add text before URL
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.substring(lastIndex, match.index) });
+      }
+      // Add URL
+      parts.push({ type: 'url', content: match[0] });
+      lastIndex = match.index + match[0].length;
+    }
+    
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.substring(lastIndex) });
+    }
+    
+    // If no URLs found, return escaped text
+    if (!hasUrls) {
+      return escapeHtml(text);
+    }
+    
+    // Build HTML with escaped text and link tags for URLs
+    return parts.map(part => {
+      if (part.type === 'url') {
+        const escapedUrl = escapeHtml(part.content);
+        return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+      } else {
+        return escapeHtml(part.content);
+      }
+    }).join('');
+  };
+
   // Allowlist of tags safe to render (lists, paragraphs, formatting, links)
   const ALLOWED_HTML_TAGS = new Set(['ul', 'ol', 'li', 'p', 'br', 'strong', 'em', 'b', 'i', 'a', 'span']);
   const sanitizeHtmlForDisplay = (html: string): string => {
-    if (typeof document === 'undefined') return escapeHtml(html);
+    if (typeof document === 'undefined') {
+      // Server-side: convert URLs in plain HTML string
+      return html.replace(/(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi, (url) => {
+        const escapedUrl = escapeHtml(url);
+        return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+      });
+    }
     try {
       const doc = new DOMParser().parseFromString(html, 'text/html');
-      const serialize = (node: Node): string => {
-        if (node.nodeType === Node.TEXT_NODE) return escapeHtml(node.textContent || '');
+      const serialize = (node: Node, parentTag?: string): string => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          const text = node.textContent || '';
+          // Don't convert URLs if we're already inside an anchor tag
+          if (parentTag === 'a') {
+            return escapeHtml(text);
+          }
+          // Convert URLs in text to links (function handles escaping)
+          return convertUrlsToLinks(text);
+        }
         if (node.nodeType !== Node.ELEMENT_NODE) return '';
         const el = node as Element;
         const tag = el.tagName.toLowerCase();
         if (!ALLOWED_HTML_TAGS.has(tag)) {
-          return Array.from(el.childNodes).map(serialize).join('');
+          return Array.from(el.childNodes).map(child => serialize(child, tag)).join('');
         }
         if (tag === 'br') return '<br>';
         // Unwrap single <p> inside <li> for compact list display (no extra gap between bullets)
@@ -1089,8 +1174,8 @@ export function CommentsModal({
           const children = Array.from(el.childNodes);
           const singleP = children.length === 1 && children[0].nodeType === Node.ELEMENT_NODE && (children[0] as Element).tagName.toLowerCase() === 'p';
           const inner = singleP
-            ? Array.from((children[0] as Element).childNodes).map(serialize).join('')
-            : Array.from(el.childNodes).map(serialize).join('');
+            ? Array.from((children[0] as Element).childNodes).map(child => serialize(child, tag)).join('')
+            : Array.from(el.childNodes).map(child => serialize(child, tag)).join('');
           return `<li>${inner}</li>`;
         }
         let attrs = '';
@@ -1100,20 +1185,67 @@ export function CommentsModal({
             attrs = ` href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer"`;
           }
         }
-        const inner = Array.from(el.childNodes).map(serialize).join('');
+        const inner = Array.from(el.childNodes).map(child => serialize(child, tag)).join('');
         // Mark empty paragraphs with an emoji so empty rows are visible
         if (tag === 'p' && !inner.trim()) return '<p>📭</p>';
         return `<${tag}${attrs}>${inner}</${tag}>`;
       };
-      let out = Array.from(doc.body.childNodes).map(serialize).join('');
+      let out = Array.from(doc.body.childNodes).map(node => serialize(node)).join('');
       // Put an emoji on each empty row created by multiple <br> (so empty lines are visible)
       out = out.replace(/(<br\s*\/?>)(\s*<br\s*\/?>)+/gi, (match, firstBr) => {
         const extraBrCount = (match.match(/<br\s*\/?>/gi) || []).length - 1;
         return firstBr + Array(extraBrCount).fill('📭<br>').join('');
       });
+      // Post-process: convert any remaining URLs that might not have been caught
+      // Split by anchor tags to process text outside of links
+      const parts: string[] = [];
+      const linkRegex = /(<a[^>]*>.*?<\/a>)/gi;
+      let lastIndex = 0;
+      let match;
+      
+      while ((match = linkRegex.exec(out)) !== null) {
+        // Add text before the link
+        if (match.index > lastIndex) {
+          const beforeText = out.substring(lastIndex, match.index);
+          // Convert URLs in this text
+          const converted = beforeText.replace(/(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi, (url) => {
+            const escapedUrl = escapeHtml(url);
+            return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+          });
+          parts.push(converted);
+        }
+        // Add the link as-is
+        parts.push(match[0]);
+        lastIndex = match.index + match[0].length;
+      }
+      
+      // Add remaining text after last link
+      if (lastIndex < out.length) {
+        const afterText = out.substring(lastIndex);
+        const converted = afterText.replace(/(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi, (url) => {
+          const escapedUrl = escapeHtml(url);
+          return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+        });
+        parts.push(converted);
+      }
+      
+      // If no links were found, process the entire string
+      if (parts.length === 0) {
+        out = out.replace(/(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi, (url) => {
+          const escapedUrl = escapeHtml(url);
+          return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+        });
+      } else {
+        out = parts.join('');
+      }
+      
       return out;
     } catch {
-      return escapeHtml(html);
+      // Fallback: convert URLs in escaped HTML
+      return html.replace(/(https?:\/\/[^\s<>"{}|\\^`[\]]+)/gi, (url) => {
+        const escapedUrl = escapeHtml(url);
+        return `<a href="${escapedUrl}" target="_blank" rel="noopener noreferrer">${escapedUrl}</a>`;
+      });
     }
   };
 
@@ -1205,8 +1337,12 @@ export function CommentsModal({
       
       // Find all table rows
       const rows = doc.querySelectorAll('tr');
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1213',message:'parseDescriptionTable started',data:{keyword,rowsCount:rows.length,htmlDescriptionLength:htmlDescription?.length||0},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       
       // Search for the row containing the keyword
+      let matchCount = 0;
       for (const row of rows) {
         const cells = row.querySelectorAll('td, th');
         if (cells.length >= 2) {
@@ -1219,6 +1355,10 @@ export function CommentsModal({
           // Check if first column contains the keyword (case-insensitive)
           const firstCellText = firstCell.textContent?.trim() || '';
           if (firstCellText && firstCellText.toLowerCase().includes(keyword.toLowerCase())) {
+            matchCount++;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1227',message:'Found matching row',data:{keyword,firstCellText,matchCount},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             // Return the second column HTML content (preserves formatting)
             const secondCell = cells[1];
             const secondCellHTML = secondCell.innerHTML?.trim() || '';
@@ -1226,12 +1366,19 @@ export function CommentsModal({
             // Skip empty cells (check both HTML and text content)
             if (secondCellHTML && secondCellText) {
               // Clean the HTML to remove empty elements and make it more compact
-              return cleanExtractedHTML(secondCellHTML);
+              const result = cleanExtractedHTML(secondCellHTML);
+              // #region agent log
+              fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1235',message:'Returning extracted value',data:{keyword,matchCount,resultLength:result?.length||0,resultPreview:result?.substring(0,100)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+              // #endregion
+              return result;
             }
           }
         }
       }
       
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1241',message:'No match found',data:{keyword,matchCount},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       return null;
     } catch (error) {
       console.error('Error parsing description table:', error);
@@ -1311,13 +1458,11 @@ export function CommentsModal({
 
   // Helper function to strip data source content from base content
   // This prevents duplication when baseContent already contains previously added data sources
-  // Data sources are always appended after the base content, separated by HR tags
+  // Data sources can be at the beginning, middle, or end of content
   const stripDataSourceContent = (content: string): string => {
     if (!content || !criterion?.data_sources || criterion.data_sources.length === 0) return content;
     
-    // Data sources are added with HR separators between them
-    // The pattern is: baseContent + '\n\n' + dataSource1 + <hr> + dataSource2 + ...
-    // So we can split by HR tags and take only the first part (before any HR)
+    // First, split by HR tags - data sources are separated by HR tags
     const hrPattern = /<hr[^>]*>/gi;
     const parts = content.split(hrPattern);
     
@@ -1326,23 +1471,124 @@ export function CommentsModal({
       return parts[0].trim();
     }
     
-    // If no HR tags, check if content ends with data source patterns
-    // Look for patterns that match data source content (e.g., **FieldLabel**<br>value)
-    // We'll use a simpler approach: if the last part matches data source patterns, remove it
+    // Build patterns to match data source headers for all configured data sources
+    // Data source header format: <strong>Label</strong><br> or **Label**<br>
+    const dataSourceHeaders: Array<{ pattern: RegExp; label: string; fullPattern: RegExp }> = [];
+    for (const source of criterion.data_sources) {
+      if (source.type === 'aha_field' || source.type === 'aha_description_part') {
+        let label = '';
+        if (source.type === 'aha_field' && source.value) {
+          // For aha_field, use getFieldLabel to get the proper display label
+          label = getFieldLabel(source.value);
+        } else {
+          // For aha_description_part, use source.value directly
+          label = source.value || source.label || '';
+        }
+        if (label) {
+          // Match: <strong>Label</strong><br> or **Label**<br> (case-insensitive, flexible whitespace)
+          const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          const pattern = new RegExp(`(<strong>|<b>|\\*\\*)\\s*${escapedLabel}\\s*(</strong>|</b>|\\*\\*)<br\\s*/?>`, 'i');
+          // Full pattern to match the entire data source block (header + content until next header or end)
+          // This helps detect duplicates more accurately
+          const fullPattern = new RegExp(`(<strong>|<b>|\\*\\*)\\s*${escapedLabel}\\s*(</strong>|</b>|\\*\\*)<br\\s*/?>[\\s\\S]*?(?=(<strong>|<b>|\\*\\*)\\s*${escapedLabel}\\s*(</strong>|</b>|\\*\\*)<br\\s*/?>|$)`, 'gi');
+          dataSourceHeaders.push({ pattern, label, fullPattern });
+        }
+      }
+    }
+    
     let cleaned = content;
     
-    // Try to identify data source content at the end by looking for the separator pattern
-    // Data sources are added with: baseContent + '\n\n' + dataSection
-    // So if we find '\n\n' followed by data source patterns, that's the separator
+    // Remove ALL occurrences of each data source (including duplicates)
+    for (const { pattern, label, fullPattern } of dataSourceHeaders) {
+      // First, find all occurrences of this data source
+      const matches: Array<{ start: number; end: number }> = [];
+      let searchStart = 0;
+      let match;
+      
+      // Use fullPattern to find complete blocks
+      while ((match = fullPattern.exec(cleaned)) !== null) {
+        matches.push({ start: match.index, end: match.index + match[0].length });
+        // Reset lastIndex to avoid infinite loop with global regex
+        if (match.index === fullPattern.lastIndex) {
+          fullPattern.lastIndex++;
+        }
+      }
+      
+      // Remove duplicates (keep only the first occurrence if multiple found)
+      if (matches.length > 1) {
+        // Remove all but the first occurrence (working backwards to preserve indices)
+        for (let i = matches.length - 1; i > 0; i--) {
+          const { start, end } = matches[i];
+          cleaned = cleaned.substring(0, start) + cleaned.substring(end);
+        }
+      }
+    }
+    
+    // Check if content STARTS with a data source header (most common case)
+    // We need to remove ALL instances, not just the first one
+    let foundDataSourceAtStart = true;
+    let iterations = 0;
+    const maxIterations = 20; // Increased limit to handle more duplicates
+    
+    while (foundDataSourceAtStart && iterations < maxIterations) {
+      iterations++;
+      foundDataSourceAtStart = false;
+      
+      for (const { pattern, label } of dataSourceHeaders) {
+        const match = cleaned.match(pattern);
+        if (match && match.index === 0) {
+          foundDataSourceAtStart = true;
+          // Content starts with a data source header
+          // Find where this data source content ends (before next data source or separator)
+          let endIndex = cleaned.length;
+          
+          // Check for other data source headers after this one
+          for (const { pattern: otherPattern } of dataSourceHeaders) {
+            if (otherPattern !== pattern) {
+              const nextMatch = cleaned.substring(match[0].length).match(otherPattern);
+              if (nextMatch && nextMatch.index !== undefined) {
+                endIndex = Math.min(endIndex, match[0].length + nextMatch.index);
+              }
+            }
+          }
+          
+          // Also check for the same pattern repeating (duplication case)
+          const samePatternMatch = cleaned.substring(match[0].length).match(pattern);
+          if (samePatternMatch && samePatternMatch.index !== undefined) {
+            // Found the same data source repeating - remove up to the next occurrence
+            endIndex = Math.min(endIndex, match[0].length + samePatternMatch.index);
+          }
+          
+          // Check for double newline separator (baseContent + '\n\n' + dataSource)
+          const doubleNewlineAfterMatch = cleaned.substring(match[0].length).indexOf('\n\n');
+          if (doubleNewlineAfterMatch !== -1 && doubleNewlineAfterMatch < endIndex - match[0].length) {
+            // There's user content before the next data source
+            endIndex = match[0].length + doubleNewlineAfterMatch;
+          }
+          
+          // Remove the data source content from the beginning
+          const beforeLength = cleaned.length;
+          cleaned = cleaned.substring(endIndex).trim();
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:stripDataSourceContent',message:'Removed data source from beginning',data:{label,endIndex,cleanedLength:cleaned.length,originalLength:beforeLength,iteration:iterations},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
+          break; // Process one at a time, then check again
+        }
+      }
+    }
+    
+    // Also check if content ends with data source patterns (original logic)
     const doubleNewlineIndex = cleaned.lastIndexOf('\n\n');
     if (doubleNewlineIndex > 0) {
       const afterDoubleNewline = cleaned.substring(doubleNewlineIndex + 2);
       // Check if the part after '\n\n' looks like data source content
-      // Data source content typically starts with **Label** or <strong>Label</strong>
       const dataSourcePattern = /^(<strong>|<b>|\*\*)[^<*]+(<\/strong>|<\/b>|\*\*)/i;
       if (dataSourcePattern.test(afterDoubleNewline.trim())) {
         // This looks like data source content, remove it
         cleaned = cleaned.substring(0, doubleNewlineIndex).trim();
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:stripDataSourceContent',message:'Removed data source from end',data:{doubleNewlineIndex,cleanedLength:cleaned.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
       }
     }
     
@@ -1355,6 +1601,9 @@ export function CommentsModal({
     fetchedDataSourceValues: Record<string, string | { url: string; assetName?: string }>,
     urlPreviews: Record<string, { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null>
   ): string => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1358',message:'buildContentFromDataSources called',data:{baseContentLength:baseContent?.length||0,dataSourcesCount:criterion?.data_sources?.length||0,dataSources:criterion?.data_sources||[]},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     // Process all data sources in order
     const dataSourceItems: Array<{ content: string; type: string }> = [];
     if (criterion?.data_sources) {
@@ -1364,6 +1613,9 @@ export function CommentsModal({
       const customFields = ahaFieldsStruct?.custom_fields || {};
       
       criterion.data_sources.forEach((source, index) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1366',message:'Processing data source',data:{index,sourceType:source.type,sourceValue:source.value,sourceLabel:source.label},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         if (source.type === 'aha_field' && source.value) {
           let displayValue: string | null = null;
           
@@ -1401,6 +1653,9 @@ export function CommentsModal({
           let extractedValue: string | null = null;
           if (htmlContent) {
             extractedValue = parseDescriptionTable(htmlContent, source.value);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1403',message:'Extracted value from description table',data:{index,keyword:source.value,extractedValueLength:extractedValue?.length||0,extractedValuePreview:extractedValue?.substring(0,100)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
           }
           
           // Always show the description part label, with value or "N/A" on a new line (URLs as clickable links)
@@ -1408,6 +1663,9 @@ export function CommentsModal({
           const markdownContent = `**${source.value}**`;
           const convertedContent = convertMarkdownToHTML(markdownContent) + '<br>' + formatValueForHtmlDisplay(valueToShow);
           dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1410',message:'Added data source item',data:{index,type:'aha_description_part',dataSourceItemsCount:dataSourceItems.length,contentPreview:convertedContent.substring(0,100)},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
         } else if (source.type === 'url') {
           // Get URL value from fetched data source values
           const dataSourceValue = fetchedDataSourceValues[index.toString()];
@@ -1427,9 +1685,21 @@ export function CommentsModal({
       });
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1428',message:'Finished processing data sources',data:{dataSourceItemsCount:dataSourceItems.length,dataSourceItemsTypes:dataSourceItems.map(i=>i.type),baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,200)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    // Process baseContent to convert URLs to links if it contains HTML
+    let processedBaseContent = baseContent;
+    if (baseContent && looksLikeHtml(baseContent)) {
+      processedBaseContent = sanitizeHtmlForDisplay(baseContent);
+    } else if (baseContent) {
+      // Even if not HTML, check for URLs and convert them
+      processedBaseContent = formatValueForHtmlDisplay(baseContent);
+    }
+
     // Combine base content with data source values
     // Add HTML separators between different data source sections
-    let finalContent = baseContent;
+    let finalContent = processedBaseContent;
     if (dataSourceItems.length > 0) {
       const processedContent: string[] = [];
       
@@ -1443,7 +1713,10 @@ export function CommentsModal({
       });
       
       const dataSection = processedContent.join('\n');
-      finalContent = baseContent ? baseContent + '\n\n' + dataSection : dataSection.trim();
+      finalContent = processedBaseContent ? processedBaseContent + '\n\n' + dataSection : dataSection.trim();
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1446',message:'Final content built',data:{finalContentLength:finalContent?.length||0,finalContentPreview:finalContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+      // #endregion
     }
 
     // Process final content through checkbox formatter

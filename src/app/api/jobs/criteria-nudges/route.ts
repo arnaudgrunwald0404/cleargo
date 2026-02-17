@@ -12,6 +12,44 @@ import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
 import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
+import { appendFileSync, mkdirSync } from 'fs';
+import { dirname } from 'path';
+
+const DEBUG_LOG_PATH = '/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log';
+const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
+    try {
+        const logEntry = { location, message, data, timestamp: Date.now(), runId: 'debug1', hypothesisId };
+        const logLine = JSON.stringify(logEntry) + '\n';
+        appendFileSync(DEBUG_LOG_PATH, logLine);
+        // Also log to console for immediate visibility
+        console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
+    } catch (e: any) {
+        // If directory doesn't exist, try to create it
+        if (e.code === 'ENOENT') {
+            try {
+                mkdirSync(dirname(DEBUG_LOG_PATH), { recursive: true });
+                appendFileSync(DEBUG_LOG_PATH, JSON.stringify({ location, message, data, timestamp: Date.now(), runId: 'debug1', hypothesisId }) + '\n');
+                console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
+            } catch (e2) {
+                console.error(`[DEBUG] Failed to write log:`, e2);
+                console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
+            }
+        } else {
+            console.error(`[DEBUG] Failed to write log:`, e);
+            console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
+        }
+    }
+};
+
+// Normalize release names by removing "Release " prefix (handles multiple occurrences)
+const normalizeReleaseName = (name: string): string => {
+    if (!name) return name;
+    let normalized = name.trim();
+    while (normalized.toLowerCase().startsWith('release ')) {
+        normalized = normalized.substring(8).trim();
+    }
+    return normalized;
+};
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -558,7 +596,7 @@ export async function GET(request: NextRequest) {
         const epicIds = [...new Set(criteriaToProcess.map((c: any) => c.epic_id))];
         if (epicIds.length > 0) {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:516',message:'Re-fetching epic data for release date filter',data:{epicIds,epicIdsCount:epicIds.length,criteriaCount:criteriaToProcess.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+            debugLog('route.ts:570', 'Re-fetching epic data for release date filter', {epicIds:epicIds.slice(0,10),epicIdsCount:epicIds.length,criteriaCount:criteriaToProcess.length}, 'B');
             // #endregion
             const { data: epicsWithReleases } = await supabase
                 .from('epic')
@@ -566,7 +604,7 @@ export async function GET(request: NextRequest) {
                 .in('id', epicIds);
             // #region agent log
             if (epicsWithReleases) {
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:521',message:'Re-fetched epic data',data:{fetchedCount:epicsWithReleases.length,epics:epicsWithReleases.map((e:any)=>({id:e.id,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:e.aha_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+                debugLog('route.ts:575', 'Re-fetched epic data', {fetchedCount:epicsWithReleases.length,epics:epicsWithReleases.slice(0,5).map((e:any)=>({id:e.id,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,status:e.status}))}, 'B');
             }
             // #endregion
             
@@ -576,14 +614,35 @@ export async function GET(request: NextRequest) {
                 .eq('archived', false);
             
             const releaseToDate = new Map<string, string | null>();
+            // Normalize release names: create a map with both original and normalized versions
+            // This handles cases where epics have "Release 2026.2" but DB has "2026.2" or vice versa
             if (releasesData) {
                 for (const release of releasesData) {
-                    releaseToDate.set(release.release_name, release.launch_date);
+                    const originalName = release.release_name;
+                    const normalizedName = normalizeReleaseName(originalName);
+                    // Store both original and normalized versions
+                    releaseToDate.set(originalName, release.launch_date);
+                    if (normalizedName !== originalName) {
+                        releaseToDate.set(normalizedName, release.launch_date);
+                    }
                 }
             }
             
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:516',message:'Release date map built',data:{releaseCount:releaseToDate.size,sampleReleases:Array.from(releaseToDate.entries()).slice(0,5),today:todayStr},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+            const release2026_2InMap = Array.from(releaseToDate.keys()).filter(rn => rn.includes('2026.2'));
+            const all2026_2Variants = [
+                ...Array.from(releaseToDate.keys()).filter(rn => rn.includes('2026.2')),
+                ...Array.from(releaseToDate.keys()).filter(rn => normalizeReleaseName(rn).includes('2026.2'))
+            ];
+            console.log('🗓️ RELEASE DATE MAP DEBUG:', {
+                releaseCount: releaseToDate.size,
+                allReleaseNames: Array.from(releaseToDate.keys()),
+                release2026_2Entries: release2026_2InMap.map(rn => ({name: rn, date: releaseToDate.get(rn), normalized: normalizeReleaseName(rn)})),
+                all2026_2Variants: [...new Set(all2026_2Variants)].map(rn => ({name: rn, date: releaseToDate.get(rn)})),
+                today: todayStr,
+                todayObj: today.toISOString()
+            });
+            debugLog('route.ts:586', 'Release date map built', {releaseCount:releaseToDate.size,allReleaseNames:Array.from(releaseToDate.keys()),release2026_2Entries:release2026_2InMap.map(rn => ({name: rn, date: releaseToDate.get(rn)})),today:todayStr}, 'A');
             // #endregion
             
             // Released statuses that indicate past release
@@ -595,7 +654,7 @@ export async function GET(request: NextRequest) {
                 const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
                 if (!epic) {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:530',message:'Epic not found in DB',data:{criterionId:c.id,epicId:c.epic_id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+                    debugLog('route.ts:598', 'Epic not found in DB', {criterionId:c.id,epicId:c.epic_id,epicName:c.epic?.name}, 'B');
                     // #endregion
                     return true; // Keep if epic not found (shouldn't happen)
                 }
@@ -603,7 +662,7 @@ export async function GET(request: NextRequest) {
                 // Check if epic has released status
                 if (epic.status && releasedStatuses.includes(epic.status)) {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:533',message:'Epic has released status - EXCLUDING',data:{epicId:epic.id,epicStatus:epic.status,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
+                    debugLog('route.ts:606', 'Epic has released status - EXCLUDING', {epicId:epic.id,epicStatus:epic.status,criterionId:c.id,epicName:c.epic?.name}, 'C');
                     // #endregion
                     return false; // Exclude criteria for released epics
                 }
@@ -612,15 +671,70 @@ export async function GET(request: NextRequest) {
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
                 if (!releaseName) {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:539',message:'No release name found - KEEPING',data:{epicId:epic.id,criterionId:c.id,epicName:c.epic?.name,ahaFieldsKeys:Object.keys(epic.aha_fields||{})},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+                    debugLog('route.ts:613', 'No release name found - KEEPING', {epicId:epic.id,criterionId:c.id,epicName:c.epic?.name,ahaFieldsKeys:Object.keys(epic.aha_fields||{}),ahaFieldsSample:JSON.stringify(epic.aha_fields).substring(0,200)}, 'D');
                     // #endregion
                     return true; // Keep if no release assigned
                 }
                 
-                const releaseDate = releaseToDate.get(releaseName);
+                // Normalize release name for lookup (handle "Release " prefix variations)
+                const normalizedReleaseName = normalizeReleaseName(releaseName);
+                
+                // Try both original and normalized names, plus fuzzy matching for edge cases
+                let releaseDate = releaseToDate.get(releaseName) || releaseToDate.get(normalizedReleaseName);
+                
+                // If still not found, try fuzzy matching (case-insensitive contains)
+                if (!releaseDate) {
+                    for (const [dbReleaseName, dbDate] of releaseToDate.entries()) {
+                        const dbNormalized = normalizeReleaseName(dbReleaseName);
+                        if (normalizedReleaseName.toLowerCase() === dbNormalized.toLowerCase() ||
+                            normalizedReleaseName.toLowerCase() === dbReleaseName.toLowerCase() ||
+                            releaseName.toLowerCase() === dbReleaseName.toLowerCase()) {
+                            releaseDate = dbDate;
+                            break;
+                        }
+                    }
+                }
+                
+                // #region agent log
+                const releaseNameInMap = releaseToDate.has(releaseName) || releaseToDate.has(normalizedReleaseName);
+                const is2026_2 = releaseName.includes('2026.2') || normalizedReleaseName.includes('2026.2');
+                if (is2026_2) {
+                    const all2026_2InDb = Array.from(releaseToDate.keys()).filter(rn => {
+                        const rnNorm = normalizeReleaseName(rn);
+                        return rn.includes('2026.2') || rnNorm.includes('2026.2');
+                    });
+                    console.log('🔍 RELEASE 2026.2 MATCH CHECK:', {
+                        epicId: epic.id,
+                        epicName: c.epic?.name,
+                        releaseName,
+                        normalizedReleaseName,
+                        releaseNameFound: releaseToDate.has(releaseName),
+                        normalizedNameFound: releaseToDate.has(normalizedReleaseName),
+                        releaseDate,
+                        all2026_2Releases: all2026_2InDb.map(rn => ({name: rn, date: releaseToDate.get(rn), normalized: normalizeReleaseName(rn)})),
+                        matchedViaFuzzy: !releaseToDate.has(releaseName) && !releaseToDate.has(normalizedReleaseName) && !!releaseDate
+                    });
+                }
+                debugLog('route.ts:620', 'Checking release name match', {epicId:epic.id,releaseName,normalizedReleaseName,releaseNameInMap,releaseNameFound:releaseToDate.has(releaseName),normalizedNameFound:releaseToDate.has(normalizedReleaseName),allReleaseNames:Array.from(releaseToDate.keys()).filter(rn=>rn.includes('2026.2')||normalizedReleaseName.includes(rn)||rn.includes(normalizedReleaseName)),criterionId:c.id,epicName:c.epic?.name}, 'M');
+                // #endregion
                 if (!releaseDate) {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:542',message:'Release has no date - KEEPING',data:{epicId:epic.id,releaseName,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
+                    if (is2026_2) {
+                        console.log('⚠️ RELEASE 2026.2 HAS NO DATE - KEEPING:', {
+                            epicId: epic.id,
+                            epicName: c.epic?.name,
+                            releaseName,
+                            normalizedReleaseName,
+                            closestMatches: Array.from(releaseToDate.keys()).filter((rn:string)=>{
+                                const rnNorm = normalizeReleaseName(rn);
+                                return rn.toLowerCase().includes(releaseName.toLowerCase()) || 
+                                       releaseName.toLowerCase().includes(rn.toLowerCase()) ||
+                                       rnNorm.toLowerCase().includes(normalizedReleaseName.toLowerCase()) ||
+                                       normalizedReleaseName.toLowerCase().includes(rnNorm.toLowerCase());
+                            })
+                        });
+                    }
+                    debugLog('route.ts:625', 'Release has no date - KEEPING', {epicId:epic.id,releaseName,releaseNameInMap,closestMatches:Array.from(releaseToDate.keys()).filter((rn:string)=>rn.toLowerCase().includes(releaseName.toLowerCase())||releaseName.toLowerCase().includes(rn.toLowerCase())),criterionId:c.id,epicName:c.epic?.name}, 'E');
                     // #endregion
                     return true; // Keep if release has no date
                 }
@@ -630,11 +744,25 @@ export async function GET(request: NextRequest) {
                 
                 // #region agent log
                 const daysDiff = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:548',message:'Checking release date',data:{epicId:epic.id,releaseName,releaseDate,releaseDateObj:releaseDateObj.toISOString(),today:today.toISOString(),daysDiff,willExclude:releaseDateObj<today,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'F'})}).catch(()=>{});
+                const willExclude = releaseDateObj < today;
+                if (is2026_2) {
+                    console.log('📅 RELEASE 2026.2 DATE CHECK:', {
+                        epicId: epic.id,
+                        epicName: c.epic?.name,
+                        releaseName,
+                        releaseDate,
+                        releaseDateObj: releaseDateObj.toISOString(),
+                        today: today.toISOString(),
+                        daysDiff,
+                        willExclude,
+                        action: willExclude ? 'EXCLUDING (PAST)' : 'KEEPING (FUTURE/TODAY)'
+                    });
+                }
+                debugLog('route.ts:634', 'Checking release date', {epicId:epic.id,releaseName,releaseDate,releaseDateObj:releaseDateObj.toISOString(),today:today.toISOString(),daysDiff,willExclude,action:willExclude?'EXCLUDING':'KEEPING',criterionId:c.id,epicName:c.epic?.name}, 'F');
                 // #endregion
                 
                 // Exclude if release date is in the past
-                if (releaseDateObj < today) {
+                if (willExclude) {
                     return false;
                 }
                 
@@ -644,7 +772,7 @@ export async function GET(request: NextRequest) {
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:556',message:'After past release filter',data:{before:beforeFilterCount,after:criteriaToProcess.length,excluded:beforeFilterCount-criteriaToProcess.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'K'})}).catch(()=>{});
+            debugLog('route.ts:653', 'After past release filter', {before:beforeFilterCount,after:criteriaToProcess.length,excluded:beforeFilterCount-criteriaToProcess.length}, 'K');
             // #endregion
         }
 
@@ -813,7 +941,25 @@ export async function GET(request: NextRequest) {
 
         // Log all notifications before filtering
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:720',message:'Final criteria count before notifications',data:{totalCriteria:criteriaToProcess.length,sampleCriteria:criteriaToProcess.slice(0,5).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'L'})}).catch(()=>{});
+        const release2026_2Criteria = criteriaToProcess.filter((c:any)=>{
+            const releaseName = c.epic?.aha_fields?.standard_fields?.aha_release_name || 
+                                c.epic?.aha_fields?.standard_fields?.release?.name ||
+                                c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning;
+            return releaseName && (releaseName.includes('2026.2') || releaseName.toLowerCase().includes('release 2026.2'));
+        });
+        console.log('🔍 RELEASE 2026.2 DEBUG:', {
+            totalCriteria: criteriaToProcess.length,
+            release2026_2Count: release2026_2Criteria.length,
+            release2026_2Criteria: release2026_2Criteria.map((c:any)=>({
+                epicId: c.epic_id,
+                epicName: c.epic?.name,
+                criterion: c.criterion?.label,
+                dueDate: c.condition_due_date,
+                decisionOwner: c.decision_owner?.email,
+                releaseName: c.epic?.aha_fields?.standard_fields?.aha_release_name||c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning
+            }))
+        });
+        debugLog('route.ts:837', 'Final criteria count before notifications', {totalCriteria:criteriaToProcess.length,release2026_2Count:release2026_2Criteria.length,release2026_2Criteria:release2026_2Criteria.map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date,decisionOwner:c.decision_owner?.email,releaseName:c.epic?.aha_fields?.standard_fields?.aha_release_name||c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning})),sampleCriteria:criteriaToProcess.slice(0,5).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date}))}, 'L');
         // #endregion
         const notificationsByEmail = new Map<string, any[]>();
         for (const c of criteriaToProcess) {
@@ -1039,17 +1185,39 @@ export async function GET(request: NextRequest) {
                     }
                 }
                 
-                // Fetch release dates
+                // Fetch release dates - need to normalize release names for lookup
+                // Build a map of normalized -> original release names for lookup
+                const normalizedToOriginal = new Map<string, string>();
+                for (const releaseName of releaseNames) {
+                    const normalized = normalizeReleaseName(releaseName);
+                    if (normalized !== releaseName) {
+                        normalizedToOriginal.set(normalized, releaseName);
+                    }
+                }
+                
+                // Fetch all releases that might match (original and normalized names)
+                const allReleaseNamesToFetch = new Set<string>();
+                releaseNames.forEach(rn => {
+                    allReleaseNamesToFetch.add(rn);
+                    allReleaseNamesToFetch.add(normalizeReleaseName(rn));
+                });
+                
                 const { data: releasesData } = await supabase
                     .from('release_schedule')
                     .select('release_name, launch_date')
-                    .in('release_name', Array.from(releaseNames))
+                    .in('release_name', Array.from(allReleaseNamesToFetch))
                     .eq('archived', false);
                 
                 const releaseToDate = new Map<string, string | null>();
                 if (releasesData) {
                     for (const release of releasesData) {
-                        releaseToDate.set(release.release_name, release.launch_date);
+                        const originalName = release.release_name;
+                        const normalizedName = normalizeReleaseName(originalName);
+                        // Store both original and normalized versions
+                        releaseToDate.set(originalName, release.launch_date);
+                        if (normalizedName !== originalName) {
+                            releaseToDate.set(normalizedName, release.launch_date);
+                        }
                     }
                 }
                 
@@ -1064,10 +1232,16 @@ export async function GET(request: NextRequest) {
                         continue;
                     }
                     
-                    if (!criteriaByRelease.has(releaseName)) {
-                        criteriaByRelease.set(releaseName, new Map());
+                    // Normalize release name for consistent grouping
+                    const normalizedReleaseName = normalizeReleaseName(releaseName);
+                    // Use normalized name for grouping, but try to find original name for date lookup
+                    const releaseNameForGrouping = releaseToDate.has(releaseName) ? releaseName : 
+                                                   (releaseToDate.has(normalizedReleaseName) ? normalizedReleaseName : releaseName);
+                    
+                    if (!criteriaByRelease.has(releaseNameForGrouping)) {
+                        criteriaByRelease.set(releaseNameForGrouping, new Map());
                     }
-                    const releaseMap = criteriaByRelease.get(releaseName)!;
+                    const releaseMap = criteriaByRelease.get(releaseNameForGrouping)!;
                     
                     const epicId = c.epic_id;
                     if (!releaseMap.has(epicId)) {
@@ -1078,8 +1252,9 @@ export async function GET(request: NextRequest) {
                 
                 // Sort releases by launch date (closest future first, then past releases)
                 const sortedReleases = Array.from(criteriaByRelease.entries()).sort((a, b) => {
-                    const dateA = releaseToDate.get(a[0]);
-                    const dateB = releaseToDate.get(b[0]);
+                    // Try both original and normalized names for date lookup
+                    const dateA = releaseToDate.get(a[0]) || releaseToDate.get(normalizeReleaseName(a[0]));
+                    const dateB = releaseToDate.get(b[0]) || releaseToDate.get(normalizeReleaseName(b[0]));
                     
                     // No date = put at end
                     if (!dateA && !dateB) return 0;

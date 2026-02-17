@@ -958,6 +958,13 @@ The system uses the following launch stage phases:
 - `previous_status` (Text, Nullable)
 - `updated_at` (Timestamp)
 
+#### Comment Read Status
+- `id` (UUID, Primary Key)
+- `comment_id` (UUID, Foreign Key → criterion_comment)
+- `user_id` (UUID, Foreign Key → app_user)
+- `read_at` (Timestamp) - When the comment was marked as read
+- Unique constraint on (`comment_id`, `user_id`) - Each user can have one read status per comment
+
 #### Criterion Attachment
 - `id` (UUID, Primary Key)
 - `epic_criterion_status_id` (UUID, Foreign Key → epic_criterion_status)

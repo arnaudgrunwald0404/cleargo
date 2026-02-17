@@ -1,0 +1,476 @@
+"use client";
+
+import { useState, useEffect, useCallback } from 'react';
+import {
+  Stack,
+  Group,
+  Select,
+  TextInput,
+  Button,
+  Tabs,
+  Title,
+  Text,
+  Box,
+  Badge,
+} from '@mantine/core';
+import { IconRefresh, IconMessageCircle } from '@tabler/icons-react';
+import { CommentsList } from '@/components/CommentsList';
+import { PurpleLoader } from '@/components/PurpleLoader';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { useRouter } from 'next/navigation';
+import { CommentsModal } from '@/components/CommentsModal';
+
+interface Comment {
+  id: string;
+  comment_text: string;
+  created_at: string;
+  updated_at?: string | null;
+  status_at_comment?: string | null;
+  previous_status?: string | null;
+  created_by?: {
+    id: string;
+    email: string;
+    first_name?: string | null;
+    last_name?: string | null;
+  };
+  is_read: boolean;
+  read_at?: string | null;
+  epic: {
+    id: string;
+    name: string;
+  } | null;
+  criterion: {
+    id: string;
+    label: string;
+    category?: string | null;
+  } | null;
+  launch_criterion_status_id: string;
+}
+
+interface EpicsResponse {
+  epics: Array<{ id: string; name: string }>;
+}
+
+export default function CommentsPage() {
+  const router = useRouter();
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<string>('all');
+  const [epics, setEpics] = useState<Array<{ value: string; label: string }>>([]);
+  const [selectedEpicId, setSelectedEpicId] = useState<string>('');
+  const [startDate, setStartDate] = useState<string>('');
+  const [endDate, setEndDate] = useState<string>('');
+  const [commentsModalOpen, setCommentsModalOpen] = useState(false);
+  const [selectedCommentForModal, setSelectedCommentForModal] = useState<{
+    epicId: string;
+    taskId: string;
+    taskLabel: string;
+  } | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+
+  // Fetch current user email
+  useEffect(() => {
+    fetch('/api/me', { credentials: 'include' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.user?.email) {
+          setCurrentUserEmail(data.user.email);
+        }
+      })
+      .catch((err) => console.error('Failed to fetch user email:', err));
+  }, []);
+
+  // Fetch epics for filter dropdown
+  useEffect(() => {
+    fetchEpics();
+  }, []);
+
+  const fetchEpics = async () => {
+    try {
+      const response = await fetchWithRateLimit('/api/epics', {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data: EpicsResponse = await response.json();
+        const epicOptions = [
+          { value: '', label: 'All Epics' },
+          ...data.epics.map((epic) => ({
+            value: epic.id,
+            label: epic.name,
+          })),
+        ];
+        setEpics(epicOptions);
+      }
+    } catch (error) {
+      console.error('Failed to fetch epics:', error);
+    }
+  };
+
+  // Fetch comments
+  const fetchComments = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (activeTab === 'unread') {
+        params.append('unread', 'true');
+      }
+      if (selectedEpicId) {
+        params.append('epicId', selectedEpicId);
+      }
+      if (startDate) {
+        params.append('startDate', startDate);
+      }
+      if (endDate) {
+        params.append('endDate', endDate);
+      }
+
+      const response = await fetchWithRateLimit(`/api/comments/all?${params.toString()}`, {
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setComments(data.comments || []);
+        setUnreadCount(data.unread_count || 0);
+      } else {
+        console.error('Failed to fetch comments');
+      }
+    } catch (error) {
+      console.error('Error fetching comments:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [activeTab, selectedEpicId, startDate, endDate]);
+
+  useEffect(() => {
+    fetchComments();
+  }, [fetchComments]);
+
+  const handleMarkRead = async (commentIds: string[]) => {
+    try {
+      const response = await fetchWithRateLimit('/api/comments/mark-read', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ comment_ids: commentIds }),
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        // Refresh comments to update read status
+        await fetchComments();
+      } else {
+        console.error('Failed to mark comments as read');
+      }
+    } catch (error) {
+      console.error('Error marking comments as read:', error);
+    }
+  };
+
+  const handleNavigateToEpic = (epicId: string) => {
+    router.push(`/epics/${epicId}`);
+  };
+
+  const handleOpenCommentsModal = (epicId: string, taskId: string, taskLabel: string) => {
+    setSelectedCommentForModal({ epicId, taskId, taskLabel });
+    setCommentsModalOpen(true);
+  };
+
+  const handleCloseCommentsModal = () => {
+    setCommentsModalOpen(false);
+    setSelectedCommentForModal(null);
+    // Refresh comments after closing modal (they may have been marked as read)
+    fetchComments();
+  };
+
+  return (
+    <div
+      className="min-h-screen pb-8"
+      style={{
+        fontFamily: 'var(--font-body)',
+        backgroundColor: 'var(--color-platinum)',
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 'var(--page-container-max-width)',
+          margin: '0 auto',
+          paddingLeft: 'var(--page-container-padding-x)',
+          paddingRight: 'var(--page-container-padding-x)',
+          paddingTop: 'var(--page-container-padding-top)',
+        }}
+        className="sm:px-6 lg:px-8"
+      >
+        <div className="mb-8">
+          <Group justify="space-between" align="flex-start">
+            <div>
+              <Title
+                order={1}
+                className="text-4xl font-bold mb-2"
+                style={{
+                  fontFamily: 'var(--font-marcellus), serif',
+                  color: 'var(--color-gray-900)',
+                  fontSize: 'var(--font-size-4xl)',
+                  fontWeight: 'var(--font-weight-bold)',
+                  margin: 0,
+                }}
+              >
+                Comments
+              </Title>
+              <Text
+                size="lg"
+                style={{
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--color-gray-500)',
+                  fontSize: 'var(--font-size-lg)',
+                  marginTop: '0.5rem',
+                }}
+              >
+                View and manage comments across all epics
+              </Text>
+            </div>
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              onClick={fetchComments}
+              variant="light"
+              loading={loading}
+            >
+              Refresh
+            </Button>
+          </Group>
+        </div>
+
+        <Stack gap="md">
+          {/* Tabs */}
+          <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'all')}>
+            <Tabs.List>
+              <Tabs.Tab value="all">
+                All Comments
+                {comments.length > 0 && (
+                  <Badge size="xs" variant="light" ml="xs">
+                    {comments.length}
+                  </Badge>
+                )}
+              </Tabs.Tab>
+              <Tabs.Tab value="unread">
+                Unread
+                {unreadCount > 0 && (
+                  <Badge size="xs" color="blue" ml="xs">
+                    {unreadCount}
+                  </Badge>
+                )}
+              </Tabs.Tab>
+            </Tabs.List>
+
+            <Tabs.Panel value="all" pt="md">
+              <Stack gap="md">
+                {/* Filters */}
+                <Group mb="lg" align="flex-end" gap="sm">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    Filters:
+                  </Text>
+                  <Box
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                      gap: '16px',
+                      padding: '8px 0',
+                    }}
+                  >
+                    <Select
+                      placeholder="All Epics"
+                      data={epics}
+                      value={selectedEpicId}
+                      onChange={(value) => setSelectedEpicId(value || '')}
+                      clearable
+                      style={{ minWidth: 200 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="Start Date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="End Date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    {(selectedEpicId || startDate || endDate) && (
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        onClick={() => {
+                          setSelectedEpicId('');
+                          setStartDate('');
+                          setEndDate('');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
+                  </Box>
+                </Group>
+
+                {/* Comments List */}
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}>
+                    <PurpleLoader />
+                  </div>
+                ) : (
+                  <CommentsList
+                    comments={comments}
+                    onMarkRead={handleMarkRead}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenCommentsModal={handleOpenCommentsModal}
+                    loading={loading}
+                    showBulkActions={true}
+                  />
+                )}
+              </Stack>
+            </Tabs.Panel>
+
+            <Tabs.Panel value="unread" pt="md">
+              <Stack gap="md">
+                {/* Filters */}
+                <Group mb="lg" align="flex-end" gap="sm">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    Filters:
+                  </Text>
+                  <Box
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                      gap: '16px',
+                      padding: '8px 0',
+                    }}
+                  >
+                    <Select
+                      placeholder="All Epics"
+                      data={epics}
+                      value={selectedEpicId}
+                      onChange={(value) => setSelectedEpicId(value || '')}
+                      clearable
+                      style={{ minWidth: 200 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="Start Date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="End Date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    {(selectedEpicId || startDate || endDate) && (
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        onClick={() => {
+                          setSelectedEpicId('');
+                          setStartDate('');
+                          setEndDate('');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
+                  </Box>
+                </Group>
+
+                {/* Comments List */}
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}>
+                    <PurpleLoader />
+                  </div>
+                ) : (
+                  <CommentsList
+                    comments={comments}
+                    onMarkRead={handleMarkRead}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenCommentsModal={handleOpenCommentsModal}
+                    loading={loading}
+                    showBulkActions={true}
+                  />
+                )}
+              </Stack>
+            </Tabs.Panel>
+          </Tabs>
+        </Stack>
+
+        {/* Comments Modal */}
+        {selectedCommentForModal && (
+          <CommentsModal
+            opened={commentsModalOpen}
+            onClose={handleCloseCommentsModal}
+            epicId={selectedCommentForModal.epicId}
+            taskId={selectedCommentForModal.taskId}
+            taskLabel={selectedCommentForModal.taskLabel}
+            currentUserEmail={currentUserEmail}
+            initialTab="comments"
+          />
+        )}
+      </div>
+    </div>
+  );
+}

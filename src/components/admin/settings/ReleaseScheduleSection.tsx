@@ -80,6 +80,25 @@ export default function ReleaseScheduleSection(props: Props) {
     });
   }, [releases]);
 
+  // Filter releases to show those with launch dates on or after today (excluding archived)
+  const futureReleases = useMemo(() => {
+    // Get today's date in YYYY-MM-DD format for comparison
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    return releases.filter((release) => {
+      if (!release.launch_date || release.archived) return false;
+      
+      // launch_date comes from Supabase as YYYY-MM-DD string
+      const launchDateString = typeof release.launch_date === 'string' 
+        ? release.launch_date.split('T')[0] // Handle ISO strings if any
+        : new Date(release.launch_date).toISOString().split('T')[0];
+      
+      // Compare date strings directly (YYYY-MM-DD format)
+      return launchDateString >= todayString;
+    });
+  }, [releases]);
+
   // Separate archived releases
   const archivedReleases = useMemo(() => {
     return releases.filter((release) => release.archived === true);
@@ -328,7 +347,7 @@ export default function ReleaseScheduleSection(props: Props) {
                     />
                   </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Date (External)</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Epics Loaded vs. Total</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-indigo-900">Actions</th>
                 </tr>
@@ -411,15 +430,29 @@ export default function ReleaseScheduleSection(props: Props) {
                                 }
                                 
                                 setSyncingReleaseId(release.id);
+                                
+                                // Set a timeout to prevent UI from getting stuck
+                                const releaseNameForTimeout = release.release_name;
+                                const timeoutId = setTimeout(() => {
+                                  alert(`Sync for "${releaseNameForTimeout}" is taking longer than expected. This may take several minutes for large releases. The sync is still running in the background.`);
+                                }, 30000); // Show warning after 30 seconds
+                                
                                 try {
+                                  // Create an AbortController for timeout handling
+                                  const controller = new AbortController();
+                                  const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
                                   const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`, {
                                     method: "POST",
                                     credentials: "include",
                                     headers: { "Content-Type": "application/json" },
+                                    signal: controller.signal,
                                   });
                                   
+                                  clearTimeout(fetchTimeoutId);
+                                  
                                   if (!res.ok) {
-                                    const errorData = await res.json();
+                                    const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
                                     throw new Error(errorData.error || "Failed to sync epics");
                                   }
                                   
@@ -440,8 +473,13 @@ export default function ReleaseScheduleSection(props: Props) {
                                   newCounts.delete(release.release_name);
                                   setEpicCounts(newCounts);
                                 } catch (error: any) {
-                                  alert(`Error: ${error.message}`);
+                                  if (error.name === 'AbortError') {
+                                    alert(`Sync timeout: The sync request timed out after 5 minutes. The sync may still be processing on the server. Please refresh the page in a moment.`);
+                                  } else {
+                                    alert(`Error: ${error.message || 'An error occurred during sync'}`);
+                                  }
                                 } finally {
+                                  clearTimeout(timeoutId);
                                   setSyncingReleaseId(null);
                                 }
                               }}
@@ -480,6 +518,146 @@ export default function ReleaseScheduleSection(props: Props) {
         )}
       </div>
 
+      {/* Future Releases Section */}
+      {futureReleases.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-md font-semibold text-gray-900">Releases with Launch Dates On or After Today ({futureReleases.length})</h3>
+          </div>
+          <div className="border-2 border-green-200 rounded-lg bg-green-50 overflow-hidden">
+            <table className="min-w-full divide-y divide-green-200 table-fixed">
+              <colgroup>
+                <col className="w-2/5" />
+                <col className="w-1/5" />
+                <col className="w-1/5" />
+                <col className="w-40" />
+              </colgroup>
+              <thead className="bg-green-100">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Release Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Release Date (External)</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Epics Loaded vs. Total</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-green-900">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-green-200">
+                {futureReleases.map((release) => (
+                  <tr key={release.id} className="hover:bg-green-50 transition-colors">
+                    {editingReleaseId === release.id ? (
+                      <>
+                        <td className="px-4 py-3">
+                          <input type="text" defaultValue={release.release_name} id={`release-name-${release.id}`} className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input type="text" defaultValue={formatDateForDisplay(release.launch_date)} id={`release-date-${release.id}`} placeholder="MM/DD/YYYY" className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 text-sm">-</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => {
+                              const nameInput = document.getElementById(`release-name-${release.id}`) as HTMLInputElement;
+                              const dateInput = document.getElementById(`release-date-${release.id}`) as HTMLInputElement;
+                              if (nameInput && dateInput) {
+                                onUpdate(release.id, nameInput.value, dateInput.value);
+                              }
+                            }}
+                            className="text-green-600 hover:text-green-900 mr-4"
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingReleaseId(null)} className="text-gray-600 hover:text-gray-900">
+                            Cancel
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-gray-900">{release.release_name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-600">{formatDateForDisplay(release.launch_date)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const counts = epicCounts.get(release.release_name);
+                            const cleargoCount = counts?.cleargoCount ?? null;
+                            const ahaCount = counts?.ahaCount ?? null;
+                            
+                            if (cleargoCount === null && ahaCount === null) {
+                              return <span className="text-gray-400 text-sm">-</span>;
+                            }
+                            
+                            const displayCleargo = cleargoCount !== null ? cleargoCount : '-';
+                            const displayAha = ahaCount !== null ? ahaCount : '-';
+                            
+                            return (
+                              <span className="text-gray-700 text-sm font-medium">
+                                {displayCleargo} / {displayAha}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm font-medium">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={async () => {
+                                setSyncingReleaseId(release.id);
+                                try {
+                                  const res = await fetch(`/api/integrations/aha/sync?release_name=${encodeURIComponent(release.release_name)}`, {
+                                    method: "POST",
+                                    credentials: "include",
+                                  });
+                                  
+                                  if (!res.ok) {
+                                    const errorData = await res.json();
+                                    throw new Error(errorData.error || "Failed to sync epics");
+                                  }
+                                  
+                                  const result = await res.json();
+                                  const skipMessage = result.results.skipped > 0 ? `\nSkipped: ${result.results.skipped}` : "";
+                                  alert(`Success: ${result.message}\n\nTotal epics fetched: ${result.results.total}\nCreated: ${result.results.created}\nUpdated: ${result.results.updated}${skipMessage}${result.results.errors.length > 0 ? `\nErrors: ${result.results.errors.length}` : ""}`);
+                                  
+                                  // Refresh epic counts for this release
+                                  const newCounts = new Map(epicCounts);
+                                  newCounts.delete(release.release_name);
+                                  setEpicCounts(newCounts);
+                                } catch (error: any) {
+                                  alert(`Error: ${error.message}`);
+                                } finally {
+                                  setSyncingReleaseId(null);
+                                }
+                              }}
+                              disabled={syncingReleaseId === release.id}
+                              className="text-green-600 hover:text-green-900 hover:bg-green-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-2 py-1 text-sm"
+                              title="Sync epics for this release"
+                            >
+                              {syncingReleaseId === release.id ? (
+                                <span className="animate-pulse">Refreshing...</span>
+                              ) : (
+                                "Refresh"
+                              )}
+                            </button>
+                            <button onClick={() => setEditingReleaseId(release.id)} className="text-green-600 hover:text-green-900">
+                              Edit
+                            </button>
+                            <button onClick={() => onDelete(release.id)} className="text-red-600 hover:text-red-900">
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Archived Releases Section */}
       {archivedReleases.length > 0 && (
         <div className="mt-8">
@@ -497,7 +675,7 @@ export default function ReleaseScheduleSection(props: Props) {
               <thead className="bg-gray-100">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Date (External)</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Epics Loaded vs. Total</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-900"></th>
                 </tr>

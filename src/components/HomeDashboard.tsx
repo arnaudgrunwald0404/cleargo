@@ -1,10 +1,11 @@
 "use client";
 
-import { Title, Text, Box, Select, Button, Group, Tooltip, Switch, Menu, UnstyledButton } from '@mantine/core';
-import { IconRefresh, IconDots } from "@tabler/icons-react";
+import { Title, Text, Box, Select, Button, Group, Tooltip, Switch, Menu, UnstyledButton, ActionIcon } from '@mantine/core';
+import { IconRefresh, IconDots, IconArrowsRightLeft, IconMessageCircle } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
+import { CommentsModal } from "@/components/CommentsModal";
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -42,6 +43,7 @@ type MyItem = {
         status_definition_go?: string | null;
         status_definition_conditional?: string | null;
         status_definition_no_go?: string | null;
+        rating_timing?: number | null;
     };
 };
 
@@ -422,12 +424,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
   const [delegationModalOpen, setDelegationModalOpen] = useState(false);
   const [selectedItemForDelegation, setSelectedItemForDelegation] = useState<MyItem | null>(null);
+  const [commentsModalOpen, setCommentsModalOpen] = useState(false);
+  const [selectedItemForComments, setSelectedItemForComments] = useState<MyItem | null>(null);
+  const [commentsModalInitialTab, setCommentsModalInitialTab] = useState<'content' | 'comments'>('comments');
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
   const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
   const [epicReleaseMap, setEpicReleaseMap] = useState<Map<string, string | null>>(new Map());
   const [showAllItems, setShowAllItems] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
+  const [launchStages, setLaunchStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
+  const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
+  const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -589,6 +597,65 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       setIsLoadingReleaseNames(false);
     }
   }, [items]);
+
+  useEffect(() => {
+    fetchLaunchStages();
+  }, []);
+
+  const fetchLaunchStages = async () => {
+    try {
+      const res = await fetch('/api/launch-stages', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        const stages = data.stages || [];
+        setLaunchStages(stages);
+        
+        // Calculate days before/after launch for each stage
+        const daysBeforeMap = new Map<number, number>();
+        const daysAfterMap = new Map<number, number>();
+        
+        const lastPreLaunchStage = stages.find((s: any) => s.sort_order === 3);
+        
+        stages.forEach((stage: any) => {
+          if (stage.sort_order <= 3 && lastPreLaunchStage) {
+            // Pre-launch stages: sum durations of stages before this one
+            const stagesBefore = stages.filter(
+              (s: any) =>
+                s.sort_order < stage.sort_order &&
+                s.sort_order <= lastPreLaunchStage.sort_order &&
+                s.duration_days !== null
+            );
+            const totalDaysBefore = stagesBefore.reduce(
+              (sum: number, s: any) => sum + (s.duration_days || 0),
+              0
+            );
+            if (totalDaysBefore > 0) {
+              daysBeforeMap.set(stage.id, totalDaysBefore);
+            }
+          } else if (stage.sort_order > 3) {
+            // Post-launch stages: sum durations up to this stage
+            const stagesUpTo = stages.filter(
+              (s: any) =>
+                s.sort_order <= stage.sort_order &&
+                s.duration_days !== null
+            );
+            const totalDaysAfter = stagesUpTo.reduce(
+              (sum: number, s: any) => sum + (s.duration_days || 0),
+              0
+            );
+            if (totalDaysAfter > 0) {
+              daysAfterMap.set(stage.id, totalDaysAfter);
+            }
+          }
+        });
+        
+        setStageDaysBeforeLaunch(daysBeforeMap);
+        setStageDaysAfterLaunch(daysAfterMap);
+      }
+    } catch (error) {
+      console.error('Failed to fetch launch stages:', error);
+    }
+  };
 
   const fetchCurrentUser = async () => {
     try {
@@ -925,6 +992,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const handleCloseDelegation = () => {
     setDelegationModalOpen(false);
     setSelectedItemForDelegation(null);
+  };
+
+  const handleOpenComments = (item: MyItem) => {
+    setSelectedItemForComments(item);
+    setCommentsModalInitialTab('comments');
+    setCommentsModalOpen(true);
+  };
+
+  const handleCloseComments = () => {
+    setCommentsModalOpen(false);
+    setSelectedItemForComments(null);
+    loadData(0, false);
   };
 
   const handleDelegate = async (delegationType: DelegationType, newApproverEmail: string) => {
@@ -1570,8 +1649,45 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
-                              const dueDateStr = item.condition_due_date;
-                              if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                              // Calculate due date: use condition_due_date if available, otherwise calculate from launch stages
+                              const calculateDueDate = (): string | null => {
+                                // First, try to use stored condition_due_date
+                                if (item.condition_due_date && item.condition_due_date.trim() !== '') {
+                                  return item.condition_due_date;
+                                }
+                                
+                                // If no stored date, calculate from launch stages (same logic as Epic detail page)
+                                if (!item.criterion?.rating_timing || launchStages.length === 0) {
+                                  return null;
+                                }
+                                
+                                const targetDate = item.launch.target_launch_date;
+                                if (!targetDate) {
+                                  return null;
+                                }
+                                
+                                const ratingTimingId = item.criterion.rating_timing;
+                                const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+                                const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+                                
+                                if (daysBefore === undefined && daysAfter === undefined) {
+                                  return null;
+                                }
+                                
+                                const dueDate = new Date(targetDate);
+                                
+                                if (daysBefore !== undefined) {
+                                  dueDate.setDate(dueDate.getDate() - daysBefore);
+                                } else if (daysAfter !== undefined) {
+                                  dueDate.setDate(dueDate.getDate() + daysAfter);
+                                }
+                                
+                                return dueDate.toISOString().split('T')[0];
+                              };
+                              
+                              const dueDateStr = calculateDueDate();
+                              
+                              if (!dueDateStr) {
                                 return (
                                   <span style={{
                                     fontSize: 'var(--font-size-sm)',
@@ -1621,17 +1737,33 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             })()}
                           </td>
                           {!readOnly && (
-                          <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
-                            <Button
-                              variant="subtle"
-                              size="xs"
-                              onClick={() => handleOpenDelegation(item)}
-                              style={{
-                                fontSize: "14px"
-                              }}
-                            >
-                              Delegate
-                            </Button>
+                          <td className="px-4 py-3 text-right whitespace-nowrap" style={{ padding: "12px 16px" }}>
+                            <Group gap="xs" justify="flex-end">
+                              <Tooltip label="Delegate this task" position="top" withArrow>
+                                <ActionIcon
+                                  variant="subtle"
+                                  size="sm"
+                                  onClick={() => handleOpenDelegation(item)}
+                                  style={{
+                                    color: 'var(--color-gray-600)'
+                                  }}
+                                >
+                                  <IconArrowsRightLeft size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Add comment" position="top" withArrow>
+                                <ActionIcon
+                                  variant="subtle"
+                                  size="sm"
+                                  onClick={() => handleOpenComments(item)}
+                                  style={{
+                                    color: 'var(--color-gray-600)'
+                                  }}
+                                >
+                                  <IconMessageCircle size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Group>
                           </td>
                           )}
                         </tr>
@@ -1656,6 +1788,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               isGate={selectedItemForDelegation.criterion.gate || false}
               currentApproverEmail={currentUserEmail}
               onDelegate={handleDelegate}
+            />
+          )}
+
+          {selectedItemForComments && (
+            <CommentsModal
+              opened={commentsModalOpen}
+              onClose={handleCloseComments}
+              epicId={selectedItemForComments.launch.id}
+              taskId={selectedItemForComments.id}
+              taskLabel={selectedItemForComments.criterion.label}
+              currentUserEmail={currentUserEmail}
+              initialTab={commentsModalInitialTab}
             />
           )}
         </div>

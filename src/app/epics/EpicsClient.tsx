@@ -1701,10 +1701,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 }
                                                 
                                                 setSyncingReleaseName(group.releaseName);
+                                                
+                                                // Set a timeout to prevent UI from getting stuck
+                                                const releaseNameForTimeout = group.releaseName;
+                                                const timeoutId = setTimeout(() => {
+                                                    // Check if still syncing this release (using a ref or direct check)
+                                                    notifications.show({
+                                                        title: 'Sync Taking Longer Than Expected',
+                                                        message: `The sync for "${releaseNameForTimeout}" is still running. This may take several minutes for large releases. The page will refresh when complete.`,
+                                                        color: 'yellow',
+                                                        autoClose: 10000,
+                                                    });
+                                                }, 30000); // Show warning after 30 seconds
+                                                
                                                 try {
                                                     const existingAhaIds = group.epics
                                                         .map(e => e.aha_id)
                                                         .filter((id): id is string => Boolean(id));
+
+                                                    // Create an AbortController for timeout handling
+                                                    const controller = new AbortController();
+                                                    const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
 
                                                     const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
                                                         method: "POST",
@@ -1714,10 +1731,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             releaseName: group.releaseName,
                                                             existingAhaIds,
                                                         }),
+                                                        signal: controller.signal,
                                                     });
                                                     
+                                                    clearTimeout(fetchTimeoutId);
+                                                    
                                                     if (!res.ok) {
-                                                        const errorData = await res.json();
+                                                        const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
                                                         throw new Error(errorData.error || "Failed to sync epics");
                                                     }
                                                     
@@ -1743,12 +1763,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     // Reload epics to show updated data
                                                     loadData();
                                                 } catch (error: any) {
-                                                    notifications.show({
-                                                        title: 'Sync Failed',
-                                                        message: error.message,
-                                                        color: 'red',
-                                                    });
+                                                    if (error.name === 'AbortError') {
+                                                        notifications.show({
+                                                            title: 'Sync Timeout',
+                                                            message: 'The sync request timed out after 5 minutes. The sync may still be processing on the server. Please refresh the page in a moment.',
+                                                            color: 'orange',
+                                                            autoClose: 15000,
+                                                        });
+                                                    } else {
+                                                        notifications.show({
+                                                            title: 'Sync Failed',
+                                                            message: error.message || 'An error occurred during sync',
+                                                            color: 'red',
+                                                        });
+                                                    }
                                                 } finally {
+                                                    clearTimeout(timeoutId);
                                                     setSyncingReleaseName(null);
                                                 }
                                             }}
