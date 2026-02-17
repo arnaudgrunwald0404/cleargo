@@ -96,7 +96,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 **Needs:**
 - Single view of major launches, risks, and readiness
 - High-level portfolio visibility
-- Weekly leadership digests
+- Weekly digests
 
 **Use Cases:**
 - Quarterly/monthly reviews
@@ -571,7 +571,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 #### 9.2 Settings Management
 - **Per-Tier Thresholds**: Configure readiness thresholds per tier
 - **Staleness Window**: Configure days before criterion considered stale (default: 14)
-- **Digest Schedule**: Configure weekly leadership digest schedule (default: Monday 9:00 AM)
+- **Digest Schedule**: Configure weekly digest schedule (default: Monday 9:00 AM)
 - **Email Allowlist**: Configure allowed email domains (default: clearcompany.com)
 - **Fallback User**: Configure fallback Product Ops user
 - **Timezone**: Configure company timezone
@@ -640,7 +640,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 #### 10.1 Email Notifications
 - **Stale Criterion Reminders**: Daily reminders for criteria not updated in staleness window (see scheduled job below; reminders may include an AI-generated personalized nudge when configured).
-- **Weekly Leadership Digest**: Summary of top launches by tier/risk
+- **Weekly Digest**: Summary of top launches by tier/risk
 - **Risk Alerts**: Alerts when launch enters high-risk status
 - **Go/No-Go Notifications**: Notifications when decision snapshots created
 - **Status Change Notifications**: Notifications when readiness status changes
@@ -1214,7 +1214,7 @@ The system uses the following launch stage phases:
 6. System logs notification.
 7. User receives reminder, clicks link to epic, updates criterion; system marks criterion as updated.
 
-### Flow 5: Weekly Leadership Digest
+### Flow 5: Weekly Digest
 1. Scheduled job runs Monday 9:00 AM (configurable)
 2. System queries all active epics
 3. System filters to TIER_1 and TIER_2
@@ -1340,7 +1340,7 @@ The system uses the following launch stage phases:
 
 #### Email Types
 - **Stale Criterion Reminders**: Daily
-- **Weekly Leadership Digest**: Weekly
+- **Weekly Digest**: Weekly
 - **Risk Alerts**: On-demand
 - **Go/No-Go Notifications**: On snapshot creation
 - **Status Change Notifications**: On readiness status change

@@ -199,6 +199,7 @@ export interface EpicSuccessConfigWithDetails {
   epic_id: string;
   post_launch_owner: string; // Keep the ID for compatibility
   delegated_post_launch_owner_id?: string | null;
+  track_offline?: boolean;
   locked: boolean;
   locked_at: string | null;
   created_at: string;

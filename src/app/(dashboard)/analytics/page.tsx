@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import {
   Stack,
@@ -46,6 +46,7 @@ export default function AnalyticsDashboardPage() {
   const [hasAccess, setHasAccess] = useState(false);
   const [activeTab, setActiveTab] = useState<TabValue>('launch-metrics');
   const [loadedTabs, setLoadedTabs] = useState<Set<TabValue>>(new Set());
+  const loadedTabsRef = useRef<Set<TabValue>>(new Set());
 
   // Launch Metrics data
   const [successPlanData, setSuccessPlanData] = useState<SuccessPlanCompletionRate | null>(null);
@@ -126,46 +127,7 @@ export default function AnalyticsDashboardPage() {
     }
   }, [hasAccess]);
 
-  // Lazy load tab data when tab is selected
-  useEffect(() => {
-    if (!hasAccess) return;
-    if (!loadedTabs.has(activeTab)) {
-      switch (activeTab) {
-        case 'launch-metrics':
-          fetchLaunchMetrics();
-          break;
-        case 'timeliness':
-          fetchTimeliness();
-          break;
-        case 'usage':
-          fetchUsageAnalytics();
-          break;
-        case 'notifications':
-          fetchNotifications();
-          break;
-      }
-      setLoadedTabs(prev => new Set(prev).add(activeTab));
-    }
-  }, [activeTab, hasAccess]);
-
-  // Refetch when filters or view modes change (only for loaded tabs)
-  useEffect(() => {
-    if (!hasAccess) return;
-    if (loadedTabs.has('launch-metrics')) {
-      fetchLaunchMetrics();
-    }
-    if (loadedTabs.has('timeliness')) {
-      fetchTimeliness();
-    }
-    if (loadedTabs.has('usage')) {
-      fetchUsageAnalytics();
-    }
-    if (loadedTabs.has('notifications')) {
-      fetchNotifications();
-    }
-  }, [filters, viewMode.successPlan, viewMode.retro, viewMode.hygiene]);
-
-  const fetchLaunchMetrics = async () => {
+  const fetchLaunchMetrics = useCallback(async () => {
     setLaunchMetricsLoading(true);
     try {
       const baseParams = new URLSearchParams();
@@ -233,9 +195,9 @@ export default function AnalyticsDashboardPage() {
     } finally {
       setLaunchMetricsLoading(false);
     }
-  };
+  }, [filters.tier, filters.pod, filters.dateRangeStart, filters.dateRangeEnd, viewMode.successPlan, viewMode.retro, viewMode.hygiene]);
 
-  const fetchTimeliness = async () => {
+  const fetchTimeliness = useCallback(async () => {
     setTimelinessLoading(true);
     try {
       const baseParams = new URLSearchParams();
@@ -263,9 +225,9 @@ export default function AnalyticsDashboardPage() {
     } finally {
       setTimelinessLoading(false);
     }
-  };
+  }, [filters.tier, filters.pod, filters.dateRangeStart, filters.dateRangeEnd]);
 
-  const fetchUsageAnalytics = async () => {
+  const fetchUsageAnalytics = useCallback(async () => {
     setUsageLoading(true);
     try {
       const baseParams = new URLSearchParams();
@@ -305,9 +267,9 @@ export default function AnalyticsDashboardPage() {
     } finally {
       setUsageLoading(false);
     }
-  };
+  }, [filters.dateRangeStart, filters.dateRangeEnd, filters.role]);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
     setNotificationsLoading(true);
     try {
       const res = await fetchWithRateLimit('/api/analytics/notifications?limit=50', { maxRetries: 1 });
@@ -325,7 +287,49 @@ export default function AnalyticsDashboardPage() {
     } finally {
       setNotificationsLoading(false);
     }
-  };
+  }, []);
+
+  // Lazy load tab data when tab is selected
+  useEffect(() => {
+    if (!hasAccess) return;
+    if (!loadedTabs.has(activeTab)) {
+      switch (activeTab) {
+        case 'launch-metrics':
+          fetchLaunchMetrics();
+          break;
+        case 'timeliness':
+          fetchTimeliness();
+          break;
+        case 'usage':
+          fetchUsageAnalytics();
+          break;
+        case 'notifications':
+          fetchNotifications();
+          break;
+      }
+      const newSet = new Set(loadedTabs).add(activeTab);
+      setLoadedTabs(newSet);
+      loadedTabsRef.current = newSet;
+    }
+  }, [activeTab, hasAccess, loadedTabs, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics, fetchNotifications]);
+
+  // Refetch when filters or view modes change (only for loaded tabs)
+  useEffect(() => {
+    if (!hasAccess) return;
+    const tabs = loadedTabsRef.current;
+    if (tabs.has('launch-metrics')) {
+      fetchLaunchMetrics();
+    }
+    if (tabs.has('timeliness')) {
+      fetchTimeliness();
+    }
+    if (tabs.has('usage')) {
+      fetchUsageAnalytics();
+    }
+    if (tabs.has('notifications')) {
+      fetchNotifications();
+    }
+  }, [hasAccess, filters.tier, filters.pod, filters.dateRangeStart, filters.dateRangeEnd, filters.role, viewMode.successPlan, viewMode.retro, viewMode.hygiene, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics, fetchNotifications]);
 
   const handleRefresh = () => {
     switch (activeTab) {

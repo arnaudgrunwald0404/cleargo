@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Table, Select, Button, Group, Text, Pagination, Paper, Badge } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { UserDisplay } from '../UserDisplay';
@@ -28,12 +28,10 @@ export default function AuditLogViewer() {
     const [totalPages, setTotalPages] = useState(1);
     const [entityTypeFilter, setEntityTypeFilter] = useState<string | null>(null);
 
-    useEffect(() => {
-        fetchLogs();
-    }, [page, entityTypeFilter]);
-
-    const fetchLogs = async () => {
+    const fetchLogs = useCallback(async () => {
         setLoading(true);
+        let timeoutId: NodeJS.Timeout | null = null;
+        
         try {
             const params = new URLSearchParams({
                 page: page.toString(),
@@ -44,23 +42,43 @@ export default function AuditLogViewer() {
                 params.append('entity_type', entityTypeFilter);
             }
 
-            const res = await fetch(`/api/admin/audit?${params}`);
+            const controller = new AbortController();
+            timeoutId = setTimeout(() => controller.abort(), 30000);
+
+            const res = await fetch(`/api/admin/audit?${params}`, {
+                signal: controller.signal,
+            });
+            
             if (!res.ok) throw new Error('Failed to fetch audit logs');
 
             const result = await res.json();
             setLogs(result.data || []);
             setTotalPages(result.meta?.totalPages || 1);
-        } catch (error) {
-            console.error(error);
-            notifications.show({
-                title: 'Error',
-                message: 'Failed to load audit logs',
-                color: 'red',
-            });
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.error('Request timeout: Failed to fetch audit logs within 30 seconds');
+                notifications.show({
+                    title: 'Error',
+                    message: 'Request timed out. Please try again.',
+                    color: 'red',
+                });
+            } else {
+                console.error(error);
+                notifications.show({
+                    title: 'Error',
+                    message: 'Failed to load audit logs',
+                    color: 'red',
+                });
+            }
         } finally {
+            if (timeoutId) clearTimeout(timeoutId);
             setLoading(false);
         }
-    };
+    }, [page, entityTypeFilter]);
+
+    useEffect(() => {
+        fetchLogs();
+    }, [fetchLogs]);
 
     const exportToCSV = () => {
         const headers = ['Date', 'Actor', 'Entity Type', 'Entity ID', 'Changes'];

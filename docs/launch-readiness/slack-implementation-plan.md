@@ -41,7 +41,7 @@ Comprehensive Slack integration for Launch Readiness Console enabling real-time 
 - Stale criterion reminders
 - Launch risk alerts
 - Go/No-Go decision notifications
-- Weekly leadership digest
+- Weekly digest
 - Launch status changes
 - URL unfurling for launch links
 
@@ -108,7 +108,7 @@ SLACK_DEFAULT_CHANNEL=#launch-readiness
 1. **Stale Criteria** - Nightly job checking `last_updated_at`
 2. **Risk Alerts** - Trigger on readiness recompute when risk increases
 3. **Go/No-Go Decisions** - Trigger on snapshot creation
-4. **Leadership Digest** - Weekly scheduled job (Monday 9 AM)
+4. **Weekly Digest** - Weekly scheduled job (Monday 9 AM)
 5. **Status Changes** - Trigger on `readiness_status` update
 
 ### Interactive Features

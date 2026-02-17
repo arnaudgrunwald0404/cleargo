@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { AppSettings } from "@/lib/settings-db";
 import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getLaunchStages } from "@/lib/services/settingsService";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
@@ -165,7 +165,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
     };
     
-    const autoSaveSettings = async (updatedSettings: AppSettings) => {
+    const autoSaveSettings = useCallback(async (updatedSettings: AppSettings) => {
         setSaving(true);
         try {
             const saved = await patchSettings(updatedSettings);
@@ -178,7 +178,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         } finally {
             setSaving(false);
         }
-    };
+    }, []);
     
     const fetchUsers = async () => {
         setUsersLoading(true);

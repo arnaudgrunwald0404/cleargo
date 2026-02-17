@@ -5,7 +5,7 @@
 
 import { getSlackClient } from './client';
 import { createAdminClient } from '@/lib/supabase/server';
-import type { SlackNotificationPayload, SlackUser } from '@/types/slack';
+import type { SlackNotificationPayload, SlackUser, SlackNotificationType } from '@/types/slack';
 import {
     buildStaleCriterionMessage,
     buildLaunchRiskAlertMessage,

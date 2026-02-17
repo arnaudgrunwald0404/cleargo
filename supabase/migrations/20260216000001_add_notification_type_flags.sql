@@ -42,7 +42,7 @@ COMMENT ON COLUMN app_settings.slack_success_review_reminder IS 'Enable Slack no
 COMMENT ON COLUMN app_settings.slack_stale_criterion IS 'Enable Slack notifications for stale criteria';
 COMMENT ON COLUMN app_settings.slack_launch_risk_alert IS 'Enable Slack notifications for launch risk alerts';
 COMMENT ON COLUMN app_settings.slack_go_no_go_decision IS 'Enable Slack notifications for go/no-go decisions';
-COMMENT ON COLUMN app_settings.slack_leadership_digest IS 'Enable Slack notifications for leadership digest';
+COMMENT ON COLUMN app_settings.slack_leadership_digest IS 'Enable Slack notifications for weekly digest (deprecated: use slack_weekly_digest)';
 COMMENT ON COLUMN app_settings.slack_launch_status_change IS 'Enable Slack notifications for launch status changes';
 COMMENT ON COLUMN app_settings.slack_criterion_update IS 'Enable Slack notifications for criterion updates';
 COMMENT ON COLUMN app_settings.slack_launch_created IS 'Enable Slack notifications for launch creation';
@@ -58,7 +58,7 @@ COMMENT ON COLUMN app_settings.email_success_review_reminder IS 'Enable email no
 COMMENT ON COLUMN app_settings.email_stale_criterion IS 'Enable email notifications for stale criteria';
 COMMENT ON COLUMN app_settings.email_launch_risk_alert IS 'Enable email notifications for launch risk alerts';
 COMMENT ON COLUMN app_settings.email_go_no_go_decision IS 'Enable email notifications for go/no-go decisions';
-COMMENT ON COLUMN app_settings.email_leadership_digest IS 'Enable email notifications for leadership digest';
+COMMENT ON COLUMN app_settings.email_leadership_digest IS 'Enable email notifications for weekly digest (deprecated: use email_weekly_digest)';
 COMMENT ON COLUMN app_settings.email_launch_status_change IS 'Enable email notifications for launch status changes';
 COMMENT ON COLUMN app_settings.email_criterion_update IS 'Enable email notifications for criterion updates';
 COMMENT ON COLUMN app_settings.email_launch_created IS 'Enable email notifications for launch creation';

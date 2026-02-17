@@ -208,6 +208,7 @@ export async function GET(request: NextRequest) {
             if (userError || !userData) {
                 debugInfo.user_found = false;
                 debugInfo.user_error = userError?.message;
+                console.log(`   User ${testEmail} not found in database:`, userError?.message);
             } else {
                 debugInfo.user_found = true;
                 debugInfo.user_id = userData.id;
@@ -288,8 +289,6 @@ export async function GET(request: NextRequest) {
                         console.log(`   No overdue criteria found for this user`);
                     }
                 }
-            } else {
-                console.log(`   User ${testEmail} not found in database:`, userError?.message);
             }
         }
         

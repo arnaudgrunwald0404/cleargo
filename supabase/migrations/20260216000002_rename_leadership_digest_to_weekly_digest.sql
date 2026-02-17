@@ -12,5 +12,6 @@ COMMENT ON COLUMN app_settings.slack_weekly_digest IS 'Enable Slack notification
 COMMENT ON COLUMN app_settings.email_weekly_digest IS 'Enable email notifications for weekly digest';
 
 -- Update slack_channels JSONB column references in comments
--- Note: The actual JSONB data structure (e.g., {"leadership_digest": "#channel"}) 
+-- Note: The actual JSONB data structure should use "weekly_digest" as the key
+-- (e.g., {"weekly_digest": "#channel"}). Existing data with "leadership_digest" 
 -- should be migrated by application code or manually updated in app_settings
