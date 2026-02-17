@@ -7,6 +7,7 @@ import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 20; // Reduced for Netlify serverless timeout limits (~26s max)
 
 export async function POST(req: NextRequest) {
     try {
@@ -64,9 +65,26 @@ export async function POST(req: NextRequest) {
         let synced = 0;
         let failed = 0;
         const errors: Array<{ aha_id: string; name: string; error: string }> = [];
+        const startTime = Date.now();
+        const MAX_EXECUTION_TIME = 18000; // 18 seconds (leave buffer for response)
 
-        // Process each epic
+        // Process epics with timeout protection
         for (const epicRecord of epics) {
+            // Check if we're approaching timeout
+            if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                console.warn(`Sync timeout approaching, stopping at ${synced + failed} of ${epics.length} epics`);
+                return NextResponse.json({
+                    success: true,
+                    message: `Partial synchronization completed (timeout protection)`,
+                    synced,
+                    failed,
+                    total: epics.length,
+                    partial: true,
+                    processed: synced + failed,
+                    remaining: epics.length - (synced + failed),
+                    errors: errors.length > 0 ? errors : undefined,
+                });
+            }
             if (!epicRecord.aha_id) continue;
 
             try {

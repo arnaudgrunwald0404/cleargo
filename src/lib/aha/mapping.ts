@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { AhaConfig, AhaEpic } from './types';
 import { getCustomFields } from './client';
@@ -14,8 +14,21 @@ export function loadAhaConfig(): AhaConfig {
     if (cachedConfig) return cachedConfig;
 
     const configPath = join(process.cwd(), 'config', 'aha-custom-fields.json');
-    const configData = readFileSync(configPath, 'utf-8');
-    cachedConfig = JSON.parse(configData);
+    
+    try {
+        if (existsSync(configPath)) {
+            const configData = readFileSync(configPath, 'utf-8');
+            cachedConfig = JSON.parse(configData);
+        } else {
+            console.warn(`Config file not found at ${configPath}, using empty config`);
+            cachedConfig = { workspace_ids: [], fields: {} };
+        }
+    } catch (error: any) {
+        console.error('Error loading AHA config:', error);
+        // Fallback to empty config instead of throwing
+        cachedConfig = { workspace_ids: [], fields: {} };
+    }
+    
     return cachedConfig!;
 }
 
