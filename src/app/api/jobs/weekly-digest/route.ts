@@ -1,5 +1,5 @@
 /**
- * Scheduled job: Weekly Release Readiness Digest
+ * Scheduled job: Weekly Release Readiness Status Update
  * Builds digest data, generates LLM narrative, and sends a draft DM to the validator (agrunwald@clearcompany.com).
  * The digest is only posted to the channel when the validator clicks "Approve and send" in the DM.
  */
@@ -42,8 +42,10 @@ export async function GET(request: NextRequest) {
         const now = new Date();
         const weekOf = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
+        // Get more releases to ensure we don't miss important ones (especially those with delays)
+        // We'll still show top 2 in the digest, but having more helps prioritize releases with issues
         const lastReleases = await getLastNReleases(2, supabase);
-        const nextReleases = await getNextNReleases(2, supabase);
+        const nextReleases = await getNextNReleases(4, supabase); // Increased from 2 to 4 to catch releases like 2026.2
         const lastReleasesAnalytics = await Promise.all(
             lastReleases.map((r) => getLastReleaseAnalytics(r.release_name, r.launch_date, supabase))
         );
@@ -138,7 +140,7 @@ export async function GET(request: NextRequest) {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: '*📋 Weekly Release Readiness Digest – Draft*\nReview the content below. Approve to post the full digest to the channel.',
+                    text: '*📋 Weekly Release Readiness Status Update – Draft*\nReview the content below. Approve to post the full digest to the channel.',
                 },
             },
         ];
@@ -171,7 +173,7 @@ export async function GET(request: NextRequest) {
 
         await client.postMessage({
             channel: dmChannel,
-            text: narrative?.trim() || 'Weekly Release Readiness Digest draft. Approve and send digest via the link.',
+            text: narrative?.trim() || 'Weekly Release Readiness Status Update draft. Approve and send digest via the link.',
             blocks,
         });
 
@@ -186,7 +188,7 @@ export async function GET(request: NextRequest) {
             },
         });
     } catch (err: any) {
-        console.error('Weekly Release Readiness Digest job error:', err);
+        console.error('Weekly Release Readiness Status Update job error:', err);
         return NextResponse.json(
             { error: err?.message || 'Internal server error' },
             { status: 500 }

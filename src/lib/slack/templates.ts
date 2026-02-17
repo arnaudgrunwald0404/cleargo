@@ -299,8 +299,9 @@ export function buildGoNoGoDecisionMessage(
 }
 
 /**
- * Weekly Release Readiness Digest
- * High-level overview: last 2 releases (metrics, red flags) and next 2 releases (readiness status, red flags).
+ * Weekly Release Readiness Status Update
+ * High-level overview: last 2 releases (metrics, red flags) and next releases (readiness status, red flags).
+ * Shows up to 4 next releases to ensure important releases with delays/issues are included.
  */
 export function buildLeadershipDigestMessage(
     data: {
@@ -357,7 +358,7 @@ export function buildLeadershipDigestMessage(
             type: 'header',
             text: {
                 type: 'plain_text',
-                text: 'Weekly Release Readiness Digest',
+                text: 'Weekly Release Readiness Status Update',
                 emoji: true,
             },
         },
@@ -372,9 +373,111 @@ export function buildLeadershipDigestMessage(
             text: { type: 'mrkdwn', text: data.narrative.trim() },
         });
     }
-    // No divider between "Week of" and "Last 2 Releases"
+    // No divider between "Week of" and sections
 
-    // ---- Last 2 Releases (no dividers between releases; single divider only before Next 2 Releases) ----
+    // ---- Next 2 Releases FIRST (upcoming releases - most important) ----
+    blocks.push({
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*How are the next 2 releases shaping up?*' },
+    });
+
+    // CRITICAL: Filter out any past releases from next_releases (defensive check)
+    // Past releases should only appear in last_releases section
+    const todayForFilter = new Date();
+    todayForFilter.setHours(0, 0, 0, 0);
+    const filteredNextReleases = (data.next_releases || []).filter((release) => {
+        if (!release.launch_date) {
+            return true; // Include releases without dates (they might be future releases)
+        }
+        const launchDate = new Date(release.launch_date);
+        launchDate.setHours(0, 0, 0, 0);
+        return launchDate >= todayForFilter; // Only include future or today's releases
+    });
+
+    let shownGoNoGo = false;
+    if (filteredNextReleases.length > 0) {
+        filteredNextReleases.forEach((release) => {
+            const launchDateStr = release.launch_date
+                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                : 'Date TBD';
+            const inDays = daysFromNow(release.launch_date);
+            // Only show positive days (future) or "today" - never show negative days (past releases shouldn't be here)
+            const dateSuffix = inDays !== null && inDays > 0 ? ` = in ${inDays} days` : (inDays === 0 ? ' = today' : '');
+            const goNoGoHint =
+                inDays !== null && inDays >= 0 && inDays < 28 && !shownGoNoGo ? '  ·  _go/no-go decision time!_' : '';
+            if (inDays !== null && inDays >= 0 && inDays < 28) shownGoNoGo = true;
+
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${release.release_name}*  ·  ${launchDateStr}${dateSuffix}${goNoGoHint}`,
+                },
+            });
+            const breakdown = release.readiness_breakdown;
+            const totalEpics = breakdown.go + breakdown.conditional_go + breakdown.no_go + breakdown.not_evaluated;
+            blocks.push({
+                type: 'context',
+                elements: [
+                    {
+                        type: 'mrkdwn',
+                        text: totalEpics
+                            ? `✅ ${breakdown.go} Go  ·  ⚠️ ${breakdown.conditional_go} Conditional  ·  ❌ ${breakdown.no_go} No-Go  ·  ⏸️ ${breakdown.not_evaluated} Not evaluated`
+                            : 'No epics in this release',
+                    },
+                ],
+            });
+            const nextHighRisk = (release as { high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number; target_launch_date?: string | null }> }).high_risk_epics ?? [];
+            if (nextHighRisk.length > 0) {
+                const highRiskLines = nextHighRisk
+                    .map((e) => {
+                        const riskBadge = e.risk_level === 'HIGH' ? '🔴' : '🟡';
+                        return `${riskBadge} <${APP_URL}/epics/${e.id}|${e.name}> (${e.tier || '?'}) ${e.readiness}%`;
+                    })
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_High risk:_\n${highRiskLines}` },
+                });
+            }
+            const totalOverdue = (release as { total_criteria_overdue?: number }).total_criteria_overdue ?? 0;
+            const gateRed = (release as { gate_red_count?: number }).gate_red_count ?? 0;
+            const gateYellow = (release as { gate_yellow_count?: number }).gate_yellow_count ?? 0;
+            const nextRedFlags: string[] = [];
+            if (totalOverdue > 0) nextRedFlags.push(`• ${totalOverdue} criteria overdue`);
+            if (gateRed > 0) nextRedFlags.push(`• ${gateRed} gate criteria at No-Go (red)`);
+            if (gateYellow > 0) nextRedFlags.push(`• ${gateYellow} gate criteria conditional (yellow)`);
+            if (nextRedFlags.length > 0) {
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Red flags:_\n${nextRedFlags.join('\n')}` },
+                });
+            } else if (release.red_flags.length > 0) {
+                const epicFlags = release.red_flags
+                    .slice(0, 5)
+                    .map((flag) => {
+                        const parts = [];
+                        if (flag.gate_blockers > 0) parts.push(`${flag.gate_blockers} gate blocker(s)`);
+                        if (flag.overdue_criteria > 0) parts.push(`${flag.overdue_criteria} overdue`);
+                        return `<${APP_URL}/epics/${flag.epic_id}|${flag.epic_name}>: ${parts.join(', ')}`;
+                    })
+                    .join('\n');
+                blocks.push({
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: `_Epics with issues:_\n${epicFlags}` },
+                });
+            }
+        });
+    } else {
+        blocks.push({
+            type: 'section',
+            text: { type: 'mrkdwn', text: '_No upcoming releases in the schedule._' },
+        });
+    }
+
+    blocks.push({ type: 'divider' });
+
+    // ---- Recent Releases SECOND (past releases) ----
     blocks.push({
         type: 'section',
         text: { type: 'mrkdwn', text: '*How are the recent releases doing?*' },
@@ -452,94 +555,6 @@ export function buildLeadershipDigestMessage(
         });
     }
 
-    blocks.push({ type: 'divider' });
-
-    // ---- Next 2 Releases (no dividers between releases) ----
-    blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: '*How are the next 2 releases shaping up?*' },
-    });
-
-    let shownGoNoGo = false;
-    if (data.next_releases && data.next_releases.length > 0) {
-        data.next_releases.forEach((release) => {
-            const launchDateStr = release.launch_date
-                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                : 'Date TBD';
-            const inDays = daysFromNow(release.launch_date);
-            const dateSuffix = inDays !== null ? ` = in ${inDays} days` : '';
-            const goNoGoHint =
-                inDays !== null && inDays < 28 && !shownGoNoGo ? '  ·  _go/no-go decision time!_' : '';
-            if (inDays !== null && inDays < 28) shownGoNoGo = true;
-
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*${release.release_name}*  ·  ${launchDateStr}${dateSuffix}${goNoGoHint}`,
-                },
-            });
-            const breakdown = release.readiness_breakdown;
-            const totalEpics = breakdown.go + breakdown.conditional_go + breakdown.no_go + breakdown.not_evaluated;
-            blocks.push({
-                type: 'context',
-                elements: [
-                    {
-                        type: 'mrkdwn',
-                        text: totalEpics
-                            ? `✅ ${breakdown.go} Go  ·  ⚠️ ${breakdown.conditional_go} Conditional  ·  ❌ ${breakdown.no_go} No-Go  ·  ⏸️ ${breakdown.not_evaluated} Not evaluated`
-                            : 'No epics in this release',
-                    },
-                ],
-            });
-            const nextHighRisk = (release as { high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number; target_launch_date?: string | null }> }).high_risk_epics ?? [];
-            if (nextHighRisk.length > 0) {
-                const highRiskLines = nextHighRisk
-                    .map((e) => {
-                        const riskBadge = e.risk_level === 'HIGH' ? '🔴' : '🟡';
-                        return `${riskBadge} <${APP_URL}/epics/${e.id}|${e.name}> (${e.tier || '?'}) ${e.readiness}%`;
-                    })
-                    .join('\n');
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_High risk:_\n${highRiskLines}` },
-                });
-            }
-            const totalOverdue = (release as { total_criteria_overdue?: number }).total_criteria_overdue ?? 0;
-            const gateRed = (release as { gate_red_count?: number }).gate_red_count ?? 0;
-            const gateYellow = (release as { gate_yellow_count?: number }).gate_yellow_count ?? 0;
-            const nextRedFlags: string[] = [];
-            if (totalOverdue > 0) nextRedFlags.push(`• ${totalOverdue} criteria overdue`);
-            if (gateRed > 0) nextRedFlags.push(`• ${gateRed} gate criteria at No-Go (red)`);
-            if (gateYellow > 0) nextRedFlags.push(`• ${gateYellow} gate criteria conditional (yellow)`);
-            if (nextRedFlags.length > 0) {
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_Red flags:_\n${nextRedFlags.join('\n')}` },
-                });
-            } else if (release.red_flags.length > 0) {
-                const epicFlags = release.red_flags
-                    .slice(0, 5)
-                    .map((flag) => {
-                        const parts = [];
-                        if (flag.gate_blockers > 0) parts.push(`${flag.gate_blockers} gate blocker(s)`);
-                        if (flag.overdue_criteria > 0) parts.push(`${flag.overdue_criteria} overdue`);
-                        return `<${APP_URL}/epics/${flag.epic_id}|${flag.epic_name}>: ${parts.join(', ')}`;
-                    })
-                    .join('\n');
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_Epics with issues:_\n${epicFlags}` },
-                });
-            }
-        });
-    } else {
-        blocks.push({
-            type: 'section',
-            text: { type: 'mrkdwn', text: '_No upcoming releases in the schedule._' },
-        });
-    }
-
     blocks.push({
         type: 'actions',
         elements: [
@@ -553,7 +568,7 @@ export function buildLeadershipDigestMessage(
     });
 
     return {
-        text: `Weekly Release Readiness Digest - Week of ${data.week_of}`,
+        text: `Weekly Release Readiness Status Update - Week of ${data.week_of}`,
         blocks,
     };
 }

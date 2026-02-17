@@ -1,5 +1,5 @@
 /**
- * Approve and send the Weekly Release Readiness Digest.
+ * Approve and send the Weekly Release Readiness Status Update.
  * GET ?token=... → send digest with narrative from token.
  * GET ?token=...&edit=1 → show edit form (narrative in textarea); POST to send with edited narrative.
  * POST body: token, narrative (optional; if present, used instead of token narrative).

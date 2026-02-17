@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Modal, Button, Stack, TextInput, Text, Group } from '@mantine/core';
 import { PurpleLoader } from '../../PurpleLoader';
 
 type LaunchRelease = { releaseName: string; launchDate: string | null };
@@ -54,6 +55,10 @@ export default function ReleaseScheduleSection(props: Props) {
   const [syncingReleaseId, setSyncingReleaseId] = useState<number | null>(null);
   const [epicCounts, setEpicCounts] = useState<Map<string, { cleargoCount: number | null; ahaCount: number | null }>>(new Map());
   const fetchingCountsRef = useRef<Set<string>>(new Set());
+  const [selectedReleaseIds, setSelectedReleaseIds] = useState<Set<number>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [syncModalOpened, setSyncModalOpened] = useState(false);
+  const [startDate, setStartDate] = useState<string>("");
 
   // Filter releases to show only those with launch dates before today (excluding archived)
   const pastReleases = useMemo(() => {
@@ -79,6 +84,15 @@ export default function ReleaseScheduleSection(props: Props) {
   const archivedReleases = useMemo(() => {
     return releases.filter((release) => release.archived === true);
   }, [releases]);
+
+  // Clear selection when releases change (e.g., after deletion)
+  useEffect(() => {
+    const currentIds = new Set(pastReleases.map(r => r.id));
+    const filteredSelected = new Set(Array.from(selectedReleaseIds).filter(id => currentIds.has(id)));
+    if (filteredSelected.size !== selectedReleaseIds.size) {
+      setSelectedReleaseIds(filteredSelected);
+    }
+  }, [pastReleases.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch epic counts for releases (both past and archived)
   useEffect(() => {
@@ -131,17 +145,28 @@ export default function ReleaseScheduleSection(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastReleases.length]);
 
+  const handleSyncReleasesClick = () => {
+    // Set default start date to today
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setStartDate(todayString);
+    setSyncModalOpened(true);
+  };
+
   const handleSyncReleases = async () => {
-    if (!confirm("This will sync releases from Aha that contain epics. Continue?")) {
+    if (!startDate) {
+      alert("Please select a starting date.");
       return;
     }
-    
+
+    setSyncModalOpened(false);
     setSyncing(true);
     try {
       const res = await fetch("/api/integrations/aha/sync-releases", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start_date: startDate }),
       });
       
       if (!res.ok) {
@@ -153,9 +178,75 @@ export default function ReleaseScheduleSection(props: Props) {
       const withoutDatesMsg = result.releases_without_dates && result.releases_without_dates.length > 0
         ? `\nReleases without dates: ${result.releases_without_dates.length} (${result.releases_without_dates.map((r: any) => r.name).join(', ')})`
         : '';
-      alert(`Success: ${result.message}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${withoutDatesMsg}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
+      const startDateMsg = startDate ? `\nOnly synced releases with launch dates on or after ${startDate}` : '';
+      alert(`Success: ${result.message}${startDateMsg}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${withoutDatesMsg}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
       
       // Refresh the release list
+      await onRefreshReleases();
+      await onRefresh();
+      // Clear epic counts to trigger refetch
+      setEpicCounts(new Map());
+      // Reset start date
+      setStartDate("");
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedReleaseIds.size === pastReleases.length) {
+      setSelectedReleaseIds(new Set());
+    } else {
+      setSelectedReleaseIds(new Set(pastReleases.map(r => r.id)));
+    }
+  };
+
+  const handleToggleSelectRelease = (id: number) => {
+    const newSelected = new Set(selectedReleaseIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedReleaseIds(newSelected);
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedReleaseIds.size === 0) {
+      alert("Please select at least one release to delete.");
+      return;
+    }
+
+    const releaseNames = pastReleases
+      .filter(r => selectedReleaseIds.has(r.id))
+      .map(r => r.release_name)
+      .join(", ");
+
+    if (!confirm(`Are you sure you want to delete ${selectedReleaseIds.size} release(s)?\n\n${releaseNames}\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/releases/batch-delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedReleaseIds) }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete releases");
+      }
+
+      const result = await res.json();
+      alert(`Successfully deleted ${result.deleted_count} release(s).`);
+      
+      // Clear selection and refresh
+      setSelectedReleaseIds(new Set());
       await onRefreshReleases();
       await onRefresh();
       // Clear epic counts to trigger refetch
@@ -163,7 +254,7 @@ export default function ReleaseScheduleSection(props: Props) {
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     } finally {
-      setSyncing(false);
+      setBatchDeleting(false);
     }
   };
 
@@ -186,8 +277,20 @@ export default function ReleaseScheduleSection(props: Props) {
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-md font-semibold text-gray-900">Releases with Launch Dates Before Today ({pastReleases.length})</h3>
           <div className="flex gap-2">
+            {selectedReleaseIds.size > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                disabled={batchDeleting}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 border border-red-700 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {batchDeleting ? "Deleting..." : `Delete Selected (${selectedReleaseIds.size})`}
+              </button>
+            )}
             <button
-              onClick={handleSyncReleases}
+              onClick={handleSyncReleasesClick}
               disabled={syncing}
               className="px-3 py-1.5 text-sm font-medium text-indigo-700 bg-white border border-indigo-300 rounded-lg hover:bg-indigo-50 hover:text-indigo-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
@@ -207,6 +310,7 @@ export default function ReleaseScheduleSection(props: Props) {
           <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
             <table className="min-w-full divide-y divide-indigo-200 table-fixed">
               <colgroup>
+                <col className="w-12" />
                 <col className="w-2/5" />
                 <col className="w-1/5" />
                 <col className="w-1/5" />
@@ -214,6 +318,15 @@ export default function ReleaseScheduleSection(props: Props) {
               </colgroup>
               <thead className="bg-indigo-100">
                 <tr>
+                  <th className="px-4 py-2 text-center text-xs font-medium text-indigo-900">
+                    <input
+                      type="checkbox"
+                      checked={pastReleases.length > 0 && selectedReleaseIds.size === pastReleases.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      title="Select all"
+                    />
+                  </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Name</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Launch Date</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Epics Loaded vs. Total</th>
@@ -222,9 +335,10 @@ export default function ReleaseScheduleSection(props: Props) {
               </thead>
               <tbody className="bg-white divide-y divide-indigo-200">
                 {pastReleases.map((release) => (
-                  <tr key={release.id} className="hover:bg-indigo-50 transition-colors">
+                  <tr key={release.id} className={`hover:bg-indigo-50 transition-colors ${selectedReleaseIds.has(release.id) ? 'bg-indigo-100' : ''}`}>
                     {editingReleaseId === release.id ? (
                       <>
+                        <td className="px-4 py-3"></td>
                         <td className="px-4 py-3">
                           <input type="text" defaultValue={release.release_name} id={`release-name-${release.id}`} className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
                         </td>
@@ -254,6 +368,14 @@ export default function ReleaseScheduleSection(props: Props) {
                       </>
                     ) : (
                       <>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedReleaseIds.has(release.id)}
+                            onChange={() => handleToggleSelectRelease(release.id)}
+                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                        </td>
                         <td className="px-4 py-3">
                           <span className="font-medium text-gray-900">{release.release_name}</span>
                         </td>
@@ -347,7 +469,7 @@ export default function ReleaseScheduleSection(props: Props) {
                 ))}
                 {pastReleases.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500">
+                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-gray-500">
                       No releases with launch dates before today.
                     </td>
                   </tr>
@@ -454,6 +576,56 @@ export default function ReleaseScheduleSection(props: Props) {
           </div>
         </div>
       )}
+
+      {/* Sync Releases Modal */}
+      <Modal
+        opened={syncModalOpened}
+        onClose={() => {
+          setSyncModalOpened(false);
+          setStartDate("");
+        }}
+        title="Sync Releases from Aha"
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Select a starting date. Only releases with launch dates on or after this date will be synced.
+          </Text>
+          <TextInput
+            type="date"
+            label="Starting Date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            required
+            styles={{
+              input: {
+                borderRadius: 8,
+                border: '1px solid var(--color-gray-300)',
+                fontFamily: 'var(--font-body)'
+              }
+            }}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setSyncModalOpened(false);
+                setStartDate("");
+              }}
+              disabled={syncing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSyncReleases}
+              loading={syncing}
+              disabled={!startDate}
+            >
+              Sync Releases
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </div>
   );
 }

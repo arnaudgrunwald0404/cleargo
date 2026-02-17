@@ -125,7 +125,7 @@ export interface DigestNarrativeInput {
 }
 
 /**
- * Generates a short narrative (2–4 sentences) for the Weekly Release Readiness Digest.
+ * Generates a short narrative (2–4 sentences) for the Weekly Release Readiness Status Update.
  * E.g. "In the past few weeks we have launched [tier 1 X, tier 2 Y] which is very exciting...
  * We are getting ready for the next release with [items] and things are looking good so far."
  */
@@ -173,7 +173,7 @@ export async function generateDigestNarrative(data: DigestNarrativeInput): Promi
         const { text } = await generateText({
             model,
             prompt: `
-You are a Product Operations assistant writing the opening paragraph for the "Weekly Release Readiness Digest" Slack message.
+You are a Product Operations assistant writing the opening paragraph for the "Weekly Release Readiness Status Update" Slack message.
 Write 2–4 short, professional sentences that:
 1. Remind the team what we launched recently (reference the last 1–2 releases by name and tier if relevant, e.g. "we launched Tier 1 X and Tier 2 Y") and note that we're seeing signs of adoption.
 2. Set up the next release (reference the next 1–2 releases) and mention important high-risk or tier 1/tier 2 items; say things are looking good so far (or note concerns briefly if any).

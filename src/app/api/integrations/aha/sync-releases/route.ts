@@ -28,7 +28,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
+        // Parse request body to get start_date filter
+        const body = await req.json().catch(() => ({}));
+        const startDate = body.start_date || null;
+
         console.log('🔄 Starting release sync from Aha API...');
+        if (startDate) {
+            console.log(`📅 Filtering releases with launch dates >= ${startDate}`);
+        }
 
         // Fetch all releases from Aha (paginated)
         let allReleases: any[] = [];
@@ -47,8 +54,49 @@ export async function POST(req: NextRequest) {
 
         console.log(`📦 Found ${allReleases.length} total releases in Aha`);
 
+        // Helper function to extract "Releases date (external)" from custom_fields
+        const getExternalReleaseDate = (release: any): string | null => {
+            if (!release.custom_fields) return null;
+            
+            let externalDateValue: string | null = null;
+            
+            // Handle array format (Aha API typically returns custom_fields as array)
+            if (Array.isArray(release.custom_fields)) {
+                // Look for "Releases date (external)" field
+                const externalDateField = release.custom_fields.find((cf: any) => {
+                    const key = cf.key?.toLowerCase() || '';
+                    const name = cf.name?.toLowerCase() || '';
+                    return (key.includes('releases date (external)') || 
+                            name.includes('releases date (external)') ||
+                            key.includes('release date (external)') ||
+                            name.includes('release date (external)'));
+                });
+                
+                if (externalDateField && externalDateField.value) {
+                    externalDateValue = externalDateField.value;
+                }
+            } else if (typeof release.custom_fields === 'object') {
+                // Handle object format
+                for (const [key, value] of Object.entries(release.custom_fields)) {
+                    const field = value as any;
+                    const fieldKey = key.toLowerCase();
+                    const fieldName = (field?.name || '').toLowerCase();
+                    
+                    if ((fieldKey.includes('releases date (external)') || 
+                         fieldName.includes('releases date (external)') ||
+                         fieldKey.includes('release date (external)') ||
+                         fieldName.includes('release date (external)')) && field?.value) {
+                        externalDateValue = field.value;
+                        break;
+                    }
+                }
+            }
+            
+            return externalDateValue;
+        };
+
         // Filter releases that contain epics
-        const releasesWithEpics: Array<{ id: string; name: string; start_date?: string; end_date?: string }> = [];
+        const releasesWithEpics: Array<{ id: string; name: string; start_date?: string; end_date?: string; external_date?: string | null }> = [];
         
         for (const release of allReleases) {
             try {
@@ -57,12 +105,18 @@ export async function POST(req: NextRequest) {
                 const epics = epicsResponse.epics || [];
                 
                 if (epics.length > 0) {
+                    const externalDate = getExternalReleaseDate(release);
                     releasesWithEpics.push({
                         id: release.id,
                         name: release.name,
                         start_date: release.start_date,
                         end_date: release.end_date,
+                        external_date: externalDate,
                     });
+                    
+                    if (externalDate) {
+                        console.log(`📅 Release "${release.name}": Found external date: ${externalDate}`);
+                    }
                 }
             } catch (error) {
                 console.warn(`Failed to check epics for release ${release.name}:`, error);
@@ -77,10 +131,47 @@ export async function POST(req: NextRequest) {
         let errors = 0;
         const releasesWithoutDates: Array<{ name: string; id: string }> = [];
 
-        for (const release of releasesWithEpics) {
+        // Filter releases by start_date if provided
+        let releasesToSync = releasesWithEpics;
+        if (startDate) {
+            const startDateObj = new Date(startDate);
+            startDateObj.setHours(0, 0, 0, 0);
+            
+            releasesToSync = releasesWithEpics.filter((release) => {
+                // Priority: external_date > end_date > start_date
+                const launchDate = release.external_date || release.end_date || release.start_date || null;
+                
+                // Include releases without dates (they can still be synced)
+                if (!launchDate) {
+                    return true;
+                }
+                
+                // Parse and compare dates
+                try {
+                    const releaseDateObj = new Date(launchDate);
+                    releaseDateObj.setHours(0, 0, 0, 0);
+                    return releaseDateObj >= startDateObj;
+                } catch (error) {
+                    console.warn(`⚠️ Invalid date format for release "${release.name}": ${launchDate}`);
+                    return true; // Include releases with invalid dates
+                }
+            });
+            
+            console.log(`📅 Filtered to ${releasesToSync.length} releases with launch dates >= ${startDate} (from ${releasesWithEpics.length} total)`);
+        }
+
+        for (const release of releasesToSync) {
             try {
-                // Use end_date if available, otherwise start_date, otherwise null
-                const launchDate = release.end_date || release.start_date || null;
+                // Priority: Use "Releases date (external)" if available, otherwise end_date, otherwise start_date, otherwise null
+                const launchDate = release.external_date || release.end_date || release.start_date || null;
+                
+                if (release.external_date) {
+                    console.log(`✅ Using external date for "${release.name}": ${release.external_date}`);
+                } else if (release.end_date) {
+                    console.log(`📅 Using end_date for "${release.name}": ${release.end_date}`);
+                } else if (release.start_date) {
+                    console.log(`📅 Using start_date for "${release.name}": ${release.start_date}`);
+                }
 
                 // Track releases without dates
                 if (!launchDate) {
