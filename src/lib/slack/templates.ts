@@ -823,7 +823,7 @@ export function buildCriteriaAssignmentMessage(
  * Now supports combined format with multiple epics and criteria
  */
 export function buildCriteriaNudgeMessage(
-    groupedCriteria: GroupedCriteria | { epic_groups?: any[]; criteria?: any[]; total_criteria_count?: number },
+    groupedCriteria: GroupedCriteria | { release_groups?: any[]; epic_groups?: any[]; criteria?: any[]; total_criteria_count?: number },
     nudgeType: '1_week_before' | 'on_due_date' | 'daily_after' | 'combined',
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
@@ -935,9 +935,10 @@ export function buildCriteriaNudgeMessage(
 
 /**
  * Build combined criteria nudge message with multiple epics and criteria, ordered by urgency
+ * Now supports release grouping
  */
 function buildCombinedCriteriaNudgeMessage(
-    data: { epic_groups: any[]; criteria: any[]; total_criteria_count: number },
+    data: { release_groups?: any[]; epic_groups: any[]; criteria: any[]; total_criteria_count: number },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const today = new Date();
@@ -1012,48 +1013,132 @@ function buildCombinedCriteriaNudgeMessage(
         });
     }
 
-    // Group criteria by epic and add sections
-    for (const epicGroup of data.epic_groups) {
-        // Calculate days until/since due for this epic's most urgent criterion
-        const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
-            const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-            const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-            return dateA - dateB;
-        });
-        
-        const mostUrgentCriterion = epicCriteria[0];
-        const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
-        
-        let epicUrgencyText = '';
-        if (dueDate) {
-            dueDate.setHours(0, 0, 0, 0);
-            const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            if (daysDiff < 0) {
-                epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
-            } else if (daysDiff === 0) {
-                epicUrgencyText = ' *(Due today)*';
-            } else if (daysDiff <= 7) {
-                epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
+    // Group by release if available, otherwise by epic
+    if (data.release_groups && data.release_groups.length > 0) {
+        for (const releaseGroup of data.release_groups) {
+            // Add release header
+            let releaseHeader = '';
+            if (releaseGroup.release_name) {
+                releaseHeader = `*Release ${releaseGroup.release_name}*`;
+                if (releaseGroup.release_date) {
+                    const releaseDate = new Date(releaseGroup.release_date);
+                    releaseDate.setHours(0, 0, 0, 0);
+                    const daysDiff = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    if (daysDiff < 0) {
+                        releaseHeader += ` (${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)`;
+                    } else if (daysDiff === 0) {
+                        releaseHeader += ' (Today)';
+                    } else {
+                        releaseHeader += ` (in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})`;
+                    }
+                }
+            } else {
+                releaseHeader = '*No Release Assigned*';
+            }
+            
+            blocks.push({
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: releaseHeader,
+                },
+            });
+            
+            // Add epics within this release
+            for (const epicGroup of releaseGroup.epic_groups) {
+                // Calculate days until/since due for this epic's most urgent criterion
+                const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
+                    const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+                    const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+                    return dateA - dateB;
+                });
+                
+                const mostUrgentCriterion = epicCriteria[0];
+                const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
+                
+                let epicUrgencyText = '';
+                if (dueDate) {
+                    dueDate.setHours(0, 0, 0, 0);
+                    const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    if (daysDiff < 0) {
+                        epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
+                    } else if (daysDiff === 0) {
+                        epicUrgencyText = ' *(Due today)*';
+                    } else if (daysDiff <= 7) {
+                        epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
+                    }
+                }
+
+                blocks.push({
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `  • *${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `    • ${c.label}`).join('\n')}`,
+                    },
+                    accessory: {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'View Epic',
+                            emoji: true,
+                        },
+                        url: `${APP_URL}/epics/${epicGroup.epic_id}`,
+                        action_id: `view_epic_${epicGroup.epic_id}`,
+                    },
+                });
+            }
+            
+            // Add divider between releases
+            if (releaseGroup !== data.release_groups[data.release_groups.length - 1]) {
+                blocks.push({
+                    type: 'divider',
+                });
             }
         }
+    } else {
+        // Fallback to epic grouping (backward compatibility)
+        for (const epicGroup of data.epic_groups) {
+            // Calculate days until/since due for this epic's most urgent criterion
+            const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
+                const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+                const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+                return dateA - dateB;
+            });
+            
+            const mostUrgentCriterion = epicCriteria[0];
+            const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
+            
+            let epicUrgencyText = '';
+            if (dueDate) {
+                dueDate.setHours(0, 0, 0, 0);
+                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysDiff < 0) {
+                    epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
+                } else if (daysDiff === 0) {
+                    epicUrgencyText = ' *(Due today)*';
+                } else if (daysDiff <= 7) {
+                    epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
+                }
+            }
 
-        blocks.push({
-            type: 'section',
-            text: {
-                type: 'mrkdwn',
-                text: `*${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `• ${c.label}`).join('\n')}`,
-            },
-            accessory: {
-                type: 'button',
+            blocks.push({
+                type: 'section',
                 text: {
-                    type: 'plain_text',
-                    text: 'View Epic',
-                    emoji: true,
+                    type: 'mrkdwn',
+                    text: `*${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `• ${c.label}`).join('\n')}`,
                 },
-                url: `${APP_URL}/epics/${epicGroup.epic_id}`,
-                action_id: `view_epic_${epicGroup.epic_id}`,
-            },
-        });
+                accessory: {
+                    type: 'button',
+                    text: {
+                        type: 'plain_text',
+                        text: 'View Epic',
+                        emoji: true,
+                    },
+                    url: `${APP_URL}/epics/${epicGroup.epic_id}`,
+                    action_id: `view_epic_${epicGroup.epic_id}`,
+                },
+            });
+        }
     }
 
     // Add action button
@@ -1078,8 +1163,14 @@ function buildCombinedCriteriaNudgeMessage(
         type: 'divider',
     });
 
+    const releaseCount = data.release_groups?.length || 0;
+    const epicCount = data.epic_groups?.length || 0;
+    const text = releaseCount > 0
+        ? `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${releaseCount} release${releaseCount !== 1 ? 's' : ''}`
+        : `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${epicCount} epic${epicCount !== 1 ? 's' : ''}`;
+    
     return {
-        text: `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${data.epic_groups.length} epic${data.epic_groups.length !== 1 ? 's' : ''}`,
+        text,
         blocks,
     };
 }

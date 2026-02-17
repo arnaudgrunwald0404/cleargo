@@ -362,6 +362,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 if (payload.metadata.nudge_type === 'combined' && payload.metadata.epic_groups) {
                     message = buildCriteriaNudgeMessage(
                         {
+                            release_groups: payload.metadata.release_groups,
                             epic_groups: payload.metadata.epic_groups,
                             criteria: payload.metadata.criteria || [],
                             total_criteria_count: payload.metadata.total_criteria_count || 0,

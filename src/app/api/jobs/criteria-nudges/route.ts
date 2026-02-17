@@ -9,6 +9,7 @@ import { sendSlackNotification, syncUserSlackHandle, canReceiveSlackNotification
 import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-groups';
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
+import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -87,7 +88,8 @@ export async function GET(request: NextRequest) {
                         category
                     ),
                     epic:epic_id (
-                        name
+                        name,
+                        aha_fields
                     ),
                     decision_owner:decision_owner_id (
                         id,
@@ -129,7 +131,8 @@ export async function GET(request: NextRequest) {
                         category
                     ),
                     epic:epic_id (
-                        name
+                        name,
+                        aha_fields
                     ),
                     decision_owner:decision_owner_id (
                         id,
@@ -171,7 +174,8 @@ export async function GET(request: NextRequest) {
                         category
                     ),
                     epic:epic_id (
-                        name
+                        name,
+                        aha_fields
                     ),
                     decision_owner:decision_owner_id (
                         id,
@@ -521,33 +525,157 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Group criteria by epic for better organization in the message
-                const criteriaByEpic = new Map<string, any[]>();
-                for (const c of criteria) {
-                    const epicId = c.epic_id;
-                    if (!criteriaByEpic.has(epicId)) {
-                        criteriaByEpic.set(epicId, []);
+                // Extract release names from epics and fetch release dates
+                const epicIds = [...new Set(criteria.map(c => c.epic_id))];
+                const { data: epicsData } = await supabase
+                    .from('epic')
+                    .select('id, name, aha_fields')
+                    .in('id', epicIds);
+                
+                const epicToRelease = new Map<string, string>();
+                const releaseNames = new Set<string>();
+                
+                if (epicsData) {
+                    for (const epic of epicsData) {
+                        const releaseName = getReleaseNameFromEpic(epic as any);
+                        if (releaseName) {
+                            epicToRelease.set(epic.id, releaseName);
+                            releaseNames.add(releaseName);
+                        }
                     }
-                    criteriaByEpic.get(epicId)!.push(c);
                 }
-
-                // Build metadata with all criteria grouped by epic
-                const epicGroups = Array.from(criteriaByEpic.entries()).map(([epicId, epicCriteria]) => {
-                    const epic = epicCriteria[0].epic;
-                    return {
-                        epic_id: epicId,
-                        epic_name: epic?.name || 'Unknown Epic',
-                        criteria: epicCriteria.map((c) => ({
-                            id: c.id,
-                            criterion_id: c.criterion_id,
-                            label: c.criterion?.label || 'Unknown',
-                            category: c.criterion?.category || 'Unknown',
-                            due_date: c.condition_due_date,
-                            status: c.status,
-                            nudge_type: c.nudgeType,
-                        })),
-                    };
+                
+                // Fetch release dates
+                const { data: releasesData } = await supabase
+                    .from('release_schedule')
+                    .select('release_name, launch_date')
+                    .in('release_name', Array.from(releaseNames))
+                    .eq('archived', false);
+                
+                const releaseToDate = new Map<string, string | null>();
+                if (releasesData) {
+                    for (const release of releasesData) {
+                        releaseToDate.set(release.release_name, release.launch_date);
+                    }
+                }
+                
+                // Group criteria by release, then by epic within each release
+                const criteriaByRelease = new Map<string, Map<string, any[]>>();
+                const noReleaseCriteria: any[] = [];
+                
+                for (const c of criteria) {
+                    const releaseName = epicToRelease.get(c.epic_id);
+                    if (!releaseName) {
+                        noReleaseCriteria.push(c);
+                        continue;
+                    }
+                    
+                    if (!criteriaByRelease.has(releaseName)) {
+                        criteriaByRelease.set(releaseName, new Map());
+                    }
+                    const releaseMap = criteriaByRelease.get(releaseName)!;
+                    
+                    const epicId = c.epic_id;
+                    if (!releaseMap.has(epicId)) {
+                        releaseMap.set(epicId, []);
+                    }
+                    releaseMap.get(epicId)!.push(c);
+                }
+                
+                // Sort releases by launch date (closest future first, then past releases)
+                const sortedReleases = Array.from(criteriaByRelease.entries()).sort((a, b) => {
+                    const dateA = releaseToDate.get(a[0]);
+                    const dateB = releaseToDate.get(b[0]);
+                    
+                    // No date = put at end
+                    if (!dateA && !dateB) return 0;
+                    if (!dateA) return 1;
+                    if (!dateB) return -1;
+                    
+                    const dateAObj = new Date(dateA);
+                    const dateBObj = new Date(dateB);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    // Future releases first (ascending by date)
+                    // Then past releases (descending by date)
+                    const isAFuture = dateAObj >= today;
+                    const isBFuture = dateBObj >= today;
+                    
+                    if (isAFuture && isBFuture) {
+                        return dateAObj.getTime() - dateBObj.getTime(); // Closest future first
+                    }
+                    if (isAFuture) return -1; // Future before past
+                    if (isBFuture) return 1; // Past after future
+                    return dateBObj.getTime() - dateAObj.getTime(); // Most recent past first
                 });
+                
+                // Build release groups with epic subgroups
+                const releaseGroups: any[] = [];
+                
+                for (const [releaseName, epicMap] of sortedReleases) {
+                    const releaseDate = releaseToDate.get(releaseName);
+                    const epicGroups = Array.from(epicMap.entries()).map(([epicId, epicCriteria]) => {
+                        const epic = epicCriteria[0].epic;
+                        return {
+                            epic_id: epicId,
+                            epic_name: epic?.name || 'Unknown Epic',
+                            criteria: epicCriteria.map((c) => ({
+                                id: c.id,
+                                criterion_id: c.criterion_id,
+                                label: c.criterion?.label || 'Unknown',
+                                category: c.criterion?.category || 'Unknown',
+                                due_date: c.condition_due_date,
+                                status: c.status,
+                                nudge_type: c.nudgeType,
+                            })),
+                        };
+                    });
+                    
+                    releaseGroups.push({
+                        release_name: releaseName,
+                        release_date: releaseDate,
+                        epic_groups: epicGroups,
+                    });
+                }
+                
+                // Add criteria without releases at the end
+                if (noReleaseCriteria.length > 0) {
+                    const noReleaseEpicMap = new Map<string, any[]>();
+                    for (const c of noReleaseCriteria) {
+                        const epicId = c.epic_id;
+                        if (!noReleaseEpicMap.has(epicId)) {
+                            noReleaseEpicMap.set(epicId, []);
+                        }
+                        noReleaseEpicMap.get(epicId)!.push(c);
+                    }
+                    
+                    const noReleaseEpicGroups = Array.from(noReleaseEpicMap.entries()).map(([epicId, epicCriteria]) => {
+                        const epic = epicCriteria[0].epic;
+                        return {
+                            epic_id: epicId,
+                            epic_name: epic?.name || 'Unknown Epic',
+                            criteria: epicCriteria.map((c) => ({
+                                id: c.id,
+                                criterion_id: c.criterion_id,
+                                label: c.criterion?.label || 'Unknown',
+                                category: c.criterion?.category || 'Unknown',
+                                due_date: c.condition_due_date,
+                                status: c.status,
+                                nudge_type: c.nudgeType,
+                            })),
+                        };
+                    });
+                    
+                    releaseGroups.push({
+                        release_name: null,
+                        release_date: null,
+                        epic_groups: noReleaseEpicGroups,
+                    });
+                }
+                
+                // Flatten epic groups for backward compatibility
+                const epicGroups = releaseGroups.flatMap(rg => rg.epic_groups);
 
                 await sendSlackNotification({
                     type: 'criteria_nudge',
@@ -560,7 +688,8 @@ export async function GET(request: NextRequest) {
                     },
                     launch_id: epicGroups[0]?.epic_id, // Use first epic ID for compatibility
                     metadata: {
-                        epic_groups: epicGroups,
+                        release_groups: releaseGroups,
+                        epic_groups: epicGroups, // Keep for backward compatibility
                         total_criteria_count: criteria.length,
                         criteria: criteria.map((c) => ({
                             id: c.id,
