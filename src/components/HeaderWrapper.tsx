@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Header } from './Header';
+import { HeaderSkeleton } from './HeaderSkeleton';
 import { createClient } from '@/lib/supabase/client';
 import type { Role } from '@/lib/roles-constants';
 
@@ -110,7 +111,8 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
   
   // Update body padding when header visibility changes
   useEffect(() => {
-    const shouldShowHeader = shouldShow && !isLoading && !isPublicPage;
+    // Always add padding when showing header (either skeleton or actual header)
+    const shouldShowHeader = (!isPublicPage && (shouldShow || isLoading));
     if (shouldShowHeader) {
       document.body.style.paddingTop = '64px';
     } else {
@@ -128,9 +130,9 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
     return null;
   }
 
-  // Don't render anything while loading to avoid flash
+  // Show skeleton header while loading
   if (isLoading) {
-    return null;
+    return <HeaderSkeleton />;
   }
 
   // Only show header if user is authenticated

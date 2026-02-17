@@ -18,6 +18,7 @@ Skeleton views must **exactly match** the structure, layout, and proportions of 
 - Spacing and padding
 - Component hierarchy
 - Responsive behavior (mobile/desktop)
+- **Top navigation bar**: The header/navigation bar must always be included in skeleton states. When pages are loading, the header should display in skeleton form rather than being hidden or showing the actual header.
 
 ### 2. Show Skeletons Only When Loading
 Skeletons should only appear when data is actively being fetched. Never show skeletons when:
@@ -154,6 +155,8 @@ const stillLoadingData = loading ||
 )}
 ```
 
+**Important**: The top navigation bar (header) must also be part of the skeleton state. When pages are loading, the header should show a skeleton version rather than being hidden or showing the actual header.
+
 ### Mistake 6: Wrong Component Order in Skeleton View
 **Problem**: Components in skeleton view appear in different order than actual view, causing visual inconsistency and confusion.
 
@@ -231,6 +234,55 @@ const [isDeterminingOrder, setIsDeterminingOrder] = useState(true);
 const [isDeterminingOrder, setIsDeterminingOrder] = useState(initialData.length === 0);
 ```
 
+### Mistake 9: Showing Spinner After Skeleton Loading
+**Problem**: After skeleton loading completes and data appears, showing a full-page spinner while additional data loads creates a jarring UX. The skeleton already served its purpose - users shouldn't see a spinner after seeing the skeleton.
+
+**Example (WRONG)**:
+```tsx
+// Show skeleton initially
+if (loading && items.length === 0) {
+  return <SkeletonTable />;
+}
+
+// Then show spinner while additional data loads
+if (isLoadingReleaseNames && items.length > 0) {
+  return (
+    <div className="flex items-center justify-center p-8">
+      <PurpleLoader />
+    </div>
+  );
+}
+
+// Finally show real data
+return <Table items={items} />;
+```
+
+**Why this is bad**: Users see skeleton → spinner → data, which is confusing. The skeleton's purpose is to show structure while loading, so once data appears, it should stay visible even if some parts are still loading.
+
+**Solution**: Show data immediately once it loads, even if additional data is still loading:
+```tsx
+// Show skeleton only when no data exists
+if (loading && items.length === 0) {
+  return <SkeletonTable />;
+}
+
+// Show data immediately, even if release names are still loading
+// Release names will populate asynchronously and update the view
+return <Table items={items} releaseNames={releaseNames} />;
+```
+
+**Key Principle**: Once skeleton disappears and data appears, never replace it with a spinner. Additional data should load in the background and update the view progressively.
+
+**Acceptable Patterns**:
+- ✅ Small inline spinners next to specific loading data (e.g., `<span>Loading... <PurpleLoader size="sm" /></span>`)
+- ✅ Refresh indicators that don't replace content (e.g., banner saying "Refreshing..." at top)
+- ✅ Spinners for initial permission/access checks before any content loads
+
+**Unacceptable Patterns**:
+- ❌ Full-page spinner after skeleton has shown
+- ❌ Replacing content with spinner when data exists but additional data is loading
+- ❌ Hiding data to show spinner for supplementary information
+
 ## Best Practices
 
 ### 1. Match Component Order Exactly
@@ -289,6 +341,22 @@ const stillLoadingData =
 Show partial content when possible:
 - If main data loads but supporting data is still loading, show main content with skeleton for supporting parts
 - Don't hide everything just because one piece is loading
+- **Never show a spinner after skeleton has been displayed** - once data appears, keep it visible
+
+### 7. No Spinner After Skeleton
+**CRITICAL**: Once skeleton loading completes and data appears, never replace it with a spinner. The skeleton's purpose is to show structure while loading - once real data appears, it should remain visible even if additional data is still loading.
+
+**Flow should be**:
+1. Skeleton (when no data)
+2. Real data (appears immediately when available)
+3. Additional data loads in background and updates view progressively
+
+**NOT**:
+1. Skeleton
+2. Spinner (replacing skeleton)
+3. Real data
+
+This ensures smooth, progressive loading without jarring transitions.
 
 ## Implementation Checklist
 
@@ -299,12 +367,14 @@ When implementing skeleton loading, ensure:
 - [ ] Column widths defined with `colgroup` for tables
 - [ ] Font styles match actual components
 - [ ] All components included (cards, tables, filters, etc.)
+- [ ] **Top navigation bar included in skeleton state** (header should show skeleton when loading)
 - [ ] Loading state checks all relevant data sources
 - [ ] Empty states only show when loading is complete
 - [ ] Filters only show when data is ready
 - [ ] Responsive behavior matches (mobile/desktop)
 - [ ] Smooth transitions (no flashing)
 - [ ] Proper initialization based on initial data
+- [ ] **No spinner after skeleton** - once data appears, it stays visible even if additional data is loading
 
 ## Examples from ClearGO
 
@@ -363,6 +433,7 @@ const stillLoadingData = loading || isDeterminingOrder ||
 3. Group header skeleton matches h2 styling (20px)
 4. Added missing Pod column to skeleton table
 5. Fixed table cell proportions
+6. **Removed spinner after skeleton** - items now show immediately when loaded, even if release names are still loading
 
 **Key Code**:
 ```tsx
@@ -383,6 +454,19 @@ const stillLoadingData = loading || isDeterminingOrder ||
     marginTop: '8px'
   }} 
 />
+
+// CORRECT: Show skeleton only when no data
+if (loading && items.length === 0) {
+  return <SkeletonTable />;
+}
+
+// CORRECT: Show data immediately, release names load in background
+return <Table items={items} />;
+
+// WRONG (removed): Don't show spinner after skeleton
+// if (isLoadingReleaseNames && items.length > 0) {
+//   return <PurpleLoader />;  // ❌ Bad UX
+// }
 ```
 
 ## Lessons Learned
@@ -395,6 +479,7 @@ const stillLoadingData = loading || isDeterminingOrder ||
 6. **Test loading scenarios**: Test with initial data, without initial data, slow networks
 7. **Prevent premature empty states**: Always verify loading is complete before showing empty states
 8. **Pay attention to visual hierarchy**: Components that appear above others in the actual view must appear above them in the skeleton view
+9. **Never show spinner after skeleton**: Once skeleton disappears and data appears, keep the data visible. Additional data should load progressively in the background without replacing the view with a spinner
 
 ## Related Documentation
 

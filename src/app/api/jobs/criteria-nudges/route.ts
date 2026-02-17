@@ -80,13 +80,24 @@ export async function GET(request: NextRequest) {
         // Helper function to check if epic has cleargo_candidate = "Yes"
         // Returns false for "No", null, undefined, or missing values
         const isClearGOCandidate = (epic: any): boolean => {
+            const epicId = epic?.id || 'unknown';
+            const epicName = epic?.name || 'unknown';
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:82',message:'isClearGOCandidate called',data:{epicId,epicName,hasAhaFields:!!epic?.aha_fields,ahaFieldsType:typeof epic?.aha_fields,ahaFieldsKeys:epic?.aha_fields?Object.keys(epic.aha_fields):null,cleargoCandidatePath1:epic?.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidatePath2:epic?.aha_fields?.cleargo_candidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             // Check if epic has aha_fields
             if (!epic?.aha_fields) {
                 // Epic has no aha_fields - exclude it (shouldn't happen for synced epics)
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:85',message:'No aha_fields - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             
             if (typeof epic.aha_fields !== 'object') {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:90',message:'aha_fields not object - EXCLUDING',data:{epicId,epicName,ahaFieldsType:typeof epic.aha_fields},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             
@@ -104,6 +115,9 @@ export async function GET(request: NextRequest) {
             
             if (!customFields || typeof customFields !== 'object') {
                 // No custom_fields found - exclude epic
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:107',message:'No custom_fields found - EXCLUDING',data:{epicId,epicName,hasCustomFields:!!epic.aha_fields.custom_fields,customFieldsType:typeof epic.aha_fields.custom_fields},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             
@@ -114,29 +128,52 @@ export async function GET(request: NextRequest) {
                 ? cleargoCandidate.trim() 
                 : cleargoCandidate;
             
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:110',message:'Checking cleargo_candidate value',data:{epicId,epicName,cleargoCandidate,normalizedValue,cleargoCandidateType:typeof cleargoCandidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             // Explicitly exclude "No", null, undefined, false, and only include "Yes" or true
             if (normalizedValue === null || normalizedValue === undefined) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:118',message:'cleargo_candidate is null/undefined - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             if (normalizedValue === false) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:121',message:'cleargo_candidate is false - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             if (typeof normalizedValue === 'string') {
                 const lowerValue = normalizedValue.toLowerCase();
                 // Exclude: "no", "false", empty string, or any other value that's not "yes"
                 if (lowerValue === 'no' || lowerValue === 'false' || lowerValue === '') {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:127',message:'cleargo_candidate is "no"/"false"/empty - EXCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
                     return false;
                 }
                 // Only return true for "Yes" (case-insensitive)
                 if (lowerValue === 'yes') {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:131',message:'cleargo_candidate is "yes" - INCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                    // #endregion
                     return true;
                 }
                 // Any other string value is not "Yes", so exclude
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:135',message:'cleargo_candidate is other string value - EXCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 return false;
             }
             
             // For boolean values, only true is acceptable
-            return normalizedValue === true;
+            const result = normalizedValue === true;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:139',message:'Boolean cleargo_candidate check',data:{epicId,epicName,normalizedValue,result},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            return result;
         };
 
         // When test_email is provided, we want to see ALL criteria for that user, even if already nudged today
@@ -426,24 +463,41 @@ export async function GET(request: NextRequest) {
         }
         
         // Filter out criteria for epics where cleargo_candidate is not "Yes" (i.e., 'no' or null)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:429',message:'Starting cleargo_candidate filter',data:{totalCriteria:allCriteria.length,sampleEpics:allCriteria.slice(0,3).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,cleargoCandidate:c.epic?.aha_fields?.custom_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'G'})}).catch(()=>{});
+        // #endregion
         const filteredByClearGOCandidate = allCriteria.filter((c: any) => {
             const epic = c.epic;
             if (!epic) {
                 console.warn(`⚠️ Criterion ${c.id} has no epic data, excluding from reminders`);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:432',message:'Criterion has no epic - EXCLUDING',data:{criterionId:c.id,epicId:c.epic_id},timestamp:Date.now(),runId:'debug1',hypothesisId:'H'})}).catch(()=>{});
+                // #endregion
                 return false; // Exclude if epic not found
             }
             
             const isCandidate = isClearGOCandidate(epic);
+            const epicId = c.epic_id || epic?.id || 'no-id';
+            const epicName = epic?.name || 'unknown';
+            
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:442',message:'Filter check result',data:{epicId,epicName,criterionId:c.id,isCandidate,cleargoCandidate:epic?.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:epic?.aha_fields?.cleargo_candidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
             
             // Debug logging for epics that are being excluded
             if (!isCandidate) {
                 const cleargoValue = epic?.aha_fields?.custom_fields?.cleargo_candidate;
-                const epicId = c.epic_id || epic?.id || 'no-id';
                 console.log(`🚫 Excluding epic "${epic.name}" (${epicId}) - cleargo_candidate: ${JSON.stringify(cleargoValue)}, aha_fields structure: ${JSON.stringify(Object.keys(epic?.aha_fields || {}))}`);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:449',message:'Epic cleargo_candidate is not Yes - EXCLUDING',data:{epicId,epicName:epic.name,cleargoValue,criterionId:c.id},timestamp:Date.now(),runId:'debug1',hypothesisId:'I'})}).catch(()=>{});
+                // #endregion
             }
             
             return isCandidate;
         });
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:446',message:'After cleargo_candidate filter',data:{before:allCriteria.length,after:filteredByClearGOCandidate.length,excluded:allCriteria.length-filteredByClearGOCandidate.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'J'})}).catch(()=>{});
+        // #endregion
         
         if (filteredByClearGOCandidate.length !== allCriteria.length) {
             const excludedCount = allCriteria.length - filteredByClearGOCandidate.length;
@@ -503,10 +557,18 @@ export async function GET(request: NextRequest) {
         // - Future/today release date → include all criteria reminders
         const epicIds = [...new Set(criteriaToProcess.map((c: any) => c.epic_id))];
         if (epicIds.length > 0) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:516',message:'Re-fetching epic data for release date filter',data:{epicIds,epicIdsCount:epicIds.length,criteriaCount:criteriaToProcess.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             const { data: epicsWithReleases } = await supabase
                 .from('epic')
                 .select('id, aha_fields, status')
                 .in('id', epicIds);
+            // #region agent log
+            if (epicsWithReleases) {
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:521',message:'Re-fetched epic data',data:{fetchedCount:epicsWithReleases.length,epics:epicsWithReleases.map((e:any)=>({id:e.id,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:e.aha_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+            }
+            // #endregion
             
             const { data: releasesData } = await supabase
                 .from('release_schedule')
@@ -520,6 +582,10 @@ export async function GET(request: NextRequest) {
                 }
             }
             
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:516',message:'Release date map built',data:{releaseCount:releaseToDate.size,sampleReleases:Array.from(releaseToDate.entries()).slice(0,5),today:todayStr},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            
             // Released statuses that indicate past release
             const releasedStatuses = ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'];
             
@@ -527,22 +593,45 @@ export async function GET(request: NextRequest) {
             const beforeFilterCount = criteriaToProcess.length;
             criteriaToProcess = criteriaToProcess.filter((c: any) => {
                 const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
-                if (!epic) return true; // Keep if epic not found (shouldn't happen)
+                if (!epic) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:530',message:'Epic not found in DB',data:{criterionId:c.id,epicId:c.epic_id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
+                    // #endregion
+                    return true; // Keep if epic not found (shouldn't happen)
+                }
                 
                 // Check if epic has released status
                 if (epic.status && releasedStatuses.includes(epic.status)) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:533',message:'Epic has released status - EXCLUDING',data:{epicId:epic.id,epicStatus:epic.status,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
+                    // #endregion
                     return false; // Exclude criteria for released epics
                 }
                 
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
-                if (!releaseName) return true; // Keep if no release assigned
+                if (!releaseName) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:539',message:'No release name found - KEEPING',data:{epicId:epic.id,criterionId:c.id,epicName:c.epic?.name,ahaFieldsKeys:Object.keys(epic.aha_fields||{})},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
+                    return true; // Keep if no release assigned
+                }
                 
                 const releaseDate = releaseToDate.get(releaseName);
-                if (!releaseDate) return true; // Keep if release has no date
+                if (!releaseDate) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:542',message:'Release has no date - KEEPING',data:{epicId:epic.id,releaseName,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
+                    // #endregion
+                    return true; // Keep if release has no date
+                }
                 
                 const releaseDateObj = new Date(releaseDate);
                 releaseDateObj.setHours(0, 0, 0, 0);
+                
+                // #region agent log
+                const daysDiff = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:548',message:'Checking release date',data:{epicId:epic.id,releaseName,releaseDate,releaseDateObj:releaseDateObj.toISOString(),today:today.toISOString(),daysDiff,willExclude:releaseDateObj<today,criterionId:c.id,epicName:c.epic?.name},timestamp:Date.now(),runId:'debug1',hypothesisId:'F'})}).catch(()=>{});
+                // #endregion
                 
                 // Exclude if release date is in the past
                 if (releaseDateObj < today) {
@@ -554,6 +643,9 @@ export async function GET(request: NextRequest) {
             });
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:556',message:'After past release filter',data:{before:beforeFilterCount,after:criteriaToProcess.length,excluded:beforeFilterCount-criteriaToProcess.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'K'})}).catch(()=>{});
+            // #endregion
         }
 
         // Add missing metrics reminders for Product Managers on past releases
@@ -677,6 +769,9 @@ export async function GET(request: NextRequest) {
             for (const [epicId, pmUser] of pmUserDataByEpic.entries()) {
                 const epic = allEpics?.find((e: any) => e.id === epicId);
                 if (!epic) continue;
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:720',message:'Adding missing metrics reminder',data:{epicId,epicName:epic.name,cleargoCandidate:epic.aha_fields?.custom_fields?.cleargo_candidate,isCandidate:isClearGOCandidate(epic)},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
+                // #endregion
                 
                 const successDefinedDueDate = successDefinedDueDateByEpic.get(epicId);
                 
@@ -717,6 +812,9 @@ export async function GET(request: NextRequest) {
         }
 
         // Log all notifications before filtering
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:720',message:'Final criteria count before notifications',data:{totalCriteria:criteriaToProcess.length,sampleCriteria:criteriaToProcess.slice(0,5).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'L'})}).catch(()=>{});
+        // #endregion
         const notificationsByEmail = new Map<string, any[]>();
         for (const c of criteriaToProcess) {
             const ownerEmail = c.decision_owner?.email?.toLowerCase() || 'unknown';
@@ -915,10 +1013,18 @@ export async function GET(request: NextRequest) {
 
                 // Extract release names from epics and fetch release dates
                 const epicIds = [...new Set(criteria.map(c => c.epic_id))];
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:963',message:'Fetching epic data before sending notification',data:{epicIds,email:assigneeEmail,criteriaCount:criteria.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
+                // #endregion
                 const { data: epicsData } = await supabase
                     .from('epic')
                     .select('id, name, aha_fields')
                     .in('id', epicIds);
+                // #region agent log
+                if (epicsData) {
+                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:968',message:'Epic data before sending notification',data:{epics:epicsData.map((e:any)=>({id:e.id,name:e.name,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:e.aha_fields?.cleargo_candidate,isCandidate:isClearGOCandidate(e)}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
+                }
+                // #endregion
                 
                 const epicToRelease = new Map<string, string>();
                 const releaseNames = new Set<string>();

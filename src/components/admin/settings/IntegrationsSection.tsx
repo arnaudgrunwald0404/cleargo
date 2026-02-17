@@ -7,6 +7,7 @@ import SlackIntegrationSection from "./SlackIntegrationSection";
 import CalendarIntegrationSection from "./CalendarIntegrationSection";
 import JiraIntegrationSection from "./JiraIntegrationSection";
 import PendoIntegrationSection from "./PendoIntegrationSection";
+import RovoIntegrationSection from "./RovoIntegrationSection";
 
 type AhaField = { alias: string; label: string; key: string | null; type?: string };
 
@@ -99,6 +100,10 @@ export default function IntegrationsSection({
 
       {activeSubSection === "pendo" && (
         <PendoIntegrationSection />
+      )}
+
+      {activeSubSection === "rovo" && (
+        <RovoIntegrationSection settings={settings} setSettings={setSettings} />
       )}
     </div>
   );

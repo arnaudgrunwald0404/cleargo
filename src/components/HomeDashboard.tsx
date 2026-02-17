@@ -1087,63 +1087,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     );
   }
 
-  if (isLoadingReleaseNames && items.length > 0) {
-    const epicIds = Array.from(new Set(items.map(item => item.launch.id)));
-    const allEpicsChecked = epicIds.every(id => epicReleaseMap.has(id));
-    
-    if (!allEpicsChecked) {
-      return (
-        <div className="min-h-screen pb-8" style={{ 
-          fontFamily: 'var(--font-body)',
-          backgroundColor: 'var(--color-platinum)'
-        }}>
-          <div style={{
-            maxWidth: 'var(--page-container-max-width)',
-            margin: '0 auto',
-            paddingLeft: 'var(--page-container-padding-x)',
-            paddingRight: 'var(--page-container-padding-x)',
-            paddingTop: 'var(--page-container-padding-top)'
-          }}
-          className="sm:px-6 lg:px-8"
-          >
-            <div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 'var(--spacing-6)'
-              }}>
-                <h2 style={{
-                  fontFamily: 'var(--font-heading)',
-                  fontSize: 'var(--font-size-2xl)',
-                  fontWeight: 'var(--font-weight-bold)',
-                  color: 'var(--color-gray-900)',
-                  margin: 0
-                }}>
-                  You have {headingStats.total} criteria to inform
-                  {headingStats.forNextTwoReleases > 0 && (
-                    <span style={{
-                      fontSize: 'var(--font-size-lg)',
-                      fontWeight: 'var(--font-weight-normal)',
-                      color: 'var(--color-gray-600)',
-                      display: 'block',
-                      marginTop: 'var(--spacing-1)'
-                    }}>
-                      among which {headingStats.forNextTwoReleases} for the next two releases
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <div className="p-8 flex items-center justify-center">
-                <PurpleLoader size="md" />
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  }
-
   return (
     <div className="min-h-screen pb-8" style={{ 
       fontFamily: 'var(--font-body)',
@@ -1174,19 +1117,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                 {isFirstTime ? (
                   <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
                 ) : (
-                  <>
-                    Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>.
-                    {criteriaCount !== null && (
-                      <span style={{ 
-                        fontFamily: 'var(--font-marcellus), serif',
-                        fontSize: 'var(--font-size-4xl)',
-                        fontWeight: 'var(--font-weight-bold)',
-                        color: 'var(--color-gray-700)',
-                        marginLeft: '8px'
-                      }}>
-                        You have <span style={{ color: 'var(--table-steel, #697771)' }}>{criteriaCount}</span> criteria to inform.
-                      </span>
-                    )}
+                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total}</span> criteria to inform.
+                 
+                  
                   </>
                 )}
               </Title>

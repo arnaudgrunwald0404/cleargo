@@ -65,6 +65,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                         <ul className="ml-4 mt-1 space-y-1">
                             <li><Link {...linkPropsSm("/admin/settings/notifications", isActive("/admin/settings/notifications"))}>Notification Settings</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/email-templates", isActive("/admin/settings/email-templates"))}>Email Templates</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/notifications/reports", isActive("/admin/settings/notifications/reports"))}>Notifications Log</Link></li>
                         </ul>
                     )}
                 </li>
@@ -94,6 +95,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                             <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/calendar", isActive("/admin/settings/integrations/calendar"))}>Calendar</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/jira", isActive("/admin/settings/integrations/jira"))}>Jira</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/rovo", isActive("/admin/settings/integrations/rovo"))}>ROVO</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
                         </ul>
                     )}

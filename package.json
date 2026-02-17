@@ -19,6 +19,7 @@
     "@mantine/form": "^8.3.9",
     "@mantine/hooks": "^8.3.9",
     "@mantine/notifications": "^8.3.9",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",
     "@tabler/icons-react": "^3.35.0",

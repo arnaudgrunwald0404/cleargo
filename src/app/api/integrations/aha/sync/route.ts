@@ -18,6 +18,7 @@ import { getSettings } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // Allow up to 5 minutes for sync operations (needed for large releases)
 
 /**
  * Manual sync endpoint to pull epics from Aha on-demand.
@@ -668,12 +669,26 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error) {
-        console.error('Manual Aha sync error:', error);
-        console.error('Error stack:', (error as Error).stack);
-        return NextResponse.json(
-            { error: 'Sync failed', details: (error as Error).message },
-            { status: 500 }
-        );
+        const err = error as Error;
+        console.error('❌ Manual Aha sync error:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+            url: req.url,
+        });
+        
+        // Provide more detailed error information
+        const errorDetails: any = {
+            error: 'Sync failed',
+            message: err.message,
+        };
+        
+        // Include additional context if available
+        if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
+            errorDetails.suggestion = 'The sync operation timed out. Try syncing a smaller batch or a specific release.';
+        }
+        
+        return NextResponse.json(errorDetails, { status: 500 });
     }
 }
 

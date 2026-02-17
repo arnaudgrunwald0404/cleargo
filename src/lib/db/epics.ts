@@ -646,16 +646,19 @@ export async function recalculateDueDatesForEpic(
         });
     }
 
-    // Batch update all due dates
+    // Batch update all due dates using parallel updates for better performance
     if (updates.length > 0) {
-        // Update in batches to avoid hitting query size limits
-        const batchSize = 100;
+        // Update in parallel batches to improve performance
+        const batchSize = 50; // Smaller batches for parallel processing
+        const batches: Array<Array<{ id: string; condition_due_date: string | null }>> = [];
+        
         for (let i = 0; i < updates.length; i += batchSize) {
-            const batch = updates.slice(i, i + batchSize);
-            
-            // Use a transaction-like approach: update each record individually
-            // Supabase doesn't support bulk updates with different values easily
-            for (const update of batch) {
+            batches.push(updates.slice(i, i + batchSize));
+        }
+        
+        // Process batches sequentially, but updates within each batch in parallel
+        for (const batch of batches) {
+            const updatePromises = batch.map(async (update) => {
                 const { error: updateError } = await sb
                     .from('epic_criterion_status')
                     .update({ condition_due_date: update.condition_due_date })
@@ -663,8 +666,16 @@ export async function recalculateDueDatesForEpic(
                 
                 if (updateError) {
                     console.error(`Failed to update due date for criterion status ${update.id}:`, updateError);
-                    // Continue with other updates even if one fails
+                    return { success: false, id: update.id };
                 }
+                return { success: true, id: update.id };
+            });
+            
+            // Wait for all updates in this batch to complete
+            const results = await Promise.all(updatePromises);
+            const failed = results.filter(r => !r.success).length;
+            if (failed > 0) {
+                console.warn(`Failed to update ${failed} out of ${batch.length} criteria in batch`);
             }
         }
         

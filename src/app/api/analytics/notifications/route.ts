@@ -19,14 +19,22 @@ export async function GET(req: NextRequest) {
       .single();
     
     const rules = await getEffectivePermissionRules();
-    if (!canRolesPerformWithRules((appUser?.roles as string[]) || [], 'analytics.read', rules)) {
+    // Check for either analytics.read or settings.read permission
+    const hasAnalyticsAccess = canRolesPerformWithRules((appUser?.roles as string[]) || [], 'analytics.read', rules);
+    const hasSettingsAccess = canRolesPerformWithRules((appUser?.roles as string[]) || [], 'settings.read', rules);
+    if (!hasAnalyticsAccess && !hasSettingsAccess) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '50', 10)));
+    const type = searchParams.get('type');
+    const channel = searchParams.get('channel');
+    const status = searchParams.get('status');
+    const dateRangeStart = searchParams.get('date_range_start');
+    const dateRangeEnd = searchParams.get('date_range_end');
 
-    const { data: notifications, error } = await supabase
+    let query = supabase
       .from('notification_log')
       .select(`
         id,
@@ -40,7 +48,28 @@ export async function GET(req: NextRequest) {
         payload,
         user_id,
         epic_id
-      `)
+      `);
+
+    if (type) {
+      query = query.eq('type', type);
+    }
+    if (channel) {
+      query = query.eq('delivery_channel', channel);
+    }
+    if (status) {
+      query = query.eq('status', status);
+    }
+    if (dateRangeStart) {
+      query = query.gte('sent_at', dateRangeStart);
+    }
+    if (dateRangeEnd) {
+      // Add one day to include the entire end date
+      const endDate = new Date(dateRangeEnd);
+      endDate.setDate(endDate.getDate() + 1);
+      query = query.lt('sent_at', endDate.toISOString().split('T')[0]);
+    }
+
+    const { data: notifications, error } = await query
       .order('sent_at', { ascending: false })
       .limit(limit);
 

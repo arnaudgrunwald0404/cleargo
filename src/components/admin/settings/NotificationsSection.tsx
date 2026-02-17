@@ -1,6 +1,8 @@
 "use client";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { AppSettings } from "@/lib/settings-db";
+import { Modal, Button, Code, ScrollArea, Tabs, Text, Group, Badge } from "@mantine/core";
+import { IconEye, IconCode, IconFileText } from "@tabler/icons-react";
 
 const NOTIFICATION_SAVE_DEBOUNCE_MS = 1500;
 
@@ -37,6 +39,37 @@ const allNotificationTypes = [
   { key: 'criterion_comment_or_attachment', label: 'Criterion Comment/Attachment', category: 'Update' },
 ] as const;
 
+// Notification types that are ready for Slack (have handlers implemented)
+const slackReadyTypes = new Set([
+  'criteria_assignment',
+  'criteria_nudge',
+  'retro_reminder',
+  'stale_criterion',
+  'launch_risk_alert',
+  'go_no_go_decision',
+  'weekly_digest',
+  'launch_status_change',
+  'delegation',
+  'scorecard_alert',
+  'criterion_comment_or_attachment',
+]);
+
+// Notification types that are ready for Email (have handlers implemented)
+const emailReadyTypes = new Set([
+  'launch_status_change',
+  'launch_risk_alert',
+  'criteria_nudge',
+]);
+
+// Helper function to check if a notification type is ready for a channel
+const isNotificationReady = (type: string, channel: 'slack' | 'email'): boolean => {
+  if (channel === 'slack') {
+    return slackReadyTypes.has(type);
+  } else {
+    return emailReadyTypes.has(type);
+  }
+};
+
 export default function NotificationsSection({ settings, setSettings, onSave }: Props) {
   // Slack notification settings
   const slackNudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
@@ -56,7 +89,45 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
   const isFirstRun = useRef(true);
   const pendingSaveRef = useRef<string | null>(null);
 
+  // Template viewer state
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [templateType, setTemplateType] = useState<string | null>(null);
+  const [templateChannel, setTemplateChannel] = useState<'slack' | 'email' | null>(null);
+  const [templatePreview, setTemplatePreview] = useState<string | null>(null);
+  const [templateSubject, setTemplateSubject] = useState<string | null>(null);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+
+  const handleViewTemplate = async (type: string, channel: 'slack' | 'email') => {
+    setTemplateType(type);
+    setTemplateChannel(channel);
+    setTemplateModalOpen(true);
+    setTemplatePreview(null);
+    setTemplateSubject(null);
+    setTemplateError(null);
+    setTemplateLoading(true);
+
+    try {
+      const response = await fetch(`/api/admin/notification-templates?type=${type}&channel=${channel}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        setTemplateError(data.error || 'Failed to load template preview');
+        setTemplateLoading(false);
+        return;
+      }
+
+      setTemplatePreview(data.preview);
+      setTemplateSubject(data.subject);
+    } catch (error: any) {
+      setTemplateError(error.message || 'Failed to load template preview');
+    } finally {
+      setTemplateLoading(false);
+    }
+  };
+
   // Create a stable string representation of notification settings for comparison
+  // Sort keys to ensure consistent JSON.stringify output regardless of property order
   const getSettingsKey = () => {
     const allNotificationFlags: Record<string, boolean> = {
       slack_nudge_1_week_before: settings.slack_nudge_1_week_before ?? true,
@@ -77,7 +148,14 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
       allNotificationFlags[emailKey] = (settings[emailKey as keyof AppSettings] ?? true) as boolean;
     });
 
-    return JSON.stringify(allNotificationFlags);
+    // Sort keys to ensure consistent stringification
+    const sortedKeys = Object.keys(allNotificationFlags).sort();
+    const sortedFlags: Record<string, boolean> = {};
+    sortedKeys.forEach(key => {
+      sortedFlags[key] = allNotificationFlags[key];
+    });
+
+    return JSON.stringify(sortedFlags);
   };
 
   // Update prevValuesRef when settings change after a save
@@ -86,8 +164,25 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
     const currentKey = getSettingsKey();
     
     // If we have a pending save and the current key matches it, update the ref
+    // This means the save completed and settings were updated with the same values
     if (pendingSaveRef.current && pendingSaveRef.current === currentKey) {
       prevValuesRef.current = currentKey;
+      pendingSaveRef.current = null;
+      return;
+    }
+    
+    // If we just finished saving (savingRef is false but we had a pending save)
+    // and the current key matches the pending save, update the ref
+    if (!savingRef.current && pendingSaveRef.current && pendingSaveRef.current === currentKey) {
+      prevValuesRef.current = currentKey;
+      pendingSaveRef.current = null;
+      return;
+    }
+    
+    // If we're not saving and the key matches previous, ensure refs are synced
+    // This handles cases where settings update but values didn't actually change
+    if (!savingRef.current && prevValuesRef.current === currentKey) {
+      // Settings updated but values are the same - ensure pendingSaveRef is cleared
       pendingSaveRef.current = null;
     }
   }, [settings]);
@@ -115,6 +210,11 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
       return;
     }
 
+    // If this key matches a pending save, we're already processing it
+    if (pendingSaveRef.current === currentKey) {
+      return;
+    }
+
     // Mark as saving to prevent concurrent saves
     savingRef.current = true;
     pendingSaveRef.current = currentKey;
@@ -129,6 +229,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
         console.error("Failed to save notification settings:", err);
         // On error, clear pending save and reset saving flag
         pendingSaveRef.current = null;
+        prevValuesRef.current = currentKey; // Reset to current to prevent retry loop
       } finally {
         savingRef.current = false;
       }
@@ -136,12 +237,15 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
 
     return () => {
       clearTimeout(timer);
-      if (!savingRef.current) {
-        // Only clear pending if we're not in the middle of saving
-        pendingSaveRef.current = null;
+      // Don't clear pendingSaveRef here - let the other useEffect handle it
+      // Only reset saving flag if timer was cleared before completion
+      if (savingRef.current) {
+        // Timer was cleared but we're still marked as saving - this shouldn't happen
+        // but reset to be safe
+        savingRef.current = false;
       }
     };
-  }, [settings, onSave]);
+  }, [settings]); // Removed onSave from dependencies - it's stable via useCallback
 
   const handleSlackToggle = (type: NotificationType, checked: boolean) => {
     const keyMap: Record<NotificationType, keyof AppSettings> = {
@@ -304,7 +408,7 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
             </p>
           </div>
           
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
+          <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="sticky top-0 bg-gray-50 z-10">
                 <tr className="border-b border-gray-200">
@@ -328,36 +432,70 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
                   const emailKey = `email_${notifType.key}` as keyof AppSettings;
                   const slackValue = (settings[slackKey] ?? true) as boolean;
                   const emailValue = (settings[emailKey] ?? true) as boolean;
+                  
+                  const slackReady = isNotificationReady(notifType.key, 'slack');
+                  const emailReady = isNotificationReady(notifType.key, 'email');
+                  const isRowDisabled = !slackReady && !emailReady;
 
                   return (
-                    <tr key={notifType.key} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-xs text-gray-500 font-medium">
+                    <tr 
+                      key={notifType.key} 
+                      className={`${isRowDisabled ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50'}`}
+                    >
+                      <td className={`px-4 py-3 text-xs font-medium ${isRowDisabled ? 'text-gray-400' : 'text-gray-500'}`}>
                         {notifType.category}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-700">
+                      <td className={`px-4 py-3 text-sm ${isRowDisabled ? 'text-gray-400' : 'text-gray-700'}`}>
                         {notifType.label}
+                        {isRowDisabled && (
+                          <span className="ml-2 text-xs text-gray-400 italic">(Not implemented)</span>
+                        )}
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={slackValue && slackNotificationsEnabled}
-                          disabled={!slackNotificationsEnabled}
-                          onChange={(e) => {
-                            setSettings({ ...settings, [slackKey]: e.target.checked } as any);
-                          }}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                      <td className={`px-4 py-3 text-center ${!slackReady ? 'bg-gray-50' : ''}`}>
+                        <div className="flex items-center justify-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={slackValue && slackNotificationsEnabled}
+                            disabled={!slackNotificationsEnabled || !slackReady}
+                            onChange={(e) => {
+                              setSettings({ ...settings, [slackKey]: e.target.checked } as any);
+                            }}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={!slackReady ? 'Slack handler not implemented' : undefined}
+                          />
+                          {slackReady && (
+                            <button
+                              onClick={() => handleViewTemplate(notifType.key, 'slack')}
+                              className="text-gray-400 hover:text-indigo-600 transition-colors"
+                              title="View Slack template"
+                            >
+                              <IconEye size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-center">
-                        <input
-                          type="checkbox"
-                          checked={emailValue && emailNotificationsEnabled}
-                          disabled={!emailNotificationsEnabled}
-                          onChange={(e) => {
-                            setSettings({ ...settings, [emailKey]: e.target.checked } as any);
-                          }}
-                          className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                        />
+                      <td className={`px-4 py-3 text-center ${!emailReady ? 'bg-gray-50' : ''}`}>
+                        <div className="flex items-center justify-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={emailValue && emailNotificationsEnabled}
+                            disabled={!emailNotificationsEnabled || !emailReady}
+                            onChange={(e) => {
+                              setSettings({ ...settings, [emailKey]: e.target.checked } as any);
+                            }}
+                            className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={!emailReady ? 'Email handler not implemented' : undefined}
+                          />
+                          {emailReady && (
+                            <button
+                              onClick={() => handleViewTemplate(notifType.key, 'email')}
+                              className="text-gray-400 hover:text-indigo-600 transition-colors"
+                              title="View Email template"
+                            >
+                              <IconEye size={16} />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -376,9 +514,74 @@ export default function NotificationsSection({ settings, setSettings, onSave }: 
             <li>When a system flag is disabled, all checkboxes for that channel are disabled</li>
             <li>User-level notification preferences are managed in <strong>User Management</strong></li>
             <li>All notifications are logged in the <strong>notification_log</strong> table regardless of these settings</li>
+            <li>Click the eye icon next to enabled notification types to view their templates</li>
           </ul>
         </div>
       </div>
+
+      {/* Template Viewer Modal */}
+      <Modal
+        opened={templateModalOpen}
+        onClose={() => setTemplateModalOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <IconFileText size={20} />
+            <span>
+              {templateType && allNotificationTypes.find(t => t.key === templateType)?.label} - {templateChannel?.toUpperCase()} Preview
+            </span>
+          </div>
+        }
+        size="xl"
+      >
+        {templateLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="text-gray-500">Generating preview...</div>
+          </div>
+        ) : templateError ? (
+          <div className="space-y-4">
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+              <Text size="sm" className="text-yellow-800">
+                {templateError.includes('not implemented') ? (
+                  <>
+                    This template is not yet implemented. The notification type exists in the system but the template handler has not been created yet.
+                  </>
+                ) : (
+                  templateError
+                )}
+              </Text>
+            </div>
+          </div>
+        ) : templatePreview ? (
+          <div className="space-y-4">
+            {templateSubject && (
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                <Text size="sm" fw={600} className="text-gray-700 mb-1">
+                  {templateChannel === 'email' ? 'Subject:' : 'Preview Text:'}
+                </Text>
+                <Text size="sm" className="text-gray-600">{templateSubject}</Text>
+              </div>
+            )}
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
+                <Text size="xs" fw={600} className="text-gray-600 uppercase">
+                  {templateChannel === 'slack' ? 'Slack Message Preview' : 'Email Preview'}
+                </Text>
+              </div>
+              <ScrollArea h={500}>
+                <div 
+                  className="p-4"
+                  dangerouslySetInnerHTML={{ __html: templatePreview }}
+                />
+              </ScrollArea>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <Text size="xs" className="text-blue-800">
+                <strong>Note:</strong> This is an example preview with mock data. Actual notifications will use real epic names, dates, and user information.
+              </Text>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </div>
   );
 }

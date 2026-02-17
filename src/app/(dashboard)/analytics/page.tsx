@@ -39,7 +39,7 @@ import type {
   UserActivityTrends,
 } from '@/lib/services/usageAnalyticsService';
 
-type TabValue = 'launch-metrics' | 'timeliness' | 'usage' | 'notifications';
+type TabValue = 'launch-metrics' | 'timeliness' | 'usage';
 
 export default function AnalyticsDashboardPage() {
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -69,9 +69,6 @@ export default function AnalyticsDashboardPage() {
   const [usageTrends, setUsageTrends] = useState<UserActivityTrends | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
-  // Notifications data
-  const [notifications, setNotifications] = useState<any[] | null>(null);
-  const [notificationsLoading, setNotificationsLoading] = useState(false);
 
   const [viewMode, setViewMode] = useState<{
     successPlan: 'snapshot' | 'trends';
@@ -269,25 +266,6 @@ export default function AnalyticsDashboardPage() {
     }
   }, [filters.dateRangeStart, filters.dateRangeEnd, filters.role]);
 
-  const fetchNotifications = useCallback(async () => {
-    setNotificationsLoading(true);
-    try {
-      const res = await fetchWithRateLimit('/api/analytics/notifications?limit=50', { maxRetries: 1 });
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(Array.isArray(data) ? data : []);
-      } else {
-        const errorData = await res.json().catch(() => ({}));
-        console.error('Failed to fetch notifications:', res.status, errorData);
-        setNotifications([]);
-      }
-    } catch (error) {
-      console.error('Failed to fetch notifications:', error);
-      setNotifications([]);
-    } finally {
-      setNotificationsLoading(false);
-    }
-  }, []);
 
   // Lazy load tab data when tab is selected
   useEffect(() => {
@@ -303,15 +281,12 @@ export default function AnalyticsDashboardPage() {
         case 'usage':
           fetchUsageAnalytics();
           break;
-        case 'notifications':
-          fetchNotifications();
-          break;
       }
       const newSet = new Set(loadedTabs).add(activeTab);
       setLoadedTabs(newSet);
       loadedTabsRef.current = newSet;
     }
-  }, [activeTab, hasAccess, loadedTabs, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics, fetchNotifications]);
+  }, [activeTab, hasAccess, loadedTabs, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics]);
 
   // Refetch when filters or view modes change (only for loaded tabs)
   useEffect(() => {
@@ -326,10 +301,7 @@ export default function AnalyticsDashboardPage() {
     if (tabs.has('usage')) {
       fetchUsageAnalytics();
     }
-    if (tabs.has('notifications')) {
-      fetchNotifications();
-    }
-  }, [hasAccess, filters.tier, filters.pod, filters.dateRangeStart, filters.dateRangeEnd, filters.role, viewMode.successPlan, viewMode.retro, viewMode.hygiene, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics, fetchNotifications]);
+  }, [hasAccess, filters.tier, filters.pod, filters.dateRangeStart, filters.dateRangeEnd, filters.role, viewMode.successPlan, viewMode.retro, viewMode.hygiene, fetchLaunchMetrics, fetchTimeliness, fetchUsageAnalytics]);
 
   const handleRefresh = () => {
     switch (activeTab) {
@@ -341,9 +313,6 @@ export default function AnalyticsDashboardPage() {
         break;
       case 'usage':
         fetchUsageAnalytics();
-        break;
-      case 'notifications':
-        fetchNotifications();
         break;
     }
   };
@@ -377,8 +346,7 @@ export default function AnalyticsDashboardPage() {
 
   const isLoading = (activeTab === 'launch-metrics' && launchMetricsLoading) ||
     (activeTab === 'timeliness' && timelinessLoading) ||
-    (activeTab === 'usage' && usageLoading) ||
-    (activeTab === 'notifications' && notificationsLoading);
+    (activeTab === 'usage' && usageLoading);
 
   return (
     <div
@@ -439,13 +407,13 @@ export default function AnalyticsDashboardPage() {
 
         <Stack gap="md">
           {/* Filters */}
-          <Group mb="lg" align="center" gap="sm">
+          <Group mb="lg" align="flex-end" gap="sm">
             <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>Filters:</Text>
             <Box
               style={{
                 display: 'flex',
                 flexWrap: 'wrap',
-                alignItems: 'center',
+                alignItems: 'flex-end',
                 gap: '16px',
                 padding: '8px 0'
               }}
@@ -554,7 +522,6 @@ export default function AnalyticsDashboardPage() {
           <Tabs.Tab value="launch-metrics">Launch Metrics</Tabs.Tab>
           <Tabs.Tab value="timeliness">Timeliness</Tabs.Tab>
           <Tabs.Tab value="usage">Usage Analytics</Tabs.Tab>
-          <Tabs.Tab value="notifications">Notifications</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="launch-metrics" pt="md">
@@ -564,13 +531,13 @@ export default function AnalyticsDashboardPage() {
             </div>
           ) : (
             <Stack gap="md">
-              {/* Metric 4: Success Plan Completion */}
+              {/* Success Plan Completion */}
               <Card withBorder>
                 <Stack gap="md">
                   <Group justify="space-between" wrap="wrap">
                     <div>
                       <Title order={3} size="h4">
-                        Metric 4: % Launches with Success Plan Completed On Time
+                        % Launches with Success Plan Completed On Time
                       </Title>
                       <Text c="dimmed" size="sm">
                         Percentage of epics where success plan is completed (locked) with at least 1 metric before GA date
@@ -665,13 +632,13 @@ export default function AnalyticsDashboardPage() {
                 </Stack>
               </Card>
 
-              {/* Metric 5: Retro Completion */}
+              {/* Retro Completion */}
               <Card withBorder>
                 <Stack gap="md">
                   <Group justify="space-between" wrap="wrap">
                     <div>
                       <Title order={3} size="h4">
-                        Metric 5: % Launches with Retro Completed On Time
+                        % Launches with Retro Completed On Time
                       </Title>
                       <Text c="dimmed" size="sm">
                         Percentage of epics where retro is completed by tier-specific due date (Tier 1: GA+14, Tier 2: GA+30, Tier 3: GA+45)
@@ -768,13 +735,13 @@ export default function AnalyticsDashboardPage() {
                 </Stack>
               </Card>
 
-              {/* Metric 3: Launch Hygiene Score */}
+              {/* Launch Hygiene Score */}
               <Card withBorder>
                 <Stack gap="md">
                   <Group justify="space-between" wrap="wrap">
                     <div>
                       <Title order={3} size="h4">
-                        Metric 3: Launch Hygiene Score (0-100)
+                        Launch Hygiene Score (0-100)
                       </Title>
                       <Text c="dimmed" size="sm">
                         Weighted compliance score: Criteria completeness (50%) + Required signoffs (30%) + Cross-functional acknowledgements (20%)
@@ -865,12 +832,12 @@ export default function AnalyticsDashboardPage() {
             </div>
           ) : (
             <Stack gap="md">
-              {/* Metric 6: Criteria On-Time Rate */}
+              {/* Criteria On-Time Rate */}
               <Card withBorder>
                 <Stack gap="md">
                   <div>
                     <Title order={3} size="h4">
-                      Metric 6: Top 10 Chronically Late Criteria
+                      Top 10 Chronically Late Criteria
                     </Title>
                     <Text c="dimmed" size="sm">
                       Criteria with lowest on-time completion rates and median days late
@@ -914,12 +881,12 @@ export default function AnalyticsDashboardPage() {
                 </Stack>
               </Card>
 
-              {/* Metric 7: PM Timeliness Index */}
+              {/* PM Timeliness Index */}
               <Card withBorder>
                 <Stack gap="md">
                   <div>
                     <Title order={3} size="h4">
-                      Metric 7: PM Timeliness Index (0-100)
+                      PM Timeliness Index (0-100)
                     </Title>
                     <Text c="dimmed" size="sm">
                       Weighted score: Early (1.0) + On-time (0.8) + Late (0.3) + Missing (0.0) across PM-owned items (criteria + success plan + retro)
@@ -1106,138 +1073,6 @@ export default function AnalyticsDashboardPage() {
           )}
         </Tabs.Panel>
 
-        <Tabs.Panel value="notifications" pt="md">
-          {notificationsLoading && !notifications ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-              <PurpleLoader />
-            </div>
-          ) : (
-            <Card withBorder>
-              <Stack gap="md">
-                <div>
-                  <Title order={3} size="h4">
-                    Recent Notifications
-                  </Title>
-                  <Text c="dimmed" size="sm">
-                    Last 50 notifications sent via Slack, email, and other channels
-                  </Text>
-                </div>
-
-                {notifications && notifications.length > 0 ? (
-                  <Table>
-                    <Table.Thead>
-                      <Table.Tr>
-                        <Table.Th>Sent At</Table.Th>
-                        <Table.Th>Category</Table.Th>
-                        <Table.Th>Type</Table.Th>
-                        <Table.Th>Channel</Table.Th>
-                        <Table.Th>Status</Table.Th>
-                        <Table.Th>Recipient</Table.Th>
-                        <Table.Th>Epic</Table.Th>
-                        <Table.Th>Error</Table.Th>
-                      </Table.Tr>
-                    </Table.Thead>
-                    <Table.Tbody>
-                      {notifications.map((notification) => {
-                        const sentAt = notification.sent_at 
-                          ? new Date(notification.sent_at).toLocaleString()
-                          : '-';
-                        const recipient = notification.app_user 
-                          ? (notification.app_user.name || notification.app_user.email || 'Unknown')
-                          : '-';
-                        const epicName = notification.epic?.name || '-';
-                        const error = notification.error || '-';
-                        
-                        // Categorize notification
-                        const assignmentTypes = ['criteria_assignment', 'delegation'];
-                        const reminderTypes = ['criteria_nudge', 'retro_reminder', 'success_review_reminder'];
-                        const notificationType = notification.type || '';
-                        const category = assignmentTypes.includes(notificationType)
-                          ? 'Assignment'
-                          : reminderTypes.includes(notificationType)
-                          ? 'Reminder'
-                          : 'Other';
-
-                        return (
-                          <Table.Tr key={notification.id}>
-                            <Table.Td>
-                              <Text size="sm">{sentAt}</Text>
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge
-                                color={
-                                  category === 'Assignment'
-                                    ? 'blue'
-                                    : category === 'Reminder'
-                                    ? 'orange'
-                                    : 'gray'
-                                }
-                                variant="light"
-                              >
-                                {category}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge variant="light" color="blue">
-                                {notification.type || '-'}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge variant="light" color="gray">
-                                {notification.delivery_channel || '-'}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                              <Badge
-                                color={
-                                  notification.status === 'sent'
-                                    ? 'green'
-                                    : notification.status === 'failed'
-                                    ? 'red'
-                                    : 'yellow'
-                                }
-                              >
-                                {notification.status || 'pending'}
-                              </Badge>
-                            </Table.Td>
-                            <Table.Td>
-                              <Text size="sm">{recipient}</Text>
-                            </Table.Td>
-                            <Table.Td>
-                              {notification.epic_id ? (
-                                <Link
-                                  href={`/epics/${notification.epic_id}`}
-                                  style={{ textDecoration: 'none' }}
-                                >
-                                  <Text size="sm" c="blue" style={{ textDecoration: 'underline' }}>
-                                    {epicName}
-                                  </Text>
-                                </Link>
-                              ) : (
-                                <Text size="sm" c="dimmed">-</Text>
-                              )}
-                            </Table.Td>
-                            <Table.Td>
-                              {error !== '-' ? (
-                                <Text size="xs" c="red" style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }} title={error}>
-                                  {error}
-                                </Text>
-                              ) : (
-                                <Text size="sm" c="dimmed">-</Text>
-                              )}
-                            </Table.Td>
-                          </Table.Tr>
-                        );
-                      })}
-                    </Table.Tbody>
-                  </Table>
-                ) : (
-                  <Text c="dimmed">No notifications found</Text>
-                )}
-              </Stack>
-            </Card>
-          )}
-        </Tabs.Panel>
           </Tabs>
         </Stack>
       </div>

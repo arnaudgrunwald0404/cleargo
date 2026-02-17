@@ -134,9 +134,13 @@ export async function POST(req: NextRequest) {
                 synced++;
                 
                 // Update aha_record_not_found flag (non-blocking)
-                supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicRecord.id).catch(err => {
-                    console.warn(`Failed to update aha_record_not_found for epic ${epicRecord.id}:`, err);
-                });
+                (async () => {
+                    try {
+                        await supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicRecord.id);
+                    } catch (err) {
+                        console.warn(`Failed to update aha_record_not_found for epic ${epicRecord.id}:`, err);
+                    }
+                })();
             } catch (error: any) {
                 console.error(`Failed to sync epic ${epicRecord.aha_id}:`, error);
                 failed++;
@@ -148,9 +152,13 @@ export async function POST(req: NextRequest) {
                 const isRecordNotFound = error?.message?.includes('404') || error?.message?.toLowerCase().includes('record not found');
                 if (isRecordNotFound) {
                     // Non-blocking update
-                    supabase.from('epic').update({ aha_record_not_found: true }).eq('id', epicRecord.id).catch(err => {
-                        console.warn(`Failed to update aha_record_not_found flag for epic ${epicRecord.id}:`, err);
-                    });
+                    (async () => {
+                        try {
+                            await supabase.from('epic').update({ aha_record_not_found: true }).eq('id', epicRecord.id);
+                        } catch (err) {
+                            console.warn(`Failed to update aha_record_not_found flag for epic ${epicRecord.id}:`, err);
+                        }
+                    })();
                 }
             }
         }

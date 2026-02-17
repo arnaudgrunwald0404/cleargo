@@ -973,15 +973,15 @@ function buildCombinedCriteriaNudgeMessage(
     
     if (overdueCount > 0) {
         const daysOverdue = Math.abs(mostUrgentDays);
-        headerText = `${theme.emojis.nudge.overdue} ${data.total_criteria_count} Criteria Need Attention`;
+        headerText = `${theme.emojis.nudge.overdue} ${data.total_criteria_count} Criteria Need Your Attention`;
         urgencyEmoji = theme.emojis.nudge.overdue;
         urgencyColor = 'danger';
     } else if (dueTodayCount > 0) {
-        headerText = `${theme.emojis.nudge.dueToday} ${data.total_criteria_count} Criteria Need Attention`;
+        headerText = `${theme.emojis.nudge.dueToday} ${data.total_criteria_count} Criteria Need Your Attention`;
         urgencyEmoji = theme.emojis.nudge.dueToday;
         urgencyColor = 'warning';
     } else {
-        headerText = `${theme.emojis.nudge.weekBefore} ${data.total_criteria_count} Criteria Need Attention`;
+        headerText = `${theme.emojis.nudge.weekBefore} ${data.total_criteria_count} Criteria Need Your Attention`;
         urgencyEmoji = theme.emojis.nudge.weekBefore;
         urgencyColor = 'warning';
     }
@@ -1166,8 +1166,8 @@ function buildCombinedCriteriaNudgeMessage(
     const releaseCount = data.release_groups?.length || 0;
     const epicCount = data.epic_groups?.length || 0;
     const text = releaseCount > 0
-        ? `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${releaseCount} release${releaseCount !== 1 ? 's' : ''}`
-        : `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${epicCount} epic${epicCount !== 1 ? 's' : ''}`;
+        ? `${urgencyEmoji} ${data.total_criteria_count} Criteria Need Your Attention across ${releaseCount} release${releaseCount !== 1 ? 's' : ''}`
+        : `${urgencyEmoji} ${data.total_criteria_count} Criteria Need Your Attention across ${epicCount} epic${epicCount !== 1 ? 's' : ''}`;
     
     return {
         text,
