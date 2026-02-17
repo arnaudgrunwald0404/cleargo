@@ -11,6 +11,7 @@ import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
+import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -75,6 +76,68 @@ export async function GET(request: NextRequest) {
         // Query criteria that match nudge conditions
         // We'll need to query separately for each condition type since Supabase doesn't support OR queries easily
         const allCriteria: any[] = [];
+        
+        // Helper function to check if epic has cleargo_candidate = "Yes"
+        // Returns false for "No", null, undefined, or missing values
+        const isClearGOCandidate = (epic: any): boolean => {
+            // Check if epic has aha_fields
+            if (!epic?.aha_fields) {
+                // Epic has no aha_fields - exclude it (shouldn't happen for synced epics)
+                return false;
+            }
+            
+            if (typeof epic.aha_fields !== 'object') {
+                return false;
+            }
+            
+            // Try multiple possible structures for aha_fields
+            // Structure 1: aha_fields.custom_fields.cleargo_candidate (expected structure)
+            let customFields = epic.aha_fields.custom_fields;
+            
+            // Structure 2: aha_fields might be the custom_fields directly (legacy)
+            if (!customFields && typeof epic.aha_fields === 'object') {
+                // Check if cleargo_candidate is directly in aha_fields
+                if ('cleargo_candidate' in epic.aha_fields) {
+                    customFields = epic.aha_fields;
+                }
+            }
+            
+            if (!customFields || typeof customFields !== 'object') {
+                // No custom_fields found - exclude epic
+                return false;
+            }
+            
+            const cleargoCandidate = customFields.cleargo_candidate;
+            
+            // Handle case-insensitive comparison and various formats
+            const normalizedValue = typeof cleargoCandidate === 'string' 
+                ? cleargoCandidate.trim() 
+                : cleargoCandidate;
+            
+            // Explicitly exclude "No", null, undefined, false, and only include "Yes" or true
+            if (normalizedValue === null || normalizedValue === undefined) {
+                return false;
+            }
+            if (normalizedValue === false) {
+                return false;
+            }
+            if (typeof normalizedValue === 'string') {
+                const lowerValue = normalizedValue.toLowerCase();
+                // Exclude: "no", "false", empty string, or any other value that's not "yes"
+                if (lowerValue === 'no' || lowerValue === 'false' || lowerValue === '') {
+                    return false;
+                }
+                // Only return true for "Yes" (case-insensitive)
+                if (lowerValue === 'yes') {
+                    return true;
+                }
+                // Any other string value is not "Yes", so exclude
+                return false;
+            }
+            
+            // For boolean values, only true is acceptable
+            return normalizedValue === true;
+        };
 
         // When test_email is provided, we want to see ALL criteria for that user, even if already nudged today
         // So we'll skip the last_nudge_sent_at filter in test mode
@@ -225,6 +288,7 @@ export async function GET(request: NextRequest) {
 
         // Debug: If test_email is provided and no criteria found, check what's in the database
         let debugInfo: any = null;
+        // Note: We check allCriteria.length here (before cleargo_candidate filter) for debug purposes
         if (allCriteria.length === 0 && testEmail) {
             debugInfo = { test_email: testEmail };
             
@@ -361,7 +425,48 @@ export async function GET(request: NextRequest) {
             }
         }
         
-        if (allCriteria.length === 0) {
+        // Filter out criteria for epics where cleargo_candidate is not "Yes" (i.e., 'no' or null)
+        const filteredByClearGOCandidate = allCriteria.filter((c: any) => {
+            const epic = c.epic;
+            if (!epic) {
+                console.warn(`⚠️ Criterion ${c.id} has no epic data, excluding from reminders`);
+                return false; // Exclude if epic not found
+            }
+            
+            const isCandidate = isClearGOCandidate(epic);
+            
+            // Debug logging for epics that are being excluded
+            if (!isCandidate) {
+                const cleargoValue = epic?.aha_fields?.custom_fields?.cleargo_candidate;
+                const epicId = c.epic_id || epic?.id || 'no-id';
+                console.log(`🚫 Excluding epic "${epic.name}" (${epicId}) - cleargo_candidate: ${JSON.stringify(cleargoValue)}, aha_fields structure: ${JSON.stringify(Object.keys(epic?.aha_fields || {}))}`);
+            }
+            
+            return isCandidate;
+        });
+        
+        if (filteredByClearGOCandidate.length !== allCriteria.length) {
+            const excludedCount = allCriteria.length - filteredByClearGOCandidate.length;
+            console.log(`📋 Filtered ${excludedCount} criteria from epics where cleargo_candidate is not "Yes"`);
+            
+            // Log examples of excluded epics for debugging
+            const excludedEpics = new Set<string>();
+            allCriteria.forEach((c: any) => {
+                if (!filteredByClearGOCandidate.includes(c)) {
+                    const epic = c.epic;
+                    if (epic?.name) {
+                        const epicId = c.epic_id || epic?.id || 'no-id';
+                        const cleargoValue = epic?.aha_fields?.custom_fields?.cleargo_candidate;
+                        excludedEpics.add(`${epic.name} (ID: ${epicId}, cleargo_candidate: ${JSON.stringify(cleargoValue)})`);
+                    }
+                }
+            });
+            if (excludedEpics.size > 0 && excludedEpics.size <= 5) {
+                console.log(`   Excluded epics: ${Array.from(excludedEpics).join(', ')}`);
+            }
+        }
+        
+        if (filteredByClearGOCandidate.length === 0) {
             const response: any = {
                 success: true,
                 message: testEmail 
@@ -377,16 +482,238 @@ export async function GET(request: NextRequest) {
             
             return NextResponse.json(response);
         }
+        
+        // Use filtered criteria going forward
+        const allCriteriaFiltered = filteredByClearGOCandidate;
 
-        // If test_email is provided, filter allCriteria to only that user's criteria
+        // If test_email is provided, filter allCriteriaFiltered to only that user's criteria
         // This ensures we see their criteria even if they've been nudged today
-        let criteriaToProcess = allCriteria;
+        let criteriaToProcess = allCriteriaFiltered;
         if (testEmail) {
-            criteriaToProcess = allCriteria.filter((c: any) => {
+            criteriaToProcess = allCriteriaFiltered.filter((c: any) => {
                 const ownerEmail = c.decision_owner?.email?.toLowerCase();
                 return ownerEmail === testEmail;
             });
-            console.log(`🧪 TEST MODE: Filtered ${allCriteria.length} total criteria to ${criteriaToProcess.length} for ${testEmail}`);
+            console.log(`🧪 TEST MODE: Filtered ${allCriteriaFiltered.length} total criteria to ${criteriaToProcess.length} for ${testEmail}`);
+        }
+
+        // Filter out criteria for epics with past release dates or released status
+        // Rules:
+        // - Past release date / released status → exclude ALL criteria reminders
+        // - Future/today release date → include all criteria reminders
+        const epicIds = [...new Set(criteriaToProcess.map((c: any) => c.epic_id))];
+        if (epicIds.length > 0) {
+            const { data: epicsWithReleases } = await supabase
+                .from('epic')
+                .select('id, aha_fields, status')
+                .in('id', epicIds);
+            
+            const { data: releasesData } = await supabase
+                .from('release_schedule')
+                .select('release_name, launch_date')
+                .eq('archived', false);
+            
+            const releaseToDate = new Map<string, string | null>();
+            if (releasesData) {
+                for (const release of releasesData) {
+                    releaseToDate.set(release.release_name, release.launch_date);
+                }
+            }
+            
+            // Released statuses that indicate past release
+            const releasedStatuses = ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'];
+            
+            // Filter criteria: exclude past releases and released epics
+            const beforeFilterCount = criteriaToProcess.length;
+            criteriaToProcess = criteriaToProcess.filter((c: any) => {
+                const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
+                if (!epic) return true; // Keep if epic not found (shouldn't happen)
+                
+                // Check if epic has released status
+                if (epic.status && releasedStatuses.includes(epic.status)) {
+                    return false; // Exclude criteria for released epics
+                }
+                
+                // Check release date
+                const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
+                if (!releaseName) return true; // Keep if no release assigned
+                
+                const releaseDate = releaseToDate.get(releaseName);
+                if (!releaseDate) return true; // Keep if release has no date
+                
+                const releaseDateObj = new Date(releaseDate);
+                releaseDateObj.setHours(0, 0, 0, 0);
+                
+                // Exclude if release date is in the past
+                if (releaseDateObj < today) {
+                    return false;
+                }
+                
+                // Keep if release date is today or in the future
+                return true;
+            });
+            
+            console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
+        }
+
+        // Add missing metrics reminders for Product Managers on past releases
+        // Rules:
+        // - Past release date + missing metrics + track_offline = false → include "missing metrics" reminder for PM
+        // - Past release date + missing metrics + track_offline = true → exclude
+        // - Past release date + has metrics → exclude
+        // Note: We need to check ALL epics (not just those in allCriteriaFiltered) to find past releases with missing metrics
+        // But we still filter by cleargo_candidate = "Yes" in the loop below
+        const allEpicIdsForMissingMetrics = [...new Set(allCriteria.map((c: any) => c.epic_id))];
+        if (allEpicIdsForMissingMetrics.length > 0) {
+            const { data: allEpics } = await supabase
+                .from('epic')
+                .select('id, aha_fields, status, name')
+                .in('id', allEpicIdsForMissingMetrics);
+            
+            const { data: allReleasesData } = await supabase
+                .from('release_schedule')
+                .select('release_name, launch_date')
+                .eq('archived', false);
+            
+            const allReleaseToDate = new Map<string, string | null>();
+            if (allReleasesData) {
+                for (const release of allReleasesData) {
+                    allReleaseToDate.set(release.release_name, release.launch_date);
+                }
+            }
+            
+            // Get track_offline status for all epics
+            const { data: allSuccessConfigs } = await supabase
+                .from('epic_success_configs')
+                .select('epic_id, track_offline')
+                .in('epic_id', allEpicIdsForMissingMetrics);
+            
+            const allTrackOfflineByEpic = new Map<string, boolean>();
+            if (allSuccessConfigs) {
+                for (const config of allSuccessConfigs) {
+                    allTrackOfflineByEpic.set(config.epic_id, config.track_offline === true);
+                }
+            }
+            
+            // Get epics that have metrics configured
+            const { data: allEpicsWithMetrics } = await supabase
+                .from('epic_success_metrics')
+                .select('epic_id')
+                .in('epic_id', allEpicIdsForMissingMetrics);
+            
+            const allEpicsWithMetricsSet = new Set<string>();
+            if (allEpicsWithMetrics) {
+                for (const metric of allEpicsWithMetrics) {
+                    allEpicsWithMetricsSet.add(metric.epic_id);
+                }
+            }
+            
+            // Get "Success Defined" criterion due dates for epics
+            const { data: successDefinedCriteria } = await supabase
+                .from('epic_criterion_status')
+                .select(`
+                    epic_id,
+                    condition_due_date,
+                    criterion:criterion_id(label)
+                `)
+                .in('epic_id', allEpicIdsForMissingMetrics);
+            
+            const successDefinedDueDateByEpic = new Map<string, string | null>();
+            if (successDefinedCriteria) {
+                for (const c of successDefinedCriteria) {
+                    const criterion = Array.isArray(c.criterion) ? c.criterion[0] : c.criterion;
+                    if (criterion?.label && typeof criterion.label === 'string' && criterion.label.toLowerCase().includes('success defined')) {
+                        successDefinedDueDateByEpic.set(c.epic_id, c.condition_due_date);
+                    }
+                }
+            }
+            
+            // Get PM user IDs and user data for epics
+            const pmUserIdByEpic = new Map<string, string>();
+            const pmUserDataByEpic = new Map<string, any>();
+            
+            for (const epic of (allEpics || [])) {
+                // Skip epics where cleargo_candidate is not "Yes"
+                if (!isClearGOCandidate(epic)) continue;
+                
+                const releaseName = getReleaseNameFromEpic({ ...epic, name: epic.name || '', tier: null, status: epic.status || '', created_at: '', updated_at: '' } as any);
+                if (!releaseName) continue;
+                
+                const releaseDate = allReleaseToDate.get(releaseName);
+                if (!releaseDate) continue;
+                
+                const releaseDateObj = new Date(releaseDate);
+                releaseDateObj.setHours(0, 0, 0, 0);
+                
+                // Only process past releases
+                if (releaseDateObj >= today) continue;
+                
+                // Check if epic is missing metrics and track_offline is false
+                const hasMetrics = allEpicsWithMetricsSet.has(epic.id);
+                const trackOffline = allTrackOfflineByEpic.get(epic.id) || false;
+                
+                // Skip if has metrics or tracking offline
+                if (hasMetrics || trackOffline) continue;
+                
+                // Get PM user ID
+                const pmUserId = await resolveProductManagerUserId(epic.id);
+                if (!pmUserId) continue;
+                
+                pmUserIdByEpic.set(epic.id, pmUserId);
+                
+                // Get PM user data
+                const { data: pmUser } = await supabase
+                    .from('app_user')
+                    .select('id, email, first_name, last_name, slack_handle')
+                    .eq('id', pmUserId)
+                    .single();
+                
+                if (pmUser) {
+                    pmUserDataByEpic.set(epic.id, pmUser);
+                }
+            }
+            
+            // Add missing metrics reminders to criteriaToProcess for PMs
+            for (const [epicId, pmUser] of pmUserDataByEpic.entries()) {
+                const epic = allEpics?.find((e: any) => e.id === epicId);
+                if (!epic) continue;
+                
+                const successDefinedDueDate = successDefinedDueDateByEpic.get(epicId);
+                
+                // Create a virtual "missing metrics" criterion reminder
+                // Use today as due date, or Success Defined due date if available
+                const dueDate = successDefinedDueDate || todayStr;
+                
+                // Add to criteriaToProcess as a special missing metrics reminder
+                criteriaToProcess.push({
+                    id: `missing-metrics-${epicId}`,
+                    epic_id: epicId,
+                    criterion_id: null,
+                    condition_due_date: dueDate,
+                    status: 'NOT_SET',
+                    last_nudge_sent_at: null,
+                    nudgeType: 'missing_metrics',
+                    criterion: {
+                        label: 'Missing Success Metrics',
+                        category: 'ANALYTICS_AND_METRICS',
+                    },
+                    epic: {
+                        name: epic.name,
+                        aha_fields: epic.aha_fields,
+                    },
+                    decision_owner: {
+                        id: pmUser.id,
+                        email: pmUser.email,
+                        first_name: pmUser.first_name,
+                        last_name: pmUser.last_name,
+                        slack_handle: pmUser.slack_handle,
+                    },
+                });
+            }
+            
+            if (pmUserDataByEpic.size > 0) {
+                console.log(`📊 Added ${pmUserDataByEpic.size} missing metrics reminders for PMs on past releases`);
+            }
         }
 
         // Log all notifications before filtering
@@ -420,7 +747,7 @@ export async function GET(request: NextRequest) {
         }
 
         console.log('📋 Slack Nudge Notifications - ALL NOTIFICATIONS (before filtering):');
-        console.log(`   Total criteria needing nudges: ${criteriaToProcess.length}${testEmail ? ` (filtered from ${allCriteria.length} total)` : ` (${allCriteria.length} total)`}`);
+        console.log(`   Total criteria needing nudges: ${criteriaToProcess.length}${testEmail ? ` (filtered from ${allCriteriaFiltered.length} total)` : ` (${allCriteriaFiltered.length} total)`}`);
         console.log(`   Slack recipients: per-user flag in User Management (${allowedForSlack.size} user(s) enabled)`);
         for (const [email, criteria] of notificationsByEmail.entries()) {
             const firstCriterion = criteriaToProcess.find((c: any) =>
@@ -467,7 +794,7 @@ export async function GET(request: NextRequest) {
                     : 'No assignees have notifications enabled (all notifications logged)',
                 count: 0,
                 debug: {
-                    total_before_filter: allCriteria.length,
+                    total_before_filter: allCriteriaFiltered.length,
                     notifications_by_email: Object.fromEntries(
                         Array.from(notificationsByEmail.entries()).map(([email, criteria]) => [
                             email,

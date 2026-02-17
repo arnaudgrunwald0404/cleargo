@@ -653,6 +653,17 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
   - `/update-criterion [launch-id] [criterion-id] [status]`: Update criterion
 - **Interactive Messages**: Buttons and dropdowns for quick actions; links use `/epics/{id}` for epic detail.
 - **Stale Criterion Reminders**: Daily job (`/api/jobs/stale-criteria`) sends Slack (and email) reminders; when `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, each reminder can include an **AI-generated personalized nudge** (context-aware, concise) to improve engagement.
+- **Criteria Due Date Nudges**: Daily job (`/api/jobs/criteria-nudges`) sends Slack and email reminders for criteria based on due dates:
+  - **1 week before due date**: Reminder sent 7 days before `condition_due_date`
+  - **On due date**: Reminder sent on the exact `condition_due_date`
+  - **Daily after overdue**: Daily reminders for criteria past their due date
+  - **Grouping**: All criteria for a user are grouped into a single message, organized by release (closest future release first), then by epic within each release, sorted by urgency
+  - **Email Support**: Email notifications are sent alongside Slack notifications (if enabled in settings)
+  - **Past Release Filtering**: Criteria reminders are excluded for epics with past release dates or released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`), except for missing metrics reminders (see below)
+  - **Missing Metrics Reminders**: For past releases, Product Managers receive reminders about missing success metrics if:
+    - Epic has no `epic_success_metrics` entries
+    - `track_offline = false` in `epic_success_configs`
+    - Reminder uses the "Success Defined" criterion due date if available, otherwise uses today's date
 - **App Home**: Personalized dashboard in Slack
 - **URL Unfurling**: Rich previews for launch console links
 - **Channel Notifications**: Post to configured Slack channels
@@ -1214,6 +1225,30 @@ The system uses the following launch stage phases:
 6. System logs notification.
 7. User receives reminder, clicks link to epic, updates criterion; system marks criterion as updated.
 
+### Flow 5: Criteria Due Date Nudges
+1. Scheduled job runs daily (`GET/POST /api/jobs/criteria-nudges`).
+2. System queries criteria with `condition_due_date` matching:
+   - 1 week before today (if `slack_nudge_1_week_before` enabled)
+   - Today (if `slack_nudge_on_due_date` enabled)
+   - Before today (if `slack_nudge_daily_after_due` enabled)
+3. System filters criteria by:
+   - **Past Release Exclusion**: Excludes criteria for epics with:
+     - Past release dates (from `release_schedule.launch_date`)
+     - Released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`)
+   - **Missing Metrics Exception**: For past releases, includes "Missing Success Metrics" reminders for Product Managers if:
+     - Epic has no `epic_success_metrics` entries
+     - `epic_success_configs.track_offline = false`
+     - Product Manager can be resolved via `resolveProductManagerUserId()`
+4. System groups criteria by assignee (one message per user).
+5. For each user, system:
+   - Sorts criteria by urgency (overdue > due today > due soon)
+   - Groups by release (closest future release first, then past releases)
+   - Groups by epic within each release
+   - Builds release groups with epic subgroups
+6. System sends combined Slack notification (if user has `receive_slack_notifications = true`) and email notification (if `email_notifications_enabled` and `email_criteria_nudge` are enabled).
+7. System updates `last_nudge_sent_at` for all criteria in the notification.
+8. System logs notifications to `notification_log` table.
+
 ### Flow 5: Weekly Digest
 1. Scheduled job runs Monday 9:00 AM (configurable)
 2. System queries all active epics
@@ -1311,6 +1346,11 @@ The system uses the following launch stage phases:
 
 #### Notifications
 - **Stale Criterion Reminders**: Daily reminders (job: `/api/jobs/stale-criteria`); may include an AI-generated personalized nudge when Gemini is configured.
+- **Criteria Due Date Nudges**: Daily reminders (job: `/api/jobs/criteria-nudges`) for criteria approaching or past due dates:
+  - Sent 1 week before, on due date, and daily after overdue
+  - Grouped by release (closest future first), then by epic, sorted by urgency
+  - Excludes past releases except for missing metrics reminders to PMs
+  - Supports both Slack and email delivery channels
 - **Risk Alerts**: High-risk launch notifications
 - **Go/No-Go Decisions**: Decision notifications
 - **Weekly Digest**: Leadership summary
@@ -1340,6 +1380,7 @@ The system uses the following launch stage phases:
 
 #### Email Types
 - **Stale Criterion Reminders**: Daily
+- **Criteria Due Date Nudges**: Daily reminders for criteria approaching or past due dates, grouped by release and epic
 - **Weekly Digest**: Weekly
 - **Risk Alerts**: On-demand
 - **Go/No-Go Notifications**: On snapshot creation
@@ -1485,6 +1526,17 @@ The system uses the following launch stage phases:
 ### AI/ML Features
 1. **AI Checklist Pruning** — ✅ **IMPLEMENTED**: When criteria are instantiated for an epic, Gemini suggests which may be irrelevant (from name/description/tags). Suggestions appear in the Readiness tab via the AI Checklist Suggestions banner; users can approve (mark N/A) or dismiss. See §2.5 and `src/lib/ai/client.ts` (`pruneCriteria`).
 2. **AI-Powered Stale Nudges** — ✅ **IMPLEMENTED**: The daily stale-criteria job can attach a short, context-aware AI-generated nudge to each Slack/email reminder (launch, criterion, owner, staleness). Requires Gemini API key. See §10.1–10.2, Flow 4, and `src/lib/ai/client.ts` (`generateSmartNudge`).
+
+3. **Criteria Due Date Nudges** — ✅ **IMPLEMENTED**: Daily job (`/api/jobs/criteria-nudges`) sends reminders for criteria based on due dates:
+   - **Frequency**: 1 week before, on due date, and daily after overdue
+   - **Grouping**: All criteria for a user grouped into single message, organized by release (closest future first), then by epic, sorted by urgency
+   - **Channels**: Supports both Slack and email notifications (configurable per user and system-wide)
+   - **Past Release Filtering**: Excludes criteria reminders for past releases and released epics
+   - **Missing Metrics Reminders**: For past releases, sends "Missing Success Metrics" reminders to Product Managers when:
+     - Epic has no success metrics configured (`epic_success_metrics` empty)
+     - `track_offline = false` in `epic_success_configs`
+     - Uses "Success Defined" criterion due date if available, otherwise today's date
+   - **Implementation**: See `src/app/api/jobs/criteria-nudges/route.ts`, `src/lib/slack/templates.ts` (`buildCriteriaNudgeMessage`), and `src/lib/email/templates.ts` (`getCriteriaNudgeEmail`)
 3. **Predictive Risk Scoring**: ML-based risk prediction
 4. **Natural Language Processing**: Extract criteria from meeting notes
 5. **Sentiment Analysis**: Analyze feedback sentiment
