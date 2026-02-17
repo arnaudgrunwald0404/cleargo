@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const supabase = createClient();
+        // Use admin client for cron jobs to bypass RLS since there's no authenticated user context
+        const supabase = createAdminClient();
         const settings = await getSettings();
         
         // Check for test_email query parameter to filter to a single user
@@ -199,9 +200,8 @@ export async function GET(request: NextRequest) {
             debugInfo = { test_email: testEmail };
             
             // Query to see what criteria exist for this user
-            // Use admin client to bypass RLS since this is a cron job
-            const adminSupabase = createAdminClient();
-            const { data: userDataArray, error: userError } = await adminSupabase
+            // Use admin client (already created above) to bypass RLS since this is a cron job
+            const { data: userDataArray, error: userError } = await supabase
                 .from('app_user')
                 .select('id, email')
                 .ilike('email', testEmail)
@@ -221,6 +221,7 @@ export async function GET(request: NextRequest) {
                 debugInfo.suggestion = 'Ensure the user has logged in at least once, or create the user record in the app_user table.';
                 
                 // Also check for overdue criteria without decision_owner_id to help diagnose
+                // Use admin client (already created above) to bypass RLS
                 const { data: criteriaWithoutOwner } = await supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -251,6 +252,7 @@ export async function GET(request: NextRequest) {
                 debugInfo.user_id = userData.id;
                 
                 // Check for overdue criteria assigned to this user
+                // Use admin client (already created above) to bypass RLS
                 const { data: debugCriteria, error: debugError } = await supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -299,6 +301,7 @@ export async function GET(request: NextRequest) {
                     }));
                 } else {
                     // Check if there are overdue criteria without decision_owner_id
+                    // Use admin client (already created above) to bypass RLS
                     const { data: criteriaWithoutOwner } = await supabase
                         .from('epic_criterion_status')
                         .select(`
