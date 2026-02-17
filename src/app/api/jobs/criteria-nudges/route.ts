@@ -199,18 +199,52 @@ export async function GET(request: NextRequest) {
             debugInfo = { test_email: testEmail };
             
             // Query to see what criteria exist for this user
+            // Try case-insensitive search first
             const { data: userDataArray, error: userError } = await supabase
                 .from('app_user')
                 .select('id, email')
-                .eq('email', testEmail)
+                .ilike('email', testEmail)
                 .limit(1);
             
             const userData = userDataArray && userDataArray.length > 0 ? userDataArray[0] : null;
             
-            if (userError || !userData) {
+            if (userError) {
                 debugInfo.user_found = false;
-                debugInfo.user_error = userError?.message;
-                console.log(`   User ${testEmail} not found in database:`, userError?.message);
+                debugInfo.user_error = userError.message;
+                debugInfo.user_error_code = userError.code;
+                console.log(`   Error querying user ${testEmail}:`, userError.message);
+            } else if (!userData) {
+                debugInfo.user_found = false;
+                debugInfo.user_error = 'User not found in app_user table';
+                debugInfo.note = `No user found with email "${testEmail}". The user must exist in the app_user table to receive nudges.`;
+                debugInfo.suggestion = 'Ensure the user has logged in at least once, or create the user record in the app_user table.';
+                
+                // Also check for overdue criteria without decision_owner_id to help diagnose
+                const { data: criteriaWithoutOwner } = await supabase
+                    .from('epic_criterion_status')
+                    .select(`
+                        id,
+                        condition_due_date,
+                        status,
+                        decision_owner_id,
+                        criterion:criterion_id (label),
+                        epic:epic_id (name)
+                    `)
+                    .lt('condition_due_date', todayStr)
+                    .is('decision_owner_id', null)
+                    .limit(5);
+                
+                debugInfo.overdue_criteria_without_owner = criteriaWithoutOwner?.length || 0;
+                if (criteriaWithoutOwner && criteriaWithoutOwner.length > 0) {
+                    debugInfo.sample_unassigned_criteria = criteriaWithoutOwner.slice(0, 5).map((c: any) => ({
+                        criterion: c.criterion?.label || 'Unknown',
+                        epic: c.epic?.name || 'Unknown',
+                        status: c.status,
+                        due_date: c.condition_due_date
+                    }));
+                }
+                
+                console.log(`   User ${testEmail} not found in database`);
             } else {
                 debugInfo.user_found = true;
                 debugInfo.user_id = userData.id;
