@@ -63,18 +63,31 @@ export async function GET(req: NextRequest) {
                 } catch (error: any) {
                     // Check if it's an authentication error
                     const errorMessage = error.message || 'Connection test failed';
-                    if (errorMessage.includes('authentication failed') || errorMessage.includes('invalid') || errorMessage.includes('expired')) {
+                    
+                    // Check for serverless compatibility issues
+                    if (errorMessage.includes('EventSource') || errorMessage.includes('SSE') || errorMessage.includes('stream') || errorMessage.includes('serverless')) {
+                        connectionStatus.message = 'MCP SDK transport may not be compatible with serverless environments. Consider using direct HTTP requests instead.';
+                        connectionStatus.connected = false;
+                    } else if (errorMessage.includes('authentication failed') || errorMessage.includes('invalid') || errorMessage.includes('expired')) {
                         connectionStatus.message = 'Token is invalid or expired. Please reconnect ROVO.';
+                        connectionStatus.connected = false;
                     } else {
                         connectionStatus.message = `Connection test failed: ${errorMessage}`;
+                        connectionStatus.connected = false;
                     }
-                    connectionStatus.connected = false;
                     
                     // If token was cleared due to 401, refresh settings
                     const updatedSettings = await getSettings();
                     if (!updatedSettings.rovo_access_token) {
                         connectionStatus.message = 'Token was invalid and has been cleared. Please reconnect ROVO.';
                     }
+                    
+                    // Log the full error for debugging
+                    console.error('ROVO connection test error details:', {
+                        message: errorMessage,
+                        stack: error.stack,
+                        name: error.name,
+                    });
                 }
             }
         }

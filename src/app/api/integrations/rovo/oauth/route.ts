@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { storeRovoTokens } from '@/lib/rovo/client';
 import { resolveRole } from '@/lib/roles';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { RovoOAuthProvider } from '@/lib/rovo/mcp-client';
 import { getSettings } from '@/lib/settings-db';
 
@@ -120,10 +120,11 @@ export async function GET(request: NextRequest) {
         const redirectUri = `${baseUrl}/api/integrations/rovo/oauth`;
         
         try {
-            // Create an SSE transport to finish the OAuth flow
+            // Create a Streamable HTTP transport to finish the OAuth flow
+            // Streamable HTTP is compatible with serverless environments (unlike SSE)
             const sessionId = `rovo-${Date.now()}`;
             const authProvider = new RovoOAuthProvider(redirectUri, sessionId);
-            const transport = new SSEClientTransport(
+            const transport = new StreamableHTTPClientTransport(
                 new URL('https://mcp.atlassian.com/v1/mcp'),
                 { authProvider }
             );

@@ -34,7 +34,7 @@
 - Single source of truth for launch readiness across all products
 - Automated readiness scoring and risk assessment
 - Real-time collaboration and stakeholder accountability
-- Integration with existing tools (Aha!, Slack, Google Calendar)
+- Integration with existing tools (Aha!, Slack, Google Calendar, ROVO)
 - Historical tracking and audit capabilities
 
 ---
@@ -1327,6 +1327,49 @@ The system uses the following launch stage phases:
 - Example: `parent = {{JIRA_EPIC}} and statusCategory != Done`
 - Links are displayed in the CommentsModal for easy access to Jira tickets
 
+### ROVO Integration
+
+#### Overview
+✅ **IMPLEMENTED** - ROVO (Atlassian's AI assistant) integration for searching and summarizing Jira issues and Confluence pages.
+
+#### Architecture
+- **Protocol**: Uses Model Context Protocol (MCP) via `@modelcontextprotocol/sdk`
+- **Transport**: StreamableHTTPClientTransport (serverless-compatible, replaces deprecated SSE transport)
+- **Authentication**: OAuth 2.1 with dynamic client registration
+- **Server**: ROVO MCP Server at `https://mcp.atlassian.com/v1/mcp`
+
+#### Features
+- **Search**: Search across Jira issues and Confluence pages
+- **Summarize**: Generate summaries of specific Jira issues or Confluence pages
+- **OAuth Flow**: Secure OAuth authentication with token refresh support
+- **Connection Management**: Test connection status and disconnect functionality
+
+#### Configuration
+- **Settings Page**: `/admin/settings/integrations/rovo`
+- **Required Environment Variables**:
+  - `ROVO_OAUTH_CLIENT_ID` or `ATLASSIAN_OAUTH_CLIENT_ID`
+  - `ROVO_OAUTH_CLIENT_SECRET` or `ATLASSIAN_OAUTH_CLIENT_SECRET`
+- **OAuth Scopes**: `read:jira-work`, `read:jira-user`, `read:confluence-content.summary`, `read:confluence-space.summary`, `offline_access`
+- **Callback URL**: `/api/integrations/rovo/oauth`
+
+#### API Endpoints
+- **Search**: `POST /api/integrations/rovo/search` - Search Jira/Confluence content
+- **Summarize**: `POST /api/integrations/rovo/summarize` - Summarize specific content
+- **Status**: `GET /api/integrations/rovo/status` - Check connection status
+- **Disconnect**: `POST /api/integrations/rovo/disconnect` - Disconnect ROVO integration
+- **OAuth**: `GET /api/integrations/rovo/oauth` - OAuth initiation and callback handler
+
+#### Implementation Details
+- **MCP Client**: `src/lib/rovo/mcp-client.ts` - MCP SDK client wrapper with OAuth provider
+- **Client Library**: `src/lib/rovo/client.ts` - High-level search/summarize functions
+- **OAuth Provider**: Implements `OAuthClientProvider` interface for MCP SDK OAuth flow
+- **Token Storage**: Tokens stored in `app_settings` table (`rovo_access_token`, `rovo_refresh_token`, `rovo_token_expires_at`)
+- **Serverless Compatibility**: Uses StreamableHTTPClientTransport instead of SSE for better serverless support
+
+#### Documentation
+- Setup guide: `docs/rovo-setup.md`
+- See `src/lib/rovo/` for implementation details
+
 ### Slack Integration
 
 #### Slash Commands
@@ -1520,10 +1563,15 @@ The system uses the following launch stage phases:
    - Jira JQL data source support for criteria
    - Cached epic keys for performance
    - See `docs/jira-epic-key-methodology.md` for details
-2. **Salesforce Integration**: Sync with Salesforce for GTM tracking
-3. **Confluence Integration**: Link to Confluence documentation
-4. **GitHub Integration**: Link to GitHub repositories
-5. **Zoom Integration**: Automatic meeting transcript extraction
+2. **ROVO Integration**: ✅ **IMPLEMENTED** - Atlassian AI assistant integration
+   - MCP SDK-based integration for searching and summarizing Jira/Confluence content
+   - OAuth 2.1 authentication with dynamic client registration
+   - StreamableHTTPClientTransport for serverless compatibility
+   - See `docs/rovo-setup.md` for setup instructions
+3. **Salesforce Integration**: Sync with Salesforce for GTM tracking
+4. **Confluence Integration**: Link to Confluence documentation
+5. **GitHub Integration**: Link to GitHub repositories
+6. **Zoom Integration**: Automatic meeting transcript extraction
 
 ### AI/ML Features
 1. **AI Checklist Pruning** — ✅ **IMPLEMENTED**: When criteria are instantiated for an epic, Gemini suggests which may be irrelevant (from name/description/tags). Suggestions appear in the Readiness tab via the AI Checklist Suggestions banner; users can approve (mark N/A) or dismiss. See §2.5 and `src/lib/ai/client.ts` (`pruneCriteria`).

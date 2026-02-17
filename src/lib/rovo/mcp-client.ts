@@ -4,7 +4,7 @@
  */
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type { OAuthTokens, OAuthClientMetadata } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { getSettings, updateSettings } from '@/lib/settings-db';
@@ -139,7 +139,9 @@ async function createRovoMCPClient(redirectUrl: string): Promise<Client> {
         }
     );
 
-    const transport = new SSEClientTransport(
+    // Use Streamable HTTP transport instead of SSE for serverless compatibility
+    // SSE requires persistent connections and session state, which don't work in serverless environments
+    const transport = new StreamableHTTPClientTransport(
         new URL(ROVO_MCP_SERVER_URL),
         {
             authProvider,
@@ -149,14 +151,32 @@ async function createRovoMCPClient(redirectUrl: string): Promise<Client> {
     try {
         // Connect the client to the transport
         // This may trigger OAuth flow if tokens are missing/invalid
+        // Note: In serverless environments, SSE connections may not work properly
+        // StreamableHTTPClientTransport uses SSE internally but handles it better than SSEClientTransport
         await client.connect(transport);
     } catch (error: any) {
         // If OAuth redirect is required, re-throw with the authorization URL
         if (error.message === 'ROVO_OAuth_Redirect_Required' && error.authorizationUrl) {
             throw error;
         }
+        
+        // Log the error for debugging
+        console.error('Error connecting ROVO MCP client:', error);
+        
+        // Check if it's a serverless compatibility issue
+        if (error.message?.includes('EventSource') || error.message?.includes('SSE') || error.message?.includes('stream')) {
+            throw new Error(
+                'ROVO MCP connection failed. The MCP SDK transport may not be fully compatible with serverless environments. ' +
+                'Error: ' + (error.message || 'Unknown error')
+            );
+        }
+        
         // Otherwise, close the client and re-throw
-        await client.close().catch(() => {});
+        try {
+            await client.close();
+        } catch (closeError) {
+            // Ignore close errors
+        }
         throw error;
     }
 
@@ -165,15 +185,18 @@ async function createRovoMCPClient(redirectUrl: string): Promise<Client> {
 
 /**
  * Execute an MCP tool call using the ROVO MCP client
+ * Note: In serverless environments, connections are short-lived
  */
 async function callRovoTool(
     toolName: string,
     args: Record<string, any>,
     redirectUrl: string
 ): Promise<any> {
-    const client = await createRovoMCPClient(redirectUrl);
+    let client: Client | null = null;
     
     try {
+        client = await createRovoMCPClient(redirectUrl);
+        
         // List available tools first to verify connection
         const tools = await client.listTools();
         console.log('Available ROVO tools:', tools.tools.map(t => t.name));
@@ -191,9 +214,25 @@ async function callRovoTool(
         });
 
         return result;
+    } catch (error: any) {
+        console.error(`Error calling ROVO tool ${toolName}:`, error);
+        
+        // If it's an OAuth redirect error, re-throw it
+        if (error.message === 'ROVO_OAuth_Redirect_Required' && error.authorizationUrl) {
+            throw error;
+        }
+        
+        // Re-throw other errors
+        throw error;
     } finally {
-        // Clean up the transport connection
-        await client.close();
+        // Always clean up the transport connection
+        if (client) {
+            try {
+                await client.close();
+            } catch (closeError) {
+                console.error('Error closing ROVO client:', closeError);
+            }
+        }
     }
 }
 
