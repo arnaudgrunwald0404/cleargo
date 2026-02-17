@@ -73,3 +73,51 @@ export async function trackLogin(email: string): Promise<void> {
     });
   }
 }
+
+/**
+ * Track activity when a user performs an action (creates audit_log entry)
+ * This ensures users who make changes are counted in usage analytics
+ * even if /api/me wasn't called (e.g., API-only usage)
+ * 
+ * Uses throttling: only tracks if last_logged_in is more than 1 hour old or null
+ */
+export async function trackActivityFromAction(userId: string): Promise<void> {
+  const secretKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!secretKey) {
+    console.warn('[trackActivityFromAction] Missing service role key, skipping activity tracking');
+    return;
+  }
+
+  try {
+    const adminClient = createAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      secretKey
+    );
+
+    // Check if user has logged in recently (within last hour)
+    const { data: user } = await adminClient
+      .from('app_user')
+      .select('last_logged_in')
+      .eq('id', userId)
+      .single();
+
+    if (!user) {
+      return; // User not found, skip tracking
+    }
+
+    const lastLoggedIn = user.last_logged_in ? new Date(user.last_logged_in).getTime() : 0;
+    const oneHourAgo = Date.now() - 60 * 60 * 1000;
+
+    // Only track if last login was more than 1 hour ago or null (throttled)
+    if (!lastLoggedIn || lastLoggedIn < oneHourAgo) {
+      // Track as login activity (counts as a visit)
+      await trackUserActivity(userId, 'login', {
+        timestamp: new Date().toISOString(),
+        source: 'action', // Indicates this was triggered by an action, not /api/me
+      });
+    }
+  } catch (error) {
+    // Don't throw - activity tracking should not break the app
+    console.error('[trackActivityFromAction] Failed to track activity:', error);
+  }
+}

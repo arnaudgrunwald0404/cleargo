@@ -508,6 +508,8 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **User Activity Tracking**: 
   - Tracks user logins and activity in `user_activity` table
   - Login activity tracked automatically via `/api/me` endpoint (throttled to once per hour per user)
+  - Activity also tracked when users perform actions (e.g., updating criteria status, delegating tasks) via `trackActivityFromAction()` to ensure API-only users are counted in usage analytics
+  - Action-based tracking is throttled (only tracks if last login was more than 1 hour ago or null)
   - Updates `app_user.last_logged_in` timestamp on login
 
 ### 7. Decision Snapshots

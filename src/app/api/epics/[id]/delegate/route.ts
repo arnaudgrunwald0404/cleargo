@@ -6,6 +6,7 @@ import { canRolesPerform, canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
 import { getReleaseNameFromEpic, getEpicsForRelease } from '@/lib/services/releaseAnalyticsService';
+import { trackActivityFromAction } from '@/lib/services/userActivityService';
 
 export const dynamic = 'force-dynamic';
 
@@ -133,6 +134,11 @@ export async function POST(
         },
       });
 
+      // Track activity for usage analytics (if /api/me wasn't called)
+      trackActivityFromAction(delegatorId).catch(err => {
+        console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+      });
+
       // Send Slack notification to the newly delegated post-launch owner
       try {
         // Ensure we have a Slack handle; attempt to sync if missing
@@ -237,6 +243,11 @@ export async function POST(
             epic_name: epic.name,
           },
         });
+
+        // Track activity for usage analytics (if /api/me wasn't called)
+        trackActivityFromAction(delegatorId).catch(err => {
+          console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+        });
         break;
       }
 
@@ -288,6 +299,11 @@ export async function POST(
           }));
 
           await supabase.from('audit_log').insert(auditLogs);
+
+          // Track activity for usage analytics (if /api/me wasn't called)
+          trackActivityFromAction(delegatorId).catch(err => {
+            console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+          });
         }
         break;
       }
@@ -351,6 +367,11 @@ export async function POST(
           }));
 
           await supabase.from('audit_log').insert(auditLogs);
+
+          // Track activity for usage analytics (if /api/me wasn't called)
+          trackActivityFromAction(delegatorId).catch(err => {
+            console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+          });
         }
         break;
       }
@@ -418,6 +439,11 @@ export async function POST(
             }));
 
             await supabase.from('audit_log').insert(auditLogs);
+
+            // Track activity for usage analytics (if /api/me wasn't called)
+            trackActivityFromAction(delegatorId).catch(err => {
+              console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+            });
           }
         }
         break;

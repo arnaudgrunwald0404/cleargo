@@ -5,6 +5,7 @@ import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { isEnabled, FEATURE_NOT_APPLICABLE } from '@/lib/flags';
 import { getFeatureFlags, getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
+import { trackActivityFromAction } from '@/lib/services/userActivityService';
 
 export async function PATCH(
     req: NextRequest,
@@ -153,6 +154,12 @@ export async function PATCH(
                 entity_type: 'epic_criterion_status',
                 entity_id: lcsId,
                 json_diff: { status: { old: previousStatus ?? null, new: data.status } },
+            });
+
+            // Track activity for usage analytics (if /api/me wasn't called)
+            // This ensures users who make changes are counted even if they didn't visit the web UI
+            trackActivityFromAction(appUser.id).catch(err => {
+                console.error('[PATCH /api/epics/[id]/criteria/[lcsId]] Failed to track activity:', err);
             });
         }
 
