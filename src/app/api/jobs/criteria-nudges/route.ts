@@ -294,14 +294,20 @@ export async function GET(request: NextRequest) {
         }
         
         if (allCriteria.length === 0) {
-            return NextResponse.json({
+            const response: any = {
                 success: true,
                 message: testEmail 
                     ? `No criteria need nudging for ${testEmail}. See debug_info for details.`
                     : 'No criteria need nudging',
                 count: 0,
-                debug_info: debugInfo,
-            });
+            };
+            
+            // Always include debug_info when test_email is provided
+            if (testEmail) {
+                response.debug_info = debugInfo || { test_email: testEmail, note: 'Debug info collection failed or was skipped' };
+            }
+            
+            return NextResponse.json(response);
         }
 
         // Log all notifications before filtering
@@ -512,6 +518,7 @@ export async function GET(request: NextRequest) {
                 notifications: notificationsSent,
                 errors,
             },
+            ...(testEmail && debugInfo ? { debug_info: debugInfo } : {}),
             debug: {
                 total_before_filter: allCriteria.length,
                 filtered_count: filteredCriteria.length,
