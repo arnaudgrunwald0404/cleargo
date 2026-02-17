@@ -199,11 +199,13 @@ export async function GET(request: NextRequest) {
             debugInfo = { test_email: testEmail };
             
             // Query to see what criteria exist for this user
-            const { data: userData, error: userError } = await supabase
+            const { data: userDataArray, error: userError } = await supabase
                 .from('app_user')
                 .select('id, email')
                 .eq('email', testEmail)
-                .single();
+                .limit(1);
+            
+            const userData = userDataArray && userDataArray.length > 0 ? userDataArray[0] : null;
             
             if (userError || !userData) {
                 debugInfo.user_found = false;
