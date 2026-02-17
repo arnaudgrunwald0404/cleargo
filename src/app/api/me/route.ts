@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { isSuperAdmin } from "@/lib/auth-helpers";
 import { getEffectiveUserEmail, getImpersonatedEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
+import { trackLogin } from "@/lib/services/userActivityService";
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -144,6 +145,19 @@ async function getHandler(req: NextRequest) {
     const impersonationStartedAt = impersonationPayload?.iat != null
         ? new Date(impersonationPayload.iat * 1000).toISOString()
         : undefined;
+
+    // Track login activity (throttled: only if last_logged_in is more than 1 hour old or null)
+    if (!isImpersonating && profile?.id) {
+      const lastLoggedIn = profile.last_logged_in ? new Date(profile.last_logged_in).getTime() : 0;
+      const oneHourAgo = Date.now() - 60 * 60 * 1000;
+      
+      if (!lastLoggedIn || lastLoggedIn < oneHourAgo) {
+        // Track asynchronously to avoid blocking the response
+        trackLogin(effectiveEmail).catch(err => {
+          console.error('[api/me] Failed to track login:', err);
+        });
+      }
+    }
 
     return NextResponse.json({
         user: profile,

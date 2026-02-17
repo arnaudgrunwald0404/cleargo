@@ -303,8 +303,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildGoNoGoDecisionMessage(payload.metadata as any, theme);
                 break;
 
-            case 'leadership_digest':
-                if (!payload.metadata) throw new Error('Missing metadata for leadership_digest');
+            case 'weekly_digest':
+                if (!payload.metadata) throw new Error('Missing metadata for weekly_digest');
                 message = buildLeadershipDigestMessage(payload.metadata as any, theme);
                 break;
 

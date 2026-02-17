@@ -25,6 +25,9 @@ export async function GET(request: NextRequest) {
 
         const supabase = createClient();
         const settings = await getSettings();
+        
+        // Check for test_email query parameter to filter to a single user
+        const testEmail = request.nextUrl.searchParams.get('test_email')?.toLowerCase();
 
         // Get nudge frequency settings
         const nudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
@@ -190,11 +193,114 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        // Debug: If test_email is provided and no criteria found, check what's in the database
+        let debugInfo: any = null;
+        if (allCriteria.length === 0 && testEmail) {
+            debugInfo = { test_email: testEmail };
+            
+            // Query to see what criteria exist for this user
+            const { data: userData, error: userError } = await supabase
+                .from('app_user')
+                .select('id, email')
+                .eq('email', testEmail)
+                .single();
+            
+            if (userError || !userData) {
+                debugInfo.user_found = false;
+                debugInfo.user_error = userError?.message;
+            } else {
+                debugInfo.user_found = true;
+                debugInfo.user_id = userData.id;
+                
+                // Check for overdue criteria assigned to this user
+                const { data: debugCriteria, error: debugError } = await supabase
+                    .from('epic_criterion_status')
+                    .select(`
+                        id,
+                        epic_id,
+                        criterion_id,
+                        decision_owner_id,
+                        condition_due_date,
+                        status,
+                        last_nudge_sent_at,
+                        criterion:criterion_id (label),
+                        epic:epic_id (name)
+                    `)
+                    .eq('decision_owner_id', userData.id)
+                    .lt('condition_due_date', todayStr);
+                
+                debugInfo.overdue_criteria_assigned = debugCriteria?.length || 0;
+                console.log(`🔍 DEBUG for ${testEmail} (user_id: ${userData.id}):`);
+                console.log(`   Found ${debugCriteria?.length || 0} overdue criteria assigned to this user`);
+                
+                if (debugCriteria && debugCriteria.length > 0) {
+                    const statusBreakdown = debugCriteria.reduce((acc: any, c: any) => {
+                        acc[c.status] = (acc[c.status] || 0) + 1;
+                        return acc;
+                    }, {});
+                    debugInfo.status_breakdown = statusBreakdown;
+                    debugInfo.not_set_or_conditional_count = debugCriteria.filter((c: any) => ['NOT_SET', 'CONDITIONAL'].includes(c.status)).length;
+                    debugInfo.can_be_nudged_count = debugCriteria.filter((c: any) => {
+                        const correctStatus = ['NOT_SET', 'CONDITIONAL'].includes(c.status);
+                        const notNudgedToday = !c.last_nudge_sent_at || c.last_nudge_sent_at < todayStr;
+                        return correctStatus && notNudgedToday;
+                    }).length;
+                    
+                    console.log(`   Status breakdown:`, statusBreakdown);
+                    console.log(`   Criteria with NOT_SET or CONDITIONAL: ${debugInfo.not_set_or_conditional_count}`);
+                    console.log(`   Criteria that can be nudged: ${debugInfo.can_be_nudged_count}`);
+                    
+                    // Show first few examples
+                    debugInfo.sample_criteria = debugCriteria.slice(0, 5).map((c: any) => ({
+                        criterion: c.criterion?.label || 'Unknown',
+                        epic: c.epic?.name || 'Unknown',
+                        status: c.status,
+                        due_date: c.condition_due_date,
+                        last_nudge: c.last_nudge_sent_at || 'never',
+                        can_be_nudged: ['NOT_SET', 'CONDITIONAL'].includes(c.status) && (!c.last_nudge_sent_at || c.last_nudge_sent_at < todayStr)
+                    }));
+                } else {
+                    // Check if there are overdue criteria without decision_owner_id
+                    const { data: criteriaWithoutOwner } = await supabase
+                        .from('epic_criterion_status')
+                        .select(`
+                            id,
+                            condition_due_date,
+                            status,
+                            decision_owner_id,
+                            criterion:criterion_id (label),
+                            epic:epic_id (name)
+                        `)
+                        .lt('condition_due_date', todayStr)
+                        .is('decision_owner_id', null)
+                        .limit(5);
+                    
+                    debugInfo.overdue_criteria_without_owner = criteriaWithoutOwner?.length || 0;
+                    if (criteriaWithoutOwner && criteriaWithoutOwner.length > 0) {
+                        console.log(`   ⚠️  Found ${criteriaWithoutOwner.length} overdue criteria WITHOUT decision_owner_id`);
+                        debugInfo.sample_unassigned_criteria = criteriaWithoutOwner.slice(0, 5).map((c: any) => ({
+                            criterion: c.criterion?.label || 'Unknown',
+                            epic: c.epic?.name || 'Unknown',
+                            status: c.status,
+                            due_date: c.condition_due_date
+                        }));
+                    } else {
+                        console.log(`   No overdue criteria found for this user`);
+                    }
+                }
+            } else {
+                console.log(`   User ${testEmail} not found in database:`, userError?.message);
+            }
+        }
+        
         if (allCriteria.length === 0) {
             return NextResponse.json({
                 success: true,
-                message: 'No criteria need nudging',
+                message: testEmail 
+                    ? `No criteria need nudging for ${testEmail}. See debug_info for details.`
+                    : 'No criteria need nudging',
                 count: 0,
+                debug_info: debugInfo,
             });
         }
 
@@ -219,8 +325,17 @@ export async function GET(request: NextRequest) {
 
         const uniqueEmails = Array.from(notificationsByEmail.keys()).filter(e => e !== 'unknown');
         const allowedForSlack = new Set<string>();
+        
         for (const email of uniqueEmails) {
+            // If test_email is provided, only allow that email
+            if (testEmail && email !== testEmail) {
+                continue;
+            }
             if (await canReceiveSlackNotification(email)) allowedForSlack.add(email);
+        }
+        
+        if (testEmail) {
+            console.log(`🧪 TEST MODE: Filtering to test email: ${testEmail}`);
         }
 
         console.log('📋 Slack Nudge Notifications - ALL NOTIFICATIONS (before filtering):');
@@ -255,7 +370,9 @@ export async function GET(request: NextRequest) {
         if (filteredCriteria.length === 0) {
             return NextResponse.json({
                 success: true,
-                message: 'No assignees have Slack notifications enabled in User Management (all notifications logged)',
+                message: testEmail 
+                    ? `No criteria found for test email ${testEmail} or user doesn't have Slack notifications enabled`
+                    : 'No assignees have Slack notifications enabled in User Management (all notifications logged)',
                 count: 0,
                 debug: {
                     total_before_filter: allCriteria.length,
@@ -386,7 +503,9 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Processed ${filteredCriteria.length} criteria needing nudges`,
+            message: testEmail 
+                ? `🧪 TEST MODE: Processed ${filteredCriteria.length} criteria needing nudges for ${testEmail}`
+                : `Processed ${filteredCriteria.length} criteria needing nudges`,
             notifications_sent: notificationsSent.length,
             errors: errors.length,
             details: {

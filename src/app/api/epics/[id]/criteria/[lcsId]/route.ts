@@ -157,7 +157,19 @@ export async function PATCH(
         }
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
-        await recomputeEpicReadiness(id, appUser.id);
+        try {
+            await recomputeEpicReadiness(id, appUser.id);
+        } catch (recalcError: any) {
+            // Log error but don't fail the request - the status update succeeded
+            console.error(`[PATCH /api/epics/${id}/criteria/${lcsId}] Failed to recompute readiness:`, {
+                epicId: id,
+                criterionStatusId: lcsId,
+                error: recalcError?.message || 'Unknown error',
+                stack: recalcError?.stack
+            });
+            // Continue - the criterion status was updated successfully
+            // The readiness score will be recalculated on next status change or manual trigger
+        }
 
         return NextResponse.json(data);
     } catch (error: any) {

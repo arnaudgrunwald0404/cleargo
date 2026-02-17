@@ -142,7 +142,7 @@ CREATE INDEX IF NOT EXISTS idx_notification_log_type ON notification_log(type);
 
 -- Comments for documentation
 COMMENT ON TABLE notification_log IS 'Tracks all notifications sent to users via various channels';
-COMMENT ON COLUMN notification_log.type IS 'Type of notification: stale_criterion, launch_risk_alert, go_no_go_decision, leadership_digest, launch_status_change';
+COMMENT ON COLUMN notification_log.type IS 'Type of notification: stale_criterion, launch_risk_alert, go_no_go_decision, weekly_digest, launch_status_change';
 COMMENT ON COLUMN notification_log.delivery_channel IS 'Channel used to deliver notification: slack, email, sms';
 COMMENT ON COLUMN notification_log.slack_ts IS 'Slack message timestamp for threading and message updates';
 COMMENT ON COLUMN notification_log.payload IS 'JSON payload containing notification-specific data';

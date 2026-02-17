@@ -1,4 +1,4 @@
-name: Weekly Leadership Digest
+name: Weekly Digest
 
 on:
   schedule:
@@ -11,7 +11,7 @@ jobs:
   send-digest:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger weekly leadership digest
+      - name: Trigger weekly digest
         env:
           BASE_URL: ${{ secrets.APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -24,11 +24,11 @@ jobs:
             echo "CRON_SECRET secret not set" >&2
             exit 1
           fi
-          echo "Triggering weekly leadership digest..."
+          echo "Triggering weekly digest..."
           for i in 1 2 3; do
             STATUS=$(curl -sS -o response.json -w "%{http_code}" \
               -H "Authorization: Bearer $CRON_SECRET" \
-              "$BASE_URL/api/jobs/leadership-digest") || true
+              "$BASE_URL/api/jobs/weekly-digest") || true
             echo "HTTP $STATUS"
             cat response.json || true
             if [ "$STATUS" = "200" ]; then 

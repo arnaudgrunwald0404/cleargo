@@ -58,8 +58,8 @@ export async function POST(request: NextRequest) {
                     reason: 'New blocker identified in security review',
                 },
             },
-            leadership_digest: {
-                type: 'leadership_digest',
+            weekly_digest: {
+                type: 'weekly_digest',
                 priority: 'low',
                 metadata: {
                     week_of: new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),

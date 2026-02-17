@@ -377,7 +377,7 @@ export function buildLeadershipDigestMessage(
     // ---- Last 2 Releases (no dividers between releases; single divider only before Next 2 Releases) ----
     blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: '*📚 Last 2 Releases*' },
+        text: { type: 'mrkdwn', text: '*How are the recent releases doing?*' },
     });
 
     if (data.last_releases && data.last_releases.length > 0) {
@@ -457,7 +457,7 @@ export function buildLeadershipDigestMessage(
     // ---- Next 2 Releases (no dividers between releases) ----
     blocks.push({
         type: 'section',
-        text: { type: 'mrkdwn', text: '*🚀 Next 2 Releases*' },
+        text: { type: 'mrkdwn', text: '*How are the next 2 releases shaping up?*' },
     });
 
     let shownGoNoGo = false;
@@ -547,7 +547,7 @@ export function buildLeadershipDigestMessage(
                 type: 'button',
                 text: { type: 'plain_text', text: 'View Portfolio Dashboard', emoji: true },
                 style: 'primary',
-                url: `${APP_URL}/portfolio`,
+                url: `${APP_URL}/epics`,
             },
         ],
     });

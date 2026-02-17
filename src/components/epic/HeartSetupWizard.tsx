@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Card,
   Stack,
@@ -13,6 +13,7 @@ import {
   Alert,
   Badge,
   Textarea,
+  Checkbox,
 } from '@mantine/core';
 import {
   IconRocket,
@@ -49,6 +50,53 @@ export function HeartSetupWizard({
   const [metrics, setMetrics] = useState<EpicHeartMetric[]>([]);
   const [userContext, setUserContext] = useState('');
   const [availableEventNames, setAvailableEventNames] = useState<string[] | null>(null);
+  const [trackOffline, setTrackOffline] = useState(false);
+
+  // Load track_offline status from epic success config
+  useEffect(() => {
+    const loadTrackOfflineStatus = async () => {
+      try {
+        const res = await fetch(`/api/epics/${epicId}/success/config`);
+        if (res.ok) {
+          const config = await res.json();
+          if (config?.track_offline) {
+            setTrackOffline(config.track_offline);
+          }
+        }
+      } catch (error) {
+        // Silently fail - config might not exist yet
+      }
+    };
+    loadTrackOfflineStatus();
+  }, [epicId]);
+
+  const handleTrackOfflineChange = async (checked: boolean) => {
+    try {
+      // Check if config exists
+      const configRes = await fetch(`/api/epics/${epicId}/success/config`);
+      const method = configRes.ok ? 'PATCH' : 'POST';
+      
+      const res = await fetch(`/api/epics/${epicId}/success/config`, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ track_offline: checked }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || 'Failed to update offline tracking setting');
+      }
+    } catch (error: any) {
+      console.error('Error updating track_offline:', error);
+      notifications.show({
+        title: 'Error',
+        message: error.message || 'Failed to update offline tracking setting',
+        color: 'red',
+      });
+      // Revert the checkbox state
+      setTrackOffline(!checked);
+    }
+  };
 
   const handleMethodSelect = async (method: HeartSetupMethod) => {
     setSelectedMethod(method);
@@ -191,10 +239,21 @@ export function HeartSetupWizard({
       <Card style={{ backgroundColor: 'transparent' }}>
         <Stack gap="none">
           <Paper radius="md" style={{ backgroundColor: 'transparent' }}>
-            <Text size="lg" fw={600} c="dark">
+            <Text size="lg" fw={600} c="dark" mb="sm">
               Configure HEART Metrics
             </Text>
-            
+            <Checkbox
+              label="No automated metric for this epic, will track offline"
+              description="Epics with this option enabled will not be counted in the digest as missing metrics"
+              checked={trackOffline}
+              onChange={(e) => {
+                const checked = e.currentTarget.checked;
+                setTrackOffline(checked);
+                // Update the epic success config immediately
+                handleTrackOfflineChange(checked);
+              }}
+              mb="md"
+            />
           </Paper>
 
           {error && (

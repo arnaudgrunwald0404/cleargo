@@ -53,7 +53,7 @@ export interface AppSettings {
     slack_stale_criterion?: boolean;
     slack_launch_risk_alert?: boolean;
     slack_go_no_go_decision?: boolean;
-    slack_leadership_digest?: boolean;
+    slack_weekly_digest?: boolean;
     slack_launch_status_change?: boolean;
     slack_criterion_update?: boolean;
     slack_launch_created?: boolean;
@@ -69,7 +69,7 @@ export interface AppSettings {
     email_stale_criterion?: boolean;
     email_launch_risk_alert?: boolean;
     email_go_no_go_decision?: boolean;
-    email_leadership_digest?: boolean;
+    email_weekly_digest?: boolean;
     email_launch_status_change?: boolean;
     email_criterion_update?: boolean;
     email_launch_created?: boolean;

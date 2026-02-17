@@ -1,6 +1,6 @@
 /**
  * Release Analytics Service
- * Provides analytics for releases in the weekly leadership digest
+ * Provides analytics for releases in the weekly digest
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -87,18 +87,64 @@ export async function getEpicsForRelease(
 }
 
 /**
- * Get last N releases (past releases)
+ * Get last N releases (past releases) - matches /epics scope
+ * Only includes releases that have post-launch epics (Released_*) within last 180 days
  */
 export async function getLastNReleases(
     n: number,
     supabase: SupabaseClient
 ): Promise<Array<{ release_name: string; launch_date: string | null }>> {
-    const today = new Date().toISOString().split('T')[0];
+    // Calculate date 180 days ago
+    const today = new Date();
+    const oneHundredEightyDaysAgo = new Date();
+    oneHundredEightyDaysAgo.setDate(today.getDate() - 180);
 
+    // Get all non-archived epics with Released status
+    const { data: allEpics, error: epicsError } = await supabase
+        .from('epic')
+        .select('id, name, status, scheduled_ga_dev_date, aha_fields, archived')
+        .eq('archived', false)
+        .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed']);
+
+    if (epicsError) {
+        console.error('Error fetching epics for last releases:', epicsError);
+        return [];
+    }
+
+    if (!allEpics || allEpics.length === 0) {
+        return [];
+    }
+
+    // Filter epics within 180 days window
+    const postLaunchEpics = allEpics.filter((epic: any) => {
+        if (epic.scheduled_ga_dev_date) {
+            const gaDate = new Date(epic.scheduled_ga_dev_date);
+            if (!isNaN(gaDate.getTime())) {
+                return gaDate >= oneHundredEightyDaysAgo && gaDate <= today;
+            }
+        }
+        // If no scheduled_ga_dev_date, include it (matches PostLaunchPerformanceGrid logic)
+        return true;
+    });
+
+    // Group epics by release name
+    const releaseEpicsMap = new Map<string, boolean>();
+    for (const epic of postLaunchEpics) {
+        const releaseName = getReleaseNameFromEpic(epic as Epic);
+        if (releaseName) {
+            releaseEpicsMap.set(releaseName, true);
+        }
+    }
+
+    if (releaseEpicsMap.size === 0) {
+        return [];
+    }
+
+    // Get releases that have post-launch epics
     const { data: releases, error } = await supabase
         .from('release_schedule')
         .select('release_name, launch_date')
-        .lt('launch_date', today)
+        .in('release_name', Array.from(releaseEpicsMap.keys()))
         .eq('archived', false)
         .order('launch_date', { ascending: false })
         .limit(n);
@@ -112,18 +158,47 @@ export async function getLastNReleases(
 }
 
 /**
- * Get next N releases (upcoming releases)
+ * Get next N releases (upcoming releases) - matches /epics scope
+ * Only includes releases that have pre-launch epics (not Released_*)
  */
 export async function getNextNReleases(
     n: number,
     supabase: SupabaseClient
 ): Promise<Array<{ release_name: string; launch_date: string | null }>> {
-    const today = new Date().toISOString().split('T')[0];
+    // Get all non-archived pre-launch epics
+    const { data: allEpics, error: epicsError } = await supabase
+        .from('epic')
+        .select('id, name, status, aha_fields, archived')
+        .eq('archived', false)
+        .not('status', 'in', '(Released_Cohort_1,Released_GA,Released_Retroed)');
 
+    if (epicsError) {
+        console.error('Error fetching epics for next releases:', epicsError);
+        return [];
+    }
+
+    if (!allEpics || allEpics.length === 0) {
+        return [];
+    }
+
+    // Group epics by release name
+    const releaseEpicsMap = new Map<string, boolean>();
+    for (const epic of allEpics) {
+        const releaseName = getReleaseNameFromEpic(epic as Epic);
+        if (releaseName) {
+            releaseEpicsMap.set(releaseName, true);
+        }
+    }
+
+    if (releaseEpicsMap.size === 0) {
+        return [];
+    }
+
+    // Get releases that have pre-launch epics
     const { data: releases, error } = await supabase
         .from('release_schedule')
         .select('release_name, launch_date')
-        .gte('launch_date', today)
+        .in('release_name', Array.from(releaseEpicsMap.keys()))
         .eq('archived', false)
         .order('launch_date', { ascending: true })
         .limit(n);
@@ -215,6 +290,18 @@ export async function getLastReleaseAnalytics(
 
     const epicIds = epics.map(e => e.id);
 
+    // Get track_offline status for each epic (epics that will track offline should not be counted as missing metrics)
+    const { data: successConfigs } = await supabase
+        .from('epic_success_configs')
+        .select('epic_id, track_offline')
+        .in('epic_id', epicIds);
+    const trackOfflineByEpic = new Map<string, boolean>();
+    if (successConfigs) {
+        for (const config of successConfigs) {
+            trackOfflineByEpic.set(config.epic_id, config.track_offline === true);
+        }
+    }
+
     // Metrics per epic (for no_metrics_epics) and total count
     const { data: metricsRows } = await supabase
         .from('epic_success_metrics')
@@ -294,7 +381,14 @@ export async function getLastReleaseAnalytics(
     }
 
     const noMetricsEpics = epics
-        .filter((e) => (metricsCountByEpic.get(e.id) ?? 0) === 0)
+        .filter((e) => {
+            // Exclude epics that are marked to track offline
+            if (trackOfflineByEpic.get(e.id) === true) {
+                return false;
+            }
+            // Include epics with no metrics
+            return (metricsCountByEpic.get(e.id) ?? 0) === 0;
+        })
         .map((e) => ({ name: e.name, id: e.id }));
     const noProgressionEpics = epics
         .filter((e) => (metricsCountByEpic.get(e.id) ?? 0) > 0 && !latestScorecards.has(e.id))

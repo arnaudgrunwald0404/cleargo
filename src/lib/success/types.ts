@@ -57,6 +57,7 @@ export interface EpicSuccessConfig {
   post_launch_owner: string;
   locked: boolean;
   locked_at: string | null;
+  track_offline: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -168,6 +169,7 @@ export interface CreateSuccessMetricDTO {
 export interface CreateEpicSuccessConfigDTO {
   epic_id: string;
   post_launch_owner?: string; // Optional - will be auto-resolved to PM if not provided
+  track_offline?: boolean; // If true, indicates this epic will track metrics offline (not automated)
 }
 
 export interface CreateEpicSuccessMetricDTO {

@@ -51,6 +51,7 @@ oauth_config:
       - commands
       - im:write
       - im:history
+      - conversations:write
       - app_mentions:read
       - files:write
       - reactions:write

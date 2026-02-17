@@ -8,6 +8,7 @@ import { Notifications } from '@mantine/notifications';
 import { HeaderWrapper } from "@/components/HeaderWrapper";
 import { TableScopeWrapper } from "@/components/TableScopeWrapper";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
+import { ProfileCompletionModal } from "@/components/ProfileCompletionModal";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
@@ -109,6 +110,7 @@ export default async function RootLayout({
               <TableScopeWrapper>{children}</TableScopeWrapper>
             </div>
             <ImpersonationBanner />
+            <ProfileCompletionModal />
           </FeatureFlagsProvider>
         </MantineProvider>
       </body>

@@ -38,7 +38,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
     const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
-    const [isDeterminingOrder, setIsDeterminingOrder] = useState(true);
+    // Only show skeleton if we don't have initial data - if we have epics, we can show them immediately
+    const [isDeterminingOrder, setIsDeterminingOrder] = useState(initialEpics.length === 0);
     const [podOrder, setPodOrder] = useState<string[]>([]);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
     const [ownerInfoMap, setOwnerInfoMap] = useState<Record<string, { first_name?: string; last_name?: string; avatar_url?: string }>>({});
@@ -899,6 +900,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         ? displayedReleaseGroups.filter(group => group.releaseName === selectedRelease)
         : displayedReleaseGroups;
 
+    // Check if we're still loading data (even if we have initial epics, we might be loading release schedule)
+    // Show skeleton if:
+    // 1. We're actively loading (loading state is true)
+    // 2. We're determining order (fetching release dates)
+    // 3. We have no epics at all and no initial epics
+    // 4. We have epics but displayedReleaseGroups is empty (still loading release schedule to filter groups)
+    const stillLoadingData = loading || isDeterminingOrder || 
+        (initialEpics.length === 0 && epics.length === 0) ||
+        (epics.length > 0 && displayedReleaseGroups.length === 0 && releaseScheduleWithIds.length === 0);
+
     // Check if user has permission to sync with Aha
     const canSyncWithAha = useMemo(() => {
         if (!currentUserRoles || currentUserRoles.length === 0) return false;
@@ -961,28 +972,32 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         <div className="h-9 bg-gray-200 rounded w-32 mb-2 animate-pulse" />
                     </Box>
                     <div className="h-4 bg-gray-200 rounded w-full max-w-xl animate-pulse mb-6" style={{ maxWidth: "36rem" }} />
-                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4 mb-6" style={{ scrollbarWidth: "thin" }}>
-                        {Array.from({ length: 3 }).map((_, index) => (
-                            <div
-                                key={`skeleton-${index}`}
-                                className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse"
-                            >
-                                <div className="space-y-2">
-                                    <div className="h-6 bg-gray-300 rounded w-3/4" />
-                                    <div className="h-4 bg-gray-300 rounded w-1/2" />
-                                    <div className="pt-2 space-y-1 border-t border-gray-200">
-                                        <div className="flex justify-between text-sm">
-                                            <div className="h-4 bg-gray-300 rounded w-24" />
-                                            <div className="h-4 bg-gray-300 rounded w-12" />
-                                        </div>
-                                        <div className="flex justify-between text-sm">
-                                            <div className="h-4 bg-gray-300 rounded w-20" />
-                                            <div className="h-4 bg-gray-300 rounded w-8" />
+                    {/* Release Cards Skeleton - hidden on mobile */}
+                    <div className="hidden md:block mb-6">
+                        <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: "thin" }}>
+                            {Array.from({ length: 4 }).map((_, index) => (
+                                <div
+                                    key={`skeleton-${index}`}
+                                    className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse"
+                                    style={{ fontFamily: 'var(--font-body)' }}
+                                >
+                                    <div className="space-y-2">
+                                        <div className="h-6 bg-gray-300 rounded w-3/4" />
+                                        <div className="h-4 bg-gray-300 rounded w-1/2" />
+                                        <div className="pt-2 space-y-1 border-t border-gray-200">
+                                            <div className="flex justify-between text-sm">
+                                                <div className="h-4 bg-gray-300 rounded w-24" />
+                                                <div className="h-4 bg-gray-300 rounded w-12" />
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <div className="h-4 bg-gray-300 rounded w-20" />
+                                                <div className="h-4 bg-gray-300 rounded w-8" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
                     <div
                         className="rounded-lg"
@@ -1097,13 +1112,43 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 </Alert>
             )}
 
+            {/* Release Cards Skeleton - shown when loading, matches actual order (before filters) */}
+            {stillLoadingData && (
+                <div className="hidden md:block mb-6">
+                    <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: "thin" }}>
+                        {Array.from({ length: 4 }).map((_, index) => (
+                            <div
+                                key={`skeleton-card-${index}`}
+                                className="flex-shrink-0 w-64 p-4 rounded-lg border-2 border-gray-200 bg-white animate-pulse"
+                                style={{ fontFamily: 'var(--font-body)' }}
+                            >
+                                <div className="space-y-2">
+                                    <div className="h-6 bg-gray-300 rounded w-3/4" />
+                                    <div className="h-4 bg-gray-300 rounded w-1/2" />
+                                    <div className="pt-2 space-y-1 border-t border-gray-200">
+                                        <div className="flex justify-between text-sm">
+                                            <div className="h-4 bg-gray-300 rounded w-24" />
+                                            <div className="h-4 bg-gray-300 rounded w-12" />
+                                        </div>
+                                        <div className="flex justify-between text-sm">
+                                            <div className="h-4 bg-gray-300 rounded w-20" />
+                                            <div className="h-4 bg-gray-300 rounded w-8" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Release Cards - hidden on mobile */}
             {releaseStats.length > 0 && (
                 <div className="hidden md:block">
                 <Box mb="md">
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: 'thin' }}>
-                        {isDeterminingOrder ? (
-                            // Show skeleton cards while determining order
+                        {(loading || (isDeterminingOrder && releaseSchedule.length === 0)) ? (
+                            // Show skeleton cards only when loading or when we truly don't have release data yet
                             Array.from({ length: Math.max(releaseStats.length, 3) }).map((_, index) => (
                                 <div
                                     key={`skeleton-${index}`}
@@ -1238,6 +1283,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             )}
 
             {/* Search and filters bar - collapsible on mobile */}
+            {/* Only show filters when we have data and are not loading */}
+            {!stillLoadingData && (initialEpics.length > 0 || epics.length > 0) && (
+            <>
             {isMobile ? (
                 <Box mb="lg">
                     <Button
@@ -1507,10 +1555,82 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     </Box>
                 </Group>
             )}
+            </>
+            )}
 
           
                 
             {filteredReleaseGroups.length === 0 ? (
+                // Only show "no epics found" if we're done loading and truly have no epics
+                // Otherwise show skeleton while loading
+                stillLoadingData ? (
+                    // Table skeleton while loading
+                    <div className="rounded-lg overflow-hidden" style={{
+                            border: "1px solid #E5E7EB",
+                            backgroundColor: "#FFFFFF",
+                            boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
+                    }}>
+                        <div className="overflow-x-auto">
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                <colgroup>
+                                    <col className="w-100" />
+                                    <col className="w-24" />
+                                    <col className="w-auto" />
+                                    <col className="w-28" />
+                                    <col className="w-32" />
+                                    <col className="w-24" />
+                                    <col className="w-24" />
+                                    <col className="w-24" />
+                                    <col className="w-24" />
+                                </colgroup>
+                                <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                    <tr>
+                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {col}
+                                            </th>
+                                        ))}
+                                        <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
+                                    {Array.from({ length: 5 }).map((_, index) => (
+                                        <tr key={index} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
+                                            <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
+                                            </td>
+                                            <td className="px-4 py-3 w-24">
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-24">
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                ) : (
+                    // Show "no epics found" only when we're done loading and truly have no epics
                     <div className="rounded-lg overflow-hidden" style={{
                         border: `1px solid var(--color-gray-200)`,
                         backgroundColor: 'var(--color-white, #FFFFFF)'
@@ -1523,8 +1643,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             No epics found matching filters.
                         </div>
                     </div>
-                ) : (
-                    <div className="space-y-8 pt-2">
+                )
+            ) : (
+                <div className="space-y-8 pt-2">
                         {filteredReleaseGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="space-y-2">
                                 <div className="flex items-center justify-between gap-3">
@@ -1696,7 +1817,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
-                                    {(loading || (isDeterminingOrder && group.epics.length === 0)) ? (
+                                    {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
                                         <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
@@ -1845,7 +1966,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div>
                                                         </td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
+                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
                                                         </td>
                                                         <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
                                                             <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div>

@@ -27,7 +27,7 @@ const allNotificationTypes = [
   { key: 'stale_criterion', label: 'Stale Criterion', category: 'Alert' },
   { key: 'launch_risk_alert', label: 'Launch Risk Alert', category: 'Alert' },
   { key: 'go_no_go_decision', label: 'Go/No-Go Decision', category: 'Alert' },
-  { key: 'leadership_digest', label: 'Leadership Digest', category: 'Digest' },
+  { key: 'weekly_digest', label: 'Weekly Digest', category: 'Digest' },
   { key: 'launch_status_change', label: 'Launch Status Change', category: 'Update' },
   { key: 'criterion_update', label: 'Criterion Update', category: 'Update' },
   { key: 'launch_created', label: 'Launch Created', category: 'Update' },

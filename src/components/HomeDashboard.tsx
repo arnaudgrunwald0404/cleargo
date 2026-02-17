@@ -1,7 +1,7 @@
 "use client";
 
-import { Title, Text, Box, Select, Button, Group, Tooltip, Switch } from '@mantine/core';
-import { IconRefresh } from "@tabler/icons-react";
+import { Title, Text, Box, Select, Button, Group, Tooltip, Switch, Menu, UnstyledButton } from '@mantine/core';
+import { IconRefresh, IconDots } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
@@ -992,21 +992,47 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         }}
         className="sm:px-6 lg:px-8"
         >
-          <div style={{ fontFamily: "var(--font-body)" }}>
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "var(--spacing-6)",
-            }}>
-              <div className="space-y-2">
-                <div className="h-8 bg-gray-200 rounded w-80 max-w-full animate-pulse" />
-                <div className="h-4 bg-gray-200 rounded w-72 max-w-full animate-pulse" />
+          <div className="mb-8">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-2)' }}>
+              <div style={{ flex: 1 }}>
+                <div className="space-y-2 mb-2">
+                  {/* Title skeleton - matches Title component with Marcellus font */}
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: 'var(--font-size-4xl)',
+                      width: '480px',
+                      maxWidth: '100%',
+                      fontFamily: 'var(--font-marcellus), serif'
+                    }} 
+                  />
+                  {/* Subtitle skeleton - matches Text size="lg" */}
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: 'var(--font-size-lg)',
+                      width: '400px',
+                      maxWidth: '100%',
+                      marginTop: '8px'
+                    }} 
+                  />
+                </div>
               </div>
             </div>
             {[1, 2].map((groupIndex) => (
               <div key={groupIndex} style={{ marginBottom: "var(--spacing-6)" }}>
-                <div className="h-6 bg-gray-200 rounded w-48 mb-3 animate-pulse" style={{ maxWidth: "100%" }} />
+                {/* Group header skeleton - matches h2 styling */}
+                <div style={{ marginBottom: 'var(--spacing-3)' }}>
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: '20px',
+                      width: '200px',
+                      maxWidth: '100%',
+                      fontFamily: 'var(--font-heading)'
+                    }} 
+                  />
+                </div>
                 <div
                   className="rounded-lg overflow-hidden"
                   style={{
@@ -1018,27 +1044,31 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
-                        {["Epic", "Tier", "Criterion", "Go/No-Go Score", "Due on"].map((col) => (
-                          <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                            {col}
-                          </th>
-                        ))}
+                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Epic</th>
+                        <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Pod</th>
+                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
+                        <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
+                        <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
                       </tr>
                     </thead>
                     <tbody style={{ borderTop: "1px solid #E5E7EB" }}>
                       {Array.from({ length: 4 }).map((_, rowIndex) => (
                         <tr key={rowIndex} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
-                          <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                          <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "70%" }} />
                           </td>
                           <td className="px-4 py-3 w-24">
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
                           </td>
-                          <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60%" }} />
-                            <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "40%" }} />
+                          <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
+                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                           </td>
-                          <td className="px-4 py-3 w-24">
+                          <td style={{ padding: "12px 20px", minWidth: "300px", width: "30%" }}>
+                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
+                            <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "50%" }} />
+                          </td>
+                          <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                           </td>
                           <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
@@ -1129,53 +1159,151 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       className="sm:px-6 lg:px-8"
       >
         <div className="mb-8">
-          <Title 
-            order={1} 
-            className="text-4xl font-bold mb-2"
-            style={{ 
-              fontFamily: 'var(--font-marcellus), serif',
-              color: 'var(--color-gray-900)',
-              fontSize: 'var(--font-size-4xl)',
-              fontWeight: 'var(--font-weight-bold)'
-            }}
-          >
-            {isFirstTime ? (
-              <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
-            ) : (
-              <>
-                Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>.
-                {criteriaCount !== null && (
-                  <span style={{ 
-                    fontFamily: 'var(--font-marcellus), serif',
-                    fontSize: 'var(--font-size-4xl)',
-                    fontWeight: 'var(--font-weight-bold)',
-                    color: 'var(--color-gray-700)',
-                    marginLeft: '8px'
-                  }}>
-                    You have <span style={{ color: 'var(--table-steel, #697771)' }}>{criteriaCount}</span> criteria to inform.
-                  </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-2)' }}>
+            <div style={{ flex: 1 }}>
+              <Title 
+                order={1} 
+                className="text-4xl font-bold mb-2"
+                style={{ 
+                  fontFamily: 'var(--font-marcellus), serif',
+                  color: 'var(--color-gray-900)',
+                  fontSize: 'var(--font-size-4xl)',
+                  fontWeight: 'var(--font-weight-bold)'
+                }}
+              >
+                {isFirstTime ? (
+                  <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
+                ) : (
+                  <>
+                    Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>.
+                    {criteriaCount !== null && (
+                      <span style={{ 
+                        fontFamily: 'var(--font-marcellus), serif',
+                        fontSize: 'var(--font-size-4xl)',
+                        fontWeight: 'var(--font-weight-bold)',
+                        color: 'var(--color-gray-700)',
+                        marginLeft: '8px'
+                      }}>
+                        You have <span style={{ color: 'var(--table-steel, #697771)' }}>{criteriaCount}</span> criteria to inform.
+                      </span>
+                    )}
+                  </>
                 )}
-              </>
-            )}
-          </Title>
-          <Text 
-            size="lg" 
-            style={{ 
-              fontFamily: 'var(--font-body)',
-              color: 'var(--color-gray-500)',
-              fontSize: 'var(--font-size-lg)'
-            }}
-          >
-            {isFirstTime ? (
-              <>
-                Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.
-              </>
-            ) : (
-              <>
-                Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
-              </>
-            )}
-          </Text>
+              </Title>
+              <Text 
+                size="lg" 
+                style={{ 
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--color-gray-500)',
+                  fontSize: 'var(--font-size-lg)'
+                }}
+              >
+                {isFirstTime ? (
+                  <>
+                    Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.
+                  </>
+                ) : (
+                  <>
+                    Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
+                  </>
+                )}
+              </Text>
+            </div>
+            <Tooltip label="Page Options" position="left" withArrow>
+              <Menu shadow="md" width={280} position="bottom-end">
+                <Menu.Target>
+                  <UnstyledButton
+                    style={{
+                      padding: '8px',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--color-gray-600)',
+                      transition: 'background-color 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-gray-100)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <IconDots size={20} />
+                  </UnstyledButton>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {isSuperAdmin && usersForViewAs.length > 1 && (
+                    <Menu.Label style={{ fontFamily: 'var(--font-body)' }}>
+                      See Home page as
+                    </Menu.Label>
+                  )}
+                  {isSuperAdmin && usersForViewAs.length > 1 && (
+                    <>
+                      <Box px="xs" pb="xs">
+                        <Select
+                          data={usersForViewAs}
+                          value={viewAsUser ? viewAsUser.email : ''}
+                          onChange={(value) => {
+                            if (value === null || value === '') {
+                              setViewAsUser(null);
+                              return;
+                            }
+                            const opt = usersForViewAs.find((o) => o.value === value);
+                            setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
+                          }}
+                          placeholder="My tasks"
+                          allowDeselect={false}
+                          searchable
+                          nothingFoundMessage="No user found"
+                          size="sm"
+                          styles={() => ({
+                            input: { fontFamily: 'var(--font-body)' },
+                          })}
+                        />
+                      </Box>
+                      <Menu.Divider />
+                    </>
+                  )}
+                  <Menu.Label style={{ fontFamily: 'var(--font-body)' }}>
+                    Show pending items only
+                  </Menu.Label>
+                  <Box px="xs" pb="xs">
+                    <Group gap="sm">
+                      <Switch
+                        checked={showAllItems}
+                        onChange={(e) => setShowAllItems(e.currentTarget.checked)}
+                        label={showAllItems ? 'All' : 'Pending'}
+                        styles={{
+                          label: {
+                            fontFamily: 'var(--font-body)',
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'var(--mantine-color-dimmed)'
+                          }
+                        }}
+                      />
+                    </Group>
+                  </Box>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<IconRefresh size={16} />}
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        localStorage.removeItem(getCacheKey(false));
+                        localStorage.removeItem(getCacheKey(true));
+                      }
+                      loadData(0, false);
+                    }}
+                    disabled={isRefreshing}
+                    style={{ fontFamily: 'var(--font-body)' }}
+                  >
+                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Tooltip>
+          </div>
           {isFirstTime && (
             <div 
               style={{
@@ -1214,36 +1342,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
           )}
         </div>
 
-        {isSuperAdmin && usersForViewAs.length > 1 && (
-          <Group align="flex-start" gap="sm" style={{ marginBottom: 'var(--spacing-4)', justifyContent: 'flex-end' }}>
-            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-              See Home page as
-            </Text>
-            <Select
-              data={usersForViewAs}
-              value={viewAsUser ? viewAsUser.email : ''}
-              onChange={(value) => {
-                if (value === null || value === '') {
-                  setViewAsUser(null);
-                  return;
-                }
-                const opt = usersForViewAs.find((o) => o.value === value);
-                setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
-              }}
-              placeholder="My tasks"
-              allowDeselect={false}
-              searchable
-              nothingFoundMessage="No user found"
-              size="sm"
-              style={{ minWidth: 220 }}
-              styles={() => ({
-                input: { fontFamily: 'var(--font-body)' },
-              })}
-            />
-          </Group>
-        )}
-
-        {viewAsUser && (
+        {((viewAsUser && viewAsUser.email) || showAllItems) && (
           <Box
             style={{
               marginBottom: 'var(--spacing-4)',
@@ -1255,63 +1354,29 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
           >
             <Group justify="space-between">
               <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                Viewing task list as <strong style={{ color: 'var(--color-gray-900)' }}>{viewAsUser.name}</strong>
+                Viewing{' '}
+                {viewAsUser && viewAsUser.email ? (
+                  <>tasks as <strong style={{ color: 'var(--color-gray-900)' }}>{viewAsUser.name}</strong></>
+                ) : (
+                  <>my tasks</>
+                )}
+                {showAllItems ? ' • all items' : ' • pending items only'}
               </Text>
-              <Button
-                variant="subtle"
-                size="xs"
-                onClick={() => setViewAsUser(null)}
-                style={{ fontFamily: 'var(--font-body)' }}
-              >
-                Back to my tasks
-              </Button>
+              {viewAsUser && viewAsUser.email && (
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  onClick={() => setViewAsUser(null)}
+                  style={{ fontFamily: 'var(--font-body)' }}
+                >
+                  Back to my tasks
+                </Button>
+              )}
             </Group>
           </Box>
         )}
 
         <div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            gap: 'var(--spacing-2)',
-            marginBottom: 'var(--spacing-6)'
-          }}>
-            <Group gap="sm" className="hidden md:flex">
-              <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                {showAllItems ? 'Show all items (last 10 releases)' : 'Show pending items only'}
-              </Text>
-              <Switch
-                checked={showAllItems}
-                onChange={(e) => setShowAllItems(e.currentTarget.checked)}
-                label={showAllItems ? 'All' : 'Pending'}
-                styles={{
-                  label: {
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 'var(--font-size-sm)',
-                    color: 'var(--mantine-color-dimmed)'
-                  }
-                }}
-              />
-            </Group>
-            <Button
-              variant="subtle"
-              size="sm"
-              leftSection={<IconRefresh size={16} />}
-              loading={isRefreshing}
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  localStorage.removeItem(getCacheKey(false));
-                  localStorage.removeItem(getCacheKey(true));
-                }
-                loadData(0, false);
-              }}
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Refresh
-            </Button>
-          </div>
-
           {error && items.length === 0 && (
             <div style={{
               backgroundColor: 'var(--color-error-light)',

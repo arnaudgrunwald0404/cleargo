@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
             .setExpirationTime('1h')
             .sign(new TextEncoder().encode(SECRET));
 
-        const approveUrl = BASE_URL ? `${BASE_URL.replace(/\/$/, '')}/api/jobs/leadership-digest/approve?token=${token}` : '';
+        const approveUrl = BASE_URL ? `${BASE_URL.replace(/\/$/, '')}/api/jobs/weekly-digest/approve?token=${token}` : '';
 
         if (skipValidation && approveUrl) {
             const { data: settings } = await supabase
@@ -83,7 +83,7 @@ export async function GET(request: NextRequest) {
                 .single();
             const slackChannels = settings?.slack_channels || {};
             let channel =
-                slackChannels.leadership_digest ||
+                slackChannels.weekly_digest ||
                 settings?.slack_default_channel ||
                 process.env.SLACK_DEFAULT_CHANNEL;
             if (channel && isChannelForbidden(channel)) {
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
             if (channel) {
                 const { sendSlackNotification } = await import('@/lib/slack/notifications');
                 await sendSlackNotification({
-                    type: 'leadership_digest',
+                    type: 'weekly_digest',
                     priority: 'low',
                     channel,
                     metadata: {

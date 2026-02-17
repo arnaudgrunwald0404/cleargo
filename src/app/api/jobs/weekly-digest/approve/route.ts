@@ -42,7 +42,7 @@ async function sendDigest(narrative: string | null, request: NextRequest): Promi
         .single();
     const slackChannels = settings?.slack_channels || {};
     let channel =
-        slackChannels.leadership_digest ||
+        slackChannels.weekly_digest ||
         settings?.slack_default_channel ||
         process.env.SLACK_DEFAULT_CHANNEL;
     if (channel && isChannelForbidden(channel)) {
@@ -54,7 +54,7 @@ async function sendDigest(narrative: string | null, request: NextRequest): Promi
     }
 
     await sendSlackNotification({
-        type: 'leadership_digest',
+        type: 'weekly_digest',
         priority: 'low',
         channel,
         metadata: {

@@ -6,7 +6,7 @@ export type SlackNotificationType =
     | 'stale_criterion'
     | 'launch_risk_alert'
     | 'go_no_go_decision'
-    | 'leadership_digest'
+    | 'weekly_digest'
     | 'launch_status_change'
     | 'criterion_update'
     | 'launch_created'

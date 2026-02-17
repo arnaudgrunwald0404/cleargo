@@ -484,14 +484,31 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 - **Route**: `/analytics` (dashboard analytics page)
 - **Access**: Gated by capability `analytics.read` (assigned via Admin > Settings > Permissions); SUPERADMIN, CPO, PRODUCT_OPS and other roles can be granted this capability
+- **Performance**: Tabbed interface with lazy loading - only loads data for the active tab to improve initial page load performance
+- **Tabs**:
+  - **Launch Metrics**: Success plan completion, Retro completion, Launch hygiene
+  - **Timeliness**: Criteria timeliness, PM timeliness
+  - **Usage Analytics**: Adoption metrics, stickiness metrics, usage by role, activity trends
 - **Metrics**:
   - **Success plan completion**: Rate of epics with locked success config (snapshot and 6-month trends); filters: tier, pod, date range
   - **Retro completion**: Rate of T+30/60/90 retros submitted on time (snapshot and trends)
   - **Launch hygiene**: Distribution of launch readiness (e.g. GO vs CONDITIONAL vs NO_GO) over time (snapshot and trends)
   - **Criteria timeliness**: Share of criteria updated within staleness window; on-time stats
   - **PM timeliness**: Per-PM stats on criterion update timeliness
+  - **Usage Analytics**:
+    - **Adoption**: Total users, active users (7d/30d), new users this month
+    - **Stickiness**: DAU/MAU ratio, WAU/MAU ratio, daily/weekly/monthly active users
+    - **Usage by Role**: Activity breakdown by role (PM, PMM, ADMIN, etc.)
+    - **Activity Trends**: Time series of daily active users and logins
 - **Views**: Snapshot (current period) vs trends (time-series over configurable months); filters apply to all cards
-- **APIs**: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene`, `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
+- **APIs**: 
+  - Launch Metrics: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
+  - Timeliness: `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end)
+  - Usage: `GET /api/analytics/usage?metric={adoption|stickiness|by-role|trends}` (optional query params: date_range_start, date_range_end, role, days_back)
+- **User Activity Tracking**: 
+  - Tracks user logins and activity in `user_activity` table
+  - Login activity tracked automatically via `/api/me` endpoint (throttled to once per hour per user)
+  - Updates `app_user.last_logged_in` timestamp on login
 
 ### 7. Decision Snapshots
 
@@ -705,6 +722,8 @@ The system uses the following launch stage phases:
 - **Language**: TypeScript
 - **UI Library**: Mantine UI v8
 - **Styling**: Tailwind CSS v4
+- **Page Styling Guidelines**: See `docs/PAGE_STYLING_GUIDELINES.md` for standard page container structure, typography hierarchy, spacing patterns, and font usage across all dashboard pages
+- **Skeleton Loading Guidelines**: See `docs/SKELETON_LOADING_GUIDELINES.md` for best practices on implementing skeleton loading states, common mistakes to avoid, and how to ensure smooth loading experiences
 - **Icons**: Tabler Icons React
 - **State Management**: React Hooks
 - **Forms**: Mantine Form with Zod validation
