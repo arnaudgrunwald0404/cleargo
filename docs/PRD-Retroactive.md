@@ -285,6 +285,17 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Epic Counts**: Show number of epics per release
 - **Aha! Epic Count Caching**: Cache total epic count from Aha! per release to avoid repeated API calls
 - **Count Refresh Tracking**: Track when Aha! epic count was last fetched and cached
+- **Past Releases Management**: 
+  - Filter view for releases with launch dates before today
+  - Multiselect checkboxes for batch operations
+  - Select All functionality for quick selection
+  - Batch delete for multiple past releases at once
+  - Visual highlighting of selected releases
+- **Sync from Aha with Date Filter**: 
+  - Date picker modal for selecting starting date when syncing releases
+  - Only syncs releases with launch dates on or after selected date
+  - Defaults to today's date
+  - Uses "Releases date (external)" as primary date source (falls back to end_date, then start_date)
 
 #### 3.2 Release Grid View
 - **Visual Grid**: Releases as columns, epics as rows
@@ -1259,6 +1270,12 @@ The system uses the following launch stage phases:
 5. System generates summary email
 6. System sends to CPO and Product Leads
 7. System logs notification
+8. **Release Filtering**:
+   - Fetches up to 4 next releases (increased from 2) to ensure important releases with delays are included
+   - Filters out past releases from "next releases" section (defensive check)
+   - Past releases appear only in "last releases" section
+   - Sections ordered: "Next 2 Releases" appears before "Recent Releases"
+9. **Title**: "Weekly Release Readiness Status Update" (updated from "Weekly Release Readiness Digest")
 
 ### Flow 6: Meeting Transcript Processing
 1. User navigates to Meetings page
@@ -1302,8 +1319,12 @@ The system uses the following launch stage phases:
 #### Sync API
 - **Manual Sync**: `/api/integrations/aha/sync` - Sync all or filtered epics
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
+  - **Date Filtering**: Accepts `start_date` parameter to only sync releases with launch dates on or after the specified date
+  - **Date Priority**: Uses "Releases date (external)" custom field as primary date source, falls back to `end_date`, then `start_date`
+  - **Date Picker UI**: Admin interface includes modal with date picker for selecting starting date before sync
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
 - **Release Refresh Optimization**: When a `release` query param is provided, the sync endpoint fetches epics directly from Aha! for that release and revalidates only the epics currently shown (via `existingAhaIds`), avoiding a full epic list scan.
+- **Batch Delete API**: `/api/releases/batch-delete` - Delete multiple releases at once (POST with array of release IDs)
 
 ### Product Manager API
 
