@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle, canReceiveSlackNotification } from '@/lib/slack/notifications';
+import { sendEmailNotification } from '@/lib/email/notifications';
 import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-groups';
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
@@ -31,10 +32,14 @@ export async function GET(request: NextRequest) {
         // Check for test_email query parameter to filter to a single user
         const testEmail = request.nextUrl.searchParams.get('test_email')?.toLowerCase();
 
-        // Get nudge frequency settings
+        // Get nudge frequency settings (same for Slack and Email)
         const nudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;
         const nudgeOnDueDate = settings.slack_nudge_on_due_date ?? true;
         const nudgeDailyAfter = settings.slack_nudge_daily_after_due ?? true;
+        
+        // Check if email notifications are enabled
+        const emailNotificationsEnabled = settings.email_notifications_enabled !== false;
+        const emailCriteriaNudgeEnabled = settings.email_criteria_nudge !== false;
 
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -71,8 +76,12 @@ export async function GET(request: NextRequest) {
         // We'll need to query separately for each condition type since Supabase doesn't support OR queries easily
         const allCriteria: any[] = [];
 
+        // When test_email is provided, we want to see ALL criteria for that user, even if already nudged today
+        // So we'll skip the last_nudge_sent_at filter in test mode
+        const shouldFilterByNudgeDate = !testEmail;
+
         if (nudge1WeekBefore) {
-            const { data: weekBeforeCriteria, error: weekError } = await supabase
+            let query = supabase
                 .from('epic_criterion_status')
                 .select(
                     `
@@ -102,8 +111,13 @@ export async function GET(request: NextRequest) {
                 )
                 .eq('condition_due_date', oneWeekFromNowStr)
                 .in('status', ['NOT_SET', 'CONDITIONAL'])
-                .not('decision_owner_id', 'is', null)
-                .or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+                .not('decision_owner_id', 'is', null);
+            
+            if (shouldFilterByNudgeDate) {
+                query = query.or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+            }
+            
+            const { data: weekBeforeCriteria, error: weekError } = await query;
 
             if (weekError) {
                 console.error('Error fetching 1-week-before criteria:', weekError);
@@ -115,7 +129,7 @@ export async function GET(request: NextRequest) {
         }
 
         if (nudgeOnDueDate) {
-            const { data: dueDateCriteria, error: dueError } = await supabase
+            let query = supabase
                 .from('epic_criterion_status')
                 .select(
                     `
@@ -145,8 +159,13 @@ export async function GET(request: NextRequest) {
                 )
                 .eq('condition_due_date', todayStr)
                 .in('status', ['NOT_SET', 'CONDITIONAL'])
-                .not('decision_owner_id', 'is', null)
-                .or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+                .not('decision_owner_id', 'is', null);
+            
+            if (shouldFilterByNudgeDate) {
+                query = query.or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+            }
+            
+            const { data: dueDateCriteria, error: dueError } = await query;
 
             if (dueError) {
                 console.error('Error fetching due-date criteria:', dueError);
@@ -158,7 +177,8 @@ export async function GET(request: NextRequest) {
         if (nudgeDailyAfter) {
             // For daily after nudges, only include criteria that haven't been nudged today
             // or haven't been nudged at all (last_nudge_sent_at is null)
-            const { data: overdueCriteria, error: overdueError } = await supabase
+            // Unless test_email is provided, then show all criteria
+            let query = supabase
                 .from('epic_criterion_status')
                 .select(
                     `
@@ -188,8 +208,13 @@ export async function GET(request: NextRequest) {
                 )
                 .lt('condition_due_date', todayStr)
                 .in('status', ['NOT_SET', 'CONDITIONAL'])
-                .not('decision_owner_id', 'is', null)
-                .or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+                .not('decision_owner_id', 'is', null);
+            
+            if (shouldFilterByNudgeDate) {
+                query = query.or(`last_nudge_sent_at.is.null,last_nudge_sent_at.lt.${todayStr}`);
+            }
+            
+            const { data: overdueCriteria, error: overdueError } = await query;
 
             if (overdueError) {
                 console.error('Error fetching overdue criteria:', overdueError);
@@ -353,9 +378,20 @@ export async function GET(request: NextRequest) {
             return NextResponse.json(response);
         }
 
+        // If test_email is provided, filter allCriteria to only that user's criteria
+        // This ensures we see their criteria even if they've been nudged today
+        let criteriaToProcess = allCriteria;
+        if (testEmail) {
+            criteriaToProcess = allCriteria.filter((c: any) => {
+                const ownerEmail = c.decision_owner?.email?.toLowerCase();
+                return ownerEmail === testEmail;
+            });
+            console.log(`🧪 TEST MODE: Filtered ${allCriteria.length} total criteria to ${criteriaToProcess.length} for ${testEmail}`);
+        }
+
         // Log all notifications before filtering
         const notificationsByEmail = new Map<string, any[]>();
-        for (const c of allCriteria) {
+        for (const c of criteriaToProcess) {
             const ownerEmail = c.decision_owner?.email?.toLowerCase() || 'unknown';
             if (!notificationsByEmail.has(ownerEmail)) {
                 notificationsByEmail.set(ownerEmail, []);
@@ -376,10 +412,6 @@ export async function GET(request: NextRequest) {
         const allowedForSlack = new Set<string>();
         
         for (const email of uniqueEmails) {
-            // If test_email is provided, only allow that email
-            if (testEmail && email !== testEmail) {
-                continue;
-            }
             if (await canReceiveSlackNotification(email)) allowedForSlack.add(email);
         }
         
@@ -388,10 +420,10 @@ export async function GET(request: NextRequest) {
         }
 
         console.log('📋 Slack Nudge Notifications - ALL NOTIFICATIONS (before filtering):');
-        console.log(`   Total criteria needing nudges: ${allCriteria.length}`);
+        console.log(`   Total criteria needing nudges: ${criteriaToProcess.length}${testEmail ? ` (filtered from ${allCriteria.length} total)` : ` (${allCriteria.length} total)`}`);
         console.log(`   Slack recipients: per-user flag in User Management (${allowedForSlack.size} user(s) enabled)`);
         for (const [email, criteria] of notificationsByEmail.entries()) {
-            const firstCriterion = allCriteria.find((c: any) =>
+            const firstCriterion = criteriaToProcess.find((c: any) =>
                 c.decision_owner?.email?.toLowerCase() === email
             );
             const slackHandle = firstCriterion?.decision_owner?.slack_handle;
@@ -411,17 +443,28 @@ export async function GET(request: NextRequest) {
             }
         }
 
-        const filteredCriteria = allCriteria.filter((c: any) => {
+        // Filter criteria for Slack (requires per-user flag)
+        const filteredCriteriaForSlack = criteriaToProcess.filter((c: any) => {
             const ownerEmail = c.decision_owner?.email?.toLowerCase();
             return ownerEmail && allowedForSlack.has(ownerEmail);
         });
 
-        if (filteredCriteria.length === 0) {
+        // Filter criteria for Email (all users, if email notifications are enabled)
+        const filteredCriteriaForEmail = emailNotificationsEnabled && emailCriteriaNudgeEnabled
+            ? criteriaToProcess.filter((c: any) => {
+                const ownerEmail = c.decision_owner?.email?.toLowerCase();
+                return !!ownerEmail;
+            })
+            : [];
+
+        const filteredCriteria = filteredCriteriaForSlack; // Keep for backward compatibility
+
+        if (filteredCriteria.length === 0 && filteredCriteriaForEmail.length === 0) {
             return NextResponse.json({
                 success: true,
                 message: testEmail 
-                    ? `No criteria found for test email ${testEmail} or user doesn't have Slack notifications enabled`
-                    : 'No assignees have Slack notifications enabled in User Management (all notifications logged)',
+                    ? `No criteria found for test email ${testEmail} or user doesn't have notifications enabled`
+                    : 'No assignees have notifications enabled (all notifications logged)',
                 count: 0,
                 debug: {
                     total_before_filter: allCriteria.length,
@@ -438,21 +481,39 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        console.log(`✅ Sending notifications to ${filteredCriteria.length} criteria (${allCriteria.length} total were logged)`);
+        console.log(`✅ Sending Slack notifications to ${filteredCriteria.length} criteria (${criteriaToProcess.length} total were logged)`);
+        if (emailNotificationsEnabled && emailCriteriaNudgeEnabled) {
+            console.log(`✅ Sending Email notifications to ${filteredCriteriaForEmail.length} criteria`);
+        }
 
-        console.log(`✅ After filter: ${filteredCriteria.length} criteria will receive nudges`);
+        console.log(`✅ After filter: ${filteredCriteria.length} criteria will receive Slack nudges`);
 
-        // Group all criteria by assignee (one message per user)
-        const groupedByAssignee = new Map<string, any[]>();
+        // Group all criteria by assignee for Slack (one message per user)
+        const groupedByAssigneeForSlack = new Map<string, any[]>();
         for (const criterion of filteredCriteria) {
             const ownerEmail = criterion.decision_owner?.email?.toLowerCase();
             if (!ownerEmail) continue;
             
-            if (!groupedByAssignee.has(ownerEmail)) {
-                groupedByAssignee.set(ownerEmail, []);
+            if (!groupedByAssigneeForSlack.has(ownerEmail)) {
+                groupedByAssigneeForSlack.set(ownerEmail, []);
             }
-            groupedByAssignee.get(ownerEmail)!.push(criterion);
+            groupedByAssigneeForSlack.get(ownerEmail)!.push(criterion);
         }
+
+        // Group all criteria by assignee for Email (one message per user)
+        const groupedByAssigneeForEmail = new Map<string, any[]>();
+        for (const criterion of filteredCriteriaForEmail) {
+            const ownerEmail = criterion.decision_owner?.email?.toLowerCase();
+            if (!ownerEmail) continue;
+            
+            if (!groupedByAssigneeForEmail.has(ownerEmail)) {
+                groupedByAssigneeForEmail.set(ownerEmail, []);
+            }
+            groupedByAssigneeForEmail.get(ownerEmail)!.push(criterion);
+        }
+
+        // Keep backward compatibility
+        const groupedByAssignee = groupedByAssigneeForSlack;
 
         const notificationsSent: any[] = [];
         const errors: any[] = [];
@@ -677,6 +738,7 @@ export async function GET(request: NextRequest) {
                 // Flatten epic groups for backward compatibility
                 const epicGroups = releaseGroups.flatMap(rg => rg.epic_groups);
 
+                // Send Slack notification
                 await sendSlackNotification({
                     type: 'criteria_nudge',
                     priority: overallPriority,
@@ -704,6 +766,31 @@ export async function GET(request: NextRequest) {
                     },
                 });
 
+                // Send Email notification (if enabled) - reuse release groups from Slack
+                if (emailNotificationsEnabled && emailCriteriaNudgeEnabled) {
+                    const emailCriteria = groupedByAssigneeForEmail.get(assigneeEmail!);
+                    if (emailCriteria && emailCriteria.length > 0) {
+                        try {
+                            // Reuse the same release groups structure (already built for Slack)
+                            // Convert to email format (same structure)
+                            await sendEmailNotification({
+                                type: 'criteria_nudge',
+                                recipientEmail: assigneeEmail!,
+                                userId: assigneeId!,
+                                metadata: {
+                                    recipientName: assigneeName,
+                                    release_groups: releaseGroups, // Reuse same release groups
+                                    total_criteria_count: emailCriteria.length,
+                                    appUrl: process.env.NEXT_PUBLIC_APP_URL || '',
+                                },
+                            });
+                            console.log(`Sent email nudge to ${assigneeEmail} for ${emailCriteria.length} criteria`);
+                        } catch (emailError: any) {
+                            console.error(`Failed to send email nudge to ${assigneeEmail}:`, emailError);
+                        }
+                    }
+                }
+
                 // Update last_nudge_sent_at for all criteria
                 const criterionIds = criteria.map((c) => c.id);
                 const { error: updateError } = await supabase
@@ -724,15 +811,224 @@ export async function GET(request: NextRequest) {
 
                 notificationCount++;
                 console.log(
-                    `Sent combined nudge to ${assigneeEmail} for ${criteria.length} criteria across ${epicGroups.length} epics`
+                    `Sent combined Slack nudge to ${assigneeEmail} for ${criteria.length} criteria across ${epicGroups.length} epics`
                 );
             } catch (error: any) {
-                console.error(`Failed to send nudge to ${assigneeEmail}:`, error);
+                console.error(`Failed to send Slack nudge to ${assigneeEmail}:`, error);
                 errors.push({
                     assignee_email: assigneeEmail,
                     error: error.message,
                 });
                 notificationCount++;
+            }
+        }
+
+        // Process email-only users (users who don't have Slack enabled but have email enabled)
+        if (emailNotificationsEnabled && emailCriteriaNudgeEnabled) {
+            for (const [email, criteria] of groupedByAssigneeForEmail.entries()) {
+                // Skip if already processed in Slack loop
+                if (groupedByAssigneeForSlack.has(email)) {
+                    continue;
+                }
+
+                // Add delay between notifications
+                if (notificationCount > 0) {
+                    await delay(500);
+                }
+
+                // Sort criteria by urgency
+                criteria.sort((a, b) => getUrgencyScore(a) - getUrgencyScore(b));
+
+                const firstCriterion = criteria[0];
+                const assigneeId = firstCriterion.decision_owner?.id;
+                const assigneeEmail = firstCriterion.decision_owner?.email?.toLowerCase();
+                const assigneeName = `${firstCriterion.decision_owner?.first_name || ''} ${firstCriterion.decision_owner?.last_name || ''}`.trim() || assigneeEmail;
+
+                try {
+                    // Build release groups for email (same logic as Slack)
+                    const emailEpicIds = [...new Set(criteria.map(c => c.epic_id))];
+                    const { data: emailEpicsData } = await supabase
+                        .from('epic')
+                        .select('id, name, aha_fields')
+                        .in('id', emailEpicIds);
+                    
+                    const emailEpicToRelease = new Map<string, string>();
+                    const emailReleaseNames = new Set<string>();
+                    
+                    if (emailEpicsData) {
+                        for (const epic of emailEpicsData) {
+                            const releaseName = getReleaseNameFromEpic(epic as any);
+                            if (releaseName) {
+                                emailEpicToRelease.set(epic.id, releaseName);
+                                emailReleaseNames.add(releaseName);
+                            }
+                        }
+                    }
+                    
+                    const { data: emailReleasesData } = await supabase
+                        .from('release_schedule')
+                        .select('release_name, launch_date')
+                        .in('release_name', Array.from(emailReleaseNames))
+                        .eq('archived', false);
+                    
+                    const emailReleaseToDate = new Map<string, string | null>();
+                    if (emailReleasesData) {
+                        for (const release of emailReleasesData) {
+                            emailReleaseToDate.set(release.release_name, release.launch_date);
+                        }
+                    }
+                    
+                    // Group email criteria by release
+                    const emailCriteriaByRelease = new Map<string, Map<string, any[]>>();
+                    const emailNoReleaseCriteria: any[] = [];
+                    
+                    for (const c of criteria) {
+                        const releaseName = emailEpicToRelease.get(c.epic_id);
+                        if (!releaseName) {
+                            emailNoReleaseCriteria.push(c);
+                            continue;
+                        }
+                        
+                        if (!emailCriteriaByRelease.has(releaseName)) {
+                            emailCriteriaByRelease.set(releaseName, new Map());
+                        }
+                        const releaseMap = emailCriteriaByRelease.get(releaseName)!;
+                        
+                        const epicId = c.epic_id;
+                        if (!releaseMap.has(epicId)) {
+                            releaseMap.set(epicId, []);
+                        }
+                        releaseMap.get(epicId)!.push(c);
+                    }
+                    
+                    // Sort releases (same logic as Slack)
+                    const emailSortedReleases = Array.from(emailCriteriaByRelease.entries()).sort((a, b) => {
+                        const dateA = emailReleaseToDate.get(a[0]);
+                        const dateB = emailReleaseToDate.get(b[0]);
+                        
+                        if (!dateA && !dateB) return 0;
+                        if (!dateA) return 1;
+                        if (!dateB) return -1;
+                        
+                        const dateAObj = new Date(dateA);
+                        const dateBObj = new Date(dateB);
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        
+                        const isAFuture = dateAObj >= today;
+                        const isBFuture = dateBObj >= today;
+                        
+                        if (isAFuture && isBFuture) {
+                            return dateAObj.getTime() - dateBObj.getTime();
+                        }
+                        if (isAFuture) return -1;
+                        if (isBFuture) return 1;
+                        return dateBObj.getTime() - dateAObj.getTime();
+                    });
+                    
+                    // Build email release groups
+                    const emailReleaseGroups: any[] = [];
+                    
+                    for (const [releaseName, epicMap] of emailSortedReleases) {
+                        const releaseDate = emailReleaseToDate.get(releaseName);
+                        const epicGroups = Array.from(epicMap.entries()).map(([epicId, epicCriteria]) => {
+                            const epic = epicCriteria[0].epic;
+                            return {
+                                epic_id: epicId,
+                                epic_name: epic?.name || 'Unknown Epic',
+                                criteria: epicCriteria.map((c) => ({
+                                    id: c.id,
+                                    criterion_id: c.criterion_id,
+                                    label: c.criterion?.label || 'Unknown',
+                                    category: c.criterion?.category || 'Unknown',
+                                    due_date: c.condition_due_date,
+                                    status: c.status,
+                                    nudge_type: c.nudgeType,
+                                })),
+                            };
+                        });
+                        
+                        emailReleaseGroups.push({
+                            release_name: releaseName,
+                            release_date: releaseDate,
+                            epic_groups: epicGroups,
+                        });
+                    }
+                    
+                    // Add criteria without releases
+                    if (emailNoReleaseCriteria.length > 0) {
+                        const emailNoReleaseEpicMap = new Map<string, any[]>();
+                        for (const c of emailNoReleaseCriteria) {
+                            const epicId = c.epic_id;
+                            if (!emailNoReleaseEpicMap.has(epicId)) {
+                                emailNoReleaseEpicMap.set(epicId, []);
+                            }
+                            emailNoReleaseEpicMap.get(epicId)!.push(c);
+                        }
+                        
+                        const emailNoReleaseEpicGroups = Array.from(emailNoReleaseEpicMap.entries()).map(([epicId, epicCriteria]) => {
+                            const epic = epicCriteria[0].epic;
+                            return {
+                                epic_id: epicId,
+                                epic_name: epic?.name || 'Unknown Epic',
+                                criteria: epicCriteria.map((c) => ({
+                                    id: c.id,
+                                    criterion_id: c.criterion_id,
+                                    label: c.criterion?.label || 'Unknown',
+                                    category: c.criterion?.category || 'Unknown',
+                                    due_date: c.condition_due_date,
+                                    status: c.status,
+                                    nudge_type: c.nudgeType,
+                                })),
+                            };
+                        });
+                        
+                        emailReleaseGroups.push({
+                            release_name: null,
+                            release_date: null,
+                            epic_groups: emailNoReleaseEpicGroups,
+                        });
+                    }
+                    
+                    await sendEmailNotification({
+                        type: 'criteria_nudge',
+                        recipientEmail: assigneeEmail!,
+                        userId: assigneeId!,
+                        metadata: {
+                            recipientName: assigneeName,
+                            release_groups: emailReleaseGroups,
+                            total_criteria_count: criteria.length,
+                            appUrl: process.env.NEXT_PUBLIC_APP_URL || '',
+                        },
+                    });
+
+                    // Update last_nudge_sent_at for all criteria
+                    const criterionIds = criteria.map((c) => c.id);
+                    const { error: updateError } = await supabase
+                        .from('epic_criterion_status')
+                        .update({ last_nudge_sent_at: todayStr })
+                        .in('id', criterionIds);
+
+                    if (updateError) {
+                        console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
+                    }
+
+                    notificationsSent.push({
+                        assignee_email: assigneeEmail,
+                        criteria_count: criteria.length,
+                        epic_count: emailReleaseGroups.flatMap(rg => rg.epic_groups).length,
+                    });
+
+                    notificationCount++;
+                    console.log(`Sent email nudge to ${assigneeEmail} for ${criteria.length} criteria`);
+                } catch (error: any) {
+                    console.error(`Failed to send email nudge to ${assigneeEmail}:`, error);
+                    errors.push({
+                        assignee_email: assigneeEmail,
+                        error: error.message,
+                    });
+                    notificationCount++;
+                }
             }
         }
 
@@ -750,10 +1046,11 @@ export async function GET(request: NextRequest) {
             ...(testEmail && debugInfo ? { debug_info: debugInfo } : {}),
             debug: {
                 total_before_filter: allCriteria.length,
+                filtered_for_test: testEmail ? criteriaToProcess.length : allCriteria.length,
                 filtered_count: filteredCriteria.length,
                 notifications_by_email: Object.fromEntries(
                     Array.from(notificationsByEmail.entries()).map(([email, criteria]) => {
-                        const firstCriterion = allCriteria.find((c: any) =>
+                        const firstCriterion = criteriaToProcess.find((c: any) =>
                             c.decision_owner?.email?.toLowerCase() === email
                         );
                         const slackHandle = firstCriterion?.decision_owner?.slack_handle;

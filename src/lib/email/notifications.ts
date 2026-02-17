@@ -1,9 +1,9 @@
 import { resend, EMAIL_SENDER } from './client';
-import { getLaunchStatusChangeEmail, getRiskAlertEmail } from './templates';
+import { getLaunchStatusChangeEmail, getRiskAlertEmail, getCriteriaNudgeEmail } from './templates';
 import { logNotification } from '../slack/notifications';
 import { createAdminClient } from '@/lib/supabase/server';
 
-export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert';
+export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert' | 'criteria_nudge';
 
 export interface EmailNotificationPayload {
     type: EmailNotificationType;
@@ -114,6 +114,14 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
                     payload.metadata.riskLevel,
                     payload.metadata.reason,
                     payload.metadata.launchUrl
+                );
+                break;
+            case 'criteria_nudge':
+                emailContent = getCriteriaNudgeEmail(
+                    payload.metadata.recipientName || null,
+                    payload.metadata.release_groups || [],
+                    payload.metadata.total_criteria_count || 0,
+                    payload.metadata.appUrl || process.env.NEXT_PUBLIC_APP_URL || ''
                 );
                 break;
             default:
