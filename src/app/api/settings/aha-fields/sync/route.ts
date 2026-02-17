@@ -62,17 +62,23 @@ export async function POST(req: NextRequest) {
             });
         }
 
+        // Limit the number of epics processed per request to prevent timeouts
+        // Process in batches to avoid hitting Netlify's timeout limits
+        const MAX_EPICS_PER_REQUEST = 10; // Conservative limit for serverless
+        const epicsToProcess = epics.slice(0, MAX_EPICS_PER_REQUEST);
+        const hasMore = epics.length > MAX_EPICS_PER_REQUEST;
+
         let synced = 0;
         let failed = 0;
         const errors: Array<{ aha_id: string; name: string; error: string }> = [];
         const startTime = Date.now();
-        const MAX_EXECUTION_TIME = 18000; // 18 seconds (leave buffer for response)
+        const MAX_EXECUTION_TIME = 15000; // 15 seconds (more conservative buffer)
 
         // Process epics with timeout protection
-        for (const epicRecord of epics) {
-            // Check if we're approaching timeout
+        for (const epicRecord of epicsToProcess) {
+            // Check timeout more frequently (before each epic)
             if (Date.now() - startTime > MAX_EXECUTION_TIME) {
-                console.warn(`Sync timeout approaching, stopping at ${synced + failed} of ${epics.length} epics`);
+                console.warn(`Sync timeout approaching, stopping at ${synced + failed} of ${epicsToProcess.length} epics`);
                 return NextResponse.json({
                     success: true,
                     message: `Partial synchronization completed (timeout protection)`,
@@ -88,8 +94,24 @@ export async function POST(req: NextRequest) {
             if (!epicRecord.aha_id) continue;
 
             try {
-                // Fetch epic from AHA
-                const epic = await getEpic(epicRecord.aha_id);
+                // Check timeout before each async operation
+                if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                    console.warn(`Sync timeout approaching during epic processing, stopping`);
+                    break;
+                }
+
+                // Fetch epic from AHA with timeout protection
+                const epicPromise = getEpic(epicRecord.aha_id);
+                const timeoutPromise = new Promise<never>((_, reject) => 
+                    setTimeout(() => reject(new Error('Epic fetch timeout')), 10000)
+                );
+                const epic = await Promise.race([epicPromise, timeoutPromise]);
+                
+                // Check timeout again before mapping
+                if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                    console.warn(`Sync timeout approaching during mapping, stopping`);
+                    break;
+                }
                 
                 // Map epic to epic data with current fieldsToLoad
                 const epicData = await mapEpicToEpic(epic, fieldsToLoad);
@@ -110,7 +132,11 @@ export async function POST(req: NextRequest) {
                 // Update epic with new aha_fields
                 await upsertEpicFromAha(epicData, ownerId);
                 synced++;
-                await supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicRecord.id);
+                
+                // Update aha_record_not_found flag (non-blocking)
+                supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicRecord.id).catch(err => {
+                    console.warn(`Failed to update aha_record_not_found for epic ${epicRecord.id}:`, err);
+                });
             } catch (error: any) {
                 console.error(`Failed to sync epic ${epicRecord.aha_id}:`, error);
                 failed++;
@@ -121,17 +147,25 @@ export async function POST(req: NextRequest) {
                 });
                 const isRecordNotFound = error?.message?.includes('404') || error?.message?.toLowerCase().includes('record not found');
                 if (isRecordNotFound) {
-                    await supabase.from('epic').update({ aha_record_not_found: true }).eq('id', epicRecord.id);
+                    // Non-blocking update
+                    supabase.from('epic').update({ aha_record_not_found: true }).eq('id', epicRecord.id).catch(err => {
+                        console.warn(`Failed to update aha_record_not_found flag for epic ${epicRecord.id}:`, err);
+                    });
                 }
             }
         }
 
         return NextResponse.json({
             success: true,
-            message: `Synchronized ${synced} epic${synced !== 1 ? 's' : ''}`,
+            message: hasMore 
+                ? `Synchronized ${synced} of ${epicsToProcess.length} epics (${epics.length - epicsToProcess.length} remaining)`
+                : `Synchronized ${synced} epic${synced !== 1 ? 's' : ''}`,
             synced,
             failed,
             total: epics.length,
+            processed: synced + failed,
+            remaining: hasMore ? epics.length - epicsToProcess.length : 0,
+            partial: hasMore,
             errors: errors.length > 0 ? errors : undefined,
         });
     } catch (error: any) {
