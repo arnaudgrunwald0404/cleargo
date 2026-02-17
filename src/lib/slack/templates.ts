@@ -820,13 +820,20 @@ export function buildCriteriaAssignmentMessage(
 
 /**
  * Criteria Nudge Notification (grouped by epic, due date, and assignee)
+ * Now supports combined format with multiple epics and criteria
  */
 export function buildCriteriaNudgeMessage(
-    groupedCriteria: GroupedCriteria,
-    nudgeType: '1_week_before' | 'on_due_date' | 'daily_after',
+    groupedCriteria: GroupedCriteria | { epic_groups?: any[]; criteria?: any[]; total_criteria_count?: number },
+    nudgeType: '1_week_before' | 'on_due_date' | 'daily_after' | 'combined',
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
-    const dueDate = groupedCriteria.criteria[0]?.due_date;
+    // Handle new combined format
+    if (nudgeType === 'combined' && 'epic_groups' in groupedCriteria && groupedCriteria.epic_groups) {
+        return buildCombinedCriteriaNudgeMessage(groupedCriteria as any, theme);
+    }
+
+    // Original format (backward compatibility)
+    const dueDate = (groupedCriteria as GroupedCriteria).criteria[0]?.due_date;
     if (!dueDate) {
         throw new Error('Cannot build nudge message without due date');
     }
@@ -863,7 +870,7 @@ export function buildCriteriaNudgeMessage(
         contextText = `These criteria are ${daysOverdue} day${daysOverdue !== 1 ? 's' : ''} overdue. Please update their status as soon as possible.`;
     }
 
-    const criteriaList = groupedCriteria.criteria
+    const criteriaList = (groupedCriteria as GroupedCriteria).criteria
         .map((c) => `• ${c.label}`)
         .join('\n');
 
@@ -880,7 +887,7 @@ export function buildCriteriaNudgeMessage(
             type: 'section',
             text: {
                 type: 'mrkdwn',
-                text: `*${groupedCriteria.epic_name}*\nDue Date: ${dueDate}`,
+                text: `*${(groupedCriteria as GroupedCriteria).epic_name}*\nDue Date: ${dueDate}`,
             },
         },
         {
@@ -910,7 +917,7 @@ export function buildCriteriaNudgeMessage(
                         emoji: true,
                     },
                     style: urgencyColor === 'danger' ? 'danger' : 'primary',
-                    url: `${APP_URL}/epics/${groupedCriteria.epic_id}`,
+                    url: `${APP_URL}/epics/${(groupedCriteria as GroupedCriteria).epic_id}`,
                     action_id: 'update_criteria',
                 },
             ],
@@ -921,7 +928,158 @@ export function buildCriteriaNudgeMessage(
     ];
 
     return {
-        text: `${urgencyEmoji} ${groupedCriteria.criteria.length} criteria ${nudgeType === 'daily_after' ? 'overdue' : 'due'} for ${groupedCriteria.epic_name}`,
+        text: `${urgencyEmoji} ${(groupedCriteria as GroupedCriteria).criteria.length} criteria ${nudgeType === 'daily_after' ? 'overdue' : 'due'} for ${(groupedCriteria as GroupedCriteria).epic_name}`,
+        blocks,
+    };
+}
+
+/**
+ * Build combined criteria nudge message with multiple epics and criteria, ordered by urgency
+ */
+function buildCombinedCriteriaNudgeMessage(
+    data: { epic_groups: any[]; criteria: any[]; total_criteria_count: number },
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Calculate urgency breakdown
+    let overdueCount = 0;
+    let dueTodayCount = 0;
+    let dueSoonCount = 0;
+    let mostUrgentDays = 0;
+
+    for (const c of data.criteria) {
+        if (!c.due_date) continue;
+        const dueDate = new Date(c.due_date);
+        dueDate.setHours(0, 0, 0, 0);
+        const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (daysDiff < 0) {
+            overdueCount++;
+            if (daysDiff < mostUrgentDays) mostUrgentDays = daysDiff;
+        } else if (daysDiff === 0) {
+            dueTodayCount++;
+        } else if (daysDiff <= 7) {
+            dueSoonCount++;
+        }
+    }
+
+    // Determine header based on most urgent items
+    let headerText: string;
+    let urgencyEmoji: string;
+    let urgencyColor: 'danger' | 'warning' | undefined;
+    
+    if (overdueCount > 0) {
+        const daysOverdue = Math.abs(mostUrgentDays);
+        headerText = `${theme.emojis.nudge.overdue} ${data.total_criteria_count} Criteria Need Attention`;
+        urgencyEmoji = theme.emojis.nudge.overdue;
+        urgencyColor = 'danger';
+    } else if (dueTodayCount > 0) {
+        headerText = `${theme.emojis.nudge.dueToday} ${data.total_criteria_count} Criteria Need Attention`;
+        urgencyEmoji = theme.emojis.nudge.dueToday;
+        urgencyColor = 'warning';
+    } else {
+        headerText = `${theme.emojis.nudge.weekBefore} ${data.total_criteria_count} Criteria Need Attention`;
+        urgencyEmoji = theme.emojis.nudge.weekBefore;
+        urgencyColor = 'warning';
+    }
+
+    const blocks: SlackBlock[] = [
+        {
+            type: 'header',
+            text: {
+                type: 'plain_text',
+                text: headerText,
+                emoji: true,
+            },
+        },
+    ];
+
+    // Add summary
+    const summaryParts: string[] = [];
+    if (overdueCount > 0) summaryParts.push(`${overdueCount} overdue`);
+    if (dueTodayCount > 0) summaryParts.push(`${dueTodayCount} due today`);
+    if (dueSoonCount > 0) summaryParts.push(`${dueSoonCount} due soon`);
+    
+    if (summaryParts.length > 0) {
+        blocks.push({
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*Summary:* ${summaryParts.join(', ')}`,
+            },
+        });
+    }
+
+    // Group criteria by epic and add sections
+    for (const epicGroup of data.epic_groups) {
+        // Calculate days until/since due for this epic's most urgent criterion
+        const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
+            const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+            const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+            return dateA - dateB;
+        });
+        
+        const mostUrgentCriterion = epicCriteria[0];
+        const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
+        
+        let epicUrgencyText = '';
+        if (dueDate) {
+            dueDate.setHours(0, 0, 0, 0);
+            const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            if (daysDiff < 0) {
+                epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
+            } else if (daysDiff === 0) {
+                epicUrgencyText = ' *(Due today)*';
+            } else if (daysDiff <= 7) {
+                epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
+            }
+        }
+
+        blocks.push({
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `• ${c.label}`).join('\n')}`,
+            },
+            accessory: {
+                type: 'button',
+                text: {
+                    type: 'plain_text',
+                    text: 'View Epic',
+                    emoji: true,
+                },
+                url: `${APP_URL}/epics/${epicGroup.epic_id}`,
+                action_id: `view_epic_${epicGroup.epic_id}`,
+            },
+        });
+    }
+
+    // Add action button
+    blocks.push({
+        type: 'actions',
+        elements: [
+            {
+                type: 'button',
+                text: {
+                    type: 'plain_text',
+                    text: 'View All My Items',
+                    emoji: true,
+                },
+                style: urgencyColor === 'danger' ? 'danger' : 'primary',
+                url: `${APP_URL}/my-items`,
+                action_id: 'view_all_items',
+            },
+        ],
+    });
+
+    blocks.push({
+        type: 'divider',
+    });
+
+    return {
+        text: `${urgencyEmoji} ${data.total_criteria_count} criteria need attention across ${data.epic_groups.length} epic${data.epic_groups.length !== 1 ? 's' : ''}`,
         blocks,
     };
 }

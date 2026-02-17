@@ -357,16 +357,31 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');
-                const groupedNudgeCriteria = {
-                    epic_id: payload.launch_id!,
-                    epic_name: payload.metadata.epic_name,
-                    assignee_id: payload.recipient!.id,
-                    assignee_email: payload.recipient!.email,
-                    assignee_name: payload.recipient!.name,
-                    assignee_slack_handle: payload.recipient!.slack_handle,
-                    criteria: payload.metadata.criteria || [],
-                };
-                message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type, theme);
+                
+                // Check if this is a combined message (new format)
+                if (payload.metadata.nudge_type === 'combined' && payload.metadata.epic_groups) {
+                    message = buildCriteriaNudgeMessage(
+                        {
+                            epic_groups: payload.metadata.epic_groups,
+                            criteria: payload.metadata.criteria || [],
+                            total_criteria_count: payload.metadata.total_criteria_count || 0,
+                        },
+                        'combined',
+                        theme
+                    );
+                } else {
+                    // Original format (backward compatibility)
+                    const groupedNudgeCriteria = {
+                        epic_id: payload.launch_id!,
+                        epic_name: payload.metadata.epic_name,
+                        assignee_id: payload.recipient!.id,
+                        assignee_email: payload.recipient!.email,
+                        assignee_name: payload.recipient!.name,
+                        assignee_slack_handle: payload.recipient!.slack_handle,
+                        criteria: payload.metadata.criteria || [],
+                    };
+                    message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type, theme);
+                }
                 break;
 
             case 'criterion_comment_or_attachment':

@@ -59,7 +59,7 @@ export function HeartSetupWizard({
         const res = await fetch(`/api/epics/${epicId}/success/config`);
         if (res.ok) {
           const config = await res.json();
-          if (config?.track_offline) {
+          if (config && typeof config.track_offline === 'boolean') {
             setTrackOffline(config.track_offline);
           }
         }
@@ -72,9 +72,15 @@ export function HeartSetupWizard({
 
   const handleTrackOfflineChange = async (checked: boolean) => {
     try {
-      // Check if config exists
+      // Check if config exists - GET returns null with status 200 when config doesn't exist
       const configRes = await fetch(`/api/epics/${epicId}/success/config`);
-      const method = configRes.ok ? 'PATCH' : 'POST';
+      let method: 'POST' | 'PATCH' = 'POST';
+      
+      if (configRes.ok) {
+        // Parse the response to check if config actually exists
+        const configData = await configRes.json();
+        method = configData ? 'PATCH' : 'POST';
+      }
       
       const res = await fetch(`/api/epics/${epicId}/success/config`, {
         method,
@@ -85,6 +91,12 @@ export function HeartSetupWizard({
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.error || 'Failed to update offline tracking setting');
+      }
+
+      // Confirm state was saved successfully by reading back from response
+      const savedConfig = await res.json();
+      if (savedConfig?.track_offline !== undefined) {
+        setTrackOffline(savedConfig.track_offline);
       }
     } catch (error: any) {
       console.error('Error updating track_offline:', error);
@@ -268,7 +280,7 @@ export function HeartSetupWizard({
             </Alert>
           )}
 
-          <Paper  p="md" radius="md" style={{ backgroundColor: 'var(--color-platinum)', borderColor: 'var(--color-gray-300)' }}>
+          <Paper  p="md" radius="md" style={{ backgroundColor: 'var(--color-platinum)', borderColor: 'var(--color-gray-300)', opacity: trackOffline ? 0.5 : 1 }}>
             <Group gap="xs" mb="xs">
            
           
@@ -290,6 +302,7 @@ export function HeartSetupWizard({
               maxRows={4}
               autosize
               color="dark.gray"
+              disabled={trackOffline}
             />
             <Text size="sm" c="dimmed" mt="xs">
               Whatever you type here is passed to the AI when you click <strong>Fully Automatic</strong> or <strong>AI-Assisted</strong> below. Manual setup does not use this.
@@ -303,8 +316,13 @@ export function HeartSetupWizard({
               p="md"
               radius="md"
               bg="white"
-              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
-              onClick={() => handleMethodSelect('auto')}
+              style={{ 
+                cursor: trackOffline ? 'not-allowed' : 'pointer', 
+                borderColor: 'var(--color-gray-300)',
+                opacity: trackOffline ? 0.5 : 1,
+                pointerEvents: trackOffline ? 'none' : 'auto'
+              }}
+              onClick={() => !trackOffline && handleMethodSelect('auto')}
             >
               <Group>
                 <ThemeIcon size="xl" radius="md" color="green">
@@ -335,8 +353,13 @@ export function HeartSetupWizard({
               p="md"
               radius="md"
               bg="white"
-              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
-              onClick={() => handleMethodSelect('ai_assisted')}
+              style={{ 
+                cursor: trackOffline ? 'not-allowed' : 'pointer', 
+                borderColor: 'var(--color-gray-300)',
+                opacity: trackOffline ? 0.5 : 1,
+                pointerEvents: trackOffline ? 'none' : 'auto'
+              }}
+              onClick={() => !trackOffline && handleMethodSelect('ai_assisted')}
             >
               <Group>
                 <ThemeIcon size="xl" radius="md" color="blue">
@@ -365,8 +388,13 @@ export function HeartSetupWizard({
               p="md"
               radius="md"
               bg="white"
-              style={{ cursor: 'pointer', borderColor: 'var(--color-gray-300)' }}
-              onClick={() => handleMethodSelect('manual')}
+              style={{ 
+                cursor: trackOffline ? 'not-allowed' : 'pointer', 
+                borderColor: 'var(--color-gray-300)',
+                opacity: trackOffline ? 0.5 : 1,
+                pointerEvents: trackOffline ? 'none' : 'auto'
+              }}
+              onClick={() => !trackOffline && handleMethodSelect('manual')}
             >
               <Group>
                 <ThemeIcon size="xl" radius="md" color="gray">

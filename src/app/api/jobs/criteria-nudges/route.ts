@@ -438,14 +438,16 @@ export async function GET(request: NextRequest) {
 
         console.log(`✅ After filter: ${filteredCriteria.length} criteria will receive nudges`);
 
-        // Group by epic, due date, and assignee (and nudge type for daily_after)
-        const groupedByNudgeType = new Map<string, any[]>();
+        // Group all criteria by assignee (one message per user)
+        const groupedByAssignee = new Map<string, any[]>();
         for (const criterion of filteredCriteria) {
-            const key = criterion.nudgeType;
-            if (!groupedByNudgeType.has(key)) {
-                groupedByNudgeType.set(key, []);
+            const ownerEmail = criterion.decision_owner?.email?.toLowerCase();
+            if (!ownerEmail) continue;
+            
+            if (!groupedByAssignee.has(ownerEmail)) {
+                groupedByAssignee.set(ownerEmail, []);
             }
-            groupedByNudgeType.get(key)!.push(criterion);
+            groupedByAssignee.get(ownerEmail)!.push(criterion);
         }
 
         const notificationsSent: any[] = [];
@@ -454,95 +456,154 @@ export async function GET(request: NextRequest) {
         // Helper function to add delay between notifications
         const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-        // Process each nudge type
-        for (const [nudgeType, criteria] of groupedByNudgeType.entries()) {
-            // Group by epic, due date, and assignee
-            const grouped = groupCriteriaByEpicDueDateAndAssignee(criteria);
+        // Helper function to calculate urgency score (lower = more urgent)
+        const getUrgencyScore = (criterion: any): number => {
+            const dueDate = criterion.condition_due_date ? new Date(criterion.condition_due_date) : null;
+            if (!dueDate) return 999; // No due date = least urgent
+            
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const dueDateNormalized = new Date(dueDate);
+            dueDateNormalized.setHours(0, 0, 0, 0);
+            
+            const daysDiff = Math.ceil((dueDateNormalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            
+            // Most overdue = most urgent (negative days, so -100 is more urgent than -1)
+            // Then due today (0)
+            // Then due in 1 week (7)
+            return -daysDiff;
+        };
 
-            let notificationCount = 0;
-            for (const [key, group] of grouped.entries()) {
-                // Add delay between notifications to avoid rate limiting (500ms between each)
-                if (notificationCount > 0) {
-                    await delay(500);
+        // Process each assignee (one message per user)
+        let notificationCount = 0;
+        for (const [email, criteria] of groupedByAssignee.entries()) {
+            // Add delay between notifications to avoid rate limiting (500ms between each)
+            if (notificationCount > 0) {
+                await delay(500);
+            }
+
+            // Sort criteria by urgency (most urgent first)
+            criteria.sort((a, b) => getUrgencyScore(a) - getUrgencyScore(b));
+
+            // Get user info from first criterion
+            const firstCriterion = criteria[0];
+            const assigneeId = firstCriterion.decision_owner?.id;
+            const assigneeEmail = firstCriterion.decision_owner?.email?.toLowerCase();
+            const assigneeName = `${firstCriterion.decision_owner?.first_name || ''} ${firstCriterion.decision_owner?.last_name || ''}`.trim() || assigneeEmail;
+            let assigneeSlackHandle = firstCriterion.decision_owner?.slack_handle;
+
+            if (!assigneeSlackHandle) {
+                // Try to sync Slack handle before skipping
+                console.log(`Attempting to sync Slack handle for ${assigneeEmail}...`);
+                const syncedHandle = await syncUserSlackHandle(assigneeEmail!);
+                
+                if (syncedHandle) {
+                    assigneeSlackHandle = syncedHandle;
+                    console.log(`Successfully synced Slack handle for ${assigneeEmail}: ${syncedHandle}`);
+                } else {
+                    console.log(`Skipping nudge for ${assigneeEmail} - no Slack handle found`);
+                    continue;
                 }
-                if (!group.assignee_slack_handle) {
-                    // Try to sync Slack handle before skipping
-                    console.log(`Attempting to sync Slack handle for ${group.assignee_email}...`);
-                    const syncedHandle = await syncUserSlackHandle(group.assignee_email);
-                    
-                    if (syncedHandle) {
-                        // Update the group with the synced handle
-                        group.assignee_slack_handle = syncedHandle;
-                        console.log(`Successfully synced Slack handle for ${group.assignee_email}: ${syncedHandle}`);
-                    } else {
-                        console.log(`Skipping nudge for ${group.assignee_email} - no Slack handle found`);
-                        continue;
+            }
+
+            try {
+                // Determine overall priority based on most urgent criterion
+                const mostUrgent = criteria[0];
+                const mostUrgentDueDate = mostUrgent.condition_due_date ? new Date(mostUrgent.condition_due_date) : null;
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                let overallPriority: 'high' | 'medium' = 'medium';
+                if (mostUrgentDueDate) {
+                    const daysDiff = Math.ceil((mostUrgentDueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    if (daysDiff < 0) {
+                        overallPriority = 'high'; // Overdue = high priority
                     }
                 }
 
-                try {
-                    const epicUrl = process.env.NEXT_PUBLIC_APP_URL
-                        ? `${process.env.NEXT_PUBLIC_APP_URL}/epics/${group.epic_id}`
-                        : undefined;
-
-                    await sendSlackNotification({
-                        type: 'criteria_nudge',
-                        priority: nudgeType === 'daily_after' ? 'high' : 'medium',
-                        recipient: {
-                            id: group.assignee_id,
-                            email: group.assignee_email,
-                            slack_handle: group.assignee_slack_handle,
-                            name: group.assignee_name,
-                        },
-                        launch_id: group.epic_id,
-                        metadata: {
-                            epic_name: group.epic_name,
-                            epic_id: group.epic_id,
-                            criteria_count: group.criteria.length,
-                            criteria: group.criteria.map((c) => ({
-                                id: c.id,
-                                label: c.label,
-                                category: c.category,
-                                due_date: c.due_date,
-                            })),
-                            nudge_type: nudgeType,
-                            epic_url: epicUrl,
-                        },
-                    });
-
-                    // Update last_nudge_sent_at for all criteria in this group
-                    const criterionIds = group.criteria.map((c) => c.id);
-                    const { error: updateError } = await supabase
-                        .from('epic_criterion_status')
-                        .update({ last_nudge_sent_at: todayStr })
-                        .in('id', criterionIds);
-
-                    if (updateError) {
-                        console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
-                        // Continue anyway - notification was sent
+                // Group criteria by epic for better organization in the message
+                const criteriaByEpic = new Map<string, any[]>();
+                for (const c of criteria) {
+                    const epicId = c.epic_id;
+                    if (!criteriaByEpic.has(epicId)) {
+                        criteriaByEpic.set(epicId, []);
                     }
-
-                    notificationsSent.push({
-                        epic_id: group.epic_id,
-                        assignee_email: group.assignee_email,
-                        nudge_type: nudgeType,
-                        criteria_count: group.criteria.length,
-                    });
-
-                    notificationCount++;
-                    console.log(
-                        `Sent ${nudgeType} nudge to ${group.assignee_email} for ${group.criteria.length} criteria in ${group.epic_name} (${notificationCount}/${grouped.size})`
-                    );
-                } catch (error: any) {
-                    console.error(`Failed to send nudge to ${group.assignee_email}:`, error);
-                    errors.push({
-                        epic_id: group.epic_id,
-                        assignee_email: group.assignee_email,
-                        nudge_type: nudgeType,
-                        error: error.message,
-                    });
-                    notificationCount++;
+                    criteriaByEpic.get(epicId)!.push(c);
                 }
+
+                // Build metadata with all criteria grouped by epic
+                const epicGroups = Array.from(criteriaByEpic.entries()).map(([epicId, epicCriteria]) => {
+                    const epic = epicCriteria[0].epic;
+                    return {
+                        epic_id: epicId,
+                        epic_name: epic?.name || 'Unknown Epic',
+                        criteria: epicCriteria.map((c) => ({
+                            id: c.id,
+                            criterion_id: c.criterion_id,
+                            label: c.criterion?.label || 'Unknown',
+                            category: c.criterion?.category || 'Unknown',
+                            due_date: c.condition_due_date,
+                            status: c.status,
+                            nudge_type: c.nudgeType,
+                        })),
+                    };
+                });
+
+                await sendSlackNotification({
+                    type: 'criteria_nudge',
+                    priority: overallPriority,
+                    recipient: {
+                        id: assigneeId!,
+                        email: assigneeEmail!,
+                        slack_handle: assigneeSlackHandle,
+                        name: assigneeName,
+                    },
+                    launch_id: epicGroups[0]?.epic_id, // Use first epic ID for compatibility
+                    metadata: {
+                        epic_groups: epicGroups,
+                        total_criteria_count: criteria.length,
+                        criteria: criteria.map((c) => ({
+                            id: c.id,
+                            label: c.criterion?.label || 'Unknown',
+                            category: c.criterion?.category || 'Unknown',
+                            due_date: c.condition_due_date,
+                            epic_id: c.epic_id,
+                            epic_name: c.epic?.name || 'Unknown',
+                            nudge_type: c.nudgeType,
+                        })),
+                        nudge_type: 'combined', // Indicates this is a combined message
+                    },
+                });
+
+                // Update last_nudge_sent_at for all criteria
+                const criterionIds = criteria.map((c) => c.id);
+                const { error: updateError } = await supabase
+                    .from('epic_criterion_status')
+                    .update({ last_nudge_sent_at: todayStr })
+                    .in('id', criterionIds);
+
+                if (updateError) {
+                    console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
+                    // Continue anyway - notification was sent
+                }
+
+                notificationsSent.push({
+                    assignee_email: assigneeEmail,
+                    criteria_count: criteria.length,
+                    epic_count: epicGroups.length,
+                });
+
+                notificationCount++;
+                console.log(
+                    `Sent combined nudge to ${assigneeEmail} for ${criteria.length} criteria across ${epicGroups.length} epics`
+                );
+            } catch (error: any) {
+                console.error(`Failed to send nudge to ${assigneeEmail}:`, error);
+                errors.push({
+                    assignee_email: assigneeEmail,
+                    error: error.message,
+                });
+                notificationCount++;
             }
         }
 
