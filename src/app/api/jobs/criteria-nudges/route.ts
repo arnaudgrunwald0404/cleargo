@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle, canReceiveSlackNotification } from '@/lib/slack/notifications';
 import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-groups';
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
@@ -199,8 +199,9 @@ export async function GET(request: NextRequest) {
             debugInfo = { test_email: testEmail };
             
             // Query to see what criteria exist for this user
-            // Try case-insensitive search first
-            const { data: userDataArray, error: userError } = await supabase
+            // Use admin client to bypass RLS since this is a cron job
+            const adminSupabase = createAdminClient();
+            const { data: userDataArray, error: userError } = await adminSupabase
                 .from('app_user')
                 .select('id, email')
                 .ilike('email', testEmail)
