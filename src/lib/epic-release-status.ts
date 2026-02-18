@@ -71,7 +71,7 @@ export function computeEpicReleaseStatus(
 
   launchDate.setHours(0, 0, 0, 0);
 
-  if (today < launchDate) {
+  if (today <= launchDate) {
     return 'Pre_Release';
   }
 
