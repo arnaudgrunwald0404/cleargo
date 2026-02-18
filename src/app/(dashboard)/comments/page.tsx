@@ -47,18 +47,18 @@ interface Comment {
   launch_criterion_status_id: string;
 }
 
-interface EpicsResponse {
-  epics: Array<{ id: string; name: string }>;
-}
+type EpicsResponse = Array<{ id: string; name: string }>;
 
 export default function CommentsPage() {
   const router = useRouter();
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [activeTab, setActiveTab] = useState<string>('all');
+  const [myEpicsUnreadCount, setMyEpicsUnreadCount] = useState(0);
+  const [activeTab, setActiveTab] = useState<string>('my-epics');
   const [epics, setEpics] = useState<Array<{ value: string; label: string }>>([]);
   const [selectedEpicId, setSelectedEpicId] = useState<string>('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
   const [commentsModalOpen, setCommentsModalOpen] = useState(false);
@@ -81,6 +81,25 @@ export default function CommentsPage() {
       .catch((err) => console.error('Failed to fetch user email:', err));
   }, []);
 
+  // Fetch my-epics unread count (independent of active tab)
+  const fetchMyEpicsUnreadCount = useCallback(async () => {
+    try {
+      const response = await fetchWithRateLimit('/api/comments/all?myEpicsOnly=true&unread=true', {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setMyEpicsUnreadCount(data.unread_count || 0);
+      }
+    } catch {
+      // silently ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchMyEpicsUnreadCount();
+  }, [fetchMyEpicsUnreadCount]);
+
   // Fetch epics for filter dropdown
   useEffect(() => {
     fetchEpics();
@@ -93,9 +112,10 @@ export default function CommentsPage() {
       });
       if (response.ok) {
         const data: EpicsResponse = await response.json();
+        const epicsArray = Array.isArray(data) ? data : [];
         const epicOptions = [
           { value: '', label: 'All Epics' },
-          ...data.epics.map((epic) => ({
+          ...epicsArray.map((epic) => ({
             value: epic.id,
             label: epic.name,
           })),
@@ -114,6 +134,9 @@ export default function CommentsPage() {
       const params = new URLSearchParams();
       if (activeTab === 'unread') {
         params.append('unread', 'true');
+      }
+      if (activeTab === 'my-epics') {
+        params.append('myEpicsOnly', 'true');
       }
       if (selectedEpicId) {
         params.append('epicId', selectedEpicId);
@@ -159,8 +182,8 @@ export default function CommentsPage() {
       });
 
       if (response.ok) {
-        // Refresh comments to update read status
         await fetchComments();
+        fetchMyEpicsUnreadCount();
       } else {
         console.error('Failed to mark comments as read');
       }
@@ -183,7 +206,18 @@ export default function CommentsPage() {
     setSelectedCommentForModal(null);
     // Refresh comments after closing modal (they may have been marked as read)
     fetchComments();
+    fetchMyEpicsUnreadCount();
   };
+
+  const filteredComments = selectedStatus
+    ? comments.filter((c) => c.status_at_comment === selectedStatus)
+    : comments;
+
+  const STATUS_OPTIONS = [
+    { value: 'GO', label: 'GO' },
+    { value: 'CONDITIONAL', label: 'CONDITIONAL' },
+    { value: 'NO_GO', label: 'NO GO' },
+  ];
 
   return (
     <div
@@ -246,6 +280,14 @@ export default function CommentsPage() {
           {/* Tabs */}
           <Tabs value={activeTab} onChange={(value) => setActiveTab(value || 'all')}>
             <Tabs.List>
+              <Tabs.Tab value="my-epics">
+                My Epics
+                {myEpicsUnreadCount > 0 && (
+                  <Badge size="xs" color="blue" ml="xs">
+                    {myEpicsUnreadCount}
+                  </Badge>
+                )}
+              </Tabs.Tab>
               <Tabs.Tab value="all">
                 All Comments
                 {comments.length > 0 && (
@@ -296,6 +338,22 @@ export default function CommentsPage() {
                         },
                       }}
                     />
+                    <Select
+                      placeholder="All Statuses"
+                      data={STATUS_OPTIONS}
+                      value={selectedStatus}
+                      onChange={(value) => setSelectedStatus(value || '')}
+                      clearable
+                      style={{ minWidth: 160 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
                     <TextInput
                       type="date"
                       label="Start Date"
@@ -326,12 +384,13 @@ export default function CommentsPage() {
                         },
                       }}
                     />
-                    {(selectedEpicId || startDate || endDate) && (
+                    {(selectedEpicId || selectedStatus || startDate || endDate) && (
                       <Button
                         variant="subtle"
                         size="xs"
                         onClick={() => {
                           setSelectedEpicId('');
+                          setSelectedStatus('');
                           setStartDate('');
                           setEndDate('');
                         }}
@@ -349,7 +408,7 @@ export default function CommentsPage() {
                   </div>
                 ) : (
                   <CommentsList
-                    comments={comments}
+                    comments={filteredComments}
                     onMarkRead={handleMarkRead}
                     onNavigateToEpic={handleNavigateToEpic}
                     onOpenCommentsModal={handleOpenCommentsModal}
@@ -392,6 +451,22 @@ export default function CommentsPage() {
                         },
                       }}
                     />
+                    <Select
+                      placeholder="All Statuses"
+                      data={STATUS_OPTIONS}
+                      value={selectedStatus}
+                      onChange={(value) => setSelectedStatus(value || '')}
+                      clearable
+                      style={{ minWidth: 160 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
                     <TextInput
                       type="date"
                       label="Start Date"
@@ -422,12 +497,13 @@ export default function CommentsPage() {
                         },
                       }}
                     />
-                    {(selectedEpicId || startDate || endDate) && (
+                    {(selectedEpicId || selectedStatus || startDate || endDate) && (
                       <Button
                         variant="subtle"
                         size="xs"
                         onClick={() => {
                           setSelectedEpicId('');
+                          setSelectedStatus('');
                           setStartDate('');
                           setEndDate('');
                         }}
@@ -445,7 +521,103 @@ export default function CommentsPage() {
                   </div>
                 ) : (
                   <CommentsList
-                    comments={comments}
+                    comments={filteredComments}
+                    onMarkRead={handleMarkRead}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenCommentsModal={handleOpenCommentsModal}
+                    loading={loading}
+                    showBulkActions={true}
+                  />
+                )}
+              </Stack>
+          </Tabs.Panel>
+
+            <Tabs.Panel value="my-epics" pt="md">
+              <Stack gap="md">
+                {/* Filters */}
+                <Group mb="lg" align="flex-end" gap="sm">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    Filters:
+                  </Text>
+                  <Box
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                      gap: '16px',
+                      padding: '8px 0',
+                    }}
+                  >
+                    <Select
+                      placeholder="All Statuses"
+                      data={STATUS_OPTIONS}
+                      value={selectedStatus}
+                      onChange={(value) => setSelectedStatus(value || '')}
+                      clearable
+                      style={{ minWidth: 160 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="Start Date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="End Date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    {(selectedStatus || startDate || endDate) && (
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        onClick={() => {
+                          setSelectedStatus('');
+                          setStartDate('');
+                          setEndDate('');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
+                  </Box>
+                </Group>
+
+                {/* Comments List */}
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}>
+                    <PurpleLoader />
+                  </div>
+                ) : (
+                  <CommentsList
+                    comments={filteredComments}
                     onMarkRead={handleMarkRead}
                     onNavigateToEpic={handleNavigateToEpic}
                     onOpenCommentsModal={handleOpenCommentsModal}
@@ -455,8 +627,8 @@ export default function CommentsPage() {
                 )}
               </Stack>
             </Tabs.Panel>
-          </Tabs>
-        </Stack>
+        </Tabs>
+      </Stack>
 
         {/* Comments Modal */}
         {selectedCommentForModal && (

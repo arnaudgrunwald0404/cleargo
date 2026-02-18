@@ -14,7 +14,7 @@ import {
   Tooltip,
   Card,
 } from '@mantine/core';
-import { IconMessageCircle, IconExternalLink, IconCheck } from '@tabler/icons-react';
+import { IconMessageCircle, IconCheck } from '@tabler/icons-react';
 import { UserDisplay } from './UserDisplay';
 
 interface Comment {
@@ -206,17 +206,16 @@ export function CommentsList({
         </Group>
       )}
 
-      <Table.ScrollContainer minWidth={800}>
+      <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm" highlightOnHover>
           <Table.Thead>
             <Table.Tr>
               {showBulkActions && onMarkRead && <Table.Th style={{ width: 40 }} />}
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Epic</Table.Th>
-              <Table.Th>Criterion</Table.Th>
+              <Table.Th style={{ width: 320 }}>Epic / Criterion</Table.Th>
+              <Table.Th style={{ width: 60 }}>Status</Table.Th>
               <Table.Th>Comment</Table.Th>
-              <Table.Th>Author</Table.Th>
-              <Table.Th>Date</Table.Th>
+              <Table.Th style={{ width: 80 }}>Author</Table.Th>
+              <Table.Th style={{ width: 100 }}>Date</Table.Th>
               <Table.Th style={{ width: 100 }}>Actions</Table.Th>
             </Table.Tr>
           </Table.Thead>
@@ -231,7 +230,7 @@ export function CommentsList({
                   key={comment.id}
                   style={{
                     backgroundColor: isUnread ? 'rgba(59, 130, 246, 0.05)' : undefined,
-                    fontWeight: isUnread ? 500 : undefined,
+                    fontWeight: isUnread ? 600 : undefined,
                   }}
                 >
                   {showBulkActions && onMarkRead && (
@@ -243,72 +242,62 @@ export function CommentsList({
                     </Table.Td>
                   )}
                   <Table.Td>
-                    <Group gap={4}>
-                      {comment.previous_status && getStatusColor(comment.previous_status) && (
-                        <>
-                          <div
+                    <Stack gap={2} align="flex-start">
+                      {comment.epic ? (
+                        <Tooltip label={comment.epic.name}>
+                          <Button
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => handleNavigateToEpic(comment.epic!.id)}
+                            px={0}
                             style={{
-                              width: '8px',
-                              height: '8px',
-                              borderRadius: '50%',
-                              backgroundColor: getStatusColor(comment.previous_status)!,
+                              color: '#4F46E5',
+                              fontWeight: 500,
+                              maxWidth: '100%',
+                              height: 'auto',
+                              justifyContent: 'flex-start',
                             }}
-                            title={`Previous: ${getStatusLabel(comment.previous_status)}`}
-                          />
-                          {comment.status_at_comment &&
-                            comment.previous_status !== comment.status_at_comment && (
-                              <span style={{ fontSize: '10px' }}>→</span>
-                            )}
-                        </>
+                          >
+                            <Text size="sm" truncate style={{ maxWidth: 260 }}>
+                              {comment.epic.name}
+                            </Text>
+                          </Button>
+                        </Tooltip>
+                      ) : (
+                        <Text size="sm" c="dimmed">Unknown epic</Text>
                       )}
-                      {comment.status_at_comment && getStatusColor(comment.status_at_comment) && (
-                        <div
-                          style={{
-                            width: '8px',
-                            height: '8px',
-                            borderRadius: '50%',
-                            backgroundColor: getStatusColor(comment.status_at_comment)!,
-                          }}
-                          title={`Status: ${getStatusLabel(comment.status_at_comment)}`}
-                        />
+                      {comment.criterion ? (
+                        <Text size="sm" truncate style={{ maxWidth: 300 }}>
+                          {comment.criterion.label}
+                        </Text>
+                      ) : (
+                        <Text size="xs" c="dimmed">Unknown criterion</Text>
                       )}
-                      {isUnread && (
-                        <Badge size="xs" color="blue" variant="dot">
-                          New
-                        </Badge>
-                      )}
-                    </Group>
+                    </Stack>
                   </Table.Td>
                   <Table.Td>
-                    {comment.epic ? (
-                      <Button
-                        variant="subtle"
-                        size="xs"
-                        onClick={() => handleNavigateToEpic(comment.epic!.id)}
-                        rightSection={<IconExternalLink size={14} />}
-                      >
-                        {comment.epic.name}
-                      </Button>
-                    ) : (
-                      <Text size="sm" c="dimmed">
-                        Unknown
-                      </Text>
-                    )}
+                    <Tooltip label={comment.status_at_comment ? getStatusLabel(comment.status_at_comment) : 'Unrated'}>
+                      <div
+                        style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: '50%',
+                          backgroundColor: getStatusColor(comment.status_at_comment) ?? '#d1d5db',
+                          border: comment.status_at_comment
+                            ? `3px solid ${getStatusColor(comment.status_at_comment)}`
+                            : '2px solid #e5e7eb',
+                          boxShadow: comment.status_at_comment
+                            ? `0 0 8px ${getStatusColor(comment.status_at_comment)}66`
+                            : 'none',
+                          cursor: 'help',
+                          flexShrink: 0,
+                        }}
+                      />
+                    </Tooltip>
                   </Table.Td>
                   <Table.Td>
-                    {comment.criterion ? (
-                      <Text size="sm" fw={isUnread ? 600 : 400}>
-                        {comment.criterion.label}
-                      </Text>
-                    ) : (
-                      <Text size="sm" c="dimmed">
-                        Unknown
-                      </Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="sm" lineClamp={2} style={{ maxWidth: 300 }}>
-                      {truncateText(commentText)}
+                    <Text size="sm">
+                      {commentText}
                     </Text>
                   </Table.Td>
                   <Table.Td>
@@ -317,7 +306,7 @@ export function CommentsList({
                         email={comment.created_by.email}
                         firstName={comment.created_by.first_name}
                         lastName={comment.created_by.last_name}
-                        size="sm"
+                        size="xs"
                       />
                     ) : (
                       <Text size="sm" c="dimmed">

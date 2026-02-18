@@ -7,6 +7,7 @@ import { PurpleLoader } from './PurpleLoader';
 import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil } from '@tabler/icons-react';
 import { RichText, type RichTextMentionHandle } from './admin/RichText';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { LinkPreview, extractUrlsFromHtml } from './LinkPreview';
 
 function getMentionedUserIdsFromHtml(html: string): string[] {
   if (!html) return [];
@@ -45,6 +46,44 @@ function sanitizeMentionSpansInHtml(html: string): string {
       }
     }
   });
+
+  // Linkify plain-text URLs that are not already inside an <a> tag
+  const urlRegex = /https?:\/\/[^\s<>"']+/g;
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  let node: Node | null;
+  while ((node = walker.nextNode())) {
+    const parent = (node as Text).parentElement;
+    if (parent && parent.tagName !== 'A') {
+      textNodes.push(node as Text);
+    }
+  }
+  textNodes.forEach((textNode) => {
+    const text = textNode.textContent || '';
+    urlRegex.lastIndex = 0;
+    if (!urlRegex.test(text)) return;
+    urlRegex.lastIndex = 0;
+    const frag = doc.createDocumentFragment();
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = urlRegex.exec(text)) !== null) {
+      if (match.index > lastIndex) {
+        frag.appendChild(doc.createTextNode(text.slice(lastIndex, match.index)));
+      }
+      const a = doc.createElement('a');
+      a.href = match[0];
+      a.textContent = match[0];
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      frag.appendChild(a);
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) {
+      frag.appendChild(doc.createTextNode(text.slice(lastIndex)));
+    }
+    textNode.parentNode?.replaceChild(frag, textNode);
+  });
+
   return doc.body.innerHTML;
 }
 
@@ -2519,6 +2558,10 @@ export function CommentsModal({
                           }}
                         />
                       )}
+                      {/* Link previews for URLs in comment */}
+                      {editingCommentId !== comment.id && extractUrlsFromHtml(comment.comment_text).map((url) => (
+                        <LinkPreview key={url} url={url} />
+                      ))}
                       {/* Show attachments if any */}
                       {comment.attachments && comment.attachments.length > 0 && (
                         <Group gap="xs" mt="xs">

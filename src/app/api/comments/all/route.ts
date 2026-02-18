@@ -34,6 +34,20 @@ export async function GET(req: NextRequest) {
     const epicId = searchParams.get('epicId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+    const myEpicsOnly = searchParams.get('myEpicsOnly') === 'true';
+
+    // If myEpicsOnly, resolve the epic IDs where this user is a decision owner
+    let myEpicIds: string[] | null = null;
+    if (myEpicsOnly) {
+      const { data: ownerRows } = await supabase
+        .from('epic_criterion_status')
+        .select('epic_id')
+        .eq('decision_owner_id', userId);
+
+      myEpicIds = ownerRows
+        ? [...new Set(ownerRows.map((r: any) => r.epic_id as string))]
+        : [];
+    }
 
     // Build base query for comments
     let commentsQuery = supabase
@@ -71,8 +85,14 @@ export async function GET(req: NextRequest) {
 
     // Apply filters
     if (epicId) {
-      // Filter by epic - need to join through epic_criterion_status
       commentsQuery = commentsQuery.eq('launch_criterion_status.epic_id', epicId);
+    }
+
+    if (myEpicIds !== null) {
+      if (myEpicIds.length === 0) {
+        return NextResponse.json({ comments: [], unread_count: 0 });
+      }
+      commentsQuery = commentsQuery.in('launch_criterion_status.epic_id', myEpicIds);
     }
 
     if (startDate) {
