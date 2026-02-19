@@ -8,6 +8,7 @@ import { getCachedUsers, setCachedUsers } from '@/lib/cache/usersCache';
 
 export type DelegationType =
   | 'SINGLE_TASK'
+  | 'TEMPLATE_SINGLE_TASK'
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
   | 'RELEASE_CATEGORY_INCLUDING_GATES'
@@ -188,6 +189,8 @@ export function DelegationModal({
     switch (type) {
       case 'SINGLE_TASK':
         return `Delegate only "${taskLabel}" for this epic`;
+      case 'TEMPLATE_SINGLE_TASK':
+        return `Delegate "${taskLabel}" for this epic, this release's epics, and all future epics`;
       case 'CATEGORY_EXCLUDING_GATES':
         return `Delegate all ${category} tasks (except GATE criteria) for this epic`;
       case 'CATEGORY_INCLUDING_GATES':
@@ -274,6 +277,15 @@ export function DelegationModal({
                       </Text>
                     </Text>
                     <Text size="xs" c="dimmed">{getDelegationDescription('SINGLE_TASK')}</Text>
+                  </div>
+                }
+              />
+              <Radio
+                value="TEMPLATE_SINGLE_TASK"
+                label={
+                  <div>
+                    <Text size="sm" fw={500}>This criteria for this, this release&apos;s, and all future epics</Text>
+                    <Text size="xs" c="dimmed">{getDelegationDescription('TEMPLATE_SINGLE_TASK')}</Text>
                   </div>
                 }
               />
