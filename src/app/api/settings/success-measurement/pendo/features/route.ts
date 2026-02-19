@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { resolveRole } from '@/lib/roles';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { getPendoIntegration } from '@/lib/integrations/pendo/service';
 import { PendoClient } from '@/lib/integrations/pendo/client';
 import {
@@ -34,9 +35,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role (same as events endpoint)
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

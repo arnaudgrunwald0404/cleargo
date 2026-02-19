@@ -10,7 +10,14 @@ import type {
   EpicHeartSnapshot,
   HeartMetricStatus,
   HeartMeasurementType,
+  HeartHappinessCompositeConfig,
 } from './types';
+import {
+  DEFAULT_HAPPINESS_COMPOSITE_CONFIG,
+  normalizeSurveyScore,
+  calculateFrustrationHealth,
+  calculateHappinessCompositeScore,
+} from './happiness-composite';
 
 // ============================================================================
 // Pendo Client Helper
@@ -49,6 +56,93 @@ interface CalculationResult {
   error?: string;
 }
 
+async function getNormalizedSurveyScore(
+  metricId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ score: number | null; responseCount: number; surveyType: string | null }> {
+  const supabase = getClient();
+  const { data: survey } = await supabase
+    .from('heart_surveys')
+    .select('id, survey_type')
+    .eq('epic_heart_metric_id', metricId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!survey?.id) {
+    return { score: null, responseCount: 0, surveyType: null };
+  }
+
+  const { data: responses } = await supabase
+    .from('heart_survey_responses')
+    .select('response_value')
+    .eq('heart_survey_id', survey.id)
+    .gte('responded_at', `${startDate}T00:00:00.000Z`)
+    .lte('responded_at', `${endDate}T23:59:59.999Z`);
+
+  const values = (responses || [])
+    .map((r: any) => Number(r.response_value))
+    .filter((n: number) => Number.isFinite(n));
+
+  if (values.length === 0) {
+    return { score: null, responseCount: 0, surveyType: survey.survey_type };
+  }
+
+  const avg = values.reduce((sum: number, n: number) => sum + n, 0) / values.length;
+  return {
+    score: normalizeSurveyScore(avg, survey.survey_type),
+    responseCount: values.length,
+    surveyType: survey.survey_type,
+  };
+}
+
+async function getFrustrationHealthScore(
+  client: PendoClient,
+  config: HeartHappinessCompositeConfig,
+  fallbackEventIds: string[],
+  fallbackSegmentId: string | null | undefined,
+  startDate: string,
+  endDate: string
+): Promise<{ health: number; penalty: number; totalEvents: number; uniqueUsers: number; per100Users: number }> {
+  const eventIds = config.frustrationEventIds?.length > 0 ? config.frustrationEventIds : fallbackEventIds;
+  const segmentId = config.frustrationSegmentId ?? fallbackSegmentId ?? null;
+
+  if (!eventIds || eventIds.length === 0) {
+    return { health: 100, penalty: 0, totalEvents: 0, uniqueUsers: 0, per100Users: 0 };
+  }
+
+  const pairs = await Promise.all(
+    eventIds.map(async (eventId) => {
+      const [eventCount, uniqueUsers] = await Promise.all([
+        client.getEventCount({
+          eventId,
+          startDate,
+          endDate,
+          filters: segmentId ? { segmentId } : undefined,
+        }),
+        client.getUniqueVisitors({
+          eventId,
+          startDate,
+          endDate,
+          filters: segmentId ? { segmentId } : undefined,
+        }),
+      ]);
+      return { eventCount, uniqueUsers };
+    })
+  );
+
+  const totalEvents = pairs.reduce((sum, p) => sum + p.eventCount, 0);
+  const uniqueUsers = Math.max(0, ...pairs.map((p) => p.uniqueUsers));
+  const { penalty, health, eventsPer100Users } = calculateFrustrationHealth(
+    totalEvents,
+    uniqueUsers,
+    config.frustrationEventsPer100UsersAtMaxPenalty
+  );
+
+  return { health, penalty, totalEvents, uniqueUsers, per100Users: eventsPer100Users };
+}
+
 /**
  * Calculate the value for a single HEART metric
  */
@@ -61,7 +155,12 @@ async function calculateMetricValue(
   const measurementType = metric.measurement_type as HeartMeasurementType;
   const eventIds = metric.pendo_event_ids;
   
-  if (!eventIds || eventIds.length === 0) {
+  if (
+    (!eventIds || eventIds.length === 0) &&
+    measurementType !== 'happiness_composite_score' &&
+    measurementType !== 'survey_score' &&
+    measurementType !== 'nps_score'
+  ) {
     return { value: null, rawData: {}, error: 'No event IDs configured' };
   }
   
@@ -236,6 +335,42 @@ async function calculateMetricValue(
       case 'nps_score': {
         // Survey data comes from a different source - skip for now
         return { value: null, rawData: {}, error: 'Survey metrics require survey responses' };
+      }
+
+      case 'happiness_composite_score': {
+        const config: HeartHappinessCompositeConfig = {
+          ...DEFAULT_HAPPINESS_COMPOSITE_CONFIG,
+          ...(metric.composite_config?.happiness || {}),
+        };
+
+        const survey = await getNormalizedSurveyScore(metric.id, startDate, endDate);
+        const frustration = await getFrustrationHealthScore(
+          client,
+          config,
+          eventIds,
+          metric.pendo_segment_id,
+          startDate,
+          endDate
+        );
+
+        const composite = calculateHappinessCompositeScore(survey.score, frustration.health, config);
+        value = composite.score;
+
+        rawData.surveyScoreNormalized = survey.score;
+        rawData.surveyResponseCount = survey.responseCount;
+        rawData.surveyType = survey.surveyType;
+        rawData.surveyUsed = composite.surveyUsed;
+        rawData.surveySource = composite.surveySource;
+        rawData.frustrationPenaltyNormalized = frustration.penalty;
+        rawData.frustrationHealth = frustration.health;
+        rawData.frustrationEventsPer100Users = frustration.per100Users;
+        rawData.frustrationTotalEvents = frustration.totalEvents;
+        rawData.frustrationUniqueUsers = frustration.uniqueUsers;
+        rawData.weights = {
+          surveyWeight: config.surveyWeight,
+          frustrationWeight: config.frustrationWeight,
+        };
+        break;
       }
       
       default:

@@ -6,12 +6,18 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import {
   getEpicHeartConfig,
   getEpicHeartMetrics,
   createMetricMilestones,
 } from '@/lib/heart/service';
 import type { HeartCategoryId } from '@/lib/heart/types';
+
+function forbid() {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
 
 export async function GET(
   req: NextRequest,
@@ -63,7 +69,12 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
-    // Get config
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
+    }
+    
     const config = await getEpicHeartConfig(epicId);
     if (!config) {
       return NextResponse.json(

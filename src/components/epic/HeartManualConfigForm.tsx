@@ -48,13 +48,13 @@ const HEART_CATEGORIES: Array<{
     id: 'happiness',
     name: 'Happiness',
     icon: '😊',
-    description: 'User satisfaction with the feature (requires survey)',
+    description: 'User satisfaction — combines frustration signals (rage clicks, dead clicks, u-turns) with optional survey data',
     pendoMeasurementTypes: [
+      { value: 'happiness_composite_score', label: 'Composite Score (frustration health + optional survey)' },
       { value: 'survey_score', label: 'Survey Score (1-5 rating)' },
       { value: 'nps_score', label: 'Net Promoter Score (NPS)' },
     ],
-    manualPlaceholder: 'e.g., NPS Score, CSAT Rating, Survey Avg Score',
-    requiresSurvey: true,
+    manualPlaceholder: 'e.g., NPS Score, CSAT Rating, Frustration Score',
   },
   {
     id: 'engagement',
@@ -254,8 +254,9 @@ export function HeartManualConfigForm({
       });
   });
 
-  // Separate lists for events, features, and segments
+  // Separate lists for events, features, pages, and segments
   const [pendoFeatures, setPendoFeatures] = useState<Array<{ value: string; label: string; kind: string }>>([]);
+  const [pendoPages, setPendoPages] = useState<Array<{ value: string; label: string }>>([]);
   // Map of Pendo IDs/names to display labels (for showing names instead of cryptic IDs)
   const [pendoIdToLabel, setPendoIdToLabel] = useState<Record<string, string>>({});
 
@@ -264,9 +265,10 @@ export function HeartManualConfigForm({
     const fetchPendoData = async () => {
       setLoadingPendo(true);
       try {
-        const [eventsRes, featuresRes, segmentsRes] = await Promise.all([
+        const [eventsRes, featuresRes, pagesRes, segmentsRes] = await Promise.all([
           fetch('/api/settings/success-measurement/pendo/events?activeOnly=false'),
           fetch('/api/settings/success-measurement/pendo/features?activeOnly=false'),
+          fetch('/api/settings/success-measurement/pendo/pages'),
           fetch('/api/settings/success-measurement/pendo/segments?activeOnly=false'),
         ]);
 
@@ -308,6 +310,21 @@ export function HeartManualConfigForm({
               });
             setPendoFeatures(featureOptions);
             if (featureOptions.length > 0) hasAnyData = true;
+          }
+        }
+
+        // Process pages (Product screens / URL patterns)
+        if (pagesRes.ok) {
+          const data = await pagesRes.json();
+          if (data.pages && Array.isArray(data.pages)) {
+            const pageOptions = data.pages
+              .filter((p: any) => p && p.id && p.name)
+              .map((p: any) => {
+                idToLabel[p.id] = p.name;
+                return { value: p.id, label: p.name };
+              });
+            setPendoPages(pageOptions);
+            if (pageOptions.length > 0) hasAnyData = true;
           }
         }
 
@@ -557,6 +574,35 @@ export function HeartManualConfigForm({
             Set up HEART category metrics using Pendo events or manual entry, and manage any custom metrics you&apos;ve added.
           </Text>
         </div>
+
+        {/* Show what we're currently tracking so users can see and edit existing config */}
+        {existingMetrics.length > 0 && (
+          <Paper p="md" withBorder bg="gray.0">
+            <Text size="sm" fw={600} mb="xs">What we&apos;re tracking</Text>
+            <Text size="xs" c="dimmed" mb="xs">
+              Use the tabs below to change events or targets for each category.
+            </Text>
+            <Stack gap={4}>
+              {HEART_CATEGORIES.filter((cat) => {
+                const m = existingMetrics.find((em) => em.heart_category === cat.id);
+                return m && (m.pendo_event_ids?.length ?? 0) > 0;
+              }).map((cat) => {
+                const m = existingMetrics.find((em) => em.heart_category === cat.id)!;
+                const labels = (m.pendo_event_ids || []).map((id) => pendoIdToLabel[id] ?? id);
+                const summary = labels.length <= 2 ? labels.join(', ') : `${labels[0]}, ${labels[1]} and ${labels.length - 2} more`;
+                return (
+                  <Group key={cat.id} gap="xs">
+                    <Text size="xs" fw={500}>{cat.icon} {cat.name}:</Text>
+                    <Text size="xs" c="dimmed">{summary}</Text>
+                  </Group>
+                );
+              })}
+              {existingMetrics.some((m) => m.is_custom) && (
+                <Text size="xs" c="dimmed">Custom metrics: see Custom tab.</Text>
+              )}
+            </Stack>
+          </Paper>
+        )}
 
         {error && (
           <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
@@ -938,12 +984,10 @@ export function HeartManualConfigForm({
                                     pendoEvents.some(e => e.value === id)
                                   )}
                                   onChange={(value) => {
-                                    // Merge with any selected features
-                                    const featureIds = data.pendoEventIds.filter(id => 
-                                      pendoFeatures.some(f => f.value === id)
-                                    );
-                                    updateFormData(cat.id, { pendoEventIds: [...value, ...featureIds] });
-                                    if (value.length > 0 || featureIds.length > 0) {
+                                    const featureIds = data.pendoEventIds.filter(id => pendoFeatures.some(f => f.value === id));
+                                    const pageIds = data.pendoEventIds.filter(id => pendoPages.some(p => p.value === id));
+                                    updateFormData(cat.id, { pendoEventIds: [...value, ...featureIds, ...pageIds] });
+                                    if (value.length > 0 || featureIds.length > 0 || pageIds.length > 0) {
                                       toggleCategory(cat.id, true);
                                     }
                                   }}
@@ -959,22 +1003,46 @@ export function HeartManualConfigForm({
                                       <Text size="xs" c="dimmed">(UI elements tagged in Pendo)</Text>
                                     </Group>
                                   }
-                                  description="Clicks/views on tagged buttons, pages, or UI elements"
+                                  description="Clicks/views on tagged buttons or UI elements"
                                   placeholder="Search tagged features..."
                                   data={pendoFeatures.map(f => ({
                                     value: f.value,
-                                    label: `${f.kind === 'Page' ? '📄' : '✨'} ${f.label} (${f.kind})`,
+                                    label: f.label,
                                   }))}
                                   value={data.pendoEventIds.filter(id => 
                                     pendoFeatures.some(f => f.value === id)
                                   )}
                                   onChange={(value) => {
-                                    // Merge with any selected events
-                                    const eventIds = data.pendoEventIds.filter(id => 
-                                      pendoEvents.some(e => e.value === id)
-                                    );
-                                    updateFormData(cat.id, { pendoEventIds: [...eventIds, ...value] });
-                                    if (value.length > 0 || eventIds.length > 0) {
+                                    const eventIds = data.pendoEventIds.filter(id => pendoEvents.some(e => e.value === id));
+                                    const pageIds = data.pendoEventIds.filter(id => pendoPages.some(p => p.value === id));
+                                    updateFormData(cat.id, { pendoEventIds: [...eventIds, ...value, ...pageIds] });
+                                    if (eventIds.length > 0 || value.length > 0 || pageIds.length > 0) {
+                                      toggleCategory(cat.id, true);
+                                    }
+                                  }}
+                                  searchable
+                                  clearable
+                                  maxDropdownHeight={200}
+                                />
+
+                                <MultiSelect
+                                  label={
+                                    <Group gap={4}>
+                                      <Text size="sm">📄 Pages</Text>
+                                      <Text size="xs" c="dimmed">(product screens / URL patterns)</Text>
+                                    </Group>
+                                  }
+                                  description="Page views tracked by Pendo on specific screens"
+                                  placeholder="Search pages..."
+                                  data={pendoPages}
+                                  value={data.pendoEventIds.filter(id => 
+                                    pendoPages.some(p => p.value === id)
+                                  )}
+                                  onChange={(value) => {
+                                    const eventIds = data.pendoEventIds.filter(id => pendoEvents.some(e => e.value === id));
+                                    const featureIds = data.pendoEventIds.filter(id => pendoFeatures.some(f => f.value === id));
+                                    updateFormData(cat.id, { pendoEventIds: [...eventIds, ...featureIds, ...value] });
+                                    if (eventIds.length > 0 || featureIds.length > 0 || value.length > 0) {
                                       toggleCategory(cat.id, true);
                                     }
                                   }}

@@ -7,7 +7,6 @@ import {
   Group,
   Text,
   Badge,
-  Progress,
   Grid,
   Paper,
   Button,
@@ -23,6 +22,8 @@ import {
   Textarea,
   SegmentedControl,
   Autocomplete,
+  Tabs,
+  Box,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -38,6 +39,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { HeartSetupWizard } from './HeartSetupWizard';
 import { HeartManualConfigForm } from './HeartManualConfigForm';
+import { HeartMetricTracker } from './HeartMetricTracker';
 import type {
   EpicHeartDashboard as DashboardData,
   HeartMetricDisplay,
@@ -58,6 +60,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [configured, setConfigured] = useState(false);
+  const [canEdit, setCanEdit] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -111,6 +114,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
       }
       const data = await res.json();
       setConfigured(data.configured);
+      setCanEdit(!!data.canEdit);
       if (data.configured) {
         setDashboard(data);
         setShowSetup(false);
@@ -155,8 +159,20 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
     );
   }
 
-  // Show setup wizard if not configured
+  // Not configured: show setup wizard only if user can edit; otherwise read-only message
   if (!configured || showSetup) {
+    if (!canEdit) {
+      return (
+        <Card withBorder padding="lg">
+          <Stack gap="sm">
+            <Text size="lg" fw={600}>HEART Metrics</Text>
+            <Text size="sm" c="dimmed">
+              HEART metrics are not configured for this epic. Only users with Configure Success Metrics permission (CPO, Product, or Product Ops) can set this up.
+            </Text>
+          </Stack>
+        </Card>
+      );
+    }
     return (
       <HeartSetupWizard
         epicId={epicId}
@@ -169,8 +185,8 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
     );
   }
 
-  // Show edit form when editing existing metrics
-  if (showEditForm && dashboard) {
+  // Show edit form when editing existing metrics (only reachable when canEdit)
+  if (showEditForm && dashboard && canEdit) {
     // Extract existing metrics from the dashboard
     const existingMetrics: EpicHeartMetric[] = dashboard.metrics
       .filter(m => m.metric)
@@ -197,7 +213,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   const { config, metrics, overallStatus, daysSinceLaunch } = dashboard;
 
   return (
-    <Stack gap="md">
+    <Stack gap="md" style={{ width: '100%', maxWidth: '100%', alignItems: 'stretch' }}>
       {/* Header */}
       <Card withBorder padding="md">
         <Group justify="space-between">
@@ -225,39 +241,41 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
               </Text>
             )}
           </div>
-          <Group gap="xs">
-            <Tooltip label="Refresh data">
-              <ActionIcon variant="subtle" onClick={fetchDashboard}>
-                <IconRefresh size={18} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Reset and reconfigure">
-              <ActionIcon 
-                variant="subtle" 
-                color="red"
-                onClick={handleReset}
-                loading={resetting}
+          {canEdit && (
+            <Group gap="xs">
+              <Tooltip label="Refresh data">
+                <ActionIcon variant="subtle" onClick={fetchDashboard}>
+                  <IconRefresh size={18} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Reset and reconfigure">
+                <ActionIcon 
+                  variant="subtle" 
+                  color="red"
+                  onClick={handleReset}
+                  loading={resetting}
+                >
+                  <IconTrash size={18} />
+                </ActionIcon>
+              </Tooltip>
+              <Button
+                variant="light"
+                size="xs"
+                leftSection={<IconPlus size={14} />}
+                onClick={() => setShowAddCustomMetric(true)}
               >
-                <IconTrash size={18} />
-              </ActionIcon>
-            </Tooltip>
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconPlus size={14} />}
-              onClick={() => setShowAddCustomMetric(true)}
-            >
-              Add Metric
-            </Button>
-            <Button
-              variant="light"
-              size="xs"
-              leftSection={<IconEdit size={14} />}
-              onClick={() => setShowEditForm(true)}
-            >
-              Edit Metrics
-            </Button>
-          </Group>
+                Add Metric
+              </Button>
+              <Button
+                variant="light"
+                size="xs"
+                leftSection={<IconEdit size={14} />}
+                onClick={() => setShowEditForm(true)}
+              >
+                Edit Metrics
+              </Button>
+            </Group>
+          )}
         </Group>
       </Card>
 
@@ -281,7 +299,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
         }}
       />
 
-      {/* HEART Cards (5 standard categories) */}
+      {/* HEART Cards — compact summary only (no chart inside card) */}
       <Grid>
         {metrics.filter(item => !item.metric?.is_custom).map((item) => (
           <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 2.4 }}>
@@ -293,6 +311,43 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
           </Grid.Col>
         ))}
       </Grid>
+
+      {/* HEART Trends — one tab per metric (H, E, A, R, T), full-width chart */}
+      {metrics.some(item => !item.metric?.is_custom && item.metric) && (
+        <Card withBorder padding="lg" style={{ width: '100%', maxWidth: 'none' }}>
+          <Text size="sm" fw={600} c="dimmed" mb="md">HEART Trends</Text>
+          <Tabs
+            defaultValue={metrics.find(m => !m.metric?.is_custom && m.metric)?.category.id ?? 'happiness'}
+            variant="pills"
+            radius="md"
+          >
+            <Tabs.List>
+              {metrics
+                .filter(item => !item.metric?.is_custom && item.metric)
+                .map((item) => (
+                  <Tabs.Tab key={item.category.id} value={item.category.id}>
+                    {item.category.name}
+                  </Tabs.Tab>
+                ))}
+            </Tabs.List>
+            {metrics
+              .filter(item => !item.metric?.is_custom && item.metric)
+              .map((item) => (
+                <Tabs.Panel key={item.category.id} value={item.category.id} pt="md">
+                  <Box style={{ width: '100%', minWidth: 0 }}>
+                    <HeartMetricTracker
+                      item={item}
+                      releaseDate={dashboard?.launchDate || null}
+                      height={280}
+                      showFill
+                      fullWidth
+                    />
+                  </Box>
+                </Tabs.Panel>
+              ))}
+          </Tabs>
+        </Card>
+      )}
 
       {/* Standalone Custom Metrics (not aligned to HEART) */}
       {metrics.some(item => item.metric?.is_custom) && (
@@ -331,281 +386,56 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
 // Individual HEART metric card
 function HeartMetricCard({
   item,
-  eventIdToName,
-  releaseDate,
+  eventIdToName: _eventIdToName,
+  releaseDate: _releaseDate,
 }: {
   item: HeartMetricDisplay;
   eventIdToName?: Record<string, string>;
   releaseDate?: string | null;
 }) {
-  const { category, metric, latestSnapshot, trend, isPreLaunch, measurementPeriod, milestoneProgress, currentMilestone, history } = item;
+  const { category, metric, latestSnapshot, trend, historyUnit } = item;
 
-  // Determine display value
-  let displayValue: string = '--';
-  let displayUnit: string = '';
-  let progressValue: number = 0;
-  let statusColor: string = 'gray';
+  let displayValue = '--';
+  let displayUnit = '';
 
   if (latestSnapshot && latestSnapshot.value !== null) {
     const value = latestSnapshot.value;
-    
-    // Format based on measurement type
-    if (metric?.measurement_type.includes('percentage') || metric?.measurement_type.includes('rate')) {
-      displayValue = `${value.toFixed(1)}`;
-      displayUnit = '%';
-      progressValue = Math.min(value, 100);
-    } else if (metric?.measurement_type.includes('per_user')) {
+    if (historyUnit === 'completions') {
+      displayValue = value >= 1000 ? `${(value / 1000).toFixed(1)}K` : value.toLocaleString();
+    } else if (metric?.measurement_type.includes('percentage') || metric?.measurement_type.includes('rate')) {
       displayValue = value.toFixed(1);
+      displayUnit = '%';
+    } else if (metric?.measurement_type.includes('per_user')) {
+      const rounded = Math.round(value);
+      displayValue = rounded >= 10000
+        ? `${(rounded / 1000).toFixed(0)}K`
+        : rounded >= 1000
+        ? rounded.toLocaleString()
+        : String(rounded);
       displayUnit = '/user';
     } else {
       displayValue = value.toFixed(0);
     }
-
-    // Status color
-    statusColor = latestSnapshot.status === 'ON_TRACK' ? 'green' :
-                  latestSnapshot.status === 'AT_RISK' ? 'yellow' :
-                  latestSnapshot.status === 'MISSED' ? 'red' : 'gray';
   }
 
-  // Special handling for Happiness (survey-based)
-  const isHappiness = category.id === 'happiness';
-  const needsSurvey = isHappiness && !metric;
-
-  // Format event/feature IDs for display: use name from map when available, else truncate event names
-  const formatEventName = (eventId: string) => {
-    if (eventIdToName?.[eventId]) return eventIdToName[eventId];
-    // Event IDs are often like "App.Module.Action" - show last 2 parts when no map
-    const parts = eventId.split('.');
-    if (parts.length > 2) return parts.slice(-2).join('.');
-    return eventId;
-  };
-
-  const historyPoints = (history || [])
-    .filter(s => s.value !== null && s.value !== undefined)
-    .map(s => ({ date: s.snapshot_date, value: s.value as number }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  if (latestSnapshot?.value !== null && latestSnapshot?.value !== undefined) {
-    const last = historyPoints[historyPoints.length - 1];
-    const latestDate = latestSnapshot.snapshot_date;
-    if (!last || last.date !== latestDate || last.value !== latestSnapshot.value) {
-      historyPoints.push({ date: latestDate, value: latestSnapshot.value });
-    }
-  }
+  const trendColor = !trend || trend === 'stable' ? 'gray.7' :
+    trend === 'up' ? 'green.7' : 'red.6';
 
   return (
-    <Paper withBorder p="md" h="100%">
-      <Stack gap="xs" h="100%" justify="space-between">
-        <div>
-          <Group gap="xs" mb="xs">
-            <Text size="xl">{category.icon}</Text>
-            <Text size="sm" fw={500}>{category.name}</Text>
-            {metric && (!metric.pendo_event_ids || metric.pendo_event_ids.length === 0) && (
-              <Badge size="xs" color="blue" variant="light">Manual</Badge>
-            )}
-            {metric?.is_custom && (
-              <Badge size="xs" color="grape" variant="light">Custom</Badge>
-            )}
-          </Group>
-          
-          {needsSurvey ? (
-            <div>
-              <Text size="xs" c="dimmed">Survey required</Text>
-              <Badge size="xs" color="yellow" variant="light" mt="xs">Coming Soon</Badge>
-            </div>
-          ) : !metric ? (
-            <Text size="xs" c="dimmed">Not configured</Text>
-          ) : (
-            <>
-              <Group gap={4} align="baseline">
-                <Text size="xl" fw={700} c={statusColor}>
-                  {displayValue}
-                </Text>
-                {displayUnit && (
-                  <Text size="sm" c="dimmed">{displayUnit}</Text>
-                )}
-                {trend && (
-                  <TrendIcon trend={trend} />
-                )}
-              </Group>
-              
-              {/* Zero value explanation */}
-              {latestSnapshot?.value === 0 && (
-                <Tooltip
-                  label={isPreLaunch 
-                    ? "Tracking baseline before release. Data will continue after release."
-                    : "No events recorded yet. Check that the correct Pendo events/features are selected and that users are interacting with the feature."
-                  }
-                  multiline
-                  w={250}
-                  position="bottom"
-                >
-                  <Text size="xs" c="orange.6" mt={2} style={{ cursor: 'help' }}>
-                    {isPreLaunch ? '📊 Tracking baseline (pre-release)' : '❓ No activity detected'}
-                  </Text>
-                </Tooltip>
-              )}
-              
-              {/* Show metric name */}
-              {metric.name && (
-                <Text size="xs" fw={500} lineClamp={1} mt={4}>
-                  {metric.name}
-                </Text>
-              )}
-              
-              {/* Show Pendo events/features being tracked (names when available) */}
-              {metric.pendo_event_ids && metric.pendo_event_ids.length > 0 ? (
-                <Tooltip
-                  label={metric.pendo_event_ids
-                    .map((id) => eventIdToName?.[id] ?? id)
-                    .join('\n')}
-                  multiline
-                  w={300}
-                  position="bottom"
-                >
-                  <Text size="xs" c="dimmed" lineClamp={1} style={{ cursor: 'help' }}>
-                    📊 {metric.pendo_event_ids.length === 1
-                      ? formatEventName(metric.pendo_event_ids[0])
-                      : `${metric.pendo_event_ids.length} events`}
-                  </Text>
-                </Tooltip>
-              ) : (!metric.pendo_event_ids || metric.pendo_event_ids.length === 0) ? (
-                <Text size="xs" c="dimmed" mt={2}>
-                  ✏️ Manual entry
-                </Text>
-              ) : null}
-              
-              {/* Show measurement period context */}
-              {measurementPeriod && (
-                <Text size="xs" c="dimmed" mt={2}>
-                  📅 {measurementPeriod}
-                </Text>
-              )}
+    <Paper withBorder p="md" h="100%" radius="md" bg="white">
+      <Stack gap={8} h="100%" justify="space-between">
+        <Text size="sm" fw={600} c="dimmed">{category.name}</Text>
 
-              {/* Sparkline trend preview */}
-              {historyPoints.length >= 1 && (
-                <div style={{ marginTop: 6 }}>
-                  <Sparkline
-                    points={historyPoints}
-                    releaseDate={releaseDate || null}
-                  />
-                </div>
-              )}
-              
-              {/* Show AI rationale if available */}
-              {metric.ai_suggested && metric.ai_rationale && (
-                <Tooltip 
-                  label={metric.ai_rationale} 
-                  multiline 
-                  w={300}
-                  position="bottom"
-                >
-                  <Badge size="xs" color="blue" variant="light" mt={4} style={{ cursor: 'help' }}>
-                    🤖 AI suggested
-                  </Badge>
-                </Tooltip>
-              )}
-            </>
-          )}
-        </div>
+        <Group gap={6} align="baseline" wrap="nowrap">
+          <Text size="34px" fw={700} lh={1} c={trendColor}>
+            {displayValue}
+          </Text>
+          {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}
+        </Group>
 
-        {/* Milestone progress display */}
-        {metric && milestoneProgress && milestoneProgress.length > 0 ? (
-          <div>
-            {/* Mini milestone indicators */}
-            <Group gap={4} mb={4}>
-              {milestoneProgress.map((mp, idx) => {
-                const milestoneStatusColor = mp.status === 'ON_TRACK' ? 'green' :
-                  mp.status === 'AT_RISK' ? 'yellow' :
-                  mp.status === 'MISSED' ? 'red' : 'gray';
-                const isActive = currentMilestone?.milestone.id === mp.milestone.id;
-                return (
-                  <Tooltip 
-                    key={mp.milestone.id}
-                    label={`${mp.milestone.label || `Day ${mp.milestone.days_after_launch}`}: ${mp.milestone.target_value}${metric?.target_unit ? ` ${metric.target_unit}` : '%'} target${mp.daysRemaining !== null ? ` (${mp.daysRemaining} days left)` : ''}`}
-                    position="top"
-                  >
-                    <div 
-                      style={{ 
-                        width: 8, 
-                        height: 8, 
-                        borderRadius: '50%', 
-                        backgroundColor: `var(--mantine-color-${milestoneStatusColor}-${isActive ? '6' : '3'})`,
-                        border: isActive ? '2px solid var(--mantine-color-blue-5)' : 'none',
-                        cursor: 'help',
-                      }} 
-                    />
-                  </Tooltip>
-                );
-              })}
-            </Group>
-            
-            {/* Current milestone progress */}
-            {currentMilestone && (
-              <>
-                <Progress
-                  value={currentMilestone.percentComplete}
-                  color={currentMilestone.status === 'ON_TRACK' ? 'green' :
-                    currentMilestone.status === 'AT_RISK' ? 'yellow' :
-                    currentMilestone.status === 'MISSED' ? 'red' : 'gray'}
-                  size="sm"
-                  radius="xl"
-                />
-                <Text size="xs" c="dimmed" mt={4}>
-                  {currentMilestone.milestone.label || `Day ${currentMilestone.milestone.days_after_launch}`}: {currentMilestone.milestone.target_value}{metric?.target_unit ? ` ${metric.target_unit}` : '%'}
-                  {currentMilestone.daysRemaining !== null && currentMilestone.daysRemaining > 0 && (
-                    <Text span c="blue" size="xs"> ({currentMilestone.daysRemaining}d left)</Text>
-                  )}
-                </Text>
-              </>
-            )}
-          </div>
-        ) : (
-          /* Fallback to single target display */
-          <>
-            {metric && latestSnapshot?.value !== null && progressValue > 0 && (
-              <div>
-                <Progress
-                  value={progressValue}
-                  color={statusColor}
-                  size="sm"
-                  radius="xl"
-                />
-                {metric.target_value && (
-                  <Text size="xs" c="dimmed" mt={4}>
-                    Target: {metric.target_value}{metric.target_unit ? ` ${metric.target_unit}` : '%'}
-                    {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
-                  </Text>
-                )}
-              </div>
-            )}
-
-            {metric && !latestSnapshot && metric.target_value && (
-              <Text size="xs" c="dimmed">
-                Target: {metric.target_value}{metric.target_unit ? ` ${metric.target_unit}` : '%'}
-                {metric.target_timeframe_days && ` by day ${metric.target_timeframe_days}`}
-              </Text>
-            )}
-          </>
+        {metric?.name && (
+          <Text size="xs" c="dimmed" lineClamp={1}>{metric.name}</Text>
         )}
-
-        {/* Status badge */}
-        {latestSnapshot ? (
-          <Badge
-            size="xs"
-            color={isPreLaunch ? 'blue' : statusColor}
-            variant="light"
-            fullWidth
-          >
-            {isPreLaunch ? '🚀 Pre-release' :
-             latestSnapshot.status === 'ON_TRACK' ? '✓ On Track' :
-             latestSnapshot.status === 'AT_RISK' ? '⚠ At Risk' :
-             latestSnapshot.status === 'MISSED' ? '✗ Missed' : 'Pending'}
-          </Badge>
-        ) : metric ? (
-          <Badge size="xs" color="gray" variant="light" fullWidth>
-            Awaiting data
-          </Badge>
-        ) : null}
       </Stack>
     </Paper>
   );
@@ -635,19 +465,19 @@ function DataCollectionInfo({
         <Text size="sm" c="dimmed">
           {formattedReleaseDate ? (
             <>
-              Measurement starts: <strong>{formattedReleaseDate}</strong>
+              Release: <strong>{formattedReleaseDate}</strong>
               {isPreLaunch && <Badge size="xs" color="blue" variant="light" ml="xs">Upcoming</Badge>}
             </>
           ) : (
-            <Text span c="orange.6">No release date set (using last 7 days)</Text>
+            <Text span c="orange.6">No release date set</Text>
           )}
         </Text>
       </Group>
-      {isPreLaunch && (
-        <Text size="xs" c="dimmed">
-          Baseline tracking is active now; release will start the main measurement window.
-        </Text>
-      )}
+      <Text size="xs" c="dimmed">
+        {formattedReleaseDate
+          ? 'Charts show pre-release (then) vs post-release (now). The orange Release line marks the divider.'
+          : 'Set a release date to see the Release line and post-release segment on each chart.'}
+      </Text>
     </Group>
   );
 }
@@ -672,84 +502,6 @@ function TrendIcon({ trend }: { trend: 'up' | 'down' | 'stable' }) {
     <Tooltip label="Stable">
       <IconMinus size={16} color="gray" />
     </Tooltip>
-  );
-}
-
-function Sparkline({
-  points,
-  releaseDate,
-}: {
-  points: Array<{ date: string; value: number }>;
-  releaseDate: string | null;
-}) {
-  if (points.length < 1) return null;
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-
-  const toTime = (date: string) => new Date(date).getTime();
-  const minTime = Math.min(...points.map((p) => toTime(p.date)));
-  const maxTime = Math.max(...points.map((p) => toTime(p.date)));
-  const timeRange = maxTime - minTime || 1;
-
-  const toX = (date: string) => ((toTime(date) - minTime) / timeRange) * 100;
-  const toY = (value: number) => 24 - ((value - min) / range) * 24;
-
-  const beforeRelease: string[] = [];
-  const afterRelease: string[] = [];
-  const releaseTime = releaseDate ? new Date(releaseDate).getTime() : null;
-
-  for (const point of points) {
-    const coord = `${toX(point.date)},${toY(point.value)}`;
-    if (releaseTime && new Date(point.date).getTime() >= releaseTime) {
-      afterRelease.push(coord);
-    } else {
-      beforeRelease.push(coord);
-    }
-  }
-
-  const releaseX = releaseTime && releaseTime >= minTime && releaseTime <= maxTime
-    ? toX(releaseDate as string)
-    : null;
-
-  return (
-    <svg width="100%" height="24" viewBox="0 0 100 24" preserveAspectRatio="none">
-      {beforeRelease.length >= 2 && (
-        <polyline
-          fill="none"
-          stroke="var(--mantine-color-blue-5)"
-          strokeWidth="2"
-          points={beforeRelease.join(' ')}
-        />
-      )}
-      {afterRelease.length >= 2 && (
-        <polyline
-          fill="none"
-          stroke="var(--mantine-color-green-5)"
-          strokeWidth="2"
-          points={afterRelease.join(' ')}
-        />
-      )}
-      {points.length === 1 && (
-        <circle
-          cx={toX(points[0].date)}
-          cy={toY(points[0].value)}
-          r="2.5"
-          fill="var(--mantine-color-blue-5)"
-        />
-      )}
-      {releaseX !== null && (
-        <line
-          x1={releaseX}
-          y1={0}
-          x2={releaseX}
-          y2={24}
-          stroke="var(--mantine-color-gray-4)"
-          strokeDasharray="2,2"
-        />
-      )}
-    </svg>
   );
 }
 

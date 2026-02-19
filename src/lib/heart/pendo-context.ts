@@ -12,6 +12,8 @@ const getDbClient = () => getAdminClient();
 import type { 
   PendoEventForAgent,
   PendoFeatureForAgent,
+  PendoPageForAgent,
+  PendoEntityForAgent,
   PendoContextForAgent,
   EpicContextForAgent,
   PendoEventCached 
@@ -133,50 +135,42 @@ export async function getPendoContextForAgent(
     return {
       events: [],
       features: [],
+      pages: [],
       segments: [],
       apps: [],
     };
   }
   
-  // Fetch data in parallel
-  let [events, features, segments, apps] = await Promise.all([
+  // Fetch data in parallel — now includes pages
+  let [events, features, pages, segments, apps] = await Promise.all([
     client.getEvents().catch(() => []),
     client.getFeatures().catch(() => []),
+    client.getPages().catch(() => [] as Array<{ id: string; name: string; appId: string }>),
     client.getSegments().catch(() => []),
     client.getApps().catch(() => []),
   ]);
 
-  // Filter out inactive events/features (0 activity in last 14 days)
+  // Build a date range for optional activity checks (segments only)
   const today = new Date();
   const start = new Date(today);
   start.setDate(start.getDate() - 14);
   const startDate = start.toISOString().split('T')[0];
   const endDate = today.toISOString().split('T')[0];
-
-  const filterActive = async <T,>(items: T[], getId: (item: T) => string) => {
-    const checks = await Promise.all(
-      items.map(async (item) => {
-        const count = await client.getEventCount({
-          eventId: getId(item),
-          startDate,
-          endDate,
-        });
-        return { item, count };
-      })
-    );
-    return checks.filter(c => c.count > 0).map(c => c.item);
-  };
-
-  events = await filterActive(events, (e: any) => e.name);
-  features = await filterActive(features, (f: any) => f.id);
+  // Keep full event/feature lists for AI matching.
+  // Filtering by recent activity can hide exactly the event the user expects.
   if (segments.length > 0) {
     const segmentChecks = await Promise.all(
       segments.map(async (segment) => {
-        const count = await client.getTotalUniqueVisitors({
-          startDate,
-          endDate,
-          segmentId: segment.id,
-        });
+        let count = 0;
+        try {
+          count = await client.getTotalUniqueVisitors({
+            startDate,
+            endDate,
+            segmentId: segment.id,
+          });
+        } catch {
+          count = 0;
+        }
         return { segment, count };
       })
     );
@@ -220,11 +214,19 @@ export async function getPendoContextForAgent(
     group: f.group,
   }));
 
-  console.log(`[getPendoContextForAgent] events=${formattedEvents.length} features=${formattedFeatures.length} segments=${segments.length} apps=${apps.length} (active last 14 days)`);
-  
+  // Format pages for agent
+  const formattedPages: PendoPageForAgent[] = pages.map(p => ({
+    id: p.id,
+    name: p.name,
+    appId: p.appId,
+  }));
+
+  console.log(`[getPendoContextForAgent] events=${formattedEvents.length} features=${formattedFeatures.length} pages=${formattedPages.length} segments=${segments.length} apps=${apps.length}`);
+
   return {
     events: formattedEvents,
     features: formattedFeatures,
+    pages: formattedPages,
     segments,
     apps,
   };
@@ -297,7 +299,18 @@ export async function getEpicContextForAgent(
   
   // Extract what we can from aha_fields
   const ahaFields = epic.aha_fields as Record<string, any> | null;
-  let description = ahaFields?.description || ahaFields?.description_text || null;
+  const sf = ahaFields?.standard_fields;
+  let description: string | null = null;
+
+  // Try structured path first: aha_fields.standard_fields.description.body (HTML)
+  const descBody = sf?.description?.body;
+  if (typeof descBody === 'string' && descBody.trim()) {
+    description = stripHtmlTags(descBody);
+  }
+  // Fallback to flat fields
+  if (!description) {
+    description = ahaFields?.description || ahaFields?.description_text || null;
+  }
   
   // If no description in local data, fetch from Aha API
   if (!description && epic.aha_id) {
@@ -440,46 +453,251 @@ export async function buildAgentContext(
 }
 
 // ============================================================================
-// Event Matching Utilities
+// Entity Matching Utilities (MCP-inspired)
 // ============================================================================
 
 /**
- * Find Pendo events that might be related to an epic
- * Uses fuzzy matching on event names vs epic keywords
+ * Split CamelCase and PascalCase into separate tokens.
+ * "ClearInsights" → ["clear", "insights"]
+ * "OneOnOne" → ["one", "on", "one"]
+ */
+function splitCamelCase(value: string): string[] {
+  return value
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/**
+ * Normalize a single token: lowercase, strip non-alnum, light stem.
+ */
+function normalizeToken(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .replace(/(ing|tion|ions|ment|ments|ed|es|s)$/g, '');
+}
+
+const STOP_WORDS = new Set([
+  'this', 'that', 'with', 'from', 'have', 'will', 'when', 'should',
+  'could', 'would', 'the', 'and', 'for', 'are', 'not', 'but', 'all',
+  'can', 'had', 'her', 'was', 'one', 'our', 'out', 'also', 'been',
+  'into', 'each', 'then', 'them', 'than', 'its', 'over', 'such', 'more',
+  'some', 'other', 'these', 'using', 'used', 'via', 'app', 'new', 'to',
+  'do', 'be', 'if', 'or', 'an', 'by', 'of', 'in', 'on', 'at', 'it',
+  'no', 'so', 'up', 'he', 'we', 'my', 'me', 'how', 'who', 'what',
+  'just', 'may', 'might', 'any', 'you', 'your',
+]);
+
+/**
+ * Advanced tokenizer that handles:
+ * - Dot-notation: "App.ClearInsights.Search" → ["clearinsight", "search"]
+ * - CamelCase: "ClearInsights" → ["clear", "insight"]
+ * - Hyphens/underscores: "ci-dashboard" → ["ci", "dashboard"]
+ * - Brackets: "[RnA]" → ["rna"]
+ */
+function tokenize(value: string): string[] {
+  const raw = value
+    .replace(/\[([^\]]*)\]/g, ' $1 ')
+    .split(/[.\s\-_/,;:()]+/)
+    .filter(Boolean);
+
+  const tokens: string[] = [];
+  for (const part of raw) {
+    const camelParts = splitCamelCase(part);
+    for (const cp of camelParts) {
+      const normed = normalizeToken(cp);
+      if (normed.length > 1 && !STOP_WORDS.has(normed)) {
+        tokens.push(normed);
+      }
+    }
+    // Also add the full joined part as a token for compound matching
+    const fullNormed = normalizeToken(part);
+    if (fullNormed.length > 2 && !STOP_WORDS.has(fullNormed)) {
+      tokens.push(fullNormed);
+    }
+  }
+
+  return [...new Set(tokens)];
+}
+
+/**
+ * Check if a short token (2-4 chars) could be an abbreviation for a compound name.
+ * "ci" matches "ClearInsights" because C-I are first letters.
+ * "rff" matches "React Feature Flags" because R-F-F are first letters.
+ */
+function isAbbreviationOf(abbr: string, compoundTokens: string[]): boolean {
+  if (abbr.length < 2 || abbr.length > 5 || compoundTokens.length < 2) return false;
+  if (abbr.length > compoundTokens.length) return false;
+
+  const initials = compoundTokens
+    .map(t => t.charAt(0))
+    .join('');
+  return initials.startsWith(abbr) || initials === abbr;
+}
+
+/**
+ * Build a unified list of searchable entities from all Pendo data.
+ */
+function buildEntityList(context: PendoContextForAgent): PendoEntityForAgent[] {
+  const entities: PendoEntityForAgent[] = [];
+
+  for (const ev of context.events) {
+    entities.push({
+      id: ev.name,
+      name: ev.name,
+      entityType: 'trackEvent',
+      description: ev.description,
+    });
+  }
+
+  for (const feat of context.features) {
+    entities.push({
+      id: feat.id,
+      name: feat.name,
+      entityType: 'feature',
+      description: null,
+    });
+  }
+
+  for (const page of context.pages) {
+    entities.push({
+      id: page.id,
+      name: page.name,
+      entityType: 'page',
+      description: null,
+    });
+  }
+
+  return entities;
+}
+
+/**
+ * Score a single keyword against a set of entity tokens.
+ * Returns points earned (0 if no match).
+ */
+function scoreKeywordMatch(keyword: string, entityTokens: string[]): number {
+  if (entityTokens.includes(keyword)) return 3;
+
+  const hasStemMatch = entityTokens.some(
+    t => (t.length > 3 && keyword.length > 3) && (t.startsWith(keyword) || keyword.startsWith(t))
+  );
+  if (hasStemMatch) return 2;
+
+  if (keyword.length <= 5 && isAbbreviationOf(keyword, entityTokens)) return 2.5;
+
+  return 0;
+}
+
+/**
+ * Find Pendo entities (events, features, pages) related to an epic.
+ * Uses IDF-weighted scoring to avoid template boilerplate drowning real signal.
+ * Name keywords are weighted 3x higher than description keywords.
+ */
+export function findRelatedEntities(
+  epicName: string,
+  epicDescription: string | null,
+  context: PendoContextForAgent
+): PendoEntityForAgent[] {
+  const allEntities = buildEntityList(context);
+
+  // Two-tier keyword extraction: name is high-signal, description is noisy
+  const nameKeywords = tokenize(epicName);
+  const nameSet = new Set(nameKeywords);
+  const descKeywords = epicDescription
+    ? tokenize(epicDescription).filter(k => !nameSet.has(k))
+    : [];
+
+  // Pre-tokenize all entities
+  const entityTokenSets = allEntities.map(e =>
+    tokenize(`${e.name} ${e.description || ''}`)
+  );
+
+  // Compute document frequency (DF) for IDF weighting
+  const allKeywords = [...new Set([...nameKeywords, ...descKeywords])];
+  const docFreq = new Map<string, number>();
+  for (const kw of allKeywords) {
+    let count = 0;
+    for (const tokenSet of entityTokenSets) {
+      if (tokenSet.includes(kw) || tokenSet.some(t => (t.length > 3 && kw.length > 3) && (t.startsWith(kw) || kw.startsWith(t)))) {
+        count++;
+      }
+    }
+    docFreq.set(kw, count);
+  }
+
+  // IDF weight: rare keywords score higher, common keywords score lower (but not zero)
+  const totalEntities = allEntities.length || 1;
+  const idfWeight = (kw: string): number => {
+    const df = docFreq.get(kw) || 1;
+    return Math.max(0.1, Math.log2(totalEntities / df));
+  };
+
+  // Hard-filter description keywords that match >15% of entities (pure noise)
+  // Name keywords are never hard-filtered — IDF weighting handles them
+  const descNoiseCutoff = totalEntities * 0.15;
+  const effectiveDescKw = descKeywords
+    .filter(k => (docFreq.get(k) || 0) <= descNoiseCutoff)
+    .sort((a, b) => (docFreq.get(a) || 0) - (docFreq.get(b) || 0))
+    .slice(0, 20);
+
+  const scored = allEntities.map((entity, idx) => {
+    const entityTokens = entityTokenSets[idx];
+    let score = 0;
+
+    // Name keywords: 3x base weight, multiplied by IDF
+    for (const kw of nameKeywords) {
+      const matchScore = scoreKeywordMatch(kw, entityTokens);
+      if (matchScore > 0) {
+        score += matchScore * 3 * idfWeight(kw);
+      }
+    }
+
+    // Description keywords: 1x base weight, multiplied by IDF
+    for (const kw of effectiveDescKw) {
+      const matchScore = scoreKeywordMatch(kw, entityTokens);
+      if (matchScore > 0) {
+        score += matchScore * idfWeight(kw);
+      }
+    }
+
+    // Small boost for pages/features (higher signal than generic track events)
+    if (entity.entityType === 'page') score *= 1.1;
+    if (entity.entityType === 'feature') score *= 1.05;
+
+    return { entity, score };
+  });
+
+  // Require a meaningful score
+  const minScore = nameKeywords.length > 0 ? 5 : 2;
+  const results = scored
+    .filter(e => e.score >= minScore)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 50)
+    .map(e => e.entity);
+
+  return results;
+}
+
+/**
+ * Legacy wrapper: Find related events only (for backward compatibility).
  */
 export function findRelatedEvents(
   epicName: string,
   epicDescription: string | null,
   events: PendoEventForAgent[]
 ): PendoEventForAgent[] {
-  // Extract keywords from epic
-  const text = `${epicName} ${epicDescription || ''}`.toLowerCase();
-  const keywords = text
-    .split(/\s+/)
-    .filter(w => w.length > 3)
-    .filter(w => !['this', 'that', 'with', 'from', 'have', 'will', 'when', 'should', 'could', 'would'].includes(w));
-  
-  // Score each event based on keyword matches
-  const scoredEvents = events.map(event => {
-    const eventText = `${event.name} ${event.description || ''}`.toLowerCase();
-    let score = 0;
-    
-    for (const keyword of keywords) {
-      if (eventText.includes(keyword)) {
-        score += 1;
-      }
-    }
-    
-    // Boost events with higher usage (more reliable)
-    if (event.userCount > 100) score += 0.5;
-    if (event.eventCount > 1000) score += 0.5;
-    
-    return { event, score };
-  });
-  
-  // Return events with score > 0, sorted by score
-  return scoredEvents
-    .filter(e => e.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map(e => e.event);
+  const dummyContext: PendoContextForAgent = {
+    events,
+    features: [],
+    pages: [],
+    segments: [],
+    apps: [],
+  };
+  return findRelatedEntities(epicName, epicDescription, dummyContext)
+    .filter(e => e.entityType === 'trackEvent')
+    .map(e => events.find(ev => ev.name === e.id)!)
+    .filter(Boolean);
 }

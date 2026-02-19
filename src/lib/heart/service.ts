@@ -6,6 +6,12 @@
 import { getAdminClient } from '@/lib/db';
 import { runHeartAgent, generateMetricName } from './agent';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+import {
+  DEFAULT_HAPPINESS_COMPOSITE_CONFIG,
+  normalizeSurveyScore,
+  calculateFrustrationHealth,
+  calculateHappinessCompositeScore,
+} from './happiness-composite';
 
 // Use admin client for HEART operations since these run in API routes
 // and RLS policies may not have proper auth context
@@ -33,7 +39,17 @@ import type {
   HeartMetricMilestone,
   MilestoneProgress,
   DefaultMilestone,
+  HeartHappinessCompositeConfig,
+  MetricContext,
 } from './types';
+
+const HEART_SYSTEM_DEFAULTS: Record<HeartCategoryId, { targetValue: number; targetTimeframeDays: number }> = {
+  happiness: { targetValue: 80, targetTimeframeDays: 30 },
+  engagement: { targetValue: 3, targetTimeframeDays: 14 },
+  adoption: { targetValue: 75, targetTimeframeDays: 30 },
+  retention: { targetValue: 60, targetTimeframeDays: 30 },
+  task_success: { targetValue: 85, targetTimeframeDays: 14 },
+};
 
 // ============================================================================
 // Pendo Client Helper
@@ -73,10 +89,109 @@ interface LiveMetricValue {
   value: number | null;
   status: HeartMetricStatus;
   error?: string;
+  rawData?: Record<string, any>;
   /** Whether the epic is pre-launch (launch date in future or not set) */
   isPreLaunch?: boolean;
   /** Human-readable measurement period description */
   measurementPeriod?: string;
+  /** Context explaining what the metric measures */
+  metricContext?: MetricContext;
+}
+
+async function getNormalizedSurveyScore(
+  metricId: string,
+  startDate: string,
+  endDate: string
+): Promise<{ score: number | null; responseCount: number; surveyType: string | null }> {
+  const supabase = getClient();
+  const { data: survey } = await supabase
+    .from('heart_surveys')
+    .select('id, survey_type')
+    .eq('epic_heart_metric_id', metricId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (!survey?.id) {
+    return { score: null, responseCount: 0, surveyType: null };
+  }
+
+  const { data: responses } = await supabase
+    .from('heart_survey_responses')
+    .select('response_value')
+    .eq('heart_survey_id', survey.id)
+    .gte('responded_at', `${startDate}T00:00:00.000Z`)
+    .lte('responded_at', `${endDate}T23:59:59.999Z`);
+
+  const values = (responses || [])
+    .map((r: any) => Number(r.response_value))
+    .filter((n: number) => Number.isFinite(n));
+
+  if (values.length === 0) {
+    return { score: null, responseCount: 0, surveyType: survey.survey_type };
+  }
+
+  const avg = values.reduce((sum: number, n: number) => sum + n, 0) / values.length;
+  return {
+    score: normalizeSurveyScore(avg, survey.survey_type),
+    responseCount: values.length,
+    surveyType: survey.survey_type,
+  };
+}
+
+async function getFrustrationHealthScore(
+  client: PendoClient,
+  config: HeartHappinessCompositeConfig,
+  fallbackEventIds: string[],
+  fallbackSegmentId: string | null | undefined,
+  startDate: string,
+  endDate: string
+): Promise<{ health: number; penalty: number; totalEvents: number; uniqueUsers: number; per100Users: number }> {
+  const segmentId = config.frustrationSegmentId ?? fallbackSegmentId ?? null;
+  const eventIds = config.frustrationEventIds?.length ? config.frustrationEventIds : fallbackEventIds;
+  const days = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1);
+
+  let totalEvents: number;
+  let uniqueUsers: number;
+
+  if (eventIds.length > 0) {
+    // Prefer scoped: native frustration and visitors for the configured pages only.
+    const [frustrationSeries, scopedVisitors] = await Promise.all([
+      client.getFrustrationTimeSeries({ days, pageIds: eventIds }),
+      client.getUniqueVisitorsForPageIds({
+        pageIds: eventIds,
+        startDate,
+        endDate,
+        segmentId: segmentId ?? undefined,
+      }),
+    ]);
+    totalEvents = frustrationSeries.reduce((sum, d) => sum + d.count, 0);
+    uniqueUsers = scopedVisitors;
+    // Fallback to app-wide when scoped has no data so we don't show "0 frustration signals across 0 visitors".
+    if (totalEvents === 0 && uniqueUsers === 0) {
+      const [appFrustration, appVisitors] = await Promise.all([
+        client.getFrustrationTimeSeries({ days }),
+        client.getTotalUniqueVisitors({ startDate, endDate, segmentId: segmentId ?? undefined }),
+      ]);
+      totalEvents = appFrustration.reduce((sum, d) => sum + d.count, 0);
+      uniqueUsers = appVisitors;
+    }
+  } else {
+    const [frustrationSeries, appVisitors] = await Promise.all([
+      client.getFrustrationTimeSeries({ days }),
+      client.getTotalUniqueVisitors({ startDate, endDate, segmentId: segmentId ?? undefined }),
+    ]);
+    totalEvents = frustrationSeries.reduce((sum, d) => sum + d.count, 0);
+    uniqueUsers = appVisitors;
+  }
+
+  const { penalty, health, eventsPer100Users } = calculateFrustrationHealth(
+    totalEvents,
+    uniqueUsers,
+    config.frustrationEventsPer100UsersAtMaxPenalty
+  );
+
+  return { health, penalty, totalEvents, uniqueUsers, per100Users: eventsPer100Users };
 }
 
 /**
@@ -93,8 +208,13 @@ export async function fetchLiveMetricValue(
   const measurementType = metric.measurement_type as HeartMeasurementType;
   const eventIds = metric.pendo_event_ids;
 
-  // No events configured - can't fetch data
-  if (!eventIds || eventIds.length === 0) {
+  // Most non-survey metrics require event IDs
+  if (
+    (!eventIds || eventIds.length === 0) &&
+    measurementType !== 'happiness_composite_score' &&
+    measurementType !== 'survey_score' &&
+    measurementType !== 'nps_score'
+  ) {
     return { value: null, status: 'PENDING', error: 'No events configured' };
   }
 
@@ -108,11 +228,22 @@ export async function fetchLiveMetricValue(
   // Calculate date range
   const endDate = today.toISOString().split('T')[0];
 
-  // Default to last 7 days
+  // Default to last 30 days (matches Pendo timeSeries window)
   const rangeStart = new Date(today);
-  rangeStart.setDate(rangeStart.getDate() - 7);
+  rangeStart.setDate(rangeStart.getDate() - 30);
   let startDate = rangeStart.toISOString().split('T')[0];
-  let measurementPeriod = 'Last 7 days';
+  let measurementPeriod = 'Last 30 days';
+
+  // Override period label based on measurement type
+  if (measurementType === 'return_rate_7_days') {
+    measurementPeriod = 'Last 14 days';
+  } else if (measurementType === 'return_rate_14_days') {
+    measurementPeriod = 'Last 28 days';
+  } else if (measurementType === 'return_rate_30_days') {
+    measurementPeriod = 'Last 60 days';
+  } else if (measurementType === 'happiness_composite_score') {
+    measurementPeriod = 'Last 30 days';
+  }
 
   // For adoption metrics, use release date if available and released
   if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users')) {
@@ -123,7 +254,24 @@ export async function fetchLiveMetricValue(
   try {
     const primaryEventId = eventIds[0];
     let value: number | null = null;
-    
+    const rawData: Record<string, any> = {};
+    const eventNames = eventIds.map(id => {
+      const parts = id.split('.');
+      return parts.length > 2 ? parts.slice(-2).join('.') : id;
+    });
+    let metricContext: MetricContext | undefined;
+
+    let resolvedSegmentName: string | null = null;
+    if (metric.pendo_segment_id) {
+      try {
+        const segments = await client.getSegments();
+        const match = segments.find(s => s.id === metric.pendo_segment_id);
+        resolvedSegmentName = match?.name ?? `Segment ${metric.pendo_segment_id.slice(0, 8)}...`;
+      } catch {
+        resolvedSegmentName = `Segment ${metric.pendo_segment_id.slice(0, 8)}...`;
+      }
+    }
+
     switch (measurementType) {
       case 'events_per_user':
       case 'events_per_user_per_week': {
@@ -153,16 +301,36 @@ export async function fetchLiveMetricValue(
         } else {
           value = 0;
         }
+        metricContext = {
+          description: `${totalEvents.toLocaleString()} events across ${uniqueUsers.toLocaleString()} users`,
+          trackingEvents: eventNames,
+          segmentName: resolvedSegmentName,
+          raw: { totalEvents, uniqueVisitors: uniqueUsers },
+        };
         break;
       }
       
       case 'unique_users_percentage': {
-        value = await client.getEventPercentage({
-          eventId: primaryEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
+        const [uniqueVis, totalVis] = await Promise.all([
+          client.getUniqueVisitors({
+            eventId: primaryEventId,
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          }),
+          client.getTotalUniqueVisitors({
+            startDate,
+            endDate,
+            segmentId: metric.pendo_segment_id ?? undefined,
+          }),
+        ]);
+        value = totalVis > 0 ? (uniqueVis / totalVis) * 100 : 0;
+        metricContext = {
+          description: `${uniqueVis.toLocaleString()} unique visitors out of ${totalVis.toLocaleString()} total app visitors`,
+          trackingEvents: eventNames,
+          segmentName: resolvedSegmentName,
+          raw: { uniqueVisitors: uniqueVis, totalAppVisitors: totalVis },
+        };
         break;
       }
       
@@ -173,6 +341,12 @@ export async function fetchLiveMetricValue(
           endDate,
           filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
         });
+        metricContext = {
+          description: `${(value ?? 0).toLocaleString()} unique users triggered this event`,
+          trackingEvents: eventNames,
+          segmentName: resolvedSegmentName,
+          raw: { uniqueVisitors: value ?? 0 },
+        };
         break;
       }
 
@@ -183,6 +357,12 @@ export async function fetchLiveMetricValue(
           endDate,
           filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
         });
+        metricContext = {
+          description: `${(value ?? 0).toLocaleString()} unique accounts triggered this event`,
+          trackingEvents: eventNames,
+          segmentName: resolvedSegmentName,
+          raw: {},
+        };
         break;
       }
       
@@ -198,51 +378,87 @@ export async function fetchLiveMetricValue(
         const periodMid = new Date(today);
         periodMid.setDate(periodMid.getDate() - retentionDays);
         
-        const firstPeriod = await client.getEventPercentage({
-          eventId: primaryEventId,
-          startDate: periodStart.toISOString().split('T')[0],
-          endDate: periodMid.toISOString().split('T')[0],
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        const secondPeriod = await client.getEventPercentage({
-          eventId: primaryEventId,
-          startDate: periodMid.toISOString().split('T')[0],
-          endDate: endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
+        const [firstPeriod, secondPeriod, uniqueVis] = await Promise.all([
+          client.getEventPercentage({
+            eventId: primaryEventId,
+            startDate: periodStart.toISOString().split('T')[0],
+            endDate: periodMid.toISOString().split('T')[0],
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          }),
+          client.getEventPercentage({
+            eventId: primaryEventId,
+            startDate: periodMid.toISOString().split('T')[0],
+            endDate: endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          }),
+          client.getUniqueVisitors({
+            eventId: primaryEventId,
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          }),
+        ]);
         
         if (firstPeriod > 0) {
           value = Math.min(100, (secondPeriod / firstPeriod) * 100);
         } else {
           value = 0;
         }
+        metricContext = {
+          description: `${uniqueVis.toLocaleString()} users returned within ${retentionDays} days (period-over-period comparison)`,
+          trackingEvents: eventNames,
+          segmentName: resolvedSegmentName,
+          raw: { uniqueVisitors: uniqueVis, returningVisitors: uniqueVis },
+        };
         break;
       }
       
       case 'completion_rate':
       case 'success_rate': {
-        const startEventId = eventIds[0];
-        const completeEventId = eventIds[1] || eventIds[0];
-        
-        const startCount = await client.getEventCount({
-          eventId: startEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        const completeCount = await client.getEventCount({
-          eventId: completeEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        if (startCount > 0) {
-          value = (completeCount / startCount) * 100;
+        if (eventIds.length >= 2) {
+          const startEventId = eventIds[0];
+          const completeEventId = eventIds[1];
+
+          const startCount = await client.getEventCount({
+            eventId: startEventId,
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          });
+
+          const completeCount = await client.getEventCount({
+            eventId: completeEventId,
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          });
+
+          if (startCount > 0) {
+            value = (completeCount / startCount) * 100;
+          } else {
+            value = 0;
+          }
+          metricContext = {
+            description: `${completeCount.toLocaleString()} completions out of ${startCount.toLocaleString()} starts`,
+            trackingEvents: eventNames,
+            segmentName: resolvedSegmentName,
+            raw: { totalEvents: startCount, completionCount: completeCount },
+          };
         } else {
-          value = 0;
+          const completionCount = await client.getEventCount({
+            eventId: eventIds[0],
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          });
+          value = completionCount;
+          measurementPeriod = measurementPeriod ? `${measurementPeriod} (completions)` : 'Completions';
+          metricContext = {
+            description: `${completionCount.toLocaleString()} total completions (single event tracked)`,
+            trackingEvents: eventNames,
+            segmentName: resolvedSegmentName,
+            raw: { completionCount },
+          };
         }
         break;
       }
@@ -250,6 +466,59 @@ export async function fetchLiveMetricValue(
       case 'survey_score':
       case 'nps_score': {
         return { value: null, status: 'PENDING', error: 'Survey metrics require survey responses' };
+      }
+
+      case 'happiness_composite_score': {
+        const config: HeartHappinessCompositeConfig = {
+          ...DEFAULT_HAPPINESS_COMPOSITE_CONFIG,
+          ...(metric.composite_config?.happiness || {}),
+        };
+
+        const survey = await getNormalizedSurveyScore(metric.id, startDate, endDate);
+        const frustration = await getFrustrationHealthScore(
+          client,
+          config,
+          eventIds,
+          metric.pendo_segment_id,
+          startDate,
+          endDate
+        );
+
+        const composite = calculateHappinessCompositeScore(survey.score, frustration.health, config);
+        value = composite.score;
+        rawData.happinessComposite = {
+          surveyScoreNormalized: survey.score,
+          surveyResponseCount: survey.responseCount,
+          surveyType: survey.surveyType,
+          surveyUsed: composite.surveyUsed,
+          surveySource: composite.surveySource,
+          frustrationPenaltyNormalized: frustration.penalty,
+          frustrationHealth: frustration.health,
+          frustrationEventsPer100Users: frustration.per100Users,
+          frustrationTotalEvents: frustration.totalEvents,
+          frustrationUniqueUsers: frustration.uniqueUsers,
+          weights: {
+            surveyWeight: config.surveyWeight,
+            frustrationWeight: config.frustrationWeight,
+          },
+          lookback: { startDate, endDate },
+        };
+        const hasSurvey = survey.score !== null;
+        const descParts: string[] = [];
+        if (hasSurvey) {
+          descParts.push(`Survey: ${survey.responseCount} responses (${survey.surveyType})`);
+        }
+        descParts.push(`${frustration.totalEvents.toLocaleString()} frustration signals across ${frustration.uniqueUsers.toLocaleString()} visitors`);
+        if (!hasSurvey) {
+          descParts.push('No survey configured — score based on frustration health only');
+        }
+        metricContext = {
+          description: descParts.join(' · '),
+          trackingEvents: eventNames.length > 0 ? eventNames : ['All pages (native frustration)'],
+          segmentName: resolvedSegmentName,
+          raw: { frustrationSignals: frustration.totalEvents, uniqueVisitors: frustration.uniqueUsers },
+        };
+        break;
       }
       
       default:
@@ -284,7 +553,7 @@ export async function fetchLiveMetricValue(
       }
     }
 
-    return { value, status, isPreLaunch, measurementPeriod };
+    return { value, status, rawData, isPreLaunch, measurementPeriod, metricContext };
   } catch (error: any) {
     console.error(`[HeartService] Error fetching live metric ${metric.id}:`, error);
     return { value: null, status: 'PENDING', error: error.message, isPreLaunch, measurementPeriod };
@@ -498,6 +767,7 @@ export async function createEpicHeartMetric(
       target_timeframe_days: dto.target_timeframe_days || null,
       ai_suggested: dto.ai_suggested || false,
       ai_rationale: dto.ai_rationale || null,
+      composite_config: dto.composite_config || null,
     })
     .select()
     .single();
@@ -583,11 +853,12 @@ export async function setupHeartMetricsWithAI(
     };
   }
   
-  // Check if AI found any usable metrics (at least one non-happiness category)
+  // Check if AI found any usable metrics
   const hasUsableMetrics = agentResult.recommendations.engagement ||
     agentResult.recommendations.adoption ||
     agentResult.recommendations.retention ||
-    agentResult.recommendations.taskSuccess;
+    agentResult.recommendations.taskSuccess ||
+    agentResult.recommendations.happiness;
   
   if (!hasUsableMetrics) {
     // AI couldn't find any relevant events - don't create config
@@ -679,8 +950,8 @@ export async function applyRecommendations(
   // Engagement
   if (recommendations.engagement) {
     const defaults = defaultsByCategory['engagement'];
-    const targetValue = recommendations.engagement.targetValue ?? defaults?.default_target_value ?? null;
-    const targetTimeframeDays = recommendations.engagement.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? HEART_SYSTEM_DEFAULTS.engagement.targetValue;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? HEART_SYSTEM_DEFAULTS.engagement.targetTimeframeDays;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'engagement',
@@ -707,8 +978,8 @@ export async function applyRecommendations(
   // Adoption
   if (recommendations.adoption) {
     const defaults = defaultsByCategory['adoption'];
-    const targetValue = recommendations.adoption.targetValue ?? defaults?.default_target_value ?? null;
-    const targetTimeframeDays = recommendations.adoption.targetTimeframeDays ?? defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? HEART_SYSTEM_DEFAULTS.adoption.targetValue;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? HEART_SYSTEM_DEFAULTS.adoption.targetTimeframeDays;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'adoption',
@@ -736,8 +1007,8 @@ export async function applyRecommendations(
   // Retention (recommendation has no targetValue/targetTimeframeDays; use defaults only)
   if (recommendations.retention) {
     const defaults = defaultsByCategory['retention'];
-    const targetValue = defaults?.default_target_value ?? null;
-    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? HEART_SYSTEM_DEFAULTS.retention.targetValue;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? HEART_SYSTEM_DEFAULTS.retention.targetTimeframeDays;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'retention',
@@ -764,8 +1035,8 @@ export async function applyRecommendations(
   // Task Success (recommendation has no targetValue/targetTimeframeDays; use defaults only)
   if (recommendations.taskSuccess) {
     const defaults = defaultsByCategory['task_success'];
-    const targetValue = defaults?.default_target_value ?? null;
-    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? null;
+    const targetValue = defaults?.default_target_value ?? HEART_SYSTEM_DEFAULTS.task_success.targetValue;
+    const targetTimeframeDays = defaults?.default_target_timeframe_days ?? HEART_SYSTEM_DEFAULTS.task_success.targetTimeframeDays;
     const metric = await createEpicHeartMetric({
       epic_heart_config_id: configId,
       heart_category: 'task_success',
@@ -789,8 +1060,42 @@ export async function applyRecommendations(
     metrics.push(metric);
   }
   
-  // Note: Happiness is not auto-created since it requires a survey
-  // The recommendation is stored for the user to create a survey if desired
+  // Happiness (survey + frustration composite)
+  if (recommendations.happiness) {
+    const defaults = defaultsByCategory['happiness'];
+    const metric = await createEpicHeartMetric({
+      epic_heart_config_id: configId,
+      heart_category: 'happiness',
+      name: `Happiness - ${epicName}`,
+      measurement_type: 'happiness_composite_score',
+      pendo_event_ids: recommendations.happiness.frustrationEventIds,
+      pendo_segment_id: recommendations.happiness.frustrationSegmentId,
+      target_value: defaults?.default_target_value ?? HEART_SYSTEM_DEFAULTS.happiness.targetValue,
+      target_timeframe_days: defaults?.default_target_timeframe_days ?? HEART_SYSTEM_DEFAULTS.happiness.targetTimeframeDays,
+      ai_suggested: true,
+      ai_rationale: recommendations.happiness.rationale,
+      composite_config: {
+        happiness: {
+          surveyWeight: 0.7,
+          frustrationWeight: 0.3,
+          optimisticSurveyBaseline: 80,
+          frustrationEventIds: recommendations.happiness.frustrationEventIds,
+          frustrationSegmentId: recommendations.happiness.frustrationSegmentId ?? null,
+          frustrationEventsPer100UsersAtMaxPenalty: 30,
+        },
+      },
+    });
+    const milestones = buildMilestones(
+      defaults?.default_milestones,
+      metric.target_value,
+      metric.target_timeframe_days,
+      true
+    );
+    if (milestones.length > 0) {
+      await createMetricMilestones(metric.id, milestones);
+    }
+    metrics.push(metric);
+  }
   
   return metrics;
 }
@@ -1026,12 +1331,35 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
   const supabase = getClient();
   const { data: epic } = await supabase
     .from('epic')
-    .select('target_launch_date')
+    .select('target_launch_date, scheduled_ga_dev_date, aha_fields')
     .eq('id', epicId)
     .single();
   
-  const epicLaunchDate = epic?.target_launch_date ? new Date(epic.target_launch_date) : null;
-  
+  const isValidDateStr = (s: string | null | undefined): boolean => {
+    if (!s) return false;
+    return !isNaN(new Date(s).getTime()) && /^\d{4}-\d{2}-\d{2}/.test(s);
+  };
+
+  let rawLaunchDate: string | null = null;
+  if (isValidDateStr(epic?.target_launch_date)) {
+    rawLaunchDate = epic!.target_launch_date;
+  } else {
+    const ahaFields = (epic?.aha_fields as any) || {};
+    const sf = ahaFields?.standard_fields;
+    const releaseName = sf?.aha_release_name || sf?.release?.name || null;
+    if (releaseName) {
+      const { data: schedule } = await supabase
+        .from('release_schedule')
+        .select('launch_date')
+        .eq('release_name', releaseName)
+        .maybeSingle();
+      if (isValidDateStr(schedule?.launch_date)) {
+        rawLaunchDate = schedule!.launch_date;
+      }
+    }
+  }
+  const epicLaunchDate = rawLaunchDate ? new Date(rawLaunchDate) : null;
+
   let daysSinceLaunch: number | null = null;
   if (epicLaunchDate) {
     const today = new Date();
@@ -1040,7 +1368,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
   
   // Try to get Pendo client for live data
   const pendoClient = await getPendoClient();
-  
+
   // Build metrics display with live data from Pendo
   const metricsWithLiveData: HeartMetricDisplay[] = [];
   
@@ -1055,6 +1383,8 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     // Track context for display
     let isPreLaunch: boolean | undefined;
     let measurementPeriod: string | undefined;
+    let historyUnit: string | undefined;
+    let metricContext: MetricContext | undefined;
 
     if (metric && pendoClient) {
       // Fetch LIVE data from Pendo
@@ -1068,29 +1398,143 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
 
       isPreLaunch = liveData.isPreLaunch;
       measurementPeriod = liveData.measurementPeriod;
+      metricContext = liveData.metricContext;
       
       if (liveData.value !== null || !liveData.error) {
+        const snapshotDate = new Date().toISOString().split('T')[0];
+
         // Create a virtual snapshot for display (not persisted)
         latestSnapshot = {
           id: `live-${metric.id}`,
           epic_heart_metric_id: metric.id,
-          snapshot_date: new Date().toISOString().split('T')[0],
+          snapshot_date: snapshotDate,
           value: liveData.value,
           target_at_snapshot: metric.target_value,
           status: liveData.status,
-          pendo_raw_data: {},
+          pendo_raw_data: liveData.rawData || {},
           calculated_at: new Date().toISOString(),
         };
+
+        // Auto-persist today's snapshot so chart history accumulates over time
+        if (liveData.value !== null) {
+          supabase
+            .from('epic_heart_snapshots')
+            .upsert({
+              epic_heart_metric_id: metric.id,
+              snapshot_date: snapshotDate,
+              value: liveData.value,
+              target_at_snapshot: metric.target_value,
+              status: liveData.status,
+              pendo_raw_data: liveData.rawData || {},
+              calculated_at: new Date().toISOString(),
+            }, { onConflict: 'epic_heart_metric_id,snapshot_date' })
+            .then(() => {})
+            .catch((err: any) => console.warn('[HeartService] snapshot auto-save failed:', err.message));
+        }
       }
       
-      // Calculate trend from historical snapshots (if any exist)
-      const historicalSnapshots = await getSnapshots(metric.id);
-      history = historicalSnapshots;
-      if (historicalSnapshots.length >= 1 && liveData.value !== null) {
-        const lastHistorical = historicalSnapshots[historicalSnapshots.length - 1];
-        if (lastHistorical.value !== null) {
-          if (liveData.value > lastHistorical.value) trend = 'up';
-          else if (liveData.value < lastHistorical.value) trend = 'down';
+      // Fetch daily time-series from Pendo and compute actual metric values per day
+      const allEventIds = metric.pendo_event_ids ?? [];
+      if (allEventIds.length > 0 && pendoClient) {
+        try {
+          // Fetch time series for all events and aggregate
+          const allDailySeries = await Promise.all(
+            allEventIds.map(eid => pendoClient.getDailyMetricTimeSeries({ eventId: eid, days: 30 }))
+          );
+          // Merge: sum events and take max unique visitors per day across events
+          const dailyMap = new Map<string, { date: string; events: number; visitors: number }>();
+          for (const series of allDailySeries) {
+            for (const d of series) {
+              const existing = dailyMap.get(d.date);
+              if (existing) {
+                existing.events += d.events;
+                existing.visitors = Math.max(existing.visitors, d.visitors);
+              } else {
+                dailyMap.set(d.date, { ...d });
+              }
+            }
+          }
+          const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+          if (daily.length > 0) {
+            const totalVisitorsInPeriod = new Set(daily.map(d => d.visitors)).size > 0
+              ? daily.reduce((sum, d) => sum + d.visitors, 0) / daily.length
+              : 1;
+            const maxVisitorsInADay = Math.max(...daily.map(d => d.visitors), 1);
+
+            history = daily.map(d => {
+              let metricValue: number;
+              switch (metric.measurement_type) {
+                case 'unique_users_percentage':
+                  metricValue = (d.visitors / Math.max(1, maxVisitorsInADay)) * 100;
+                  break;
+                case 'events_per_user_per_week':
+                  metricValue = d.visitors > 0 ? d.events / d.visitors : 0;
+                  break;
+                case 'return_rate_14_days':
+                case 'return_rate_30_days':
+                  metricValue = (d.visitors / Math.max(1, maxVisitorsInADay)) * 100;
+                  break;
+                case 'success_rate':
+                case 'completion_rate':
+                  metricValue = d.events;
+                  historyUnit = 'completions';
+                  break;
+                default:
+                  metricValue = d.events;
+              }
+              return {
+                id: `ts-${metric.id}-${d.date}`,
+                epic_heart_metric_id: metric.id,
+                snapshot_date: d.date,
+                value: Math.round(metricValue * 100) / 100,
+                target_at_snapshot: metric.target_value,
+                status: 'PENDING' as HeartMetricStatus,
+                pendo_raw_data: { events: d.events, visitors: d.visitors },
+                calculated_at: new Date().toISOString(),
+              };
+            });
+          } else {
+            history = await getSnapshots(metric.id);
+          }
+        } catch {
+          history = await getSnapshots(metric.id);
+        }
+      } else if (category.id === 'happiness' && pendoClient) {
+        try {
+          const frustrationCounts = await pendoClient.getFrustrationTimeSeries({ days: 30 });
+          if (frustrationCounts.length > 0) {
+            history = frustrationCounts.map(d => ({
+              id: `frust-${metric.id}-${d.date}`,
+              epic_heart_metric_id: metric.id,
+              snapshot_date: d.date,
+              value: d.count,
+              target_at_snapshot: metric.target_value,
+              status: 'PENDING' as HeartMetricStatus,
+              pendo_raw_data: d.breakdown || {},
+              calculated_at: new Date().toISOString(),
+            }));
+            historyUnit = 'frustration';
+          } else {
+            history = await getSnapshots(metric.id);
+          }
+        } catch {
+          history = await getSnapshots(metric.id);
+        }
+      } else {
+        history = await getSnapshots(metric.id);
+        if (latestSnapshot && latestSnapshot.value !== null) {
+          const todayKey = new Date().toISOString().split('T')[0];
+          if (!history.some(s => s.snapshot_date === todayKey)) {
+            history = [...history, latestSnapshot];
+          }
+        }
+      }
+      if (history.length >= 2) {
+        const prevH = history[history.length - 2];
+        const currH = history[history.length - 1];
+        if (prevH.value !== null && currH.value !== null) {
+          if (currH.value > prevH.value) trend = 'up';
+          else if (currH.value < prevH.value) trend = 'down';
           else trend = 'stable';
         }
       }
@@ -1143,7 +1587,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
         nextMilestone = upcomingMilestones.length > 0 ? upcomingMilestones[0] : null;
       }
     }
-    
+
     metricsWithLiveData.push({
       category,
       metric,
@@ -1153,6 +1597,8 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       trend,
       isPreLaunch,
       measurementPeriod,
+      historyUnit,
+      metricContext,
       milestoneProgress,
       currentMilestone,
       nextMilestone,
@@ -1199,7 +1645,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
           value: liveData.value,
           target_at_snapshot: metric.target_value,
           status: liveData.status,
-          pendo_raw_data: {},
+          pendo_raw_data: liveData.rawData || {},
           calculated_at: new Date().toISOString(),
         };
       }
@@ -1285,7 +1731,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     metrics: metricsWithLiveData,
     overallStatus,
     daysSinceLaunch,
-    launchDate: epic?.target_launch_date || null,
+    launchDate: rawLaunchDate,
     pendoEventIdToName,
   };
 }
@@ -1497,7 +1943,7 @@ export async function createInitialSnapshots(epicId: string): Promise<{
           value: liveData.value,
           target_at_snapshot: metric.target_value,
           status: liveData.status,
-          pendo_raw_data: {},
+          pendo_raw_data: liveData.rawData || {},
           calculated_at: today.toISOString(),
         }, {
           onConflict: 'epic_heart_metric_id,snapshot_date',

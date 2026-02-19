@@ -413,11 +413,14 @@ The HEART framework (Google: Happiness, Engagement, Adoption, Retention, Task Su
 
 - **HEART Categories**: Happiness, Engagement, Adoption, Retention, Task Success; admin-configurable with descriptions, icons, sort order, and whether a survey is required
 - **Epic HEART Config**: Per-epic config with setup method (`auto`, `ai_assisted`, `manual`), status (`draft`, `active`, `archived`), optional AI model version, approval tracking
-- **HEART Metrics**: Per-epic metrics with measurement types (e.g. `events_per_user`, `unique_users_percentage`, `return_rate_7_days`, `completion_rate`, `survey_score`, `nps_score`); Pendo event IDs, segment, app; target value and timeframe; optional AI-suggested flag and rationale; custom metrics with category label and icon; optional link to custom metric template
+- **HEART Metrics**: Per-epic metrics with measurement types (e.g. `events_per_user`, `unique_users_percentage`, `return_rate_7_days`, `completion_rate`, `survey_score`, `nps_score`, `happiness_composite_score`); Pendo event IDs, segment, app; target value and timeframe; optional AI-suggested flag and rationale; custom metrics with category label and icon; optional link to custom metric template
+- **Happiness Composite**: Happiness now supports `survey + frustration` scoring. Composite formula: `happiness = surveyWeight * effectiveSurvey + frustrationWeight * (100 - frustrationPenalty)` where `effectiveSurvey` uses real survey responses when present, otherwise an optimistic baseline. Default weights: survey `0.7`, frustration `0.3`; fallback survey baseline: `80`.
 - **Milestones**: Multi-target metrics support milestones (days after launch, target value, label) for phased goals
 - **AI-Assisted Setup**: `setupHeartMetricsWithAI` / `runHeartAgent` use epic context and Pendo context (events, features, segments, apps) to recommend metrics per HEART category; PMs can apply recommendations via Apply Recommendations flow
+- **Default Target Policy**: Auto-applied HEART metrics now start from category defaults (admin-configured target + timeframe, with system fallbacks if defaults are missing) instead of using AI-suggested numeric targets, so PMs start from a consistent baseline and then adjust per epic.
 - **Snapshots**: Daily and initial snapshots compute current value vs target; status ON_TRACK, AT_RISK, MISSED, PENDING; cron job `/api/cron/heart-snapshots` for daily runs
 - **Pendo Data Confidence**: Per-metric confidence level (high/medium/low/unknown), score, and issues (e.g. no recent data, low volume, missing feature/event, segment empty, data gap)
+- **Pendo Query Resilience**: Track-event aggregation uses resilient filter logic across `track` and `trackType` entity representations and both name/id fields (`trackType`, `trackTypeId`, `id`, `name`) to reduce false zeroes when subscriptions expose different schemas.
 - **HEART Dashboard**: Epic-level dashboard shows config, metrics with latest snapshot, trend, milestone progress, measurement period; list view of epics with HEART and overall status
 - **Admin Defaults & Templates**: Category defaults (target value, timeframe, measurement type, guidance, example events, default milestones); custom metric templates (reusable across epics) with name, category label, measurement type, Pendo event pattern, defaults
 - **API Surface**: `GET/POST /api/epics/[id]/heart`, `GET/POST /api/epics/[id]/heart/metrics`, `GET/POST /api/epics/[id]/heart/recommendations`, `POST /api/epics/[id]/heart/apply-recommendations`, `GET /api/epics/[id]/heart/snapshots`, `GET/POST /api/epics/[id]/heart/automations`, `GET/POST /api/settings/success-measurement/heart/defaults`, `GET/POST /api/settings/success-measurement/heart/templates`; Pendo check and metrics by ID
@@ -1129,7 +1132,7 @@ The system uses the following launch stage phases:
 
 #### HEART Framework (summary)
 - **epic_heart_config**: Epic-level HEART config (setup_method, status, ai_model_version, approval)
-- **epic_heart_metric**: Per-epic HEART metrics (category, measurement_type, pendo_event_ids, target_value, target_timeframe_days, ai_suggested, milestones)
+- **epic_heart_metric**: Per-epic HEART metrics (category, measurement_type, pendo_event_ids, target_value, target_timeframe_days, ai_suggested, milestones, optional `composite_config` JSON for models like Happiness survey+frustration)
 - **epic_heart_metric_milestone**: Multi-target milestones (days_after_launch, target_value, label)
 - **epic_heart_snapshot**: Daily snapshot per metric (value, target_at_snapshot, status, data_confidence)
 - **heart_category**: HEART categories (happiness, engagement, adoption, retention, task_success) with defaults

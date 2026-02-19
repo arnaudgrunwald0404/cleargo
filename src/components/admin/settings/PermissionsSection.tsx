@@ -34,6 +34,9 @@ function getCapabilityCategory(capabilityId: string): string {
   if (capabilityId.startsWith("settings.aha") || capabilityId.startsWith("settings.webhookUrl")) {
     return "Aha Integration";
   }
+  if (capabilityId.startsWith("settings.successMeasurement")) {
+    return "Success Measurement";
+  }
   return "Other";
 }
 

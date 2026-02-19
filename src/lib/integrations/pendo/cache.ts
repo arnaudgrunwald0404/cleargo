@@ -16,6 +16,7 @@ import { createClient } from '@/lib/supabase/server';
 export const PENDO_CACHE_TTL = {
   events: 3600,       // 1 hour
   features: 3600,     // 1 hour
+  pages: 3600,        // 1 hour
   segments: 14400,    // 4 hours
 } as const;
 

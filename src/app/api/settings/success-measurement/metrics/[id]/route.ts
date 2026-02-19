@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveRole } from '@/lib/roles';
 import { getMetricById, updateMetric, deleteMetric } from '@/lib/services/successMeasurementService';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
@@ -49,32 +48,22 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
-      return forbid();
+    const { data: me, error: userError } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
     }
 
-    // Additional capability check
-    if (role !== 'SUPERADMIN') {
-      const { data: me, error: userError } = await supabase
-        .from('app_user')
-        .select('roles')
-        .eq('email', user.email)
-        .single();
-
-      if (userError && userError.code === 'PGRST116') {
-        return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-      }
-      if (userError) {
-        throw userError;
-      }
-
-      const rules = await getEffectivePermissionRules();
-      const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.update', rules);
-      if (!canUpdate) {
-        return forbid();
-      }
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
 
     // Validate request body
@@ -113,32 +102,22 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
-      return forbid();
+    const { data: me, error: userError } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) {
+      throw userError;
     }
 
-    // Additional capability check
-    if (role !== 'SUPERADMIN') {
-      const { data: me, error: userError } = await supabase
-        .from('app_user')
-        .select('roles')
-        .eq('email', user.email)
-        .single();
-
-      if (userError && userError.code === 'PGRST116') {
-        return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-      }
-      if (userError) {
-        throw userError;
-      }
-
-      const rules = await getEffectivePermissionRules();
-      const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.delete', rules);
-      if (!canDelete) {
-        return forbid();
-      }
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
 
     const deleted = await deleteMetric(id);

@@ -60,12 +60,127 @@ export class PendoClient {
   private apiKey: string;
   private baseUrl: string;
   private environment: string;
+  /** Cache event name -> track type ID for aggregation filters (Pendo expects ID, not name). */
+  private eventNameToTrackId: Map<string, string> = new Map();
+  private eventMapLoaded = false;
+  /** Cache of known page IDs to distinguish page vs feature IDs for correct source routing. */
+  private pageIdSet: Set<string> | null = null;
 
   constructor(config: PendoConfig) {
     this.apiKey = config.apiKey;
     this.environment = config.environment || 'prod';
     // Pendo API base URL - adjust if needed
     this.baseUrl = 'https://app.pendo.io/api/v1';
+  }
+
+  /**
+   * Resolve track event name to Pendo track type ID for aggregation filters.
+   * Pendo aggregation expects trackType == <id>; we store events by name so we resolve once and cache.
+   */
+  private async resolveTrackTypeId(eventName: string): Promise<string> {
+    if (!eventName.includes('.')) return eventName; // feature IDs stay as-is
+    if (this.eventNameToTrackId.has(eventName)) return this.eventNameToTrackId.get(eventName)!;
+    if (!this.eventMapLoaded) {
+      try {
+        const events = await this.getEvents();
+        for (const e of events) {
+          if (e.name) this.eventNameToTrackId.set(e.name, e.id ?? e.name);
+        }
+        this.eventMapLoaded = true;
+      } catch (err) {
+        console.warn('[PendoClient] resolveTrackTypeId: could not load events', err);
+        return eventName;
+      }
+    }
+    return this.eventNameToTrackId.get(eventName) ?? eventName;
+  }
+
+  /**
+   * Lazy-load page IDs so we can route queries to pageEvents vs featureEvents.
+   */
+  private async isPageId(id: string): Promise<boolean> {
+    if (id.includes('.')) return false;
+    if (this.pageIdSet === null) {
+      try {
+        const pages = await this.getPages();
+        this.pageIdSet = new Set(pages.map(p => p.id));
+      } catch {
+        this.pageIdSet = new Set();
+      }
+    }
+    return this.pageIdSet.has(id);
+  }
+
+  /**
+   * Determine the Pendo aggregation source type for a given event/entity ID.
+   * Track events contain dots; otherwise check page cache.
+   */
+  private async resolveSourceType(id: string): Promise<'trackEvents' | 'featureEvents' | 'pageEvents'> {
+    if (id.includes('.')) return 'trackEvents';
+    if (await this.isPageId(id)) return 'pageEvents';
+    return 'featureEvents';
+  }
+
+  /**
+   * Build a resilient track-event filter for Pendo Aggregation.
+   * Different subscriptions can expose track events as either `track` or `trackType`
+   * entities, and may key them by name or internal ID.
+   */
+  private buildTrackEventFilter(eventName: string, resolvedTrackType: string): string {
+    const candidates = Array.from(new Set([resolvedTrackType, eventName].filter(Boolean)));
+    const clauses: string[] = [];
+
+    for (const candidate of candidates) {
+      const isLikelyName = candidate.includes('.');
+      if (isLikelyName) {
+        clauses.push(`(type == "track" && trackType == "${candidate}")`);
+        clauses.push(`(type == "trackType" && name == "${candidate}")`);
+      } else {
+        clauses.push(`(type == "track" && trackTypeId == "${candidate}")`);
+        clauses.push(`(type == "track" && trackType == "${candidate}")`);
+        clauses.push(`(type == "trackType" && id == "${candidate}")`);
+        clauses.push(`(type == "trackType" && trackTypeId == "${candidate}")`);
+      }
+    }
+
+    return `(${clauses.join(' || ')})`;
+  }
+
+  private extractFirstRow(response: any): any {
+    if (Array.isArray(response) && response.length > 0) return response[0];
+    if (Array.isArray(response?.results) && response.results.length > 0) return response.results[0];
+    return response ?? null;
+  }
+
+  private firstNumericField(row: any, keys: string[]): number | null {
+    if (!row || typeof row !== 'object') return null;
+    for (const key of keys) {
+      const value = row[key];
+      if (typeof value === 'number' && Number.isFinite(value)) return value;
+      if (typeof value === 'string') {
+        const parsed = Number(value);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+    }
+    return null;
+  }
+
+  private extractEventCount(response: any): number {
+    const row = this.extractFirstRow(response);
+    const count = this.firstNumericField(row, ['count', 'numEvents', 'value', 'total']);
+    return count ?? 0;
+  }
+
+  private extractUniqueVisitorCount(response: any): number {
+    const row = this.extractFirstRow(response);
+    const count = this.firstNumericField(row, ['count', 'uniqueVisitorCount', 'uniqueVisitors', 'value']);
+    return count ?? 0;
+  }
+
+  private extractUniqueAccountCount(response: any): number {
+    const row = this.extractFirstRow(response);
+    const count = this.firstNumericField(row, ['count', 'uniqueAccountCount', 'uniqueAccounts', 'value']);
+    return count ?? 0;
   }
 
   private async request(endpoint: string, options: RequestInit = {}): Promise<any> {
@@ -102,64 +217,167 @@ export class PendoClient {
   }
 
   /**
+   * Build a date filter for the appropriate source.
+   * trackEvents and pageEvents use `day` (epoch ms for midnight); featureEvents use `browserTime`.
+   */
+  private buildDateFilter(startDate: string, endDate: string, source: 'trackEvents' | 'featureEvents' | 'pageEvents' | 'events'): string {
+    const startMs = new Date(startDate).getTime();
+    const endMs = new Date(endDate).getTime() + 86400000;
+    const field = (source === 'trackEvents' || source === 'pageEvents') ? 'day' : 'browserTime';
+    return `${field} >= ${startMs} && ${field} < ${endMs}`;
+  }
+
+  /**
    * Get count of events for a given event ID and date range.
-   * Handles both Feature IDs and Track Event names using the unified 'events' source.
+   * Routes to the correct Pendo source: trackEvents, featureEvents, or pageEvents.
    */
   async getEventCount(params: PendoEventCountParams): Promise<number> {
     try {
-      const isFeature = !params.eventId.includes('.');
-      const pipeline: any[] = [
-        { 
-          source: { 
-            events: null,
-            timeSeries: {
-              period: 'dayRange',
-              first: 'now()',
-              count: -30 // Last 30 days by default
-            }
-          } 
-        }
-      ];
+      const sourceType = await this.resolveSourceType(params.eventId);
+      const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
+      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
 
-      // Filter by type and ID
-      if (isFeature) {
-        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      let pipeline: any[];
+      if (sourceType === 'trackEvents') {
+        pipeline = [{ source: { trackEvents: null, timeSeries } }, { filter: `trackTypeId == "${resolvedId}"` }];
+      } else if (sourceType === 'pageEvents') {
+        pipeline = [{ source: { pageEvents: null, timeSeries } }, { filter: `pageId == "${params.eventId}"` }];
       } else {
-        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+        pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
-      // Filter by date range (if provided, otherwise timeSeries handles it)
       if (params.startDate && params.endDate) {
-        pipeline.push({
-          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
-        });
+        pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
+      }
+      if (params.filters?.segmentId && sourceType !== 'trackEvents') {
+        pipeline.push({ identified: 'visitorId' });
+        pipeline.push({ segment: { id: params.filters.segmentId } });
+      }
+      pipeline.push({ group: { fields: { total: { sum: 'numEvents' } } } });
+
+      const response = await this.request('/aggregation', { method: 'POST', body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }) });
+      const items = Array.isArray(response) ? response : (response?.results ?? response?.data?.results ?? []);
+      return items?.[0]?.total ?? 0;
+    } catch (error: any) {
+      console.error('Error fetching Pendo event count:', error, { eventId: params.eventId, startDate: params.startDate, endDate: params.endDate });
+      return 0;
+    }
+  }
+
+  /**
+   * Get daily events AND unique visitors for a given event ID over the last N days.
+   * Returns both values so the caller can compute the actual metric (%, ratio, etc.).
+   */
+  async getDailyMetricTimeSeries(params: {
+    eventId: string;
+    days: number;
+  }): Promise<Array<{ date: string; events: number; visitors: number }>> {
+    try {
+      const sourceType = await this.resolveSourceType(params.eventId);
+      const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
+
+      const fields = {
+        totalEvents: { sum: 'numEvents' },
+        uniqueVisitors: { count: 'visitorId' },
+      };
+
+      let pipeline: any[];
+      if (sourceType === 'trackEvents') {
+        pipeline = [
+          { source: { trackEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { filter: `trackTypeId == "${resolvedId}"` },
+          { group: { group: ['day'], fields } },
+        ];
+      } else if (sourceType === 'pageEvents') {
+        pipeline = [
+          { source: { pageEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { filter: `pageId == "${params.eventId}"` },
+          { group: { group: ['day'], fields } },
+        ];
+      } else {
+        pipeline = [
+          { source: { featureEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { filter: `featureId == "${params.eventId}"` },
+          { group: { group: ['day'], fields } },
+        ];
       }
 
-      if (params.filters?.segmentId) {
-        pipeline.push({
-          identified: 'visitorId',
-          segment: { id: params.filters.segmentId },
+      const response = await this.request('/aggregation', { method: 'POST', body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }) });
+
+      const results: Array<{ date: string; events: number; visitors: number }> = [];
+      const items = Array.isArray(response) ? response : (response?.results || []);
+      for (const item of items) {
+        const dayVal = item?.day;
+        if (dayVal == null) continue;
+        results.push({
+          date: new Date(dayVal).toISOString().split('T')[0],
+          events: Number(item?.totalEvents ?? 0),
+          visitors: Number(item?.uniqueVisitors ?? 0),
         });
       }
+      results.sort((a, b) => a.date.localeCompare(b.date));
+      return results;
+    } catch (error: any) {
+      console.error('Error fetching Pendo daily metric time series:', error);
+      return [];
+    }
+  }
 
-      pipeline.push({ count: null });
-
-      const response = await this.request('/aggregation', {
-        method: 'POST',
-        body: JSON.stringify({
-          response: { mimeType: 'application/json' },
-          request: { pipeline },
-        }),
+  /**
+   * Get daily frustration metrics (rage clicks, dead clicks, u-turns, error clicks) over the last N days.
+   * Uses Pendo's pageEvents source which tracks native frustration signals automatically.
+   * @param pageIds - Optional: limit to these page IDs (scoped); omit for app-wide.
+   */
+  async getFrustrationTimeSeries(params: {
+    days: number;
+    pageIds?: string[];
+  }): Promise<Array<{ date: string; count: number; breakdown?: { rageClicks: number; deadClicks: number; uTurns: number; errorClicks: number } }>> {
+    try {
+      const pipeline: any[] = [
+        { source: { pageEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+      ];
+      if (params.pageIds && params.pageIds.length > 0) {
+        const filter =
+          params.pageIds.length === 1
+            ? `pageId == "${params.pageIds[0]}"`
+            : params.pageIds.map((id) => `pageId == "${id}"`).join(' || ');
+        pipeline.push({ filter });
+      }
+      pipeline.push({
+        group: {
+          group: ['day'],
+          fields: {
+            rageClicks: { sum: 'numRageClicks' },
+            deadClicks: { sum: 'numDeadClicks' },
+            uTurns: { sum: 'numUTurns' },
+            errorClicks: { sum: 'numErrorClicks' },
+          },
+        },
       });
 
-      const results = Array.isArray(response) ? response : (response?.results || []);
-      if (results.length > 0) {
-        return Number(results[0].count) || 0;
+      const response = await this.request('/aggregation', { method: 'POST', body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }) });
+
+      const results: Array<{ date: string; count: number; breakdown?: { rageClicks: number; deadClicks: number; uTurns: number; errorClicks: number } }> = [];
+      const items = Array.isArray(response) ? response : (response?.results || []);
+      for (const item of items) {
+        const dayVal = item?.day;
+        if (dayVal == null) continue;
+        const rage = Number(item?.rageClicks ?? 0);
+        const dead = Number(item?.deadClicks ?? 0);
+        const uTurn = Number(item?.uTurns ?? 0);
+        const error = Number(item?.errorClicks ?? 0);
+        const total = rage + dead + uTurn + error;
+        results.push({
+          date: new Date(dayVal).toISOString().split('T')[0],
+          count: total,
+          breakdown: { rageClicks: rage, deadClicks: dead, uTurns: uTurn, errorClicks: error },
+        });
       }
-      return typeof response === 'number' ? response : (response?.count || 0);
+      results.sort((a, b) => a.date.localeCompare(b.date));
+      return results;
     } catch (error: any) {
-      console.error('Error fetching Pendo event count:', error);
-      return 0;
+      console.error('Error fetching Pendo frustration time series:', error);
+      return [];
     }
   }
 
@@ -168,55 +386,32 @@ export class PendoClient {
    */
   async getUniqueVisitors(params: PendoEventCountParams): Promise<number> {
     try {
-      const isFeature = !params.eventId.includes('.');
-      const pipeline: any[] = [
-        { 
-          source: { 
-            events: null,
-            timeSeries: {
-              period: 'dayRange',
-              first: 'now()',
-              count: -30
-            }
-          } 
-        }
-      ];
+      const sourceType = await this.resolveSourceType(params.eventId);
+      const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
+      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
 
-      if (isFeature) {
-        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      let pipeline: any[];
+      if (sourceType === 'trackEvents') {
+        pipeline = [{ source: { trackEvents: null, timeSeries } }, { filter: `trackTypeId == "${resolvedId}"` }];
+      } else if (sourceType === 'pageEvents') {
+        pipeline = [{ source: { pageEvents: null, timeSeries } }, { filter: `pageId == "${params.eventId}"` }];
       } else {
-        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+        pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
       if (params.startDate && params.endDate) {
-        pipeline.push({
-          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
-        });
+        pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
       }
-
-      if (params.filters?.segmentId) {
-        pipeline.push({
-          identified: 'visitorId',
-          segment: { id: params.filters.segmentId },
-        });
+      if (params.filters?.segmentId && sourceType !== 'trackEvents') {
+        pipeline.push({ identified: 'visitorId' });
+        pipeline.push({ segment: { id: params.filters.segmentId } });
       }
 
       pipeline.push({ group: { group: ['visitorId'] } });
       pipeline.push({ count: null });
 
-      const response = await this.request('/aggregation', {
-        method: 'POST',
-        body: JSON.stringify({
-          response: { mimeType: 'application/json' },
-          request: { pipeline },
-        }),
-      });
-
-      const results = Array.isArray(response) ? response : (response?.results || []);
-      if (results.length > 0) {
-        return Number(results[0].count) || 0;
-      }
-      return typeof response === 'number' ? response : (response?.count || 0);
+      const response = await this.request('/aggregation', { method: 'POST', body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }) });
+      return this.extractUniqueVisitorCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo unique visitors:', error);
       return 0;
@@ -228,58 +423,72 @@ export class PendoClient {
    */
   async getUniqueAccounts(params: PendoEventCountParams): Promise<number> {
     try {
-      const isFeature = !params.eventId.includes('.');
-      const pipeline: any[] = [
-        { 
-          source: { 
-            events: null,
-            timeSeries: {
-              period: 'dayRange',
-              first: 'now()',
-              count: -30
-            }
-          } 
-        }
-      ];
+      const sourceType = await this.resolveSourceType(params.eventId);
+      const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
+      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
 
-      if (isFeature) {
-        pipeline.push({ filter: `type == "feature" && featureId == "${params.eventId}"` });
+      let pipeline: any[];
+      if (sourceType === 'trackEvents') {
+        pipeline = [{ source: { trackEvents: null, timeSeries } }, { filter: `trackTypeId == "${resolvedId}"` }];
+      } else if (sourceType === 'pageEvents') {
+        pipeline = [{ source: { pageEvents: null, timeSeries } }, { filter: `pageId == "${params.eventId}"` }];
       } else {
-        pipeline.push({ filter: `type == "track" && trackType == "${params.eventId}"` });
+        pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
       if (params.startDate && params.endDate) {
-        pipeline.push({
-          filter: `browserTime >= ${new Date(params.startDate).getTime()} && browserTime < ${new Date(params.endDate).getTime() + 86400000}`,
-        });
+        pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
+      }
+      if (params.filters?.segmentId && sourceType !== 'trackEvents') {
+        pipeline.push({ identified: 'visitorId' });
+        pipeline.push({ segment: { id: params.filters.segmentId } });
       }
 
-      if (params.filters?.segmentId) {
-        pipeline.push({
-          identified: 'visitorId',
-          segment: { id: params.filters.segmentId },
-        });
-      }
-
-      // Group by accountId to count unique companies
       pipeline.push({ group: { group: ['accountId'] } });
       pipeline.push({ count: null });
 
-      const response = await this.request('/aggregation', {
-        method: 'POST',
-        body: JSON.stringify({
-          response: { mimeType: 'application/json' },
-          request: { pipeline },
-        }),
-      });
-
-      const results = Array.isArray(response) ? response : (response?.results || []);
-      if (results.length > 0) {
-        return Number(results[0].count) || 0;
-      }
-      return typeof response === 'number' ? response : (response?.count || 0);
+      const response = await this.request('/aggregation', { method: 'POST', body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }) });
+      return this.extractUniqueAccountCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo unique accounts:', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get unique visitors who had page events on any of the given page IDs (for scoped frustration denominator).
+   */
+  async getUniqueVisitorsForPageIds(params: {
+    pageIds: string[];
+    startDate: string;
+    endDate: string;
+    segmentId?: string;
+  }): Promise<number> {
+    if (!params.pageIds.length) return 0;
+    try {
+      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
+      const filter =
+        params.pageIds.length === 1
+          ? `pageId == "${params.pageIds[0]}"`
+          : params.pageIds.map((id) => `pageId == "${id}"`).join(' || ');
+      const pipeline: any[] = [
+        { source: { pageEvents: null, timeSeries } },
+        { filter },
+        { filter: this.buildDateFilter(params.startDate, params.endDate, 'pageEvents') },
+      ];
+      if (params.segmentId) {
+        pipeline.push({ identified: 'visitorId' });
+        pipeline.push({ segment: { id: params.segmentId } });
+      }
+      pipeline.push({ group: { group: ['visitorId'] } });
+      pipeline.push({ count: null });
+      const response = await this.request('/aggregation', {
+        method: 'POST',
+        body: JSON.stringify({ response: { mimeType: 'application/json' }, request: { pipeline } }),
+      });
+      return this.extractUniqueVisitorCount(response);
+    } catch (error: any) {
+      console.error('Error fetching unique visitors for page IDs:', error);
       return 0;
     }
   }
@@ -327,11 +536,7 @@ export class PendoClient {
         }),
       });
 
-      const results = Array.isArray(response) ? response : (response?.results || []);
-      if (results.length > 0) {
-        return Number(results[0].count) || 0;
-      }
-      return typeof response === 'number' ? response : (response?.count || 0);
+      return this.extractUniqueVisitorCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo total unique visitors:', error);
       return 0;
@@ -473,7 +678,7 @@ export class PendoClient {
 
         validEvents.push({
           name: name.trim(),
-          id: trackType.id || trackType.eventId || trackType.key || name.trim(),
+          id: trackType.id || trackType.Id || trackType.eventId || trackType.key || name.trim(),
           description: trackType.description || trackType.eventDescription || trackType.desc || '',
         });
       }
@@ -601,6 +806,42 @@ export class PendoClient {
       return features;
     } catch (error: any) {
       console.error('Error fetching Pendo features:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get list of Pendo pages (tagged URL patterns).
+   * These represent product areas / screens instrumented in Pendo.
+   */
+  async getPages(): Promise<Array<{ id: string; name: string; appId: string }>> {
+    try {
+      const response = await this.request('/page', { method: 'GET' });
+
+      const source: any[] = Array.isArray(response) ? response : [];
+      const pages: Array<{ id: string; name: string; appId: string }> = [];
+
+      for (const item of source) {
+        if (!item) continue;
+        const id = item.id || item.pageId;
+        const name = item.name || item.displayName;
+        if (!id || !name) continue;
+        pages.push({
+          id: String(id),
+          name: String(name),
+          appId: item.appId ? String(item.appId) : '',
+        });
+      }
+
+      console.log(
+        '[PendoClient] getPages: rawCount=%d filteredCount=%d',
+        source.length,
+        pages.length
+      );
+
+      return pages;
+    } catch (error: any) {
+      console.error('Error fetching Pendo pages:', error);
       return [];
     }
   }

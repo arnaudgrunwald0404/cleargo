@@ -1,6 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveRole } from '@/lib/roles';
 import { getMetrics, createMetric } from '@/lib/services/successMeasurementService';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
@@ -49,13 +48,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
-      return forbid();
-    }
-
-    // Additional capability check
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
@@ -70,8 +62,7 @@ export async function POST(req: NextRequest) {
     }
 
     const rules = await getEffectivePermissionRules();
-    const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], 'criteria.create', rules);
-    if (!canCreate && role !== 'SUPERADMIN') {
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return forbid();
     }
 

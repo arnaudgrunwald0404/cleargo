@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveRole } from '@/lib/roles';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { z } from 'zod';
 import { PendoClient } from '@/lib/integrations/pendo/client';
 import { invalidatePendoCache } from '@/lib/integrations/pendo/cache';
@@ -41,11 +42,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check permissions - Admin only
-    const role = await resolveRole(user.email);
-    const isAdmin = role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
-
-    if (!isAdmin) {
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return forbid();
     }
 
@@ -86,11 +85,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check permissions - Admin only
-    const role = await resolveRole(user.email);
-    const isAdmin = role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
-
-    if (!isAdmin) {
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return forbid();
     }
 
@@ -219,11 +216,9 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check permissions - Admin only
-    const role = await resolveRole(user.email);
-    const isAdmin = role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
-
-    if (!isAdmin) {
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return forbid();
     }
 

@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import {
   updateEpicHeartMetric,
   deleteEpicHeartMetric,
@@ -17,6 +19,10 @@ import {
 } from '@/lib/heart/service';
 import { getClient } from '@/lib/db';
 import type { UpdateEpicHeartMetricDTO } from '@/lib/heart/types';
+
+function forbid() {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
 
 export async function GET(
   req: NextRequest,
@@ -77,11 +83,15 @@ export async function PATCH(
   try {
     const { metricId } = await params;
     
-    // Auth check
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
     
     // Parse body
@@ -102,6 +112,7 @@ export async function PATCH(
     // Custom metric fields
     if (body.custom_category_label !== undefined) dto.custom_category_label = body.custom_category_label;
     if (body.custom_icon !== undefined) dto.custom_icon = body.custom_icon;
+    if (body.composite_config !== undefined) dto.composite_config = body.composite_config;
     
     // Update metric
     const metric = await updateEpicHeartMetric(metricId, dto);
@@ -132,11 +143,15 @@ export async function DELETE(
   try {
     const { metricId } = await params;
     
-    // Auth check
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
     
     // Delete metric

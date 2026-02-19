@@ -5,7 +5,8 @@
  */
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { resolveRole } from '@/lib/roles';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import type { HeartCustomMetricTemplate, CreateCustomMetricTemplateDTO } from '@/lib/heart/types';
 
 export async function GET(req: NextRequest) {
@@ -61,9 +62,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 

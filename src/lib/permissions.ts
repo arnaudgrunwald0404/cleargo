@@ -27,7 +27,8 @@ export type CapabilityId =
   | "settings.webhookUrl.read"
   | "settings.webhookUrl.update"
   | "meetings.read"
-  | "analytics.read";
+  | "analytics.read"
+  | "settings.successMeasurement.update";
 
 export type Capability = {
   id: CapabilityId;
@@ -171,6 +172,11 @@ export const CAPABILITIES: Capability[] = [
     label: "View Analytics",
     description: "Allow viewing the Analytics dashboard (CPO-only for now).",
   },
+  {
+    id: "settings.successMeasurement.update",
+    label: "Configure Success Metrics (HEART)",
+    description: "Allow setting up and editing HEART metrics, Pendo config, and success measurement. Others can view only.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -201,6 +207,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
   "meetings.read": ["CPO", "SUPERADMIN"],
   "analytics.read": ["CPO"],
+  "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

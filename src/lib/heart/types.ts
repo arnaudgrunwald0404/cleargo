@@ -37,6 +37,7 @@ export type HeartMeasurementType =
   | 'success_rate'              // Task Success: successes / attempts
   | 'survey_score'              // Happiness: average survey response
   | 'nps_score'                 // Happiness: Net Promoter Score
+  | 'happiness_composite_score' // Happiness: survey + frustration composite
   // Manual-entry types (free-text stored as string, these are fallback constants)
   | 'manual_numeric'            // Manual: user-entered numeric value (count, amount, etc.)
   | 'manual_percentage'         // Manual: user-entered percentage value
@@ -110,9 +111,24 @@ export interface EpicHeartMetric {
   custom_category_label?: string | null;
   custom_icon?: string | null;
   template_id?: string | null;
+  // Structured config for composite calculations (e.g., happiness)
+  composite_config?: HeartCompositeConfig | null;
   // Milestones (loaded separately)
   milestones?: HeartMetricMilestone[];
 }
+
+export interface HeartHappinessCompositeConfig {
+  surveyWeight: number;
+  frustrationWeight: number;
+  optimisticSurveyBaseline: number;
+  frustrationEventIds: string[];
+  frustrationSegmentId?: string | null;
+  frustrationEventsPer100UsersAtMaxPenalty: number;
+}
+
+export type HeartCompositeConfig = {
+  happiness?: HeartHappinessCompositeConfig;
+};
 
 // ============================================================================
 // Metric Milestones (multiple targets over time)
@@ -260,6 +276,7 @@ export interface CreateEpicHeartMetricDTO {
   target_unit?: string | null;
   ai_suggested?: boolean;
   ai_rationale?: string | null;
+  composite_config?: HeartCompositeConfig | null;
 }
 
 export interface UpdateEpicHeartMetricDTO {
@@ -276,6 +293,7 @@ export interface UpdateEpicHeartMetricDTO {
   // Custom metric fields
   custom_category_label?: string | null;
   custom_icon?: string | null;
+  composite_config?: HeartCompositeConfig | null;
 }
 
 export interface CreateHeartSurveyDTO {
@@ -308,9 +326,27 @@ export interface PendoFeatureForAgent {
   group: string | null;
 }
 
+export interface PendoPageForAgent {
+  id: string;
+  name: string;
+  appId: string;
+}
+
+/**
+ * Unified entity type for cross-entity search.
+ * Represents a track event, feature, or page that the agent can match against.
+ */
+export interface PendoEntityForAgent {
+  id: string;
+  name: string;
+  entityType: 'trackEvent' | 'feature' | 'page';
+  description: string | null;
+}
+
 export interface PendoContextForAgent {
   events: PendoEventForAgent[];
   features: PendoFeatureForAgent[];
+  pages: PendoPageForAgent[];
   segments: Array<{ id: string; name: string }>;
   apps: Array<{ id: string; name: string }>;
 }
@@ -352,8 +388,10 @@ export interface HeartAgentRecommendation {
     rationale: string;
   };
   happiness?: {
-    surveyType: HeartSurveyType;
-    suggestedQuestion: string;
+    surveyType?: HeartSurveyType | null;
+    suggestedQuestion?: string | null;
+    frustrationEventIds: string[];
+    frustrationSegmentId?: string | null;
     rationale: string;
   };
 }
@@ -361,6 +399,24 @@ export interface HeartAgentRecommendation {
 // ============================================================================
 // UI Display Types
 // ============================================================================
+
+export interface MetricContext {
+  /** Human-readable explanation of what the metric measures and its denominator */
+  description: string;
+  /** Event names being tracked (human-readable) */
+  trackingEvents: string[];
+  /** Segment name if applicable */
+  segmentName?: string | null;
+  /** Raw numbers for transparency */
+  raw?: {
+    totalEvents?: number;
+    uniqueVisitors?: number;
+    totalAppVisitors?: number;
+    frustrationSignals?: number;
+    returningVisitors?: number;
+    completionCount?: number;
+  };
+}
 
 export interface HeartMetricDisplay {
   category: HeartCategory;
@@ -379,6 +435,10 @@ export interface HeartMetricDisplay {
   currentMilestone?: MilestoneProgress | null;
   /** Next upcoming milestone */
   nextMilestone?: HeartMetricMilestone | null;
+  /** Unit label for chart history values (e.g. 'events' when showing raw activity counts) */
+  historyUnit?: string;
+  /** Context explaining what the metric measures and its raw data */
+  metricContext?: MetricContext;
 }
 
 export interface EpicHeartDashboard {

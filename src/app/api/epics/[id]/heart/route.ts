@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import {
   getEpicHeartDashboard,
   getEpicHeartConfig,
@@ -16,6 +18,10 @@ import {
   createInitialSnapshots,
 } from '@/lib/heart/service';
 import type { HeartSetupMethod } from '@/lib/heart/types';
+
+function forbid() {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
 
 /**
  * Get app_user.id from email
@@ -43,26 +49,28 @@ export async function GET(
   try {
     const { id: epicId } = await params;
     
-    // Auth check
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    const canEdit = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules);
     
-    // Get dashboard data
     const dashboard = await getEpicHeartDashboard(epicId);
     
     if (!dashboard) {
       return NextResponse.json({ 
         configured: false,
+        canEdit,
         message: 'HEART metrics not configured for this epic'
       });
     }
-    
     return NextResponse.json({
       configured: true,
-      ...dashboard
+      canEdit,
+      ...dashboard,
     });
   } catch (error) {
     console.error('Error fetching HEART dashboard:', error);
@@ -87,6 +95,12 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
+    }
+
     // Get app_user.id from email (not auth user id)
     const appUserId = await getAppUserId(user.email);
     if (!appUserId) {
@@ -179,11 +193,15 @@ export async function DELETE(
   try {
     const { id: epicId } = await params;
     
-    // Auth check
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
     
     // Delete the config (cascades to metrics, snapshots, etc.)

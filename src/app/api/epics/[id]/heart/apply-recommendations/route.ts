@@ -5,6 +5,8 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import {
   getEpicHeartConfig,
   applyRecommendations,
@@ -12,6 +14,10 @@ import {
 } from '@/lib/heart/service';
 import { getClient } from '@/lib/db';
 import type { HeartAgentRecommendation } from '@/lib/heart/types';
+
+function forbid() {
+  return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+}
 
 export async function POST(
   req: NextRequest,
@@ -23,8 +29,13 @@ export async function POST(
     // Auth check
     const supabase = await createClient();
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) {
+    if (authError || !user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
+    const rules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+      return forbid();
     }
     
     // Get config

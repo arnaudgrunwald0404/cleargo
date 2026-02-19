@@ -60,6 +60,7 @@ export {
   syncPendoEventsCache,
   getCachedPendoEvents,
   findRelatedEvents,
+  findRelatedEntities,
 } from './pendo-context';
 
 // Snapshot Calculator
