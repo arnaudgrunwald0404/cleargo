@@ -1457,7 +1457,15 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 >
                                                     {item.criterion.label}
                                                     {item.criterion.gate && (
-                                                        <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                        <Tooltip
+                                                            label="This is a Gate criterion — it must be resolved before the epic can receive a Go decision. A single unresolved Gate blocks the entire launch."
+                                                            multiline
+                                                            w={280}
+                                                            withArrow
+                                                            position="top"
+                                                        >
+                                                            <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full cursor-default">GATE</span>
+                                                        </Tooltip>
                                                     )}
                                                 </button>
                                             </div>
@@ -1915,7 +1923,15 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                     >
                                                         {item.criterion.label}
                                                         {item.criterion.gate && (
-                                                            <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                            <Tooltip
+                                                                label="This is a Gate criterion — it must be resolved before the epic can receive a Go decision. A single unresolved Gate blocks the entire launch."
+                                                                multiline
+                                                                w={280}
+                                                                withArrow
+                                                                position="top"
+                                                            >
+                                                                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full cursor-default">GATE</span>
+                                                            </Tooltip>
                                                         )}
                                                     </button>
                                                 </div>
