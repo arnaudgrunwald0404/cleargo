@@ -4,7 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
 import { getEpicsWithDueRetros } from '@/lib/services/retroReminderService';
 import { buildRetroReminderMessage } from '@/lib/slack/templates/retro-reminders';
@@ -23,7 +23,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const settings = await getSettings();
+    const adminClient = createAdminClient();
+    const settings = await getSettings(adminClient);
     const reminderDaysBefore = 3; // Default: 3 days before due date
 
     console.log('Starting retro reminder job...');

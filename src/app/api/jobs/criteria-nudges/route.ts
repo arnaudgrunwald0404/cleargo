@@ -66,7 +66,7 @@ export async function GET(request: NextRequest) {
 
         // Use admin client for cron jobs to bypass RLS since there's no authenticated user context
         const supabase = createAdminClient();
-        const settings = await getSettings();
+        const settings = await getSettings(supabase);
         
         // Check for test_email query parameter to filter to a single user
         const testEmail = request.nextUrl.searchParams.get('test_email')?.toLowerCase();

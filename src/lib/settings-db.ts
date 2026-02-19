@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaults } from "./settings";
 import { debugLog } from "./debug";
 import { DEFAULT_RULES } from "./permissions";
@@ -104,8 +105,8 @@ export async function getEffectivePermissionRules(): Promise<Record<CapabilityId
     return { ...DEFAULT_RULES, ...overrides } as Record<CapabilityId, string[]>;
 }
 
-export async function getSettings(): Promise<AppSettings> {
-    const supabase = await createClient();
+export async function getSettings(client?: SupabaseClient): Promise<AppSettings> {
+    const supabase = client ?? await createClient();
 
     // Try to get the single row (id=1)
     const { data, error } = await supabase
