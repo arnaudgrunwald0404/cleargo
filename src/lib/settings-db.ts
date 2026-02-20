@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { defaults } from "./settings";
 import { debugLog } from "./debug";
 import { DEFAULT_RULES } from "./permissions";
@@ -40,11 +41,52 @@ export interface AppSettings {
     slack_nudge_daily_after_due?: boolean;
     slack_notification_test_email?: string; // For email notifications
     slack_notification_test_slack_handle?: string; // For Slack notifications (Slack user ID, e.g., U12345678)
+    email_nudge_1_week_before?: boolean;
+    email_nudge_on_due_date?: boolean;
+    email_nudge_daily_after_due?: boolean;
+    slack_notifications_enabled?: boolean; // System flag: Enable/disable all Slack notifications
+    email_notifications_enabled?: boolean; // System flag: Enable/disable all email notifications
+    // Slack notification type flags
+    slack_criteria_assignment?: boolean;
+    slack_criteria_nudge?: boolean;
+    slack_retro_reminder?: boolean;
+    slack_success_review_reminder?: boolean;
+    slack_stale_criterion?: boolean;
+    slack_launch_risk_alert?: boolean;
+    slack_go_no_go_decision?: boolean;
+    slack_weekly_digest?: boolean;
+    slack_launch_status_change?: boolean;
+    slack_criterion_update?: boolean;
+    slack_launch_created?: boolean;
+    slack_delegation?: boolean;
+    slack_scorecard_alert?: boolean;
+    slack_escalation_alert?: boolean;
+    slack_criterion_comment_or_attachment?: boolean;
+    // Email notification type flags
+    email_criteria_assignment?: boolean;
+    email_criteria_nudge?: boolean;
+    email_retro_reminder?: boolean;
+    email_success_review_reminder?: boolean;
+    email_stale_criterion?: boolean;
+    email_launch_risk_alert?: boolean;
+    email_go_no_go_decision?: boolean;
+    email_weekly_digest?: boolean;
+    email_launch_status_change?: boolean;
+    email_criterion_update?: boolean;
+    email_launch_created?: boolean;
+    email_delegation?: boolean;
+    email_scorecard_alert?: boolean;
+    email_escalation_alert?: boolean;
+    email_criterion_comment_or_attachment?: boolean;
     slack_theme?: import('./slack/theme').SlackThemeConfig; // Slack notification theme customization
     jira_domain?: string | null; // Jira domain (e.g., "clearco.atlassian.net")
     jira_api_token?: string | null; // Jira API token for authentication
     jira_email?: string | null; // Jira email associated with the API token (required for Basic Auth)
     jira_cloud_id?: string | null; // Jira Cloud ID (required for API calls, fetched automatically)
+    rovo_access_token?: string | null; // ROVO MCP Server OAuth access token
+    rovo_refresh_token?: string | null; // ROVO MCP Server OAuth refresh token
+    rovo_token_expires_at?: string | null; // ROVO access token expiration timestamp
+    rovo_redirect_url?: string | null; // Custom OAuth redirect URL for ROVO integration. If null, uses default computed URL.
   // Mapping of Pendo appId -> human-friendly application name
   pendo_app_names?: Record<string, string>;
   /** Enabled feature flag keys (e.g. ai_pruning, meetings, not_applicable). Used in Settings > Other Settings. */
@@ -63,8 +105,8 @@ export async function getEffectivePermissionRules(): Promise<Record<CapabilityId
     return { ...DEFAULT_RULES, ...overrides } as Record<CapabilityId, string[]>;
 }
 
-export async function getSettings(): Promise<AppSettings> {
-    const supabase = await createClient();
+export async function getSettings(client?: SupabaseClient): Promise<AppSettings> {
+    const supabase = client ?? await createClient();
 
     // Try to get the single row (id=1)
     const { data, error } = await supabase

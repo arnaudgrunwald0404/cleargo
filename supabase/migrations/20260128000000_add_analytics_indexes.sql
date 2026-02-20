@@ -2,7 +2,7 @@
 -- Add database indexes for ClearGO Analytics v1 query performance
 
 -- ============================================================================
--- Indexes for Metric 4: Success Plan Completion
+-- Indexes for Success Plan Completion
 -- ============================================================================
 
 -- Index for epic_success_configs queries filtering by locked and locked_at
@@ -20,7 +20,7 @@ CREATE INDEX IF NOT EXISTS idx_epic_ga_dates
   WHERE scheduled_ga_dev_date IS NOT NULL OR target_launch_date IS NOT NULL;
 
 -- ============================================================================
--- Indexes for Metric 5: Retro Completion
+-- Indexes for Retro Completion
 -- ============================================================================
 
 -- Index for epic_retros queries filtering by status and submitted_at
@@ -33,7 +33,7 @@ CREATE INDEX IF NOT EXISTS idx_epic_retros_epic_status
   ON epic_retros(epic_id, status, submitted_at);
 
 -- ============================================================================
--- Indexes for Metric 3: Launch Hygiene Score
+-- Indexes for Launch Hygiene Score
 -- ============================================================================
 
 -- Index for epic_criterion_status queries with criterion joins (already exists but ensure it's optimized)
@@ -43,7 +43,7 @@ CREATE INDEX IF NOT EXISTS idx_ecs_epic_status_complete
   WHERE status != 'NOT_SET';
 
 -- ============================================================================
--- Indexes for Metric 6: Criteria On-Time Rate
+-- Indexes for Criteria On-Time Rate
 -- ============================================================================
 
 -- Index for epic_criterion_status with last_updated_at (for completion date)
@@ -59,7 +59,7 @@ CREATE INDEX IF NOT EXISTS idx_criterion_label
   WHERE label IS NOT NULL;
 
 -- ============================================================================
--- Indexes for Metric 7: PM Timeliness Index
+-- Indexes for PM Timeliness Index
 -- ============================================================================
 
 -- Index for app_user queries filtering by PM role

@@ -1,10 +1,11 @@
 "use client";
 
-import { Title, Text, Box, Select, Button, Group, Tooltip, Switch } from '@mantine/core';
-import { IconRefresh } from "@tabler/icons-react";
+import { Title, Text, Box, Select, Button, Group, Tooltip, Switch, Menu, UnstyledButton, ActionIcon } from '@mantine/core';
+import { IconRefresh, IconDots, IconArrowsRightLeft, IconMessageCircle } from "@tabler/icons-react";
 import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
+import { CommentsModal } from "@/components/CommentsModal";
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -42,6 +43,7 @@ type MyItem = {
         status_definition_go?: string | null;
         status_definition_conditional?: string | null;
         status_definition_no_go?: string | null;
+        rating_timing?: number | null;
     };
 };
 
@@ -422,12 +424,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [savingItems, setSavingItems] = useState<Set<string>>(new Set());
   const [delegationModalOpen, setDelegationModalOpen] = useState(false);
   const [selectedItemForDelegation, setSelectedItemForDelegation] = useState<MyItem | null>(null);
+  const [commentsModalOpen, setCommentsModalOpen] = useState(false);
+  const [selectedItemForComments, setSelectedItemForComments] = useState<MyItem | null>(null);
+  const [commentsModalInitialTab, setCommentsModalInitialTab] = useState<'content' | 'comments'>('comments');
   const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
   const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
   const [epicReleaseMap, setEpicReleaseMap] = useState<Map<string, string | null>>(new Map());
   const [showAllItems, setShowAllItems] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
+  const [launchStages, setLaunchStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
+  const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
+  const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -589,6 +597,65 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       setIsLoadingReleaseNames(false);
     }
   }, [items]);
+
+  useEffect(() => {
+    fetchLaunchStages();
+  }, []);
+
+  const fetchLaunchStages = async () => {
+    try {
+      const res = await fetch('/api/launch-stages', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        const stages = data.stages || [];
+        setLaunchStages(stages);
+        
+        // Calculate days before/after launch for each stage
+        const daysBeforeMap = new Map<number, number>();
+        const daysAfterMap = new Map<number, number>();
+        
+        const lastPreLaunchStage = stages.find((s: any) => s.sort_order === 3);
+        
+        stages.forEach((stage: any) => {
+          if (stage.sort_order <= 3 && lastPreLaunchStage) {
+            // Pre-launch stages: sum durations of stages before this one
+            const stagesBefore = stages.filter(
+              (s: any) =>
+                s.sort_order < stage.sort_order &&
+                s.sort_order <= lastPreLaunchStage.sort_order &&
+                s.duration_days !== null
+            );
+            const totalDaysBefore = stagesBefore.reduce(
+              (sum: number, s: any) => sum + (s.duration_days || 0),
+              0
+            );
+            if (totalDaysBefore > 0) {
+              daysBeforeMap.set(stage.id, totalDaysBefore);
+            }
+          } else if (stage.sort_order > 3) {
+            // Post-launch stages: sum durations up to this stage
+            const stagesUpTo = stages.filter(
+              (s: any) =>
+                s.sort_order <= stage.sort_order &&
+                s.duration_days !== null
+            );
+            const totalDaysAfter = stagesUpTo.reduce(
+              (sum: number, s: any) => sum + (s.duration_days || 0),
+              0
+            );
+            if (totalDaysAfter > 0) {
+              daysAfterMap.set(stage.id, totalDaysAfter);
+            }
+          }
+        });
+        
+        setStageDaysBeforeLaunch(daysBeforeMap);
+        setStageDaysAfterLaunch(daysAfterMap);
+      }
+    } catch (error) {
+      console.error('Failed to fetch launch stages:', error);
+    }
+  };
 
   const fetchCurrentUser = async () => {
     try {
@@ -927,6 +994,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     setSelectedItemForDelegation(null);
   };
 
+  const handleOpenComments = (item: MyItem) => {
+    setSelectedItemForComments(item);
+    setCommentsModalInitialTab('comments');
+    setCommentsModalOpen(true);
+  };
+
+  const handleCloseComments = () => {
+    setCommentsModalOpen(false);
+    setSelectedItemForComments(null);
+    loadData(0, false);
+  };
+
   const handleDelegate = async (delegationType: DelegationType, newApproverEmail: string) => {
     if (!selectedItemForDelegation) return;
     
@@ -992,21 +1071,47 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         }}
         className="sm:px-6 lg:px-8"
         >
-          <div style={{ fontFamily: "var(--font-body)" }}>
-            <div style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "var(--spacing-6)",
-            }}>
-              <div className="space-y-2">
-                <div className="h-8 bg-gray-200 rounded w-80 max-w-full animate-pulse" />
-                <div className="h-4 bg-gray-200 rounded w-72 max-w-full animate-pulse" />
+          <div className="mb-8">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-2)' }}>
+              <div style={{ flex: 1 }}>
+                <div className="space-y-2 mb-2">
+                  {/* Title skeleton - matches Title component with Marcellus font */}
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: 'var(--font-size-4xl)',
+                      width: '480px',
+                      maxWidth: '100%',
+                      fontFamily: 'var(--font-marcellus), serif'
+                    }} 
+                  />
+                  {/* Subtitle skeleton - matches Text size="lg" */}
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: 'var(--font-size-lg)',
+                      width: '400px',
+                      maxWidth: '100%',
+                      marginTop: '8px'
+                    }} 
+                  />
+                </div>
               </div>
             </div>
             {[1, 2].map((groupIndex) => (
               <div key={groupIndex} style={{ marginBottom: "var(--spacing-6)" }}>
-                <div className="h-6 bg-gray-200 rounded w-48 mb-3 animate-pulse" style={{ maxWidth: "100%" }} />
+                {/* Group header skeleton - matches h2 styling */}
+                <div style={{ marginBottom: 'var(--spacing-3)' }}>
+                  <div 
+                    className="bg-gray-200 rounded animate-pulse" 
+                    style={{ 
+                      height: '20px',
+                      width: '200px',
+                      maxWidth: '100%',
+                      fontFamily: 'var(--font-heading)'
+                    }} 
+                  />
+                </div>
                 <div
                   className="rounded-lg overflow-hidden"
                   style={{
@@ -1018,27 +1123,31 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
-                        {["Epic", "Tier", "Criterion", "Go/No-Go Score", "Due on"].map((col) => (
-                          <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                            {col}
-                          </th>
-                        ))}
+                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Epic</th>
+                        <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Pod</th>
+                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
+                        <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
+                        <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
                       </tr>
                     </thead>
                     <tbody style={{ borderTop: "1px solid #E5E7EB" }}>
                       {Array.from({ length: 4 }).map((_, rowIndex) => (
                         <tr key={rowIndex} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
-                          <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                          <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "70%" }} />
                           </td>
                           <td className="px-4 py-3 w-24">
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
                           </td>
-                          <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60%" }} />
-                            <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "40%" }} />
+                          <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
+                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                           </td>
-                          <td className="px-4 py-3 w-24">
+                          <td style={{ padding: "12px 20px", minWidth: "300px", width: "30%" }}>
+                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
+                            <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "50%" }} />
+                          </td>
+                          <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                           </td>
                           <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
@@ -1057,63 +1166,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     );
   }
 
-  if (isLoadingReleaseNames && items.length > 0) {
-    const epicIds = Array.from(new Set(items.map(item => item.launch.id)));
-    const allEpicsChecked = epicIds.every(id => epicReleaseMap.has(id));
-    
-    if (!allEpicsChecked) {
-      return (
-        <div className="min-h-screen pb-8" style={{ 
-          fontFamily: 'var(--font-body)',
-          backgroundColor: 'var(--color-platinum)'
-        }}>
-          <div style={{
-            maxWidth: 'var(--page-container-max-width)',
-            margin: '0 auto',
-            paddingLeft: 'var(--page-container-padding-x)',
-            paddingRight: 'var(--page-container-padding-x)',
-            paddingTop: 'var(--page-container-padding-top)'
-          }}
-          className="sm:px-6 lg:px-8"
-          >
-            <div>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 'var(--spacing-6)'
-              }}>
-                <h2 style={{
-                  fontFamily: 'var(--font-heading)',
-                  fontSize: 'var(--font-size-2xl)',
-                  fontWeight: 'var(--font-weight-bold)',
-                  color: 'var(--color-gray-900)',
-                  margin: 0
-                }}>
-                  You have {headingStats.total} criteria to inform
-                  {headingStats.forNextTwoReleases > 0 && (
-                    <span style={{
-                      fontSize: 'var(--font-size-lg)',
-                      fontWeight: 'var(--font-weight-normal)',
-                      color: 'var(--color-gray-600)',
-                      display: 'block',
-                      marginTop: 'var(--spacing-1)'
-                    }}>
-                      among which {headingStats.forNextTwoReleases} for the next two releases
-                    </span>
-                  )}
-                </h2>
-              </div>
-              <div className="p-8 flex items-center justify-center">
-                <PurpleLoader size="md" />
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-  }
-
   return (
     <div className="min-h-screen pb-8" style={{ 
       fontFamily: 'var(--font-body)',
@@ -1129,53 +1181,141 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       className="sm:px-6 lg:px-8"
       >
         <div className="mb-8">
-          <Title 
-            order={1} 
-            className="text-4xl font-bold mb-2"
-            style={{ 
-              fontFamily: 'var(--font-marcellus), serif',
-              color: 'var(--color-gray-900)',
-              fontSize: 'var(--font-size-4xl)',
-              fontWeight: 'var(--font-weight-bold)'
-            }}
-          >
-            {isFirstTime ? (
-              <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
-            ) : (
-              <>
-                Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>.
-                {criteriaCount !== null && (
-                  <span style={{ 
-                    fontFamily: 'var(--font-marcellus), serif',
-                    fontSize: 'var(--font-size-4xl)',
-                    fontWeight: 'var(--font-weight-bold)',
-                    color: 'var(--color-gray-700)',
-                    marginLeft: '8px'
-                  }}>
-                    You have <span style={{ color: 'var(--table-steel, #697771)' }}>{criteriaCount}</span> criteria to inform.
-                  </span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-2)' }}>
+            <div style={{ flex: 1 }}>
+              <Title 
+                order={1} 
+                className="text-4xl font-bold mb-2"
+                style={{ 
+                  fontFamily: 'var(--font-marcellus), serif',
+                  color: 'var(--color-gray-900)',
+                  fontSize: 'var(--font-size-4xl)',
+                  fontWeight: 'var(--font-weight-bold)'
+                }}
+              >
+                {isFirstTime ? (
+                  <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
+                ) : (
+                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total}</span> criteria to inform.
+                 
+                  
+                  </>
                 )}
-              </>
-            )}
-          </Title>
-          <Text 
-            size="lg" 
-            style={{ 
-              fontFamily: 'var(--font-body)',
-              color: 'var(--color-gray-500)',
-              fontSize: 'var(--font-size-lg)'
-            }}
-          >
-            {isFirstTime ? (
-              <>
-                Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.
-              </>
-            ) : (
-              <>
-                Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
-              </>
-            )}
-          </Text>
+              </Title>
+              <Text 
+                size="lg" 
+                style={{ 
+                  fontFamily: 'var(--font-body)',
+                  color: 'var(--color-gray-500)',
+                  fontSize: 'var(--font-size-lg)'
+                }}
+              >
+                {isFirstTime ? (
+                  <>
+                    Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.
+                  </>
+                ) : (
+                  <>
+                    Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
+                  </>
+                )}
+              </Text>
+            </div>
+            <Tooltip label="Page Options" position="left" withArrow>
+              <Menu shadow="md" width={280} position="bottom-end">
+                <Menu.Target>
+                  <UnstyledButton
+                    style={{
+                      padding: '8px',
+                      borderRadius: '4px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      color: 'var(--color-gray-600)',
+                      transition: 'background-color 0.2s ease',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.backgroundColor = 'var(--color-gray-100)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.backgroundColor = 'transparent';
+                    }}
+                  >
+                    <IconDots size={20} />
+                  </UnstyledButton>
+                </Menu.Target>
+                <Menu.Dropdown>
+                  {isSuperAdmin && usersForViewAs.length > 1 && (
+                    <Menu.Label style={{ fontFamily: 'var(--font-body)' }}>
+                      See Home page as
+                    </Menu.Label>
+                  )}
+                  {isSuperAdmin && usersForViewAs.length > 1 && (
+                    <>
+                      <Box px="xs" pb="xs">
+                        <Select
+                          data={usersForViewAs}
+                          value={viewAsUser ? viewAsUser.email : ''}
+                          onChange={(value) => {
+                            if (value === null || value === '') {
+                              setViewAsUser(null);
+                              return;
+                            }
+                            const opt = usersForViewAs.find((o) => o.value === value);
+                            setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
+                          }}
+                          placeholder="My tasks"
+                          allowDeselect={false}
+                          searchable
+                          nothingFoundMessage="No user found"
+                          size="sm"
+                          styles={() => ({
+                            input: { fontFamily: 'var(--font-body)' },
+                          })}
+                        />
+                      </Box>
+                      <Menu.Divider />
+                    </>
+                  )}
+                  <Menu.Label style={{ fontFamily: 'var(--font-body)' }}>
+                    Show pending items only
+                  </Menu.Label>
+                  <Box px="xs" pb="xs">
+                    <Group gap="sm">
+                      <Switch
+                        checked={showAllItems}
+                        onChange={(e) => setShowAllItems(e.currentTarget.checked)}
+                        label={showAllItems ? 'All' : 'Pending'}
+                        styles={{
+                          label: {
+                            fontFamily: 'var(--font-body)',
+                            fontSize: 'var(--font-size-sm)',
+                            color: 'var(--mantine-color-dimmed)'
+                          }
+                        }}
+                      />
+                    </Group>
+                  </Box>
+                  <Menu.Divider />
+                  <Menu.Item
+                    leftSection={<IconRefresh size={16} />}
+                    onClick={() => {
+                      if (typeof window !== 'undefined') {
+                        localStorage.removeItem(getCacheKey(false));
+                        localStorage.removeItem(getCacheKey(true));
+                      }
+                      loadData(0, false);
+                    }}
+                    disabled={isRefreshing}
+                    style={{ fontFamily: 'var(--font-body)' }}
+                  >
+                    {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                  </Menu.Item>
+                </Menu.Dropdown>
+              </Menu>
+            </Tooltip>
+          </div>
           {isFirstTime && (
             <div 
               style={{
@@ -1214,36 +1354,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
           )}
         </div>
 
-        {isSuperAdmin && usersForViewAs.length > 1 && (
-          <Group align="flex-start" gap="sm" style={{ marginBottom: 'var(--spacing-4)', justifyContent: 'flex-end' }}>
-            <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-              See Home page as
-            </Text>
-            <Select
-              data={usersForViewAs}
-              value={viewAsUser ? viewAsUser.email : ''}
-              onChange={(value) => {
-                if (value === null || value === '') {
-                  setViewAsUser(null);
-                  return;
-                }
-                const opt = usersForViewAs.find((o) => o.value === value);
-                setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
-              }}
-              placeholder="My tasks"
-              allowDeselect={false}
-              searchable
-              nothingFoundMessage="No user found"
-              size="sm"
-              style={{ minWidth: 220 }}
-              styles={() => ({
-                input: { fontFamily: 'var(--font-body)' },
-              })}
-            />
-          </Group>
-        )}
-
-        {viewAsUser && (
+        {((viewAsUser && viewAsUser.email) || showAllItems) && (
           <Box
             style={{
               marginBottom: 'var(--spacing-4)',
@@ -1255,63 +1366,29 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
           >
             <Group justify="space-between">
               <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                Viewing task list as <strong style={{ color: 'var(--color-gray-900)' }}>{viewAsUser.name}</strong>
+                Viewing{' '}
+                {viewAsUser && viewAsUser.email ? (
+                  <>tasks as <strong style={{ color: 'var(--color-gray-900)' }}>{viewAsUser.name}</strong></>
+                ) : (
+                  <>my tasks</>
+                )}
+                {showAllItems ? ' • all items' : ' • pending items only'}
               </Text>
-              <Button
-                variant="subtle"
-                size="xs"
-                onClick={() => setViewAsUser(null)}
-                style={{ fontFamily: 'var(--font-body)' }}
-              >
-                Back to my tasks
-              </Button>
+              {viewAsUser && viewAsUser.email && (
+                <Button
+                  variant="subtle"
+                  size="xs"
+                  onClick={() => setViewAsUser(null)}
+                  style={{ fontFamily: 'var(--font-body)' }}
+                >
+                  Back to my tasks
+                </Button>
+              )}
             </Group>
           </Box>
         )}
 
         <div>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-end',
-            gap: 'var(--spacing-2)',
-            marginBottom: 'var(--spacing-6)'
-          }}>
-            <Group gap="sm" className="hidden md:flex">
-              <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                {showAllItems ? 'Show all items (last 10 releases)' : 'Show pending items only'}
-              </Text>
-              <Switch
-                checked={showAllItems}
-                onChange={(e) => setShowAllItems(e.currentTarget.checked)}
-                label={showAllItems ? 'All' : 'Pending'}
-                styles={{
-                  label: {
-                    fontFamily: 'var(--font-body)',
-                    fontSize: 'var(--font-size-sm)',
-                    color: 'var(--mantine-color-dimmed)'
-                  }
-                }}
-              />
-            </Group>
-            <Button
-              variant="subtle"
-              size="sm"
-              leftSection={<IconRefresh size={16} />}
-              loading={isRefreshing}
-              onClick={() => {
-                if (typeof window !== 'undefined') {
-                  localStorage.removeItem(getCacheKey(false));
-                  localStorage.removeItem(getCacheKey(true));
-                }
-                loadData(0, false);
-              }}
-              style={{ fontFamily: 'var(--font-body)' }}
-            >
-              Refresh
-            </Button>
-          </div>
-
           {error && items.length === 0 && (
             <div style={{
               backgroundColor: 'var(--color-error-light)',
@@ -1572,8 +1649,45 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
-                              const dueDateStr = item.condition_due_date;
-                              if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                              // Calculate due date: use condition_due_date if available, otherwise calculate from launch stages
+                              const calculateDueDate = (): string | null => {
+                                // First, try to use stored condition_due_date
+                                if (item.condition_due_date && item.condition_due_date.trim() !== '') {
+                                  return item.condition_due_date;
+                                }
+                                
+                                // If no stored date, calculate from launch stages (same logic as Epic detail page)
+                                if (!item.criterion?.rating_timing || launchStages.length === 0) {
+                                  return null;
+                                }
+                                
+                                const targetDate = item.launch.target_launch_date;
+                                if (!targetDate) {
+                                  return null;
+                                }
+                                
+                                const ratingTimingId = item.criterion.rating_timing;
+                                const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+                                const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+                                
+                                if (daysBefore === undefined && daysAfter === undefined) {
+                                  return null;
+                                }
+                                
+                                const dueDate = new Date(targetDate);
+                                
+                                if (daysBefore !== undefined) {
+                                  dueDate.setDate(dueDate.getDate() - daysBefore);
+                                } else if (daysAfter !== undefined) {
+                                  dueDate.setDate(dueDate.getDate() + daysAfter);
+                                }
+                                
+                                return dueDate.toISOString().split('T')[0];
+                              };
+                              
+                              const dueDateStr = calculateDueDate();
+                              
+                              if (!dueDateStr) {
                                 return (
                                   <span style={{
                                     fontSize: 'var(--font-size-sm)',
@@ -1623,17 +1737,33 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             })()}
                           </td>
                           {!readOnly && (
-                          <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
-                            <Button
-                              variant="subtle"
-                              size="xs"
-                              onClick={() => handleOpenDelegation(item)}
-                              style={{
-                                fontSize: "14px"
-                              }}
-                            >
-                              Delegate
-                            </Button>
+                          <td className="px-4 py-3 text-right whitespace-nowrap" style={{ padding: "12px 16px" }}>
+                            <Group gap="xs" justify="flex-end">
+                              <Tooltip label="Delegate this task" position="top" withArrow>
+                                <ActionIcon
+                                  variant="subtle"
+                                  size="sm"
+                                  onClick={() => handleOpenDelegation(item)}
+                                  style={{
+                                    color: 'var(--color-gray-600)'
+                                  }}
+                                >
+                                  <IconArrowsRightLeft size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                              <Tooltip label="Add comment" position="top" withArrow>
+                                <ActionIcon
+                                  variant="subtle"
+                                  size="sm"
+                                  onClick={() => handleOpenComments(item)}
+                                  style={{
+                                    color: 'var(--color-gray-600)'
+                                  }}
+                                >
+                                  <IconMessageCircle size={16} />
+                                </ActionIcon>
+                              </Tooltip>
+                            </Group>
                           </td>
                           )}
                         </tr>
@@ -1658,6 +1788,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               isGate={selectedItemForDelegation.criterion.gate || false}
               currentApproverEmail={currentUserEmail}
               onDelegate={handleDelegate}
+            />
+          )}
+
+          {selectedItemForComments && (
+            <CommentsModal
+              opened={commentsModalOpen}
+              onClose={handleCloseComments}
+              epicId={selectedItemForComments.launch.id}
+              taskId={selectedItemForComments.id}
+              taskLabel={selectedItemForComments.criterion.label}
+              currentUserEmail={currentUserEmail}
+              initialTab={commentsModalInitialTab}
             />
           )}
         </div>

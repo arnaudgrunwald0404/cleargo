@@ -1,2 +1,0 @@
-{"location":"service.ts:fetchLiveMetricValue task success","message":"completion/success rate live counts","data":{"startDate":"2026-01-21","endDate":"2026-02-20","startEventId":"u39xJ2SP_HFM","completeEventId":"aLGbIwG48fzn","startCount":0,"completeCount":0,"eventIdsLength":2},"timestamp":1771590239435,"hypothesisId":"TS1"}
-{"location":"service.ts:getEpicHeartDashboard task success history","message":"chart completion series","data":{"chartSum":7292,"pointCount":30,"firstDate":"2026-01-21","lastDate":"2026-02-19"},"timestamp":1771590239931,"hypothesisId":"TS2"}

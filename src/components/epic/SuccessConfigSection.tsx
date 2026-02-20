@@ -150,6 +150,7 @@ export function SuccessConfigSection({
         epicTier={epicTier}
         initialData={config ? {
           post_launch_owner: config.post_launch_owner,
+          track_offline: config.track_offline,
         } : undefined}
         onSubmit={handleSubmit}
         isSubmitting={submitting}

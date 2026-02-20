@@ -38,7 +38,7 @@ interface SuccessConfigFormProps {
   epicName?: string;
   isAdmin?: boolean;
   onRefresh?: () => Promise<void>;
-  config?: { post_launch_owner?: string; delegated_post_launch_owner_id?: string | null; locked?: boolean } | null;
+  config?: { post_launch_owner?: string; delegated_post_launch_owner_id?: string | null; locked?: boolean; track_offline?: boolean } | null;
   metrics?: EpicSuccessMetricWithDetails[];
 }
 
@@ -89,6 +89,7 @@ export function SuccessConfigForm({
   const [savingMetrics, setSavingMetrics] = useState(false);
   const [visibleMetricSlots, setVisibleMetricSlots] = useState(1);
   const [showCreateMetricModal, setShowCreateMetricModal] = useState(false);
+  const [trackOffline, setTrackOffline] = useState(config?.track_offline ?? false);
 
   // Get current user email
   useEffect(() => {
@@ -278,6 +279,7 @@ export function SuccessConfigForm({
     const slotsFromMetrics = Math.min(3, Math.max(1, metrics.length || 1));
     setVisibleMetricSlots(slotsFromMetrics);
   }, [metrics]);
+
 
 
 

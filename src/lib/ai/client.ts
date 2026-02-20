@@ -125,14 +125,30 @@ export interface DigestNarrativeInput {
 }
 
 /**
- * Generates a short narrative (2–4 sentences) for the Weekly Release Readiness Digest.
+ * Generates a short narrative (2–4 sentences) for the Weekly Release Readiness Status Update.
  * E.g. "In the past few weeks we have launched [tier 1 X, tier 2 Y] which is very exciting...
  * We are getting ready for the next release with [items] and things are looking good so far."
  */
 export async function generateDigestNarrative(data: DigestNarrativeInput): Promise<string | null> {
-    if (!process.env.GEMINI_API_KEY && !process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
+    // Ensure API key mapping happens at runtime (not just module load)
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
+    }
+    
+    const hasGeminiKey = !!process.env.GEMINI_API_KEY;
+    const hasGoogleKey = !!process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    
+    if (!hasGeminiKey && !hasGoogleKey) {
+        console.warn('generateDigestNarrative: Neither GEMINI_API_KEY nor GOOGLE_GENERATIVE_AI_API_KEY is set');
         return null;
     }
+    
+    console.log('generateDigestNarrative: API key found, attempting to generate narrative...', {
+        hasGeminiKey,
+        hasGoogleKey,
+        geminiKeyLength: process.env.GEMINI_API_KEY?.length || 0,
+        googleKeyLength: process.env.GOOGLE_GENERATIVE_AI_API_KEY?.length || 0,
+    });
 
     try {
         const lastSummary = data.last_releases
@@ -157,7 +173,7 @@ export async function generateDigestNarrative(data: DigestNarrativeInput): Promi
         const { text } = await generateText({
             model,
             prompt: `
-You are a Product Operations assistant writing the opening paragraph for the "Weekly Release Readiness Digest" Slack message.
+You are a Product Operations assistant writing the opening paragraph for the "Weekly Release Readiness Status Update" Slack message.
 Write 2–4 short, professional sentences that:
 1. Remind the team what we launched recently (reference the last 1–2 releases by name and tier if relevant, e.g. "we launched Tier 1 X and Tier 2 Y") and note that we're seeing signs of adoption.
 2. Set up the next release (reference the next 1–2 releases) and mention important high-risk or tier 1/tier 2 items; say things are looking good so far (or note concerns briefly if any).
@@ -170,8 +186,13 @@ Data for this week (${data.week_of}):
         });
 
         return text?.trim() || null;
-    } catch (error) {
-        console.error('Error in generateDigestNarrative:', error);
+    } catch (error: any) {
+        console.error('Error in generateDigestNarrative:', {
+            message: error?.message,
+            name: error?.name,
+            stack: error?.stack,
+            cause: error?.cause,
+        });
         return null;
     }
 }

@@ -1,5 +1,5 @@
 /**
- * Scheduled job: Weekly Release Readiness Digest
+ * Scheduled job: Weekly Release Readiness Status Update
  * Builds digest data, generates LLM narrative, and sends a draft DM to the validator (agrunwald@clearcompany.com).
  * The digest is only posted to the channel when the validator clicks "Approve and send" in the DM.
  */
@@ -9,6 +9,8 @@ import { SignJWT } from 'jose';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient, isChannelForbidden } from '@/lib/slack/client';
 import { generateDigestNarrative } from '@/lib/ai/client';
+import { buildLeadershipDigestMessage } from '@/lib/slack/templates';
+import { getSlackTheme } from '@/lib/slack/theme';
 import {
     getLastNReleases,
     getNextNReleases,
@@ -40,8 +42,10 @@ export async function GET(request: NextRequest) {
         const now = new Date();
         const weekOf = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
+        // Get more releases to ensure we don't miss important ones (especially those with delays)
+        // We'll still show top 2 in the digest, but having more helps prioritize releases with issues
         const lastReleases = await getLastNReleases(2, supabase);
-        const nextReleases = await getNextNReleases(2, supabase);
+        const nextReleases = await getNextNReleases(4, supabase); // Increased from 2 to 4 to catch releases like 2026.2
         const lastReleasesAnalytics = await Promise.all(
             lastReleases.map((r) => getLastReleaseAnalytics(r.release_name, r.launch_date, supabase))
         );
@@ -72,7 +76,7 @@ export async function GET(request: NextRequest) {
             .setExpirationTime('1h')
             .sign(new TextEncoder().encode(SECRET));
 
-        const approveUrl = BASE_URL ? `${BASE_URL.replace(/\/$/, '')}/api/jobs/leadership-digest/approve?token=${token}` : '';
+        const approveUrl = BASE_URL ? `${BASE_URL.replace(/\/$/, '')}/api/jobs/weekly-digest/approve?token=${token}` : '';
 
         if (skipValidation && approveUrl) {
             const { data: settings } = await supabase
@@ -81,7 +85,7 @@ export async function GET(request: NextRequest) {
                 .single();
             const slackChannels = settings?.slack_channels || {};
             let channel =
-                slackChannels.leadership_digest ||
+                slackChannels.weekly_digest ||
                 settings?.slack_default_channel ||
                 process.env.SLACK_DEFAULT_CHANNEL;
             if (channel && isChannelForbidden(channel)) {
@@ -90,7 +94,7 @@ export async function GET(request: NextRequest) {
             if (channel) {
                 const { sendSlackNotification } = await import('@/lib/slack/notifications');
                 await sendSlackNotification({
-                    type: 'leadership_digest',
+                    type: 'weekly_digest',
                     priority: 'low',
                     channel,
                     metadata: {
@@ -118,22 +122,35 @@ export async function GET(request: NextRequest) {
         }
         const dmChannel = await client.openConversation(slackUser.user.id);
 
+        // Build the full digest message using the same function as the final digest
+        const theme = await getSlackTheme();
+        const digestMessage = buildLeadershipDigestMessage(
+            {
+                week_of: weekOf,
+                narrative: narrative ?? null,
+                last_releases: lastReleasesAnalytics,
+                next_releases: nextReleasesAnalytics,
+            },
+            theme
+        );
+
+        // Build draft blocks: add draft header, then all digest content, then approval buttons
         const blocks: Array<{ type: string; text?: { type: string; text: string }; elements?: unknown[] }> = [
             {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: '*Weekly Release Readiness Digest – Draft*\nReview the narrative below. Approve to post the full digest to the channel.',
-                },
-            },
-            {
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: narrative?.trim() || '_No narrative generated (LLM not configured or failed)._',
+                    text: '*📋 Weekly Release Readiness Status Update – Draft*\nReview the content below. Approve to post the full digest to the channel.',
                 },
             },
         ];
+
+        // Add all digest blocks (skip only the header, keep "Week of" context and everything else)
+        const digestBlocks = digestMessage.blocks;
+        // Skip first block (header), keep everything else including "Week of" context, narrative, and all release details
+        for (let i = 1; i < digestBlocks.length; i++) {
+            blocks.push(digestBlocks[i] as any);
+        }
         if (approveUrl) {
             const editUrl = `${approveUrl}${approveUrl.includes('?') ? '&' : '?'}edit=1`;
             blocks.push({
@@ -156,7 +173,7 @@ export async function GET(request: NextRequest) {
 
         await client.postMessage({
             channel: dmChannel,
-            text: narrative?.trim() || 'Weekly Release Readiness Digest draft. Approve and send digest via the link.',
+            text: narrative?.trim() || 'Weekly Release Readiness Status Update draft. Approve and send digest via the link.',
             blocks,
         });
 
@@ -171,7 +188,7 @@ export async function GET(request: NextRequest) {
             },
         });
     } catch (err: any) {
-        console.error('Weekly Release Readiness Digest job error:', err);
+        console.error('Weekly Release Readiness Status Update job error:', err);
         return NextResponse.json(
             { error: err?.message || 'Internal server error' },
             { status: 500 }

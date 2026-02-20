@@ -6,11 +6,13 @@ import { canRolesPerform, canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { sendCriteriaAssignmentNotifications } from '@/lib/db/epics';
 import { getReleaseNameFromEpic, getEpicsForRelease } from '@/lib/services/releaseAnalyticsService';
+import { trackActivityFromAction } from '@/lib/services/userActivityService';
 
 export const dynamic = 'force-dynamic';
 
 export type DelegationType =
   | 'SINGLE_TASK'
+  | 'TEMPLATE_SINGLE_TASK'
   | 'CATEGORY_EXCLUDING_GATES'
   | 'CATEGORY_INCLUDING_GATES'
   | 'RELEASE_CATEGORY_INCLUDING_GATES'
@@ -133,6 +135,11 @@ export async function POST(
         },
       });
 
+      // Track activity for usage analytics (if /api/me wasn't called)
+      trackActivityFromAction(delegatorId).catch(err => {
+        console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+      });
+
       // Send Slack notification to the newly delegated post-launch owner
       try {
         // Ensure we have a Slack handle; attempt to sync if missing
@@ -237,6 +244,92 @@ export async function POST(
             epic_name: epic.name,
           },
         });
+
+        // Track activity for usage analytics (if /api/me wasn't called)
+        trackActivityFromAction(delegatorId).catch(err => {
+          console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+        });
+        break;
+      }
+
+      case 'TEMPLATE_SINGLE_TASK': {
+        // Look up the criterion_id for this task
+        const { data: taskRow, error: taskRowError } = await supabase
+          .from('epic_criterion_status')
+          .select('criterion_id')
+          .eq('id', taskId)
+          .single();
+
+        if (taskRowError || !taskRow?.criterion_id) {
+          return NextResponse.json({ error: 'Criterion not found for this task' }, { status: 404 });
+        }
+
+        const criterionId = taskRow.criterion_id;
+
+        // Update the criterion template so all future epics use the new owner
+        const { error: templateError } = await supabase
+          .from('criterion')
+          .update({ decision_owner_email: newApproverEmail })
+          .eq('id', criterionId);
+
+        if (templateError) throw templateError;
+
+        // Determine which epic IDs to update: current release epics (if any) + current epic
+        let epicIdsToUpdate: string[] = [epicId];
+        const releaseName = getReleaseNameFromEpic(epic as any);
+        if (releaseName) {
+          const releaseEpics = await getEpicsForRelease(releaseName, supabase);
+          epicIdsToUpdate = (releaseEpics || []).map((e: any) => e.id);
+          if (!epicIdsToUpdate.includes(epicId)) epicIdsToUpdate.push(epicId);
+        }
+
+        // Update all matching epic_criterion_status rows
+        const { data: affectedTasks, error: fetchAffectedError } = await supabase
+          .from('epic_criterion_status')
+          .select('id')
+          .in('epic_id', epicIdsToUpdate)
+          .eq('criterion_id', criterionId);
+
+        if (fetchAffectedError) throw fetchAffectedError;
+
+        const affectedTaskIds = (affectedTasks || []).map((t: any) => t.id);
+
+        if (affectedTaskIds.length > 0) {
+          const { error: updateError } = await supabase
+            .from('epic_criterion_status')
+            .update({ decision_owner_id: newApproverId })
+            .in('id', affectedTaskIds);
+
+          if (updateError) throw updateError;
+
+          delegatedTaskIds = affectedTaskIds;
+
+          const auditLogs = affectedTaskIds.map((tid: string) => ({
+            actor_id: delegatorId,
+            entity_type: 'delegation',
+            entity_id: tid,
+            json_diff: {
+              action: 'delegation',
+              delegation_type: delegationType,
+              task_label: resolvedTaskLabel,
+              category: category,
+              criterion_id: criterionId,
+              new_approver_id: newApproverId,
+              new_approver_email: newApproverEmail,
+              epic_id: epicId,
+              epic_name: epic.name,
+              template_update: true,
+              release_name: releaseName ?? null,
+              tasks_count: affectedTaskIds.length,
+            },
+          }));
+
+          await supabase.from('audit_log').insert(auditLogs);
+
+          trackActivityFromAction(delegatorId).catch(err => {
+            console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+          });
+        }
         break;
       }
 
@@ -288,6 +381,11 @@ export async function POST(
           }));
 
           await supabase.from('audit_log').insert(auditLogs);
+
+          // Track activity for usage analytics (if /api/me wasn't called)
+          trackActivityFromAction(delegatorId).catch(err => {
+            console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+          });
         }
         break;
       }
@@ -351,6 +449,11 @@ export async function POST(
           }));
 
           await supabase.from('audit_log').insert(auditLogs);
+
+          // Track activity for usage analytics (if /api/me wasn't called)
+          trackActivityFromAction(delegatorId).catch(err => {
+            console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+          });
         }
         break;
       }
@@ -418,6 +521,11 @@ export async function POST(
             }));
 
             await supabase.from('audit_log').insert(auditLogs);
+
+            // Track activity for usage analytics (if /api/me wasn't called)
+            trackActivityFromAction(delegatorId).catch(err => {
+              console.error('[POST /api/epics/[id]/delegate] Failed to track activity:', err);
+            });
           }
         }
         break;

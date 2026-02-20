@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { Modal, Button, Stack, TextInput, Text, Group } from '@mantine/core';
 import { PurpleLoader } from '../../PurpleLoader';
 
 type LaunchRelease = { releaseName: string; launchDate: string | null };
@@ -54,6 +55,10 @@ export default function ReleaseScheduleSection(props: Props) {
   const [syncingReleaseId, setSyncingReleaseId] = useState<number | null>(null);
   const [epicCounts, setEpicCounts] = useState<Map<string, { cleargoCount: number | null; ahaCount: number | null }>>(new Map());
   const fetchingCountsRef = useRef<Set<string>>(new Set());
+  const [selectedReleaseIds, setSelectedReleaseIds] = useState<Set<number>>(new Set());
+  const [batchDeleting, setBatchDeleting] = useState(false);
+  const [syncModalOpened, setSyncModalOpened] = useState(false);
+  const [startDate, setStartDate] = useState<string>("");
 
   // Filter releases to show only those with launch dates before today (excluding archived)
   const pastReleases = useMemo(() => {
@@ -75,10 +80,38 @@ export default function ReleaseScheduleSection(props: Props) {
     });
   }, [releases]);
 
+  // Filter releases to show those with launch dates on or after today (excluding archived)
+  const futureReleases = useMemo(() => {
+    // Get today's date in YYYY-MM-DD format for comparison
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    
+    return releases.filter((release) => {
+      if (!release.launch_date || release.archived) return false;
+      
+      // launch_date comes from Supabase as YYYY-MM-DD string
+      const launchDateString = typeof release.launch_date === 'string' 
+        ? release.launch_date.split('T')[0] // Handle ISO strings if any
+        : new Date(release.launch_date).toISOString().split('T')[0];
+      
+      // Compare date strings directly (YYYY-MM-DD format)
+      return launchDateString >= todayString;
+    });
+  }, [releases]);
+
   // Separate archived releases
   const archivedReleases = useMemo(() => {
     return releases.filter((release) => release.archived === true);
   }, [releases]);
+
+  // Clear selection when releases change (e.g., after deletion)
+  useEffect(() => {
+    const currentIds = new Set(pastReleases.map(r => r.id));
+    const filteredSelected = new Set(Array.from(selectedReleaseIds).filter(id => currentIds.has(id)));
+    if (filteredSelected.size !== selectedReleaseIds.size) {
+      setSelectedReleaseIds(filteredSelected);
+    }
+  }, [pastReleases.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch epic counts for releases (both past and archived)
   useEffect(() => {
@@ -131,17 +164,28 @@ export default function ReleaseScheduleSection(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pastReleases.length]);
 
+  const handleSyncReleasesClick = () => {
+    // Set default start date to today
+    const today = new Date();
+    const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setStartDate(todayString);
+    setSyncModalOpened(true);
+  };
+
   const handleSyncReleases = async () => {
-    if (!confirm("This will sync releases from Aha that contain epics. Continue?")) {
+    if (!startDate) {
+      alert("Please select a starting date.");
       return;
     }
-    
+
+    setSyncModalOpened(false);
     setSyncing(true);
     try {
       const res = await fetch("/api/integrations/aha/sync-releases", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start_date: startDate }),
       });
       
       if (!res.ok) {
@@ -153,9 +197,75 @@ export default function ReleaseScheduleSection(props: Props) {
       const withoutDatesMsg = result.releases_without_dates && result.releases_without_dates.length > 0
         ? `\nReleases without dates: ${result.releases_without_dates.length} (${result.releases_without_dates.map((r: any) => r.name).join(', ')})`
         : '';
-      alert(`Success: ${result.message}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${withoutDatesMsg}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
+      const startDateMsg = startDate ? `\nOnly synced releases with launch dates on or after ${startDate}` : '';
+      alert(`Success: ${result.message}${startDateMsg}\n\nTotal releases: ${result.total_releases}\nReleases with epics: ${result.releases_with_epics}\nSynced: ${result.synced}${withoutDatesMsg}${result.errors > 0 ? `\nErrors: ${result.errors}` : ""}`);
       
       // Refresh the release list
+      await onRefreshReleases();
+      await onRefresh();
+      // Clear epic counts to trigger refetch
+      setEpicCounts(new Map());
+      // Reset start date
+      setStartDate("");
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleToggleSelectAll = () => {
+    if (selectedReleaseIds.size === pastReleases.length) {
+      setSelectedReleaseIds(new Set());
+    } else {
+      setSelectedReleaseIds(new Set(pastReleases.map(r => r.id)));
+    }
+  };
+
+  const handleToggleSelectRelease = (id: number) => {
+    const newSelected = new Set(selectedReleaseIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedReleaseIds(newSelected);
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedReleaseIds.size === 0) {
+      alert("Please select at least one release to delete.");
+      return;
+    }
+
+    const releaseNames = pastReleases
+      .filter(r => selectedReleaseIds.has(r.id))
+      .map(r => r.release_name)
+      .join(", ");
+
+    if (!confirm(`Are you sure you want to delete ${selectedReleaseIds.size} release(s)?\n\n${releaseNames}\n\nThis action cannot be undone.`)) {
+      return;
+    }
+
+    setBatchDeleting(true);
+    try {
+      const res = await fetch("/api/releases/batch-delete", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: Array.from(selectedReleaseIds) }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to delete releases");
+      }
+
+      const result = await res.json();
+      alert(`Successfully deleted ${result.deleted_count} release(s).`);
+      
+      // Clear selection and refresh
+      setSelectedReleaseIds(new Set());
       await onRefreshReleases();
       await onRefresh();
       // Clear epic counts to trigger refetch
@@ -163,7 +273,7 @@ export default function ReleaseScheduleSection(props: Props) {
     } catch (error: any) {
       alert(`Error: ${error.message}`);
     } finally {
-      setSyncing(false);
+      setBatchDeleting(false);
     }
   };
 
@@ -186,8 +296,20 @@ export default function ReleaseScheduleSection(props: Props) {
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-md font-semibold text-gray-900">Releases with Launch Dates Before Today ({pastReleases.length})</h3>
           <div className="flex gap-2">
+            {selectedReleaseIds.size > 0 && (
+              <button
+                onClick={handleBatchDelete}
+                disabled={batchDeleting}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-red-600 border border-red-700 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                {batchDeleting ? "Deleting..." : `Delete Selected (${selectedReleaseIds.size})`}
+              </button>
+            )}
             <button
-              onClick={handleSyncReleases}
+              onClick={handleSyncReleasesClick}
               disabled={syncing}
               className="px-3 py-1.5 text-sm font-medium text-indigo-700 bg-white border border-indigo-300 rounded-lg hover:bg-indigo-50 hover:text-indigo-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5"
             >
@@ -207,6 +329,7 @@ export default function ReleaseScheduleSection(props: Props) {
           <div className="border-2 border-indigo-200 rounded-lg bg-indigo-50 overflow-hidden">
             <table className="min-w-full divide-y divide-indigo-200 table-fixed">
               <colgroup>
+                <col className="w-12" />
                 <col className="w-2/5" />
                 <col className="w-1/5" />
                 <col className="w-1/5" />
@@ -214,17 +337,27 @@ export default function ReleaseScheduleSection(props: Props) {
               </colgroup>
               <thead className="bg-indigo-100">
                 <tr>
+                  <th className="px-4 py-2 text-center text-xs font-medium text-indigo-900">
+                    <input
+                      type="checkbox"
+                      checked={pastReleases.length > 0 && selectedReleaseIds.size === pastReleases.length}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                      title="Select all"
+                    />
+                  </th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Release Date (External)</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-indigo-900">Epics Loaded vs. Total</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-indigo-900">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-indigo-200">
                 {pastReleases.map((release) => (
-                  <tr key={release.id} className="hover:bg-indigo-50 transition-colors">
+                  <tr key={release.id} className={`hover:bg-indigo-50 transition-colors ${selectedReleaseIds.has(release.id) ? 'bg-indigo-100' : ''}`}>
                     {editingReleaseId === release.id ? (
                       <>
+                        <td className="px-4 py-3"></td>
                         <td className="px-4 py-3">
                           <input type="text" defaultValue={release.release_name} id={`release-name-${release.id}`} className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500" />
                         </td>
@@ -244,6 +377,193 @@ export default function ReleaseScheduleSection(props: Props) {
                               }
                             }}
                             className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          >
+                            Save
+                          </button>
+                          <button onClick={() => setEditingReleaseId(null)} className="text-gray-600 hover:text-gray-900">
+                            Cancel
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="px-4 py-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={selectedReleaseIds.has(release.id)}
+                            onChange={() => handleToggleSelectRelease(release.id)}
+                            className="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="font-medium text-gray-900">{release.release_name}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-600">{formatDateForDisplay(release.launch_date)}</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const counts = epicCounts.get(release.release_name);
+                            const cleargoCount = counts?.cleargoCount ?? null;
+                            const ahaCount = counts?.ahaCount ?? null;
+                            
+                            if (cleargoCount === null && ahaCount === null) {
+                              return <span className="text-gray-400 text-sm">-</span>;
+                            }
+                            
+                            const displayCleargo = cleargoCount !== null ? cleargoCount : '-';
+                            const displayAha = ahaCount !== null ? ahaCount : '-';
+                            
+                            return (
+                              <span className="text-gray-700 text-sm font-medium">
+                                {displayCleargo} / {displayAha}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-sm font-medium">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`Sync epics for release "${release.release_name}"? This will sync all epics with matching tags for this release.`)) {
+                                  return;
+                                }
+                                
+                                setSyncingReleaseId(release.id);
+                                
+                                // Set a timeout to prevent UI from getting stuck
+                                const releaseNameForTimeout = release.release_name;
+                                const timeoutId = setTimeout(() => {
+                                  alert(`Sync for "${releaseNameForTimeout}" is taking longer than expected. This may take several minutes for large releases. The sync is still running in the background.`);
+                                }, 30000); // Show warning after 30 seconds
+                                
+                                try {
+                                  // Create an AbortController for timeout handling
+                                  const controller = new AbortController();
+                                  const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
+
+                                  const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`, {
+                                    method: "POST",
+                                    credentials: "include",
+                                    headers: { "Content-Type": "application/json" },
+                                    signal: controller.signal,
+                                  });
+                                  
+                                  clearTimeout(fetchTimeoutId);
+                                  
+                                  if (!res.ok) {
+                                    const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
+                                    throw new Error(errorData.error || "Failed to sync epics");
+                                  }
+                                  
+                                  const result = await res.json();
+                                  const skipDetails = [];
+                                  if (result.results.skipped_no_release > 0) {
+                                    skipDetails.push(`${result.results.skipped_no_release} with no release`);
+                                  }
+                                  if (result.results.skipped_release_not_synced > 0) {
+                                    skipDetails.push(`${result.results.skipped_release_not_synced} with unsynced release`);
+                                  }
+                                  const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
+                                  
+                                  alert(`Success: ${result.message}\n\nTotal epics fetched: ${result.results.total}\nCreated: ${result.results.created}\nUpdated: ${result.results.updated}${skipMessage}${result.results.errors.length > 0 ? `\nErrors: ${result.results.errors.length}` : ""}`);
+                                  
+                                  // Refresh epic counts for this release
+                                  const newCounts = new Map(epicCounts);
+                                  newCounts.delete(release.release_name);
+                                  setEpicCounts(newCounts);
+                                } catch (error: any) {
+                                  if (error.name === 'AbortError') {
+                                    alert(`Sync timeout: The sync request timed out after 5 minutes. The sync may still be processing on the server. Please refresh the page in a moment.`);
+                                  } else {
+                                    alert(`Error: ${error.message || 'An error occurred during sync'}`);
+                                  }
+                                } finally {
+                                  clearTimeout(timeoutId);
+                                  setSyncingReleaseId(null);
+                                }
+                              }}
+                              disabled={syncingReleaseId === release.id}
+                              className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-2 py-1 text-sm"
+                              title="Sync epics for this release"
+                            >
+                              {syncingReleaseId === release.id ? (
+                                <span className="animate-pulse">Refreshing...</span>
+                              ) : (
+                                "Refresh"
+                              )}
+                            </button>
+                            <button onClick={() => setEditingReleaseId(release.id)} className="text-indigo-600 hover:text-indigo-900">
+                              Edit
+                            </button>
+                            <button onClick={() => onDelete(release.id)} className="text-red-600 hover:text-red-900">
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))}
+                {pastReleases.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-4 py-4 text-center text-sm text-gray-500">
+                      No releases with launch dates before today.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Future Releases Section */}
+      {futureReleases.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-md font-semibold text-gray-900">Releases with Launch Dates On or After Today ({futureReleases.length})</h3>
+          </div>
+          <div className="border-2 border-green-200 rounded-lg bg-green-50 overflow-hidden">
+            <table className="min-w-full divide-y divide-green-200 table-fixed">
+              <colgroup>
+                <col className="w-2/5" />
+                <col className="w-1/5" />
+                <col className="w-1/5" />
+                <col className="w-40" />
+              </colgroup>
+              <thead className="bg-green-100">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Release Name</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Release Date (External)</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-green-900">Epics Loaded vs. Total</th>
+                  <th className="px-4 py-2 text-right text-xs font-medium text-green-900">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-green-200">
+                {futureReleases.map((release) => (
+                  <tr key={release.id} className="hover:bg-green-50 transition-colors">
+                    {editingReleaseId === release.id ? (
+                      <>
+                        <td className="px-4 py-3">
+                          <input type="text" defaultValue={release.release_name} id={`release-name-${release.id}`} className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input type="text" defaultValue={formatDateForDisplay(release.launch_date)} id={`release-date-${release.id}`} placeholder="MM/DD/YYYY" className="w-full px-3 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-green-500" />
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="text-gray-400 text-sm">-</span>
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => {
+                              const nameInput = document.getElementById(`release-name-${release.id}`) as HTMLInputElement;
+                              const dateInput = document.getElementById(`release-date-${release.id}`) as HTMLInputElement;
+                              if (nameInput && dateInput) {
+                                onUpdate(release.id, nameInput.value, dateInput.value);
+                              }
+                            }}
+                            className="text-green-600 hover:text-green-900 mr-4"
                           >
                             Save
                           </button>
@@ -284,16 +604,11 @@ export default function ReleaseScheduleSection(props: Props) {
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={async () => {
-                                if (!confirm(`Sync epics for release "${release.release_name}"? This will sync all epics with matching tags for this release.`)) {
-                                  return;
-                                }
-                                
                                 setSyncingReleaseId(release.id);
                                 try {
-                                  const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`, {
+                                  const res = await fetch(`/api/integrations/aha/sync?release_name=${encodeURIComponent(release.release_name)}`, {
                                     method: "POST",
                                     credentials: "include",
-                                    headers: { "Content-Type": "application/json" },
                                   });
                                   
                                   if (!res.ok) {
@@ -302,15 +617,7 @@ export default function ReleaseScheduleSection(props: Props) {
                                   }
                                   
                                   const result = await res.json();
-                                  const skipDetails = [];
-                                  if (result.results.skipped_no_release > 0) {
-                                    skipDetails.push(`${result.results.skipped_no_release} with no release`);
-                                  }
-                                  if (result.results.skipped_release_not_synced > 0) {
-                                    skipDetails.push(`${result.results.skipped_release_not_synced} with unsynced release`);
-                                  }
-                                  const skipMessage = skipDetails.length > 0 ? `\nSkipped: ${skipDetails.join(', ')}` : '';
-                                  
+                                  const skipMessage = result.results.skipped > 0 ? `\nSkipped: ${result.results.skipped}` : "";
                                   alert(`Success: ${result.message}\n\nTotal epics fetched: ${result.results.total}\nCreated: ${result.results.created}\nUpdated: ${result.results.updated}${skipMessage}${result.results.errors.length > 0 ? `\nErrors: ${result.results.errors.length}` : ""}`);
                                   
                                   // Refresh epic counts for this release
@@ -324,7 +631,7 @@ export default function ReleaseScheduleSection(props: Props) {
                                 }
                               }}
                               disabled={syncingReleaseId === release.id}
-                              className="text-indigo-600 hover:text-indigo-900 hover:bg-indigo-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-2 py-1 text-sm"
+                              className="text-green-600 hover:text-green-900 hover:bg-green-50 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors px-2 py-1 text-sm"
                               title="Sync epics for this release"
                             >
                               {syncingReleaseId === release.id ? (
@@ -333,7 +640,7 @@ export default function ReleaseScheduleSection(props: Props) {
                                 "Refresh"
                               )}
                             </button>
-                            <button onClick={() => setEditingReleaseId(release.id)} className="text-indigo-600 hover:text-indigo-900">
+                            <button onClick={() => setEditingReleaseId(release.id)} className="text-green-600 hover:text-green-900">
                               Edit
                             </button>
                             <button onClick={() => onDelete(release.id)} className="text-red-600 hover:text-red-900">
@@ -345,18 +652,11 @@ export default function ReleaseScheduleSection(props: Props) {
                     )}
                   </tr>
                 ))}
-                {pastReleases.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-4 text-center text-sm text-gray-500">
-                      No releases with launch dates before today.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Archived Releases Section */}
       {archivedReleases.length > 0 && (
@@ -375,7 +675,7 @@ export default function ReleaseScheduleSection(props: Props) {
               <thead className="bg-gray-100">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Name</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Launch Date</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Release Date (External)</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-900">Epics Loaded vs. Total</th>
                   <th className="px-4 py-2 text-right text-xs font-medium text-gray-900"></th>
                 </tr>
@@ -454,6 +754,56 @@ export default function ReleaseScheduleSection(props: Props) {
           </div>
         </div>
       )}
+
+      {/* Sync Releases Modal */}
+      <Modal
+        opened={syncModalOpened}
+        onClose={() => {
+          setSyncModalOpened(false);
+          setStartDate("");
+        }}
+        title="Sync Releases from Aha"
+        size="md"
+      >
+        <Stack gap="md">
+          <Text size="sm" c="dimmed">
+            Select a starting date. Only releases with launch dates on or after this date will be synced.
+          </Text>
+          <TextInput
+            type="date"
+            label="Starting Date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            required
+            styles={{
+              input: {
+                borderRadius: 8,
+                border: '1px solid var(--color-gray-300)',
+                fontFamily: 'var(--font-body)'
+              }
+            }}
+          />
+          <Group justify="flex-end" mt="md">
+            <Button
+              variant="subtle"
+              onClick={() => {
+                setSyncModalOpened(false);
+                setStartDate("");
+              }}
+              disabled={syncing}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSyncReleases}
+              loading={syncing}
+              disabled={!startDate}
+            >
+              Sync Releases
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
     </div>
   );
 }

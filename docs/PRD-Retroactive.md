@@ -34,7 +34,7 @@
 - Single source of truth for launch readiness across all products
 - Automated readiness scoring and risk assessment
 - Real-time collaboration and stakeholder accountability
-- Integration with existing tools (Aha!, Slack, Google Calendar)
+- Integration with existing tools (Aha!, Slack, Google Calendar, ROVO)
 - Historical tracking and audit capabilities
 
 ---
@@ -96,7 +96,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 **Needs:**
 - Single view of major launches, risks, and readiness
 - High-level portfolio visibility
-- Weekly leadership digests
+- Weekly digests
 
 **Use Cases:**
 - Quarterly/monthly reviews
@@ -285,6 +285,17 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Epic Counts**: Show number of epics per release
 - **Aha! Epic Count Caching**: Cache total epic count from Aha! per release to avoid repeated API calls
 - **Count Refresh Tracking**: Track when Aha! epic count was last fetched and cached
+- **Past Releases Management**: 
+  - Filter view for releases with launch dates before today
+  - Multiselect checkboxes for batch operations
+  - Select All functionality for quick selection
+  - Batch delete for multiple past releases at once
+  - Visual highlighting of selected releases
+- **Sync from Aha with Date Filter**: 
+  - Date picker modal for selecting starting date when syncing releases
+  - Only syncs releases with launch dates on or after selected date
+  - Defaults to today's date
+  - Uses "Releases date (external)" as primary date source (falls back to end_date, then start_date)
 
 #### 3.2 Release Grid View
 - **Visual Grid**: Releases as columns, epics as rows
@@ -490,14 +501,33 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 - **Route**: `/analytics` (dashboard analytics page)
 - **Access**: Gated by capability `analytics.read` (assigned via Admin > Settings > Permissions); SUPERADMIN, CPO, PRODUCT_OPS and other roles can be granted this capability
+- **Performance**: Tabbed interface with lazy loading - only loads data for the active tab to improve initial page load performance
+- **Tabs**:
+  - **Launch Metrics**: Success plan completion, Retro completion, Launch hygiene
+  - **Timeliness**: Criteria timeliness, PM timeliness
+  - **Usage Analytics**: Adoption metrics, stickiness metrics, usage by role, activity trends
 - **Metrics**:
   - **Success plan completion**: Rate of epics with locked success config (snapshot and 6-month trends); filters: tier, pod, date range
   - **Retro completion**: Rate of T+30/60/90 retros submitted on time (snapshot and trends)
   - **Launch hygiene**: Distribution of launch readiness (e.g. GO vs CONDITIONAL vs NO_GO) over time (snapshot and trends)
   - **Criteria timeliness**: Share of criteria updated within staleness window; on-time stats
   - **PM timeliness**: Per-PM stats on criterion update timeliness
+  - **Usage Analytics**:
+    - **Adoption**: Total users, active users (7d/30d), new users this month
+    - **Stickiness**: DAU/MAU ratio, WAU/MAU ratio, daily/weekly/monthly active users
+    - **Usage by Role**: Activity breakdown by role (PM, PMM, ADMIN, etc.)
+    - **Activity Trends**: Time series of daily active users and logins
 - **Views**: Snapshot (current period) vs trends (time-series over configurable months); filters apply to all cards
-- **APIs**: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene`, `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
+- **APIs**: 
+  - Launch Metrics: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
+  - Timeliness: `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end)
+  - Usage: `GET /api/analytics/usage?metric={adoption|stickiness|by-role|trends}` (optional query params: date_range_start, date_range_end, role, days_back)
+- **User Activity Tracking**: 
+  - Tracks user logins and activity in `user_activity` table
+  - Login activity tracked automatically via `/api/me` endpoint (throttled to once per hour per user)
+  - Activity also tracked when users perform actions (e.g., updating criteria status, delegating tasks) via `trackActivityFromAction()` to ensure API-only users are counted in usage analytics
+  - Action-based tracking is throttled (only tracks if last login was more than 1 hour ago or null)
+  - Updates `app_user.last_logged_in` timestamp on login
 
 ### 7. Decision Snapshots
 
@@ -560,7 +590,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 #### 9.2 Settings Management
 - **Per-Tier Thresholds**: Configure readiness thresholds per tier
 - **Staleness Window**: Configure days before criterion considered stale (default: 14)
-- **Digest Schedule**: Configure weekly leadership digest schedule (default: Monday 9:00 AM)
+- **Digest Schedule**: Configure weekly digest schedule (default: Monday 9:00 AM)
 - **Email Allowlist**: Configure allowed email domains (default: clearcompany.com)
 - **Fallback User**: Configure fallback Product Ops user
 - **Timezone**: Configure company timezone
@@ -629,7 +659,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 #### 10.1 Email Notifications
 - **Stale Criterion Reminders**: Daily reminders for criteria not updated in staleness window (see scheduled job below; reminders may include an AI-generated personalized nudge when configured).
-- **Weekly Leadership Digest**: Summary of top launches by tier/risk
+- **Weekly Digest**: Summary of top launches by tier/risk
 - **Risk Alerts**: Alerts when launch enters high-risk status
 - **Go/No-Go Notifications**: Notifications when decision snapshots created
 - **Status Change Notifications**: Notifications when readiness status changes
@@ -642,6 +672,17 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
   - `/update-criterion [launch-id] [criterion-id] [status]`: Update criterion
 - **Interactive Messages**: Buttons and dropdowns for quick actions; links use `/epics/{id}` for epic detail.
 - **Stale Criterion Reminders**: Daily job (`/api/jobs/stale-criteria`) sends Slack (and email) reminders; when `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, each reminder can include an **AI-generated personalized nudge** (context-aware, concise) to improve engagement.
+- **Criteria Due Date Nudges**: Daily job (`/api/jobs/criteria-nudges`) sends Slack and email reminders for criteria based on due dates:
+  - **1 week before due date**: Reminder sent 7 days before `condition_due_date`
+  - **On due date**: Reminder sent on the exact `condition_due_date`
+  - **Daily after overdue**: Daily reminders for criteria past their due date
+  - **Grouping**: All criteria for a user are grouped into a single message, organized by release (closest future release first), then by epic within each release, sorted by urgency
+  - **Email Support**: Email notifications are sent alongside Slack notifications (if enabled in settings)
+  - **Past Release Filtering**: Criteria reminders are excluded for epics with past release dates or released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`), except for missing metrics reminders (see below)
+  - **Missing Metrics Reminders**: For past releases, Product Managers receive reminders about missing success metrics if:
+    - Epic has no `epic_success_metrics` entries
+    - `track_offline = false` in `epic_success_configs`
+    - Reminder uses the "Success Defined" criterion due date if available, otherwise uses today's date
 - **App Home**: Personalized dashboard in Slack
 - **URL Unfurling**: Rich previews for launch console links
 - **Channel Notifications**: Post to configured Slack channels
@@ -711,6 +752,8 @@ The system uses the following launch stage phases:
 - **Language**: TypeScript
 - **UI Library**: Mantine UI v8
 - **Styling**: Tailwind CSS v4
+- **Page Styling Guidelines**: See `docs/PAGE_STYLING_GUIDELINES.md` for standard page container structure, typography hierarchy, spacing patterns, and font usage across all dashboard pages
+- **Skeleton Loading Guidelines**: See `docs/SKELETON_LOADING_GUIDELINES.md` for best practices on implementing skeleton loading states, common mistakes to avoid, and how to ensure smooth loading experiences
 - **Icons**: Tabler Icons React
 - **State Management**: React Hooks
 - **Forms**: Mantine Form with Zod validation
@@ -920,6 +963,13 @@ The system uses the following launch stage phases:
 - `status_at_comment` (Text, Nullable)
 - `previous_status` (Text, Nullable)
 - `updated_at` (Timestamp)
+
+#### Comment Read Status
+- `id` (UUID, Primary Key)
+- `comment_id` (UUID, Foreign Key → criterion_comment)
+- `user_id` (UUID, Foreign Key → app_user)
+- `read_at` (Timestamp) - When the comment was marked as read
+- Unique constraint on (`comment_id`, `user_id`) - Each user can have one read status per comment
 
 #### Criterion Attachment
 - `id` (UUID, Primary Key)
@@ -1201,7 +1251,31 @@ The system uses the following launch stage phases:
 6. System logs notification.
 7. User receives reminder, clicks link to epic, updates criterion; system marks criterion as updated.
 
-### Flow 5: Weekly Leadership Digest
+### Flow 5: Criteria Due Date Nudges
+1. Scheduled job runs daily (`GET/POST /api/jobs/criteria-nudges`).
+2. System queries criteria with `condition_due_date` matching:
+   - 1 week before today (if `slack_nudge_1_week_before` enabled)
+   - Today (if `slack_nudge_on_due_date` enabled)
+   - Before today (if `slack_nudge_daily_after_due` enabled)
+3. System filters criteria by:
+   - **Past Release Exclusion**: Excludes criteria for epics with:
+     - Past release dates (from `release_schedule.launch_date`)
+     - Released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`)
+   - **Missing Metrics Exception**: For past releases, includes "Missing Success Metrics" reminders for Product Managers if:
+     - Epic has no `epic_success_metrics` entries
+     - `epic_success_configs.track_offline = false`
+     - Product Manager can be resolved via `resolveProductManagerUserId()`
+4. System groups criteria by assignee (one message per user).
+5. For each user, system:
+   - Sorts criteria by urgency (overdue > due today > due soon)
+   - Groups by release (closest future release first, then past releases)
+   - Groups by epic within each release
+   - Builds release groups with epic subgroups
+6. System sends combined Slack notification (if user has `receive_slack_notifications = true`) and email notification (if `email_notifications_enabled` and `email_criteria_nudge` are enabled).
+7. System updates `last_nudge_sent_at` for all criteria in the notification.
+8. System logs notifications to `notification_log` table.
+
+### Flow 5: Weekly Digest
 1. Scheduled job runs Monday 9:00 AM (configurable)
 2. System queries all active epics
 3. System filters to TIER_1 and TIER_2
@@ -1209,6 +1283,12 @@ The system uses the following launch stage phases:
 5. System generates summary email
 6. System sends to CPO and Product Leads
 7. System logs notification
+8. **Release Filtering**:
+   - Fetches up to 4 next releases (increased from 2) to ensure important releases with delays are included
+   - Filters out past releases from "next releases" section (defensive check)
+   - Past releases appear only in "last releases" section
+   - Sections ordered: "Next 2 Releases" appears before "Recent Releases"
+9. **Title**: "Weekly Release Readiness Status Update" (updated from "Weekly Release Readiness Digest")
 
 ### Flow 6: Meeting Transcript Processing
 1. User navigates to Meetings page
@@ -1252,8 +1332,12 @@ The system uses the following launch stage phases:
 #### Sync API
 - **Manual Sync**: `/api/integrations/aha/sync` - Sync all or filtered epics
 - **Release Sync**: `/api/integrations/aha/sync-releases` - Sync release schedule
+  - **Date Filtering**: Accepts `start_date` parameter to only sync releases with launch dates on or after the specified date
+  - **Date Priority**: Uses "Releases date (external)" custom field as primary date source, falls back to `end_date`, then `start_date`
+  - **Date Picker UI**: Admin interface includes modal with date picker for selecting starting date before sync
 - **Field Sync**: `/api/settings/aha-fields/sync` - Sync Aha! field mappings
 - **Release Refresh Optimization**: When a `release` query param is provided, the sync endpoint fetches epics directly from Aha! for that release and revalidates only the epics currently shown (via `existingAhaIds`), avoiding a full epic list scan.
+- **Batch Delete API**: `/api/releases/batch-delete` - Delete multiple releases at once (POST with array of release IDs)
 
 ### Product Manager API
 
@@ -1277,6 +1361,49 @@ The system uses the following launch stage phases:
 - Example: `parent = {{JIRA_EPIC}} and statusCategory != Done`
 - Links are displayed in the CommentsModal for easy access to Jira tickets
 
+### ROVO Integration
+
+#### Overview
+✅ **IMPLEMENTED** - ROVO (Atlassian's AI assistant) integration for searching and summarizing Jira issues and Confluence pages.
+
+#### Architecture
+- **Protocol**: Uses Model Context Protocol (MCP) via `@modelcontextprotocol/sdk`
+- **Transport**: StreamableHTTPClientTransport (serverless-compatible, replaces deprecated SSE transport)
+- **Authentication**: OAuth 2.1 with dynamic client registration
+- **Server**: ROVO MCP Server at `https://mcp.atlassian.com/v1/mcp`
+
+#### Features
+- **Search**: Search across Jira issues and Confluence pages
+- **Summarize**: Generate summaries of specific Jira issues or Confluence pages
+- **OAuth Flow**: Secure OAuth authentication with token refresh support
+- **Connection Management**: Test connection status and disconnect functionality
+
+#### Configuration
+- **Settings Page**: `/admin/settings/integrations/rovo`
+- **Required Environment Variables**:
+  - `ROVO_OAUTH_CLIENT_ID` or `ATLASSIAN_OAUTH_CLIENT_ID`
+  - `ROVO_OAUTH_CLIENT_SECRET` or `ATLASSIAN_OAUTH_CLIENT_SECRET`
+- **OAuth Scopes**: `read:jira-work`, `read:jira-user`, `read:confluence-content.summary`, `read:confluence-space.summary`, `offline_access`
+- **Callback URL**: `/api/integrations/rovo/oauth`
+
+#### API Endpoints
+- **Search**: `POST /api/integrations/rovo/search` - Search Jira/Confluence content
+- **Summarize**: `POST /api/integrations/rovo/summarize` - Summarize specific content
+- **Status**: `GET /api/integrations/rovo/status` - Check connection status
+- **Disconnect**: `POST /api/integrations/rovo/disconnect` - Disconnect ROVO integration
+- **OAuth**: `GET /api/integrations/rovo/oauth` - OAuth initiation and callback handler
+
+#### Implementation Details
+- **MCP Client**: `src/lib/rovo/mcp-client.ts` - MCP SDK client wrapper with OAuth provider
+- **Client Library**: `src/lib/rovo/client.ts` - High-level search/summarize functions
+- **OAuth Provider**: Implements `OAuthClientProvider` interface for MCP SDK OAuth flow
+- **Token Storage**: Tokens stored in `app_settings` table (`rovo_access_token`, `rovo_refresh_token`, `rovo_token_expires_at`)
+- **Serverless Compatibility**: Uses StreamableHTTPClientTransport instead of SSE for better serverless support
+
+#### Documentation
+- Setup guide: `docs/rovo-setup.md`
+- See `src/lib/rovo/` for implementation details
+
 ### Slack Integration
 
 #### Slash Commands
@@ -1298,6 +1425,11 @@ The system uses the following launch stage phases:
 
 #### Notifications
 - **Stale Criterion Reminders**: Daily reminders (job: `/api/jobs/stale-criteria`); may include an AI-generated personalized nudge when Gemini is configured.
+- **Criteria Due Date Nudges**: Daily reminders (job: `/api/jobs/criteria-nudges`) for criteria approaching or past due dates:
+  - Sent 1 week before, on due date, and daily after overdue
+  - Grouped by release (closest future first), then by epic, sorted by urgency
+  - Excludes past releases except for missing metrics reminders to PMs
+  - Supports both Slack and email delivery channels
 - **Risk Alerts**: High-risk launch notifications
 - **Go/No-Go Decisions**: Decision notifications
 - **Weekly Digest**: Leadership summary
@@ -1327,7 +1459,8 @@ The system uses the following launch stage phases:
 
 #### Email Types
 - **Stale Criterion Reminders**: Daily
-- **Weekly Leadership Digest**: Weekly
+- **Criteria Due Date Nudges**: Daily reminders for criteria approaching or past due dates, grouped by release and epic
+- **Weekly Digest**: Weekly
 - **Risk Alerts**: On-demand
 - **Go/No-Go Notifications**: On snapshot creation
 - **Status Change Notifications**: On readiness status change
@@ -1464,14 +1597,30 @@ The system uses the following launch stage phases:
    - Jira JQL data source support for criteria
    - Cached epic keys for performance
    - See `docs/jira-epic-key-methodology.md` for details
-2. **Salesforce Integration**: Sync with Salesforce for GTM tracking
-3. **Confluence Integration**: Link to Confluence documentation
-4. **GitHub Integration**: Link to GitHub repositories
-5. **Zoom Integration**: Automatic meeting transcript extraction
+2. **ROVO Integration**: ✅ **IMPLEMENTED** - Atlassian AI assistant integration
+   - MCP SDK-based integration for searching and summarizing Jira/Confluence content
+   - OAuth 2.1 authentication with dynamic client registration
+   - StreamableHTTPClientTransport for serverless compatibility
+   - See `docs/rovo-setup.md` for setup instructions
+3. **Salesforce Integration**: Sync with Salesforce for GTM tracking
+4. **Confluence Integration**: Link to Confluence documentation
+5. **GitHub Integration**: Link to GitHub repositories
+6. **Zoom Integration**: Automatic meeting transcript extraction
 
 ### AI/ML Features
 1. **AI Checklist Pruning** — ✅ **IMPLEMENTED**: When criteria are instantiated for an epic, Gemini suggests which may be irrelevant (from name/description/tags). Suggestions appear in the Readiness tab via the AI Checklist Suggestions banner; users can approve (mark N/A) or dismiss. See §2.5 and `src/lib/ai/client.ts` (`pruneCriteria`).
 2. **AI-Powered Stale Nudges** — ✅ **IMPLEMENTED**: The daily stale-criteria job can attach a short, context-aware AI-generated nudge to each Slack/email reminder (launch, criterion, owner, staleness). Requires Gemini API key. See §10.1–10.2, Flow 4, and `src/lib/ai/client.ts` (`generateSmartNudge`).
+
+3. **Criteria Due Date Nudges** — ✅ **IMPLEMENTED**: Daily job (`/api/jobs/criteria-nudges`) sends reminders for criteria based on due dates:
+   - **Frequency**: 1 week before, on due date, and daily after overdue
+   - **Grouping**: All criteria for a user grouped into single message, organized by release (closest future first), then by epic, sorted by urgency
+   - **Channels**: Supports both Slack and email notifications (configurable per user and system-wide)
+   - **Past Release Filtering**: Excludes criteria reminders for past releases and released epics
+   - **Missing Metrics Reminders**: For past releases, sends "Missing Success Metrics" reminders to Product Managers when:
+     - Epic has no success metrics configured (`epic_success_metrics` empty)
+     - `track_offline = false` in `epic_success_configs`
+     - Uses "Success Defined" criterion due date if available, otherwise today's date
+   - **Implementation**: See `src/app/api/jobs/criteria-nudges/route.ts`, `src/lib/slack/templates.ts` (`buildCriteriaNudgeMessage`), and `src/lib/email/templates.ts` (`getCriteriaNudgeEmail`)
 3. **Predictive Risk Scoring**: ML-based risk prediction
 4. **Natural Language Processing**: Extract criteria from meeting notes
 5. **Sentiment Analysis**: Analyze feedback sentiment

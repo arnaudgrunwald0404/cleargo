@@ -25,7 +25,7 @@ Key decisions (confirmed)
 
 Open items resolved (defaults set)
 - Staleness window: 14 days.
-- Leadership digest schedule: Mondays 09:00 (company HQ time zone).
+- Weekly digest schedule: Mondays 09:00 (company HQ time zone).
 - Time zone: Company HQ time zone.
 - Email sender address for auth and digests: noreply@tacticalsync.com.
 
@@ -68,7 +68,7 @@ Views & UX
 
 Notifications (email via Resend)
 - Stale Criterion Reminder: last_updated_at older than staleness_days (default 14) and status != GO; nightly.
-- Weekly Leadership Digest: top N by tier/risk/days; schedule configurable (default Monday 09:00); recipients: CPO/Product Leads.
+- Weekly Digest: top N by tier/risk/days; schedule configurable (default Monday 09:00); recipients: CPO/Product Leads.
 - Upcoming Launch Risk Alert: covered in digest for MVP; optional extra job later.
 
 Aha integration
@@ -179,7 +179,7 @@ Epics, user stories, and tickets (with acceptance criteria)
 - E8 Notifications (Resend)
   - T8.1 Resend integration (emails, logs)
   - T8.2 Stale criterion reminder (uses staleness_days)
-  - T8.3 Weekly leadership digest (configurable schedule)
+  - T8.3 Weekly digest (configurable schedule)
 - E9 Aha integration (webhook + write-back)
   - T9.1 Webhook endpoint (verify secret, upsert, mapping doc)
     - AC: Secret verified; allowed workspaces enforced; filter: (Launch Candidate == true) OR (tags contains "LaunchConsole"); idempotent upsert.

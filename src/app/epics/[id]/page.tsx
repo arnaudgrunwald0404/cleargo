@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -9,21 +9,23 @@ import { createClient } from "@/lib/supabase/client";
 import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
-import DecisionList from "@/components/DecisionList";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { SuccessConfigSection } from "@/components/epic/SuccessConfigSection";
-import { HeartDashboard } from "@/components/epic/HeartDashboard";
 import { EpicMetricsManager } from "@/components/epic/EpicMetricsManager";
-import { ScorecardPageContent } from "@/components/epic/ScorecardPageContent";
-import { RetroPageContent } from "@/components/epic/RetroPageContent";
 import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from "@/lib/services/successMeasurementService";
 import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+
+// Lazy load tab components for code splitting
+const DecisionList = lazy(() => import("@/components/DecisionList").then(m => ({ default: m.default })));
+const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
+const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
+const RetroPageContent = lazy(() => import("@/components/epic/RetroPageContent").then(m => ({ default: m.RetroPageContent })));
 
 export default function EpicDetailPage() {
     const params = useParams();
@@ -41,6 +43,7 @@ export default function EpicDetailPage() {
     const [refreshDecisions, setRefreshDecisions] = useState(0);
     const [updatingTier, setUpdatingTier] = useState(false);
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
+    const [updatingStatus, setUpdatingStatus] = useState(false);
     const [pmOwner, setPmOwner] = useState<{ name?: string; email?: string; avatar_url?: string } | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
@@ -62,6 +65,19 @@ export default function EpicDetailPage() {
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const isMobile = useMediaQuery("(max-width: 768px)");
+
+    // Memoize status options based on admin status
+    const statusOptions = useMemo(() => {
+        const options = [
+            { value: 'Pre_Release', label: 'Pre Release', disabled: !isAdmin },
+            { value: 'Released_Cohort_1', label: 'Released Cohort 1', disabled: !isAdmin },
+            { value: 'Released_GA', label: 'Released GA', disabled: !isAdmin },
+            { value: 'Released_Retroed', label: 'Released Retroed', disabled: !isAdmin },
+            { value: 'Cancelled', label: 'Cancelled', disabled: false },
+        ];
+        console.log('Status options updated, isAdmin:', isAdmin, 'options:', options.map(o => ({ value: o.value, disabled: o.disabled })));
+        return options;
+    }, [isAdmin]);
 
     // Refs to track and cleanup async operations
     const attachmentFetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -114,6 +130,19 @@ export default function EpicDetailPage() {
             const { data: { user } } = await supabase.auth.getUser();
             if (user?.email) {
                 setCurrentUserEmail(user.email);
+                
+                // Check if user is admin and set isAdmin state
+                const { data: me } = await supabase
+                    .from('app_user')
+                    .select('roles')
+                    .eq('email', user.email)
+                    .single();
+                const userRoles = (me?.roles as string[]) || [];
+                const adminStatus = userRoles.includes('SUPERADMIN') ||
+                    userRoles.includes('PRODUCT_OPS') ||
+                    userRoles.includes('CPO');
+                console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
+                setIsAdmin(adminStatus);
             }
 
             // Use shared rate-limit-aware fetch utility
@@ -727,16 +756,37 @@ export default function EpicDetailPage() {
                         try {
                             const countsData = await res.json();
 
-                            // Process counts data and update matrix in a single state update
-                            setMatrix(prevMatrix => prevMatrix.map((item: any) => {
-                                const counts = countsData[item.id] || { commentCount: 0, attachmentCount: 0 };
-                                return {
-                                    ...item,
-                                    commentCount: counts.commentCount || 0,
-                                    attachmentCount: counts.attachmentCount || 0,
-                                    ...(counts.lastComment ? { lastComment: counts.lastComment } : {}),
-                                };
-                            }));
+                            // Process counts data and update matrix using functional setState
+                            // This ensures we're working with the latest state and prevents race conditions
+                            setMatrix(prevMatrix => {
+                                // Only update if counts actually changed to prevent unnecessary re-renders
+                                const updated = prevMatrix.map((item: any) => {
+                                    const counts = countsData[item.id] || { commentCount: 0, unreadCount: 0, attachmentCount: 0 };
+                                    const newCommentCount = counts.commentCount || 0;
+                                    const newUnreadCount = counts.unreadCount || 0;
+                                    const newAttachmentCount = counts.attachmentCount || 0;
+                                    
+                                    // Check if values actually changed
+                                    if (item.commentCount === newCommentCount && 
+                                        item.unreadCount === newUnreadCount &&
+                                        item.attachmentCount === newAttachmentCount &&
+                                        JSON.stringify(item.lastComment) === JSON.stringify(counts.lastComment || null)) {
+                                        return item; // Return same reference if unchanged
+                                    }
+                                    
+                                    return {
+                                        ...item,
+                                        commentCount: newCommentCount,
+                                        unreadCount: newUnreadCount,
+                                        attachmentCount: newAttachmentCount,
+                                        ...(counts.lastComment ? { lastComment: counts.lastComment } : {}),
+                                    };
+                                });
+                                
+                                // Only return new array if something actually changed
+                                const hasChanges = updated.some((item, index) => item !== prevMatrix[index]);
+                                return hasChanges ? updated : prevMatrix;
+                            });
                         } catch (e) {
                             console.warn('Failed to parse batch counts:', e);
                         }
@@ -957,11 +1007,11 @@ export default function EpicDetailPage() {
                     .eq('email', user.email)
                     .single();
                 const userRoles = (me?.roles as string[]) || [];
-                setIsAdmin(
-                    userRoles.includes('SUPERADMIN') ||
+                const adminStatus = userRoles.includes('SUPERADMIN') ||
                     userRoles.includes('PRODUCT_OPS') ||
-                    userRoles.includes('CPO')
-                );
+                    userRoles.includes('CPO');
+                console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
+                setIsAdmin(adminStatus);
             }
         } catch (error) {
             console.error('Error fetching success data:', error);
@@ -1043,6 +1093,109 @@ export default function EpicDetailPage() {
         updateThreshold(currentTier);
     }, [epic?.tier]);
 
+    // Memoize goNoGoDate calculation
+    const goNoGoDate = useMemo(() => {
+        const targetDate = releaseDate || epic?.target_launch_date;
+        if (!targetDate) return null;
+
+        let totalDurationDays = 0;
+
+        if (launchStages.length > 0) {
+            // Target release date is the beginning of Cohort 1 Live (sort_order 3)
+            // Go/No-Go date should only consider pre-launch phases (before Cohort 1 Live)
+            // This includes: GTM Access (sort_order 1) + Internal Readiness (sort_order 2)
+            totalDurationDays = launchStages
+                .filter(stage =>
+                    stage.duration_days !== null &&
+                    stage.sort_order < 3 // Only stages before Cohort 1 Live
+                )
+                .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+        }
+
+        if (totalDurationDays === 0) {
+            totalDurationDays = 35; // Default: GTM Access (14) + Internal Readiness (21)
+        }
+
+        const calculatedDate = new Date(targetDate);
+        calculatedDate.setDate(calculatedDate.getDate() - totalDurationDays);
+        return calculatedDate;
+    }, [releaseDate, epic?.target_launch_date, launchStages]);
+
+    // Memoize calculateDueDateForFilter function
+    const calculateDueDateForFilter = useCallback((item: any): string | null => {
+        if (!item.criterion?.rating_timing || launchStages.length === 0) {
+            return item.condition_due_date || null;
+        }
+
+        const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
+        if (!targetDate) {
+            return item.condition_due_date || null;
+        }
+
+        const ratingTimingId = item.criterion.rating_timing;
+
+        // Use pre-calculated values instead of recalculating
+        const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+        const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+
+        if (daysBefore === undefined && daysAfter === undefined) {
+            return item.condition_due_date || null;
+        }
+
+        const dueDate = new Date(targetDate);
+
+        if (daysBefore !== undefined) {
+            dueDate.setDate(dueDate.getDate() - daysBefore);
+        } else if (daysAfter !== undefined) {
+            dueDate.setDate(dueDate.getDate() + daysAfter);
+        }
+
+        return dueDate.toISOString().split('T')[0];
+    }, [releaseDate, epic, launchStages.length, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
+
+    // Memoize filtered matrix calculation
+    const filteredMatrix = useMemo(() => {
+        if (matrix.length === 0) return [];
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const fourteenDaysFromNow = new Date(today);
+        fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
+
+        return matrix.filter((item: any) => {
+            const passesMyTasks = !filterMyTasks || (currentUserEmail && item.approverEmail && item.approverEmail.toLowerCase() === currentUserEmail.toLowerCase());
+
+            const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
+            const due = dueDate ? new Date(dueDate) : null;
+            if (due) due.setHours(0, 0, 0, 0);
+            const status = item.status || 'NOT_SET';
+            const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
+            const isOverdue = due ? due.getTime() < today.getTime() && isIncomplete : false;
+            const isDueSoon = due ? due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime() && isIncomplete : false;
+
+            let passesDate = true;
+            if (filterOverdue && filterDueSoon) {
+                passesDate = isOverdue || isDueSoon;
+            } else if (filterOverdue) {
+                passesDate = isOverdue;
+            } else if (filterDueSoon) {
+                passesDate = isDueSoon;
+            }
+
+            return passesMyTasks && passesDate;
+        });
+    }, [matrix, filterMyTasks, filterOverdue, filterDueSoon, currentUserEmail, calculateDueDateForFilter]);
+
+    // Memoize suggestedItems calculation
+    const suggestedItems = useMemo(() => {
+        if (!isEnabled(FEATURE_AI_PRUNING, featureFlags)) return [];
+        return matrix.filter(m => m.ai_prune_suggested).map(m => ({
+            id: m.id,
+            label: m.criterion?.label || 'Unknown',
+            reason: m.ai_prune_reason || 'AI suggestion'
+        }));
+    }, [matrix, featureFlags]);
+
     if (loading) {
         return (
             <div className="p-8 flex items-center justify-center">
@@ -1102,6 +1255,65 @@ export default function EpicDetailPage() {
             });
         } finally {
             setUpdatingTier(false);
+        }
+    }
+
+    async function handleStatusUpdate(newStatus: string | null) {
+        console.log('handleStatusUpdate called with:', newStatus, 'current status:', epic?.status);
+        if (!newStatus || !epic || newStatus === epic.status) {
+            console.log('Early return: newStatus=', newStatus, 'epic=', epic, 'newStatus === epic.status', epic ? newStatus === epic.status : false);
+            return;
+        }
+
+        // Only allow "Cancelled" to be set manually for non-admins
+        // Admins/CPOs can set any status
+        if (newStatus !== 'Cancelled' && !isAdmin) {
+            notifications.show({
+                title: 'Invalid status',
+                message: 'Only "Cancelled" can be set manually. Other statuses are computed from launch dates.',
+                color: 'orange',
+            });
+            return;
+        }
+
+        setUpdatingStatus(true);
+        try {
+            console.log('Sending PATCH request to update status:', newStatus);
+            const res = await fetch(`/api/epics/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: newStatus }),
+            });
+
+            console.log('Response status:', res.status, 'ok:', res.ok);
+
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: 'Failed to update status' }));
+                console.error('API error:', errorData);
+                throw new Error(errorData.error || `HTTP ${res.status}: Failed to update status`);
+            }
+
+            const updatedEpic = await res.json();
+            console.log('Updated epic:', updatedEpic);
+            setEpic(updatedEpic);
+
+            notifications.show({
+                title: 'Status updated',
+                message: `Epic status has been updated to ${newStatus}`,
+                color: 'green',
+            });
+
+            // Reload data to ensure consistency
+            await loadData();
+        } catch (error: any) {
+            console.error('Error updating status:', error);
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to update status',
+                color: 'red',
+            });
+        } finally {
+            setUpdatingStatus(false);
         }
     }
 
@@ -1261,23 +1473,33 @@ export default function EpicDetailPage() {
                                 style={{ width: 150 }}
                             />
                             <div className="epic-detail-status" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{
-                                    padding: 'var(--spacing-1) var(--spacing-2)',
-                                    fontSize: 'var(--font-size-xs)',
-                                    fontWeight: 'var(--font-weight-medium)',
-                                    backgroundColor: 'var(--color-gray-100)',
-                                    color: 'var(--color-gray-700)',
-                                    borderRadius: 'var(--radius-base)',
-                                    fontFamily: 'var(--font-body)'
-                                }}>
-                                    {epic.status}
-                                </span>
+                                <Select
+                                    value={epic.status}
+                                    onChange={handleStatusUpdate}
+                                    data={statusOptions}
+                                    disabled={updatingStatus}
+                                    size="xs"
+                                    style={{ width: 150 }}
+                                    styles={{
+                                        input: {
+                                            padding: 'var(--spacing-1) var(--spacing-2)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            backgroundColor: epic.status === 'Cancelled' ? 'var(--color-red-100)' : 'var(--color-gray-100)',
+                                            color: epic.status === 'Cancelled' ? 'var(--color-red-800)' : 'var(--color-gray-700)',
+                                            borderRadius: 'var(--radius-base)',
+                                            fontFamily: 'var(--font-body)',
+                                            border: 'none',
+                                        },
+                                    }}
+                                />
                                 <Tooltip
                                     label={
                                         <div style={{ maxWidth: '300px' }}>
                                             <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is status determined?</div>
                                             <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                Status is derived from launch date, GA date, and retro completion. Only Cancelled is set manually.
+                                                Status is normally derived from launch date, GA date, and retro completion.
+                                                {isAdmin ? ' Admins/CPOs can manually override any status.' : ' Only Cancelled can be set manually.'}
                                                 <br /><br />
                                                 <strong>Pre_Release:</strong> Before target launch date
                                                 <br />
@@ -1346,30 +1568,6 @@ export default function EpicDetailPage() {
 
                 <div className="epic-detail-stats-grid mt-6 grid grid-cols-1 md:grid-cols-5 gap-6" style={{ alignItems: "start" }}>
                     {(() => {
-                        const targetDate = releaseDate || epic.target_launch_date;
-                        let goNoGoDate: Date | null = null;
-                        if (targetDate) {
-                            let totalDurationDays = 0;
-
-                            if (launchStages.length > 0) {
-                                // Target release date is the beginning of Cohort 1 Live (sort_order 3)
-                                // Go/No-Go date should only consider pre-launch phases (before Cohort 1 Live)
-                                // This includes: GTM Access (sort_order 1) + Internal Readiness (sort_order 2)
-                                totalDurationDays = launchStages
-                                    .filter(stage =>
-                                        stage.duration_days !== null &&
-                                        stage.sort_order < 3 // Only stages before Cohort 1 Live
-                                    )
-                                    .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
-                            }
-
-                            if (totalDurationDays === 0) {
-                                totalDurationDays = 35; // Default: GTM Access (14) + Internal Readiness (21)
-                            }
-
-                            goNoGoDate = new Date(targetDate);
-                            goNoGoDate.setDate(goNoGoDate.getDate() - totalDurationDays);
-                        }
                         return (
                             <>
                                 <div style={{
@@ -1729,85 +1927,6 @@ export default function EpicDetailPage() {
                             ) : (
                                 <>
                                     {(() => {
-                                        const today = new Date();
-                                        today.setHours(0, 0, 0, 0);
-                                        const fourteenDaysFromNow = new Date(today);
-                                        fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
-
-                                        // Memoization cache for filter calculations
-                                        const filterDueDateCache = new Map<number, string | null>();
-
-                                        // Use pre-calculated values for filtering (optimization: reuse pre-calculated maps)
-                                        const calculateDueDateForFilter = (item: any): string | null => {
-                                            if (!item.criterion?.rating_timing || launchStages.length === 0) {
-                                                return item.condition_due_date || null;
-                                            }
-
-                                            const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
-                                            if (!targetDate) {
-                                                return item.condition_due_date || null;
-                                            }
-
-                                            const ratingTimingId = item.criterion.rating_timing;
-
-                                            // Check cache first
-                                            if (filterDueDateCache.has(ratingTimingId)) {
-                                                return filterDueDateCache.get(ratingTimingId)!;
-                                            }
-
-                                            // Use pre-calculated values instead of recalculating
-                                            const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
-                                            const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
-
-                                            if (daysBefore === undefined && daysAfter === undefined) {
-                                                filterDueDateCache.set(ratingTimingId, null);
-                                                return item.condition_due_date || null;
-                                            }
-
-                                            const dueDate = new Date(targetDate);
-
-                                            if (daysBefore !== undefined) {
-                                                dueDate.setDate(dueDate.getDate() - daysBefore);
-                                            } else if (daysAfter !== undefined) {
-                                                dueDate.setDate(dueDate.getDate() + daysAfter);
-                                            }
-
-                                            const result = dueDate.toISOString().split('T')[0];
-                                            filterDueDateCache.set(ratingTimingId, result);
-                                            return result;
-                                        };
-
-                                        const filteredMatrix = matrix.filter((item: any) => {
-                                            const passesMyTasks = !filterMyTasks || (currentUserEmail && item.approverEmail && item.approverEmail.toLowerCase() === currentUserEmail.toLowerCase());
-
-                                            const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
-                                            const due = dueDate ? new Date(dueDate) : null;
-                                            if (due) due.setHours(0, 0, 0, 0);
-                                            const status = item.status || 'NOT_SET';
-                                            const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
-                                            const isOverdue = due ? due.getTime() < today.getTime() && isIncomplete : false;
-                                            const isDueSoon = due ? due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime() && isIncomplete : false;
-
-                                            let passesDate = true;
-                                            if (filterOverdue && filterDueSoon) {
-                                                passesDate = isOverdue || isDueSoon;
-                                            } else if (filterOverdue) {
-                                                passesDate = isOverdue;
-                                            } else if (filterDueSoon) {
-                                                passesDate = isDueSoon;
-                                            }
-
-                                            return passesMyTasks && passesDate;
-                                        });
-
-                                        const suggestedItems = isEnabled(FEATURE_AI_PRUNING, featureFlags)
-                                            ? matrix.filter(m => m.ai_prune_suggested).map(m => ({
-                                                id: m.id,
-                                                label: m.criterion?.label || 'Unknown',
-                                                reason: m.ai_prune_reason || 'AI suggestion'
-                                            }))
-                                            : [];
-
                                         return (
                                             <>
                                                 <AIPruneReviewBanner
@@ -1827,11 +1946,13 @@ export default function EpicDetailPage() {
                     <Tabs.Panel value="decisions" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
                         <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
                             {activeTab === 'decisions' && (
-                                <DecisionList
-                                    epicId={epic.id}
-                                    refreshTrigger={refreshDecisions}
-                                    onRefresh={() => setRefreshDecisions(prev => prev + 1)}
-                                />
+                                <Suspense fallback={<PurpleLoader size="md" />}>
+                                    <DecisionList
+                                        epicId={epic.id}
+                                        refreshTrigger={refreshDecisions}
+                                        onRefresh={() => setRefreshDecisions(prev => prev + 1)}
+                                    />
+                                </Suspense>
                             )}
                         </div>
                     </Tabs.Panel>
@@ -1839,27 +1960,29 @@ export default function EpicDetailPage() {
                     <Tabs.Panel value="adoption" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
                         <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
                         {activeTab === 'adoption' && (
-                            <Stack gap="xl">
-                                <HeartDashboard
-                                    epicId={epic.id}
-                                    epicName={epic.name}
-                                />
-                                
-                                {/* Legacy Success Config - for backward compatibility */}
-                                {successConfig && (
-                                    <SuccessConfigSection
+                            <Suspense fallback={<PurpleLoader size="md" />}>
+                                <Stack gap="xl">
+                                    <HeartDashboard
                                         epicId={epic.id}
                                         epicName={epic.name}
-                                        epicTier={epic.tier}
-                                        config={successConfig}
-                                        metrics={successMetrics}
-                                        isAdmin={isAdmin}
-                                        onRefresh={fetchSuccessData}
-                                        epicOwnerId={epic.owner_id}
-                                        pmOwner={pmOwner}
                                     />
-                                )}
-                            </Stack>
+                                    
+                                    {/* Legacy Success Config - for backward compatibility */}
+                                    {successConfig && (
+                                        <SuccessConfigSection
+                                            epicId={epic.id}
+                                            epicName={epic.name}
+                                            epicTier={epic.tier}
+                                            config={successConfig}
+                                            metrics={successMetrics}
+                                            isAdmin={isAdmin}
+                                            onRefresh={fetchSuccessData}
+                                            epicOwnerId={epic.owner_id}
+                                            pmOwner={pmOwner}
+                                        />
+                                    )}
+                                </Stack>
+                            </Suspense>
                         )}
                         </div>
                     </Tabs.Panel>
@@ -1867,7 +1990,9 @@ export default function EpicDetailPage() {
                     <Tabs.Panel value="scorecard" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
                         <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
                         {activeTab === 'scorecard' && (
-                            <ScorecardPageContent epicId={epic.id} />
+                            <Suspense fallback={<PurpleLoader size="md" />}>
+                                <ScorecardPageContent epicId={epic.id} />
+                            </Suspense>
                         )}
                         </div>
                     </Tabs.Panel>
@@ -1875,7 +2000,9 @@ export default function EpicDetailPage() {
                     <Tabs.Panel value="retro" pt="md">
                         {/* Lazy load retro only when tab is active */}
                         {activeTab === 'retro' && (
-                            <RetroPageContent epicId={epic.id} />
+                            <Suspense fallback={<PurpleLoader size="md" />}>
+                                <RetroPageContent epicId={epic.id} />
+                            </Suspense>
                         )}
                     </Tabs.Panel>
                 </Tabs>

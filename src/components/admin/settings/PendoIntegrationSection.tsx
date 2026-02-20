@@ -69,7 +69,7 @@ export default function PendoIntegrationSection() {
   }, [integration]);
 
   // Initialize and merge app name overrides from settings with fetched apps
-  // Re-initialize when either apps or settings change (but not during active saves)
+  // Only re-initialize when apps change, not when settings change (to prevent infinite loop)
   useEffect(() => {
     // Don't overwrite if we're currently saving
     if (isSavingRef.current) {
@@ -106,27 +106,20 @@ export default function PendoIntegrationSection() {
         setAppNameOverrides(merged);
         hasInitializedRef.current = true;
       }
-    } else if (Object.keys(savedOverrides).length > 0) {
-      // If no apps fetched yet but we have saved overrides, use them
+    } else if (Object.keys(savedOverrides).length > 0 && !hasInitializedRef.current) {
+      // Only initialize from saved overrides if we haven't initialized yet and no apps are loaded
       // Normalize keys to strings for consistency
       const normalized: Record<string, string> = {};
       Object.entries(savedOverrides).forEach(([key, value]) => {
         normalized[String(key)] = value;
       });
       
-      // Only update if different from current state
-      const currentKeys = Object.keys(appNameOverrides).sort().join(',');
-      const normalizedKeys = Object.keys(normalized).sort().join(',');
-      const hasChanges = currentKeys !== normalizedKeys ||
-        Object.keys(normalized).some(key => normalized[key] !== (appNameOverrides[key] || ''));
-      
-      if (hasChanges) {
-        console.log('[PendoIntegrationSection] Loading saved app names (no apps yet):', normalized);
-        setAppNameOverrides(normalized);
-        hasInitializedRef.current = true;
-      }
+      console.log('[PendoIntegrationSection] Loading saved app names (no apps yet):', normalized);
+      setAppNameOverrides(normalized);
+      hasInitializedRef.current = true;
     }
-  }, [pendoApps, settings?.pendo_app_names]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendoApps]); // Only depend on pendoApps, not settings?.pendo_app_names
 
   const fetchPendoApps = async () => {
     setAppsLoading(true);
@@ -172,9 +165,8 @@ export default function PendoIntegrationSection() {
           console.log('[PendoIntegrationSection] Save successful, returned settings:', (saved as any)?.pendo_app_names);
           
           // Update local state with the saved values to ensure consistency
-          if ((saved as any)?.pendo_app_names) {
-            setAppNameOverrides((saved as any).pendo_app_names);
-          }
+          // No need to call setAppNameOverrides here since we already have the correct value
+          // and calling it would be redundant
           
           // Show success notification (only once, not on every keystroke)
           notifications.show({
@@ -193,7 +185,10 @@ export default function PendoIntegrationSection() {
           // Revert on error
           setAppNameOverrides(previousOverrides);
         } finally {
-          isSavingRef.current = false;
+          // Clear the saving flag after a short delay to ensure React state updates have propagated
+          setTimeout(() => {
+            isSavingRef.current = false;
+          }, 200);
         }
       }
     }, 1000);

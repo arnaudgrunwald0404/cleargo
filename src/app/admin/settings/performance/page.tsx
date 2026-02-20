@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
     Card,
     Table,
@@ -49,13 +49,20 @@ export default function PerformancePage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchStats = async () => {
+    const fetchStats = useCallback(async () => {
         setLoading(true);
         setError(null);
+        
         try {
-            const res = await fetchWithRateLimit('/api/admin/performance', {
+            const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error('Request timeout')), 30000);
+            });
+
+            const fetchPromise = fetchWithRateLimit('/api/admin/performance', {
                 credentials: 'include',
             });
+
+            const res = await Promise.race([fetchPromise, timeoutPromise]);
 
             if (!res.ok) {
                 if (res.status === 403) {
@@ -71,24 +78,34 @@ export default function PerformancePage() {
             const data = await res.json();
             setStats(data);
         } catch (err: any) {
-            console.error('Error fetching performance stats:', err);
-            setError(err.message || 'Failed to fetch performance statistics');
-            notifications.show({
-                title: 'Error',
-                message: err.message || 'Failed to fetch performance statistics',
-                color: 'red',
-            });
+            if (err.message === 'Request timeout') {
+                console.error('Request timeout: Failed to fetch performance stats within 30 seconds');
+                setError('Request timed out. Please try again.');
+                notifications.show({
+                    title: 'Error',
+                    message: 'Request timed out. Please try again.',
+                    color: 'red',
+                });
+            } else {
+                console.error('Error fetching performance stats:', err);
+                setError(err.message || 'Failed to fetch performance statistics');
+                notifications.show({
+                    title: 'Error',
+                    message: err.message || 'Failed to fetch performance statistics',
+                    color: 'red',
+                });
+            }
         } finally {
             setLoading(false);
         }
-    };
+    }, []);
 
     useEffect(() => {
         fetchStats();
         // Refresh every 30 seconds
         const interval = setInterval(fetchStats, 30000);
         return () => clearInterval(interval);
-    }, []);
+    }, [fetchStats]);
 
     if (loading && !stats) {
         return (

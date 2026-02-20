@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFileSync, writeFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { createClient } from '@/lib/supabase/server';
 import { getCustomFields } from '@/lib/aha/client';
@@ -8,6 +8,7 @@ import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 20; // Reduced for Netlify serverless timeout limits (~26s max)
 
 export async function GET(req: NextRequest) {
     try {
@@ -38,11 +39,24 @@ export async function GET(req: NextRequest) {
         const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.read', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
-        // Always read config file directly (don't use cache) to ensure fresh data
-        // This is important in dev mode where file changes should be reflected immediately
+        // Try to read config file, fallback to empty config if file doesn't exist
+        // This handles serverless environments where the file might not be accessible
+        let config: { fields: Record<string, { label: string; key: string }> };
         const configPath = join(process.cwd(), 'config', 'aha-custom-fields.json');
-        const configData = readFileSync(configPath, 'utf-8');
-        const config = JSON.parse(configData);
+        
+        try {
+            if (existsSync(configPath)) {
+                const configData = readFileSync(configPath, 'utf-8');
+                config = JSON.parse(configData);
+            } else {
+                console.warn(`Config file not found at ${configPath}, using empty config`);
+                config = { fields: {} };
+            }
+        } catch (error: any) {
+            console.error('Error reading config file:', error);
+            // Fallback to empty config instead of failing
+            config = { fields: {} };
+        }
         
         // Clear cache after reading to keep it in sync
         clearAhaConfigCache();
@@ -177,9 +191,21 @@ export async function POST(req: NextRequest) {
             labelToAlias.set(name, alias);
         }
 
-        // Save updated config
+        // Try to save updated config (may fail on serverless platforms like Netlify)
+        // On serverless, the file system is read-only except /tmp, so we skip the write
         const configPath = join(process.cwd(), 'config', 'aha-custom-fields.json');
-        writeFileSync(configPath, JSON.stringify(config, null, 2));
+        try {
+            // Check if we can write to this location (serverless platforms may not allow this)
+            if (existsSync(configPath) || process.env.NODE_ENV !== 'production') {
+                writeFileSync(configPath, JSON.stringify(config, null, 2));
+                console.log('Config file updated successfully');
+            } else {
+                console.warn('Skipping config file write - not accessible in this environment');
+            }
+        } catch (writeError: any) {
+            // Log but don't fail - config updates are reflected in the response even if file write fails
+            console.warn('Could not write config file (expected on serverless platforms):', writeError.message);
+        }
 
         // Clear cache so next GET request loads fresh config
         clearAhaConfigCache();

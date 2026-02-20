@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test weekly leadership digest: real data, approval flow (LLM narrative + approve), and fictitious (mock) data.
+# Test weekly digest: real data, approval flow (LLM narrative + approve), and fictitious (mock) data.
 # Requires: .env with SLACK_DEFAULT_CHANNEL, SLACK_BOT_TOKEN, CRON_SECRET (for step 2), DIGEST_VALIDATOR_EMAIL (optional).
 #
 # 1) Real data (live DB) → digest posted directly to SLACK_DEFAULT_CHANNEL (send_directly=true, needs CRON_SECRET).
@@ -19,35 +19,35 @@ CHANNEL="${SLACK_DEFAULT_CHANNEL:?Set SLACK_DEFAULT_CHANNEL in .env (e.g. C0A2N4
 CRON_SECRET="${CRON_SECRET:?Set CRON_SECRET in .env for digest job auth}"
 
 echo "=== 1. Real data (live DB) → post directly to $CHANNEL ==="
-echo "GET $BASE/api/jobs/leadership-digest?send_directly=true (Bearer CRON_SECRET)"
+echo "GET $BASE/api/jobs/weekly-digest?send_directly=true (Bearer CRON_SECRET)"
 echo ""
 curl -s -w "\nHTTP %{http_code}\n" \
   -H "Authorization: Bearer $CRON_SECRET" \
-  "$BASE/api/jobs/leadership-digest?send_directly=true"
+  "$BASE/api/jobs/weekly-digest?send_directly=true"
 echo ""
 
 echo "=== 2. LLM narrative + approval flow (draft to validator, approve to post) ==="
-echo "GET $BASE/api/jobs/leadership-digest (Bearer CRON_SECRET, no send_directly)"
+echo "GET $BASE/api/jobs/weekly-digest (Bearer CRON_SECRET, no send_directly)"
 echo "  → Draft with LLM narrative is sent to Slack DM for validator (DIGEST_VALIDATOR_EMAIL or default agrunwald@clearcompany.com)."
 echo "  → Validator clicks 'Approve and send digest'; full digest is then posted to channel from settings/env."
 echo "  → Ensure NEXT_PUBLIC_APP_URL is reachable (e.g. ngrok) so the Approve link works."
 echo ""
 curl -s -w "\nHTTP %{http_code}\n" \
   -H "Authorization: Bearer $CRON_SECRET" \
-  "$BASE/api/jobs/leadership-digest"
+  "$BASE/api/jobs/weekly-digest"
 echo ""
 
 echo "=== 3. Fictitious data (mock, looks good) → $CHANNEL ==="
-echo "POST $BASE/api/integrations/slack/test (type=leadership_digest + full testData + channel)"
+echo "POST $BASE/api/integrations/slack/test (type=weekly_digest + full testData + channel)"
 echo ""
 curl -s -w "\nHTTP %{http_code}\n" \
   -X POST "$BASE/api/integrations/slack/test" \
   -H "Content-Type: application/json" \
   -d @- << EOF
 {
-  "type": "leadership_digest",
+  "type": "weekly_digest",
   "testData": {
-    "type": "leadership_digest",
+    "type": "weekly_digest",
     "priority": "low",
     "channel": "$CHANNEL",
     "metadata": {

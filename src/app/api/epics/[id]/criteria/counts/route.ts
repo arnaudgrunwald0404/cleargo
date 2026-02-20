@@ -19,6 +19,15 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Get user ID for unread count calculation
+    const { data: appUser, error: userError } = await supabase
+      .from('app_user')
+      .select('id')
+      .eq('email', userEmail)
+      .single();
+
+    const userId = appUser?.id || null;
+
     // Parse request body
     const body = await req.json();
     const { statusIds } = body;
@@ -79,8 +88,26 @@ export async function POST(
       // Continue with empty attachments rather than failing
     }
 
+    // Fetch read status for all comments if user is authenticated
+    let readStatusMap = new Map<string, boolean>();
+    if (userId && comments && comments.length > 0) {
+      const commentIds = comments.map((c: any) => c.id);
+      const { data: readStatuses, error: readError } = await supabase
+        .from('comment_read_status')
+        .select('comment_id')
+        .eq('user_id', userId)
+        .in('comment_id', commentIds);
+
+      if (!readError && readStatuses) {
+        readStatuses.forEach((rs: any) => {
+          readStatusMap.set(rs.comment_id, true);
+        });
+      }
+    }
+
     // Aggregate counts by status ID
     const commentCounts = new Map<string, number>();
+    const unreadCounts = new Map<string, number>();
     const attachmentCounts = new Map<string, number>();
     const lastComments = new Map<string, any>();
 
@@ -92,6 +119,11 @@ export async function POST(
 
         // Increment count
         commentCounts.set(statusId, (commentCounts.get(statusId) || 0) + 1);
+
+        // Track unread count (if user is authenticated and comment is not read)
+        if (userId && !readStatusMap.has(comment.id)) {
+          unreadCounts.set(statusId, (unreadCounts.get(statusId) || 0) + 1);
+        }
 
         // Track last comment (comments are already sorted by created_at DESC)
         if (!lastComments.has(statusId)) {
@@ -115,18 +147,20 @@ export async function POST(
     }
 
     // Build result object with all status IDs (including virtual ones)
-    const result: Record<string, { commentCount: number; attachmentCount: number; lastComment?: any }> = {};
+    const result: Record<string, { commentCount: number; unreadCount: number; attachmentCount: number; lastComment?: any }> = {};
     
     statusIds.forEach((statusId: string) => {
       if (statusId.startsWith('virtual-')) {
-        result[statusId] = { commentCount: 0, attachmentCount: 0 };
+        result[statusId] = { commentCount: 0, unreadCount: 0, attachmentCount: 0 };
       } else {
         const commentCount = commentCounts.get(statusId) || 0;
+        const unreadCount = unreadCounts.get(statusId) || 0;
         const attachmentCount = attachmentCounts.get(statusId) || 0;
         const lastComment = lastComments.get(statusId);
 
         result[statusId] = {
           commentCount,
+          unreadCount,
           attachmentCount,
           ...(lastComment ? { lastComment } : {}),
         };

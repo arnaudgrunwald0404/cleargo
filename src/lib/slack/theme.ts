@@ -35,7 +35,7 @@ export interface SlackThemeConfig {
             overdue: string;
         };
         comment: string;        // Comment/attachment
-        digest: string;          // Leadership digest
+        digest: string;          // Weekly digest
     };
     
     // Branding

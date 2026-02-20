@@ -125,7 +125,7 @@ The integration sends notifications for:
 - **Recipients:** Launch owner, stakeholders
 - **Content:** Decision verdict, notes, conditions
 
-#### Weekly Leadership Digest
+#### Weekly Digest
 - **Trigger:** Monday 9:00 AM (configurable)
 - **Recipients:** CPO, Product Leads
 - **Content:** Top launches by tier/risk, upcoming launches, blockers
@@ -177,7 +177,7 @@ Configure default notification channels in the database `settings` table:
 ```sql
 UPDATE settings SET 
   slack_channels = jsonb_build_object(
-    'leadership_digest', '#leadership-launches',
+    'weekly_digest', '#leadership-launches',
     'high_risk_alerts', '#launch-alerts',
     'go_no_go_decisions', '#product-decisions'
   );

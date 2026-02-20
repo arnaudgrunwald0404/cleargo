@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import { Select, Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft, IconLink, IconDatabase, IconFileText } from "@tabler/icons-react";
@@ -27,6 +27,7 @@ type MatrixItem = {
     } | null;
     notRequired?: boolean;
     commentCount?: number;
+    unreadCount?: number;
     lastComment?: {
         comment_text: string;
         created_at: string;
@@ -237,7 +238,7 @@ type Props = {
     showNotApplicable?: boolean;
 };
 
-export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false }: Props) {
+function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false }: Props) {
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
         if (source.type === 'success_metrics_defined') {
@@ -1456,7 +1457,15 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                 >
                                                     {item.criterion.label}
                                                     {item.criterion.gate && (
-                                                        <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                        <Tooltip
+                                                            label="This is a Gate criterion — it must be resolved before the epic can receive a Go decision. A single unresolved Gate blocks the entire launch."
+                                                            multiline
+                                                            w={280}
+                                                            withArrow
+                                                            position="top"
+                                                        >
+                                                            <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full cursor-default">GATE</span>
+                                                        </Tooltip>
                                                     )}
                                                 </button>
                                             </div>
@@ -1748,8 +1757,11 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     >
                                                         <IconMessageCircle className="w-4 h-4" />
                                                         {(item.commentCount || 0) > 0 && (
-                                                            <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-semibold">
-                                                                {(item.commentCount || 0) > 99 ? '99+' : item.commentCount}
+                                                            <span className={`absolute -top-1 -right-1 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center font-semibold ${(item.unreadCount || 0) > 0 ? 'bg-red-600' : 'bg-blue-600'}`}>
+                                                                {(item.unreadCount || 0) > 0 
+                                                                    ? ((item.unreadCount || 0) > 99 ? '99+' : item.unreadCount)
+                                                                    : ((item.commentCount || 0) > 99 ? '99+' : item.commentCount)
+                                                                }
                                                             </span>
                                                         )}
                                                     </button>
@@ -1911,7 +1923,15 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
                                                     >
                                                         {item.criterion.label}
                                                         {item.criterion.gate && (
-                                                            <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full">GATE</span>
+                                                            <Tooltip
+                                                                label="This is a Gate criterion — it must be resolved before the epic can receive a Go decision. A single unresolved Gate blocks the entire launch."
+                                                                multiline
+                                                                w={280}
+                                                                withArrow
+                                                                position="top"
+                                                            >
+                                                                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full cursor-default">GATE</span>
+                                                            </Tooltip>
                                                         )}
                                                     </button>
                                                 </div>
@@ -2155,4 +2175,60 @@ export default function Matrix({ epicId, epicName, epicStatus, items, onUpdate, 
         </>
     );
 }
+
+// Memoize Matrix component to prevent unnecessary re-renders
+// Only re-render when props actually change
+export default memo(Matrix, (prevProps, nextProps) => {
+    // Quick reference equality checks first
+    if (prevProps.epicId !== nextProps.epicId ||
+        prevProps.epicName !== nextProps.epicName ||
+        prevProps.epicStatus !== nextProps.epicStatus ||
+        prevProps.showNotApplicable !== nextProps.showNotApplicable ||
+        prevProps.onUpdate !== nextProps.onUpdate) {
+        return false; // Props changed, need to re-render
+    }
+
+    // Check epic object changes (only relevant fields)
+    if (prevProps.epic?.jira_epic_key !== nextProps.epic?.jira_epic_key) {
+        return false;
+    }
+    
+    // Deep comparison for aha_fields only if both exist
+    if (prevProps.epic?.aha_fields || nextProps.epic?.aha_fields) {
+        if (JSON.stringify(prevProps.epic?.aha_fields) !== JSON.stringify(nextProps.epic?.aha_fields)) {
+            return false;
+        }
+    }
+
+    // Check items array - if length changed, definitely need re-render
+    if (prevProps.items.length !== nextProps.items.length) {
+        return false;
+    }
+
+    // For items array, check if references are the same (shallow comparison)
+    // If parent is using memoized filteredMatrix, references should be stable
+    if (prevProps.items === nextProps.items) {
+        return true; // Same reference, no re-render needed
+    }
+
+    // If references differ but length is same, check key fields that affect rendering
+    // Only check first few items to avoid expensive full comparison
+    // Full comparison happens in React's reconciliation anyway
+    const checkCount = Math.min(prevProps.items.length, 10);
+    for (let i = 0; i < checkCount; i++) {
+        const prevItem = prevProps.items[i];
+        const nextItem = nextProps.items[i];
+        
+        if (prevItem.id !== nextItem.id ||
+            prevItem.status !== nextItem.status ||
+            prevItem.commentCount !== nextItem.commentCount ||
+            prevItem.attachmentCount !== nextItem.attachmentCount ||
+            prevItem.approverEmail !== nextItem.approverEmail) {
+            return false; // Item changed, need to re-render
+        }
+    }
+
+    // If we get here, props appear unchanged (or only non-critical fields changed)
+    return true; // No re-render needed
+});
 

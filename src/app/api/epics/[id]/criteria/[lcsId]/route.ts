@@ -5,6 +5,7 @@ import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { isEnabled, FEATURE_NOT_APPLICABLE } from '@/lib/flags';
 import { getFeatureFlags, getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
+import { trackActivityFromAction } from '@/lib/services/userActivityService';
 
 export async function PATCH(
     req: NextRequest,
@@ -154,10 +155,28 @@ export async function PATCH(
                 entity_id: lcsId,
                 json_diff: { status: { old: previousStatus ?? null, new: data.status } },
             });
+
+            // Track activity for usage analytics (if /api/me wasn't called)
+            // This ensures users who make changes are counted even if they didn't visit the web UI
+            trackActivityFromAction(appUser.id).catch(err => {
+                console.error('[PATCH /api/epics/[id]/criteria/[lcsId]] Failed to track activity:', err);
+            });
         }
 
         // Trigger readiness re-computation asynchronously (or await if we want immediate consistency)
-        await recomputeEpicReadiness(id, appUser.id);
+        try {
+            await recomputeEpicReadiness(id, appUser.id);
+        } catch (recalcError: any) {
+            // Log error but don't fail the request - the status update succeeded
+            console.error(`[PATCH /api/epics/${id}/criteria/${lcsId}] Failed to recompute readiness:`, {
+                epicId: id,
+                criterionStatusId: lcsId,
+                error: recalcError?.message || 'Unknown error',
+                stack: recalcError?.stack
+            });
+            // Continue - the criterion status was updated successfully
+            // The readiness score will be recalculated on next status change or manual trigger
+        }
 
         return NextResponse.json(data);
     } catch (error: any) {

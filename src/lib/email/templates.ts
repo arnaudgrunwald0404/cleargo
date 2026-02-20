@@ -249,3 +249,174 @@ export async function getDenialEmail(
     
     return { subject, html };
 }
+
+/**
+ * Criteria Nudge Email Template
+ * Groups criteria by release, sorted by closest future release first
+ */
+export function getCriteriaNudgeEmail(
+    recipientName: string | null,
+    releaseGroups: Array<{
+        release_name: string | null;
+        release_date: string | null;
+        epic_groups: Array<{
+            epic_id: string;
+            epic_name: string;
+            criteria: Array<{
+                id: string;
+                label: string;
+                category: string;
+                due_date: string | null;
+                status: string;
+                nudge_type: string;
+            }>;
+        }>;
+    }>,
+    totalCriteriaCount: number,
+    appUrl: string
+) {
+    const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Calculate summary
+    let overdueCount = 0;
+    let dueTodayCount = 0;
+    let dueSoonCount = 0;
+
+    for (const rg of releaseGroups) {
+        for (const eg of rg.epic_groups) {
+            for (const c of eg.criteria) {
+                if (!c.due_date) continue;
+                const dueDate = new Date(c.due_date);
+                dueDate.setHours(0, 0, 0, 0);
+                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                
+                if (daysDiff < 0) overdueCount++;
+                else if (daysDiff === 0) dueTodayCount++;
+                else if (daysDiff <= 7) dueSoonCount++;
+            }
+        }
+    }
+
+    const summaryParts: string[] = [];
+    if (overdueCount > 0) summaryParts.push(`<strong>${overdueCount} overdue</strong>`);
+    if (dueTodayCount > 0) summaryParts.push(`<strong>${dueTodayCount} due today</strong>`);
+    if (dueSoonCount > 0) summaryParts.push(`<strong>${dueSoonCount} due soon</strong>`);
+
+    // Build release sections
+    let releaseSectionsHtml = '';
+    for (const releaseGroup of releaseGroups) {
+        let releaseHeader = '';
+        if (releaseGroup.release_name) {
+            releaseHeader = `<h3 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-top: 24px; margin-bottom: 12px; font-size: 18px;">Release ${releaseGroup.release_name}`;
+            if (releaseGroup.release_date) {
+                const releaseDate = new Date(releaseGroup.release_date);
+                releaseDate.setHours(0, 0, 0, 0);
+                const daysDiff = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysDiff < 0) {
+                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)</span>`;
+                } else if (daysDiff === 0) {
+                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(Today)</span>`;
+                } else {
+                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                }
+            }
+            releaseHeader += '</h3>';
+        } else {
+            releaseHeader = '<h3 style="font-family: \'Atkinson Hyperlegible\', sans-serif; color: #1f2937; margin-top: 24px; margin-bottom: 12px; font-size: 18px;">No Release Assigned</h3>';
+        }
+
+        releaseSectionsHtml += releaseHeader;
+
+        for (const epicGroup of releaseGroup.epic_groups) {
+            // Sort criteria by urgency
+            const sortedCriteria = [...epicGroup.criteria].sort((a, b) => {
+                const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
+                const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
+                return dateA - dateB;
+            });
+
+            const mostUrgent = sortedCriteria[0];
+            const dueDate = mostUrgent?.due_date ? new Date(mostUrgent.due_date) : null;
+            
+            let urgencyText = '';
+            if (dueDate) {
+                dueDate.setHours(0, 0, 0, 0);
+                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysDiff < 0) {
+                    urgencyText = ` <span style="color: #dc2626; font-size: 13px;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)</span>`;
+                } else if (daysDiff === 0) {
+                    urgencyText = ' <span style="color: #f59e0b; font-size: 13px;">(Due today)</span>';
+                } else if (daysDiff <= 7) {
+                    urgencyText = ` <span style="color: #f59e0b; font-size: 13px;">(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                }
+            }
+
+            const epicUrl = `${appUrl}/epics/${epicGroup.epic_id}`;
+            const criteriaList = epicGroup.criteria.map(c => {
+                const dueDate = c.due_date ? new Date(c.due_date) : null;
+                let dueText = '';
+                if (dueDate) {
+                    dueDate.setHours(0, 0, 0, 0);
+                    const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                    if (daysDiff < 0) {
+                        dueText = ` <span style="color: #dc2626;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)</span>`;
+                    } else if (daysDiff === 0) {
+                        dueText = ' <span style="color: #f59e0b;">(Due today)</span>';
+                    } else if (daysDiff <= 7) {
+                        dueText = ` <span style="color: #f59e0b;">(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                    }
+                }
+                return `<li style="margin-bottom: 8px; line-height: 1.6;">${c.label}${dueText}</li>`;
+            }).join('');
+
+            releaseSectionsHtml += `
+                <div style="margin-left: 20px; margin-bottom: 16px;">
+                    <h4 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #374151; margin-bottom: 8px; font-size: 16px;">
+                        <a href="${epicUrl}" style="color: #4f46e5; text-decoration: none;">${epicGroup.epic_name}</a>${urgencyText}
+                    </h4>
+                    <ul style="margin: 0; padding-left: 20px; color: #4b5563;">
+                        ${criteriaList}
+                    </ul>
+                </div>
+            `;
+        }
+    }
+
+    const subject = overdueCount > 0
+        ? `[ClearGO] ${totalCriteriaCount} Overdue Criteria Need Your Attention`
+        : dueTodayCount > 0
+        ? `[ClearGO] ${totalCriteriaCount} Criteria Due Today`
+        : `[ClearGO] ${totalCriteriaCount} Criteria Need Your Attention`;
+
+    const html = `
+        <div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-bottom: 20px;">${greeting}</h2>
+            <p style="color: #4b5563; line-height: 1.6; margin-bottom: 20px;">
+                You have <strong>${totalCriteriaCount} criteria</strong> that need your attention.
+            </p>
+            
+            ${summaryParts.length > 0 ? `
+            <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
+                <p style="color: #374151; font-weight: 600; margin-bottom: 8px; font-size: 15px;">Summary</p>
+                <p style="color: #4b5563; line-height: 1.6; margin: 0;">${summaryParts.join(', ')}</p>
+            </div>
+            ` : ''}
+
+            ${releaseSectionsHtml}
+
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${appUrl}/my-items" style="display: inline-block; background-color: #4f46e5; color: white; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: 600;">
+                    View All My Items
+                </a>
+            </div>
+
+            <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">
+                This is an automated reminder. Please update the status of these criteria in ClearGO.
+            </p>
+        </div>
+    `;
+
+    return { subject, html };
+}

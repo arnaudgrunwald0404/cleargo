@@ -5,6 +5,7 @@ export type CapabilityId =
   | "criteria.delegate"
   | "launch.tier.update"
   | "launch.risk.update"
+  | "launch.status.update"
   | "launch.delete"
   | "users.read"
   | "users.invite.send"
@@ -56,6 +57,11 @@ export const CAPABILITIES: Capability[] = [
     id: "launch.risk.update",
     label: "Update Epic Risk Level",
     description: "Allow changing an Epic's risk level.",
+  },
+  {
+    id: "launch.status.update",
+    label: "Update Epic Status",
+    description: "Allow manually overriding an Epic's status (normally computed from dates).",
   },
   {
     id: "launch.delete",
@@ -184,6 +190,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "criteria.delegate": ["CPO", "PRODUCT_OPS"],
   "launch.tier.update": ["PRODUCT_OPS", "CPO"],
   "launch.risk.update": ["PRODUCT_OPS", "CPO", "PRODUCT"],
+  "launch.status.update": ["PRODUCT_OPS", "CPO"],
   "launch.delete": ["PRODUCT_OPS", "CPO"],
   "users.read": ["PRODUCT_OPS", "CPO", "PMM", "PM"],
   "users.invite.send": ["PRODUCT_OPS", "CPO"],

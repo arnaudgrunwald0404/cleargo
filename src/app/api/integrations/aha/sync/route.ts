@@ -12,11 +12,13 @@ import {
     fetchAndUpsertReleaseFromAha,
     setAhaRecordNotFoundByAhaId,
     clearAhaRecordNotFound,
+    recalculateDueDatesForEpic,
 } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // Allow up to 5 minutes for sync operations (needed for large releases)
 
 /**
  * Manual sync endpoint to pull epics from Aha on-demand.
@@ -280,6 +282,13 @@ export async function POST(req: NextRequest) {
                         await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
+                        // Recalculate due dates for existing epics
+                        try {
+                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
+                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
+                        } catch (dueDateError) {
+                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
+                        }
                         results.updated++;
                     }
 
@@ -390,6 +399,13 @@ export async function POST(req: NextRequest) {
                         await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
+                        // Recalculate due dates for existing epics
+                        try {
+                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
+                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
+                        } catch (dueDateError) {
+                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
+                        }
                         results.updated++;
                     }
 
@@ -603,6 +619,15 @@ export async function POST(req: NextRequest) {
                     results.created++;
                     console.log(`🆕 Created epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 } else {
+                    // For existing epics, recalculate due dates for all criteria
+                    // This ensures due dates are updated if target_launch_date changed
+                    try {
+                        await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
+                        console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
+                    } catch (dueDateError) {
+                        // Log error but don't fail the sync
+                        console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
+                    }
                     results.updated++;
                     console.log(`🔄 Updated epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 }
@@ -644,12 +669,26 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error) {
-        console.error('Manual Aha sync error:', error);
-        console.error('Error stack:', (error as Error).stack);
-        return NextResponse.json(
-            { error: 'Sync failed', details: (error as Error).message },
-            { status: 500 }
-        );
+        const err = error as Error;
+        console.error('❌ Manual Aha sync error:', {
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+            url: req.url,
+        });
+        
+        // Provide more detailed error information
+        const errorDetails: any = {
+            error: 'Sync failed',
+            message: err.message,
+        };
+        
+        // Include additional context if available
+        if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
+            errorDetails.suggestion = 'The sync operation timed out. Try syncing a smaller batch or a specific release.';
+        }
+        
+        return NextResponse.json(errorDetails, { status: 500 });
     }
 }
 

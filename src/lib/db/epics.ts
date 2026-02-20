@@ -333,7 +333,7 @@ async function resolveDecisionOwnersForCriteria(
 /**
  * Calculate due date based on target launch date and rating timing (launch stage)
  */
-async function calculateDueDateForCriterion(
+export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
     ratingTimingId: number | null,
     client: SupabaseClient
@@ -576,6 +576,110 @@ export async function instantiateCriteriaForEpic(
             // Log error but don't fail the instantiation
             console.error('Failed to send assignment notifications:', notificationError);
         }
+    }
+}
+
+/**
+ * Recalculate due dates for all criteria for an epic
+ * This is useful when the epic's target_launch_date changes
+ */
+export async function recalculateDueDatesForEpic(
+    epicId: string,
+    client?: SupabaseClient
+): Promise<void> {
+    const sb = client ?? supabase;
+
+    // Get epic info (for target_launch_date)
+    const { data: epic, error: epicError } = await sb
+        .from('epic')
+        .select('id, target_launch_date')
+        .eq('id', epicId)
+        .single();
+
+    if (epicError) {
+        console.error('Error fetching epic:', epicError);
+        throw new Error(`Failed to fetch epic: ${epicError.message}`);
+    }
+
+    if (!epic) {
+        throw new Error(`Epic ${epicId} not found`);
+    }
+
+    // Get all criteria statuses for this epic with their criterion info (rating_timing)
+    const { data: criteriaStatuses, error: criteriaError } = await sb
+        .from('epic_criterion_status')
+        .select(`
+            id,
+            criterion_id,
+            criterion:criterion_id (
+                rating_timing
+            )
+        `)
+        .eq('epic_id', epicId);
+
+    if (criteriaError) {
+        console.error('Error fetching criteria statuses:', criteriaError);
+        throw new Error(`Failed to fetch criteria statuses: ${criteriaError.message}`);
+    }
+
+    if (!criteriaStatuses || criteriaStatuses.length === 0) {
+        console.log(`No criteria found for epic ${epicId}, skipping due date recalculation`);
+        return;
+    }
+
+    // Calculate new due dates for all criteria
+    const updates: Array<{ id: string; condition_due_date: string | null }> = [];
+    
+    for (const status of criteriaStatuses) {
+        const criterion = status.criterion as any;
+        const ratingTimingId = criterion?.rating_timing;
+        
+        const dueDate = await calculateDueDateForCriterion(
+            epic.target_launch_date,
+            ratingTimingId,
+            sb
+        );
+        
+        updates.push({
+            id: status.id,
+            condition_due_date: dueDate,
+        });
+    }
+
+    // Batch update all due dates using parallel updates for better performance
+    if (updates.length > 0) {
+        // Update in parallel batches to improve performance
+        const batchSize = 50; // Smaller batches for parallel processing
+        const batches: Array<Array<{ id: string; condition_due_date: string | null }>> = [];
+        
+        for (let i = 0; i < updates.length; i += batchSize) {
+            batches.push(updates.slice(i, i + batchSize));
+        }
+        
+        // Process batches sequentially, but updates within each batch in parallel
+        for (const batch of batches) {
+            const updatePromises = batch.map(async (update) => {
+                const { error: updateError } = await sb
+                    .from('epic_criterion_status')
+                    .update({ condition_due_date: update.condition_due_date })
+                    .eq('id', update.id);
+                
+                if (updateError) {
+                    console.error(`Failed to update due date for criterion status ${update.id}:`, updateError);
+                    return { success: false, id: update.id };
+                }
+                return { success: true, id: update.id };
+            });
+            
+            // Wait for all updates in this batch to complete
+            const results = await Promise.all(updatePromises);
+            const failed = results.filter(r => !r.success).length;
+            if (failed > 0) {
+                console.warn(`Failed to update ${failed} out of ${batch.length} criteria in batch`);
+            }
+        }
+        
+        console.log(`Recalculated due dates for ${updates.length} criteria for epic ${epicId}`);
     }
 }
 

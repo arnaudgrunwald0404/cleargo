@@ -1,0 +1,41 @@
+name: Weekly Digest
+
+on:
+  schedule:
+    # Every Monday at 9:00 AM America/New_York (13:00 UTC, or 14:00 UTC during DST)
+    # Using 13:00 UTC as a safe default (covers both EST and EDT)
+    - cron: '0 13 * * 1'
+  workflow_dispatch: {}
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger weekly digest
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          echo "Triggering weekly digest..."
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BASE_URL/api/jobs/weekly-digest") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then 
+              echo "Digest draft sent successfully to validator"
+              exit 0
+            fi
+            echo "Retry $i..."; sleep 10
+          done
+          echo "Failed after retries" >&2
+          exit 1

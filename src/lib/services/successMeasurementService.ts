@@ -199,6 +199,7 @@ export interface EpicSuccessConfigWithDetails {
   epic_id: string;
   post_launch_owner: string; // Keep the ID for compatibility
   delegated_post_launch_owner_id?: string | null;
+  track_offline?: boolean;
   locked: boolean;
   locked_at: string | null;
   created_at: string;
@@ -444,10 +445,21 @@ export async function createEpicSuccessConfig(
   let postLaunchOwner: string | undefined = data.post_launch_owner;
   if (!postLaunchOwner) {
     const resolvedPmId = await resolveProductManagerUserId(epicId);
-    if (!resolvedPmId) {
-      throw new Error('Post-launch owner is required and could not be resolved from product manager');
+    if (resolvedPmId) {
+      postLaunchOwner = resolvedPmId;
+    } else {
+      // Fallback to epic owner if PM resolution fails
+      const { data: epic, error: epicError } = await supabase
+        .from('epic')
+        .select('owner_id')
+        .eq('id', epicId)
+        .single();
+      
+      if (epicError || !epic?.owner_id) {
+        throw new Error('Post-launch owner is required and could not be resolved. Please set a product manager or epic owner.');
+      }
+      postLaunchOwner = epic.owner_id;
     }
-    postLaunchOwner = resolvedPmId;
   }
   
   const { data: config, error } = await supabase

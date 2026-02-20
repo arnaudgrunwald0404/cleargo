@@ -5,7 +5,7 @@
 
 import { getSlackClient } from './client';
 import { createAdminClient } from '@/lib/supabase/server';
-import type { SlackNotificationPayload, SlackUser } from '@/types/slack';
+import type { SlackNotificationPayload, SlackUser, SlackNotificationType } from '@/types/slack';
 import {
     buildStaleCriterionMessage,
     buildLaunchRiskAlertMessage,
@@ -112,9 +112,43 @@ export async function canReceiveSlackNotification(email: string): Promise<boolea
 }
 
 /**
+ * Check if a notification type is enabled for Slack
+ */
+async function isSlackNotificationTypeEnabled(type: SlackNotificationType): Promise<boolean> {
+    const { getSettings } = await import('@/lib/settings-db');
+    const settings = await getSettings();
+    
+    // Check system flag first
+    if (settings.slack_notifications_enabled === false) {
+        return false;
+    }
+    
+    // Check type-specific flag
+    const flagKey = `slack_${type}` as keyof typeof settings;
+    const flagValue = settings[flagKey];
+    
+    // Default to true if flag is undefined (backward compatibility)
+    return flagValue !== false;
+}
+
+/**
  * Send a notification to Slack
  */
 export async function sendSlackNotification(payload: SlackNotificationPayload): Promise<void> {
+    // Check if this notification type is enabled
+    if (!(await isSlackNotificationTypeEnabled(payload.type))) {
+        await logNotification({
+            user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
+            launch_id: payload.launch_id,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'slack',
+            status: 'pending',
+            error: `Skipped: notification type '${payload.type}' is disabled in Settings`,
+        });
+        return;
+    }
+
     if (payload.recipients && payload.recipients.length >= 2) {
         const valid: SlackUser[] = [];
         for (const r of payload.recipients) {
@@ -269,8 +303,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildGoNoGoDecisionMessage(payload.metadata as any, theme);
                 break;
 
-            case 'leadership_digest':
-                if (!payload.metadata) throw new Error('Missing metadata for leadership_digest');
+            case 'weekly_digest':
+                if (!payload.metadata) throw new Error('Missing metadata for weekly_digest');
                 message = buildLeadershipDigestMessage(payload.metadata as any, theme);
                 break;
 
@@ -323,16 +357,32 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');
-                const groupedNudgeCriteria = {
-                    epic_id: payload.launch_id!,
-                    epic_name: payload.metadata.epic_name,
-                    assignee_id: payload.recipient!.id,
-                    assignee_email: payload.recipient!.email,
-                    assignee_name: payload.recipient!.name,
-                    assignee_slack_handle: payload.recipient!.slack_handle,
-                    criteria: payload.metadata.criteria || [],
-                };
-                message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type, theme);
+                
+                // Check if this is a combined message (new format)
+                if (payload.metadata.nudge_type === 'combined' && payload.metadata.epic_groups) {
+                    message = buildCriteriaNudgeMessage(
+                        {
+                            release_groups: payload.metadata.release_groups,
+                            epic_groups: payload.metadata.epic_groups,
+                            criteria: payload.metadata.criteria || [],
+                            total_criteria_count: payload.metadata.total_criteria_count || 0,
+                        },
+                        'combined',
+                        theme
+                    );
+                } else {
+                    // Original format (backward compatibility)
+                    const groupedNudgeCriteria = {
+                        epic_id: payload.launch_id!,
+                        epic_name: payload.metadata.epic_name,
+                        assignee_id: payload.recipient!.id,
+                        assignee_email: payload.recipient!.email,
+                        assignee_name: payload.recipient!.name,
+                        assignee_slack_handle: payload.recipient!.slack_handle,
+                        criteria: payload.metadata.criteria || [],
+                    };
+                    message = buildCriteriaNudgeMessage(groupedNudgeCriteria as any, payload.metadata.nudge_type, theme);
+                }
                 break;
 
             case 'criterion_comment_or_attachment':
@@ -511,8 +561,37 @@ export async function notifySuperAdminsOfFeedback(payload: {
         const text =
             `:inbox_tray: *New feedback submitted*${typeLabel}${epicPart}${authorPart}\n\n${payload.feedbackText}`;
 
-        await client.postMessage({ channel, text });
+        const response = await client.postMessage({ channel, text });
         console.log('[notifySuperAdminsOfFeedback] Slack message sent to', validSlackIds.length, 'super admin(s), feedbackId:', payload.feedbackId);
+
+        // Log notification for each super admin recipient
+        const notificationMetadata = {
+            feedback_id: payload.feedbackId,
+            feedback_type: payload.feedbackType,
+            epic_id: payload.epicId,
+            epic_name: payload.epicName,
+            author_email: payload.authorEmail,
+            multi_recipient: true,
+            recipient_count: validSlackIds.length,
+        };
+
+        for (const admin of superAdmins) {
+            if (authorEmailLower && admin.email?.toLowerCase() === authorEmailLower) {
+                continue;
+            }
+            if (validSlackIds.includes(admin.slack_handle || '')) {
+                await logNotification({
+                    user_id: admin.id,
+                    launch_id: payload.epicId || undefined,
+                    type: 'feedback_submission',
+                    payload: notificationMetadata,
+                    delivery_channel: 'slack',
+                    status: 'sent',
+                    slack_ts: response.ts,
+                    slack_channel: channel,
+                });
+            }
+        }
     } catch (err: any) {
         console.error('[notifySuperAdminsOfFeedback] Failed:', err?.message ?? err, err?.stack);
     }

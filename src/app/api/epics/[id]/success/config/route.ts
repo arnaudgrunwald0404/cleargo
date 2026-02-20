@@ -139,6 +139,7 @@ export async function POST(
     const config = await createEpicSuccessConfig(epicId, {
       ...(parsed.data.benchmark_id ? { benchmark_id: parsed.data.benchmark_id } : {}),
       ...(parsed.data.post_launch_owner ? { post_launch_owner: parsed.data.post_launch_owner } : {}),
+      ...(parsed.data.track_offline !== undefined ? { track_offline: parsed.data.track_offline } : {}),
     });
 
     // Note: Benchmark-based scorecard generation has been removed

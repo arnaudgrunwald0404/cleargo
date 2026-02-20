@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { Stack, Paper, Select } from '@mantine/core';
+import { Stack, Paper, Select, Alert } from '@mantine/core';
+import { IconInfoCircle } from '@tabler/icons-react';
 import { ScorecardList } from './ScorecardList';
 import { ScorecardDetail } from './ScorecardDetail';
 import { ScorecardTimeSeries } from './ScorecardTimeSeries';
@@ -21,13 +22,29 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPM, setIsPM] = useState(false);
+  const [trackOffline, setTrackOffline] = useState(false);
 
   useEffect(() => {
     if (epicId) {
+      fetchTrackOfflineStatus();
       fetchScorecards();
       checkPermissions();
     }
   }, [epicId]);
+
+  const fetchTrackOfflineStatus = async () => {
+    try {
+      const res = await fetchWithRateLimit(`/api/epics/${epicId}/success/config`, { maxRetries: 1 });
+      if (res.ok) {
+        const config = await res.json();
+        if (config && typeof config.track_offline === 'boolean') {
+          setTrackOffline(config.track_offline);
+        }
+      }
+    } catch (error) {
+      // Silently fail - config might not exist yet
+    }
+  };
 
   useEffect(() => {
     if (selectedDate && epicId) {
@@ -103,6 +120,14 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
         <PurpleLoader />
       </div>
+    );
+  }
+
+  if (trackOffline) {
+    return (
+      <Alert icon={<IconInfoCircle size={16} />} title="Offline Tracking" color="blue">
+        This epic is configured to track metrics offline. Scorecards are not available for epics with offline tracking enabled.
+      </Alert>
     );
   }
 

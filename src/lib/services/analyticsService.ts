@@ -83,7 +83,7 @@ function getGADate(epic: { scheduled_ga_dev_date?: string | null; target_launch_
 }
 
 /**
- * Metric 4: % Launches with Success Plan Completed On Time
+ * % Launches with Success Plan Completed On Time
  * 
  * Success plan is considered complete when:
  * - epic_success_configs.locked = true
@@ -313,7 +313,7 @@ export interface CriteriaOnTimeStats {
 }
 
 /**
- * Metric 6: Criteria On-Time Rate (Top Late Criteria)
+ * Criteria On-Time Rate (Top Late Criteria)
  * 
  * For each criterion name, calculate:
  * - Total instances
@@ -511,7 +511,7 @@ function getRetroDueDateOffset(tier: Tier): number {
 }
 
 /**
- * Metric 5: % Launches with Retro Completed On Time
+ * % Launches with Retro Completed On Time
  * 
  * Retro is considered complete on time when:
  * - epic_retros.status = 'SUBMITTED'
@@ -724,7 +724,7 @@ export async function getRetroCompletionRateTrends(
 }
 
 /**
- * Metric 3: Launch Hygiene Score (0-100)
+ * Launch Hygiene Score (0-100)
  * 
  * Formula:
  * - Criteria completeness: 50% weight

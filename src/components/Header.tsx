@@ -4,13 +4,14 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMediaQuery } from '@mantine/hooks';
-import { Menu, Burger, Box } from '@mantine/core';
+import { Menu, Burger, Box, Badge } from '@mantine/core';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
+import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
 
@@ -29,6 +30,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
     const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
     const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
+    const [unreadCommentCount, setUnreadCommentCount] = useState(0);
 
     // Fetch user roles and check settings access
     useEffect(() => {
@@ -79,10 +81,11 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     }
 
     // Primary navigation tabs
-    const primaryTabs = [
+    const primaryTabs: Array<{ link: string; label: string; badge?: number }> = [
         { link: '/', label: 'Home' },
         { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
+        { link: '/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: '/feedback', label: 'Feedback' },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
@@ -193,7 +196,14 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                                     backgroundColor: active ? 'var(--color-gray-100)' : undefined
                                                 }}
                                             >
-                                                {tab.label}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {tab.label}
+                                                    {tab.badge !== undefined && tab.badge > 0 && (
+                                                        <Badge size="xs" color="blue" variant="filled">
+                                                            {tab.badge > 99 ? '99+' : tab.badge}
+                                                        </Badge>
+                                                    )}
+                                                </div>
                                             </Menu.Item>
                                         );
                                     })}
@@ -220,7 +230,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                                 transition: 'var(--transition-base, 0.2s ease)',
                                                 height: 'fit-content',
                                                 display: 'flex',
-                                                alignItems: 'center'
+                                                alignItems: 'center',
+                                                gap: '8px'
                                             }}
                                             onMouseEnter={(e) => {
                                                 if (!active) {
@@ -236,6 +247,11 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                             }}
                                         >
                                             {tab.label}
+                                            {tab.badge !== undefined && tab.badge > 0 && (
+                                                <Badge size="xs" color="blue" variant="filled" style={{ minWidth: '20px' }}>
+                                                    {tab.badge > 99 ? '99+' : tab.badge}
+                                                </Badge>
+                                            )}
                                         </Link>
                                     );
                                 })}

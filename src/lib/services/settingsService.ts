@@ -142,7 +142,28 @@ export async function getAhaFields() {
   const res = await fetchWithRateLimit("/api/settings/aha-fields", {
     maxRetries: 1,
   });
-  if (!res.ok) throw new Error("Failed to fetch AHA fields");
+  if (!res.ok) {
+    // Handle non-JSON error responses
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        const errorData = await res.json();
+        throw new Error(errorData.error || "Failed to fetch AHA fields");
+      } catch (e) {
+        if (e instanceof Error && e.message.includes("Failed to fetch")) {
+          throw e;
+        }
+        throw new Error("Failed to fetch AHA fields");
+      }
+    } else {
+      const statusText = res.status === 504 
+        ? "Request timed out"
+        : res.status === 502
+        ? "Bad gateway"
+        : `Server error (${res.status})`;
+      throw new Error(`${statusText}. Failed to fetch AHA fields`);
+    }
+  }
   return res.json();
 }
 
@@ -153,8 +174,26 @@ export async function refreshAhaFieldsFromAha() {
     credentials: "include",
   });
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || "Failed to refresh field list from Aha");
+    // Handle non-JSON error responses (e.g., HTML error pages from Netlify timeouts)
+    let errorData: any = {};
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        errorData = await res.json();
+      } catch (e) {
+        // If JSON parsing fails, use status-based error message
+        errorData = {};
+      }
+    } else {
+      // For HTML or other non-JSON responses
+      const statusText = res.status === 504 
+        ? "Request timed out. The refresh operation may have taken too long."
+        : res.status === 502
+        ? "Bad gateway. The server may be temporarily unavailable."
+        : `Server error (${res.status})`;
+      throw new Error(statusText);
+    }
+    throw new Error(errorData.error || "Failed to refresh field list from Aha");
   }
   return res.json();
 }
@@ -162,7 +201,25 @@ export async function refreshAhaFieldsFromAha() {
 export async function syncAhaFields() {
   const res = await fetch("/api/settings/aha-fields/sync", { method: "POST" });
   if (!res.ok) {
-    const errorData = await res.json();
+    // Handle non-JSON error responses (e.g., HTML error pages from Netlify timeouts)
+    let errorData: any = {};
+    const contentType = res.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+      try {
+        errorData = await res.json();
+      } catch (e) {
+        // If JSON parsing fails, use status-based error message
+        errorData = {};
+      }
+    } else {
+      // For HTML or other non-JSON responses (like 504 timeout pages)
+      const statusText = res.status === 504 
+        ? "Request timed out. The sync operation may have taken too long."
+        : res.status === 502
+        ? "Bad gateway. The server may be temporarily unavailable."
+        : `Server error (${res.status})`;
+      throw new Error(statusText);
+    }
     throw new Error(errorData.error || "Failed to synchronize fields");
   }
   return res.json();

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Header } from './Header';
+import { HeaderSkeleton } from './HeaderSkeleton';
 import { createClient } from '@/lib/supabase/client';
 import type { Role } from '@/lib/roles-constants';
 
@@ -17,11 +18,13 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
   const [email, setEmail] = useState<string | null>(serverEmail || null);
   const [role, setRole] = useState<Role | null>(serverRole || null);
   const [imageUrl, setImageUrl] = useState<string | null>(serverImageUrl || null);
-  // Initialize shouldShow based on server data - if server provided email, user is likely authenticated
-  const [shouldShow, setShouldShow] = useState(!!serverEmail);
-  const [isLoading, setIsLoading] = useState(true);
-
   const isPublicPage = pathname === '/login' || pathname?.includes('/setup-password');
+  
+  // CRITICAL: Resolve navbar FIRST - if server provided data, show header immediately (no loading state)
+  // This ensures navbar always resolves before other skeleton content
+  const [shouldShow, setShouldShow] = useState(!!serverEmail);
+  // Only show loading skeleton if we don't have server data - navbar should resolve immediately when server data exists
+  const [isLoading, setIsLoading] = useState(!serverEmail && !isPublicPage);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -30,12 +33,17 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
           setIsLoading(false);
           return;
         }
-        // First check if server provided email (from layout.tsx)
+        
+        // PRIORITY: If server provided email, resolve navbar immediately (no async delay)
+        // This ensures navbar resolves FIRST before any other skeleton content
         if (serverEmail) {
           setShouldShow(true);
           setEmail(serverEmail);
           if (serverRole) setRole(serverRole);
           if (serverImageUrl) setImageUrl(serverImageUrl);
+          // Resolve navbar immediately - don't wait for additional checks
+          setIsLoading(false);
+          return;
         }
         
         // Try Supabase auth
@@ -110,7 +118,8 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
   
   // Update body padding when header visibility changes
   useEffect(() => {
-    const shouldShowHeader = shouldShow && !isLoading && !isPublicPage;
+    // Always add padding when showing header (either skeleton or actual header)
+    const shouldShowHeader = (!isPublicPage && (shouldShow || isLoading));
     if (shouldShowHeader) {
       document.body.style.paddingTop = '64px';
     } else {
@@ -128,9 +137,16 @@ export function HeaderWrapper({ serverEmail, serverRole, serverImageUrl }: Heade
     return null;
   }
 
-  // Don't render anything while loading to avoid flash
-  if (isLoading) {
-    return null;
+  // CRITICAL: Navbar resolution priority - resolve navbar FIRST before other skeleton content
+  // If we have server data, show header immediately (navbar resolves first)
+  // Only show skeleton if we truly don't have server data yet
+  if (isLoading && !serverEmail) {
+    return <HeaderSkeleton />;
+  }
+
+  // If we have server data, show header immediately (navbar resolves first)
+  if (serverEmail && email) {
+    return <Header email={email} role={role} imageUrl={imageUrl} />;
   }
 
   // Only show header if user is authenticated

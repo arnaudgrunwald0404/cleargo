@@ -46,7 +46,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     if (statusError) throw statusError;
     if (!statuses || statuses.length === 0) {
         // No applicable criteria → mark as not evaluated to avoid misleading GO/100%
-        await supabase
+        const { error: noCriteriaError } = await supabase
             .from('epic')
             .update({
                 readiness_score: null,
@@ -56,6 +56,11 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
                 updated_at: new Date().toISOString()
             })
             .eq('id', epicId);
+        
+        if (noCriteriaError) {
+            console.error(`[recomputeEpicReadiness] Failed to update epic ${epicId} (no criteria):`, noCriteriaError);
+            throw new Error(`Failed to update epic readiness: ${noCriteriaError.message}`);
+        }
         return;
     }
 
@@ -98,6 +103,16 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     const scoringResult = computeLaunchReadiness(criteriaInputs);
 
     const readinessScore = scoringResult.readiness;
+    
+    // Log calculation details for debugging
+    console.log(`[recomputeEpicReadiness] Calculated readiness for epic ${epicId}:`, {
+        score: readinessScore,
+        scorePercent: Math.round(readinessScore * 100),
+        verdict: scoringResult.verdict,
+        categoryCount: scoringResult.categoryScores.length,
+        criteriaCount: criteriaInputs.length
+    });
+    
     let readinessStatus: string;
 
     // Map verdict to database status format
@@ -137,16 +152,85 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
         }
     }
 
-    // 5. Update Epic
-    await supabase
-        .from('epic')
-        .update({
-            readiness_score: readinessScore,
-            readiness_status: readinessStatus,
-            risk_level: riskLevel,
-            updated_at: new Date().toISOString()
-        })
-        .eq('id', epicId);
+    // 5. Update Epic with retry logic for transient failures
+    const maxRetries = 3;
+    let updatedEpic: any = null;
+    let lastError: any = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        const { data, error: updateError } = await supabase
+            .from('epic')
+            .update({
+                readiness_score: readinessScore,
+                readiness_status: readinessStatus,
+                risk_level: riskLevel,
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', epicId)
+            .select('readiness_score, readiness_status, risk_level')
+            .single();
+
+        if (updateError) {
+            lastError = updateError;
+            console.error(`[recomputeEpicReadiness] Update attempt ${attempt}/${maxRetries} failed for epic ${epicId}:`, updateError);
+            
+            // Retry on transient errors (network issues, connection timeouts)
+            if (attempt < maxRetries && (
+                updateError.message?.includes('timeout') ||
+                updateError.message?.includes('network') ||
+                updateError.code === 'PGRST116' // PostgREST connection error
+            )) {
+                // Wait before retry (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+                continue;
+            }
+            
+            // Non-retryable error or max retries reached
+            throw new Error(`Failed to update epic readiness after ${attempt} attempt(s): ${updateError.message}`);
+        }
+
+        if (!data) {
+            lastError = new Error('Update returned no data');
+            console.error(`[recomputeEpicReadiness] Update attempt ${attempt}/${maxRetries} returned no data for epic ${epicId}`);
+            
+            if (attempt < maxRetries) {
+                await new Promise(resolve => setTimeout(resolve, 100 * attempt));
+                continue;
+            }
+            
+            throw new Error(`Failed to update epic readiness: Update returned no data after ${attempt} attempt(s)`);
+        }
+
+        updatedEpic = data;
+        break; // Success
+    }
+
+    if (!updatedEpic) {
+        throw lastError || new Error(`Failed to update epic readiness: Unknown error`);
+    }
+
+    // Validate the stored score matches what we calculated (within rounding tolerance)
+    const storedScore = updatedEpic.readiness_score;
+    const scoreDiff = Math.abs((storedScore ?? 0) - readinessScore);
+    if (scoreDiff > 0.001) {
+        console.error(`[recomputeEpicReadiness] ⚠️ Score mismatch detected for epic ${epicId}:`, {
+            calculated: readinessScore,
+            calculatedPercent: Math.round(readinessScore * 100),
+            stored: storedScore,
+            storedPercent: storedScore !== null && storedScore !== undefined ? Math.round(storedScore * 100) : null,
+            difference: scoreDiff,
+            differencePercent: Math.round(scoreDiff * 100)
+        });
+        // Don't throw - the update succeeded, but log the discrepancy for investigation
+        // This indicates a potential bug or race condition
+    } else {
+        console.log(`[recomputeEpicReadiness] ✅ Successfully updated epic ${epicId}:`, {
+            score: readinessScore,
+            scorePercent: Math.round(readinessScore * 100),
+            status: readinessStatus,
+            riskLevel: riskLevel
+        });
+    }
 
     // Helper function to get epic owner recipient (if not excluded)
     const getOwnerRecipient = async (ownerEmail: string | null | undefined) => {
@@ -202,7 +286,9 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
             await sendEmailNotification({
                 type: 'launch_status_change',
                 recipientEmail: epic.owner_email,
-                metadata
+                metadata,
+                userId: ownerRecipient.id,
+                epicId: epic.id,
             });
         }
     }
@@ -233,7 +319,9 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
             await sendEmailNotification({
                 type: 'launch_risk_alert',
                 recipientEmail: epic.owner_email,
-                metadata
+                metadata,
+                userId: ownerRecipient.id,
+                epicId: epic.id,
             });
         }
     }
