@@ -308,6 +308,11 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                 }
                             }
                         }
+                        // No table row matched - fallback: keyword may appear in non-table format (e.g. section headers)
+                        const descriptionText = doc.body?.textContent?.trim().toLowerCase() || htmlContent.toLowerCase();
+                        if (descriptionText.includes(keyword)) {
+                            return true;
+                        }
                     } catch (e) {
                         // Fallback to simple text search if parsing fails
                         const keyword = source.value.toLowerCase();

@@ -4,6 +4,10 @@ import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
+import { getEpic as getAhaEpic } from '@/lib/aha/client';
+import { mapEpicToEpic } from '@/lib/aha/mapping';
+import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser } from '@/lib/db/epics';
+import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,14 +17,34 @@ export async function GET(
 ) {
     try {
         const { id } = await params;
-        const epic = await getEpic(id);
+        let epic = await getEpic(id);
         if (!epic) {
             return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
         }
+
+        if (epic.aha_id) {
+            try {
+                const settings = await getSettings();
+                const fieldsToLoad = settings.aha_fields_to_load || [];
+                const ahaEpic = await getAhaEpic(epic.aha_id);
+                const epicData = await mapEpicToEpic(ahaEpic, fieldsToLoad);
+                let ownerId: string | null = null;
+                if (epicData.owner_email) {
+                    const user = await getUserByEmail(epicData.owner_email);
+                    ownerId = user ? user.id : await getFallbackProductOpsUser();
+                } else {
+                    ownerId = await getFallbackProductOpsUser();
+                }
+                await upsertEpicFromAha(epicData, ownerId);
+                epic = await getEpic(id) ?? epic;
+            } catch (syncError: any) {
+                console.warn(`Aha sync for epic ${id} (aha_id: ${epic.aha_id}):`, syncError?.message ?? syncError);
+            }
+        }
+
         return NextResponse.json(epic);
     } catch (error: any) {
         console.error('Error fetching epic:', error);
-        // Check if it's a "not found" error from Supabase
         if (error?.code === 'PGRST116' || error?.message?.includes('No rows')) {
             return NextResponse.json({ error: 'Epic not found' }, { status: 404 });
         }

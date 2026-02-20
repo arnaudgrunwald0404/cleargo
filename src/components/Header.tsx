@@ -72,6 +72,24 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     }, []);
 
     useEffect(() => {
+        const fetchUnreadCount = async () => {
+            try {
+                const res = await fetchWithRateLimit('/api/comments/all?myEpicsOnly=true&unread=true', { credentials: 'include', maxRetries: 1 });
+                if (res.ok) {
+                    const data = await res.json();
+                    setUnreadCommentCount(data.unread_count ?? 0);
+                }
+            } catch {
+                // silently ignore
+            }
+        };
+
+        fetchUnreadCount();
+        const interval = setInterval(fetchUnreadCount, 60_000);
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
         setMenuOpen(false);
     }, [pathname]);
 
@@ -199,7 +217,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                     {tab.label}
                                                     {tab.badge !== undefined && tab.badge > 0 && (
-                                                        <Badge size="xs" color="blue" variant="filled">
+                                                        <Badge size="xs" variant="filled" style={{ backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
                                                             {tab.badge > 99 ? '99+' : tab.badge}
                                                         </Badge>
                                                     )}
@@ -248,9 +266,9 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                         >
                                             {tab.label}
                                             {tab.badge !== undefined && tab.badge > 0 && (
-                                                <Badge size="xs" color="blue" variant="filled" style={{ minWidth: '20px' }}>
-                                                    {tab.badge > 99 ? '99+' : tab.badge}
-                                                </Badge>
+                                <Badge size="xs" variant="filled" style={{ minWidth: '20px', backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
+                                                {tab.badge > 99 ? '99+' : tab.badge}
+                                            </Badge>
                                             )}
                                         </Link>
                                     );
