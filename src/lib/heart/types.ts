@@ -403,10 +403,20 @@ export interface HeartAgentRecommendation {
 export interface MetricContext {
   /** Human-readable explanation of what the metric measures and its denominator */
   description: string;
-  /** Event names being tracked (human-readable) */
+  /** Event names or IDs being tracked (fallback when trackingItems not set) */
   trackingEvents: string[];
+  /** Resolved tracking targets: id + display name + optional Pendo entity type */
+  trackingItems?: { id: string; name: string; type?: 'Page' | 'Feature' | 'Track event' }[];
+  /** Human-readable measurement type (e.g. "Events per user", "Unique users %") */
+  measurementTypeLabel?: string | null;
   /** Segment name if applicable */
   segmentName?: string | null;
+  /** When the summary is for a different window than the chart (e.g. "Current period: last 31 days") */
+  descriptionScope?: string | null;
+  /** When true, visitor/count came from app-wide fallback (e.g. no scoped data) */
+  usedAppWideFallback?: boolean;
+  /** When true, Task Success is computed as second-event count / first-event count where first is a Page (page views). This is page→action rate, not a task start→complete funnel. */
+  isPageToActionRate?: boolean;
   /** Raw numbers for transparency */
   raw?: {
     totalEvents?: number;
@@ -450,6 +460,8 @@ export interface EpicHeartDashboard {
   launchDate: string | null;
   /** Map of Pendo event name or feature id -> display name (for showing names instead of IDs in UI) */
   pendoEventIdToName?: Record<string, string>;
+  /** When set, dashboard is built from stored snapshots only (as-of date view) */
+  asOfDate?: string | null;
 }
 
 export interface HeartDashboardSummary {
@@ -478,6 +490,21 @@ export interface DefaultMilestone {
   days: number;
   target: number;
   label: string;
+}
+
+/** Release-centric view: baseline (pre-release) and per-month metrics from stored snapshots */
+export interface HeartReleaseViewMonth {
+  monthIndex: number;
+  label: string;
+  startDate: string;
+  endDate: string;
+  metrics: Partial<Record<HeartCategoryId, number | null>>;
+}
+
+export interface EpicHeartReleaseView {
+  releaseDate: string | null;
+  baseline: Partial<Record<HeartCategoryId, number | null>>;
+  months: HeartReleaseViewMonth[];
 }
 
 export interface HeartCategoryDefault {

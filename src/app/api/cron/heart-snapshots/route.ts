@@ -1,10 +1,10 @@
 /**
  * HEART Metrics Daily Snapshot Cron Job
- * 
- * This endpoint should be called daily by a scheduler (e.g., Vercel Cron, GitHub Actions)
- * to create historical snapshots for trend tracking.
- * 
- * Security: Requires CRON_SECRET environment variable to match
+ *
+ * Writes one snapshot per metric per epic for *yesterday* (closed day) so we
+ * accumulate immutable history. Run daily e.g. 01:00 UTC.
+ *
+ * Security: Requires CRON_SECRET (Bearer token in Authorization header).
  */
 
 import { NextRequest, NextResponse } from 'next/server';

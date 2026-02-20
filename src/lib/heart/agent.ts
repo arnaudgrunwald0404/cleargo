@@ -192,12 +192,24 @@ ${segmentsText}
 Recommend HEART metrics for this feature. For each dimension, select the most appropriate Pendo event(s) and/or feature(s) and explain your reasoning.
 
 **eventIds can contain ANY of:**
-1. An exact **event name** from "Available Pendo Events" (e.g. \`User.Login\`), OR
-2. A **feature id** from "Available Pendo Features" (e.g. \`Avsy65YvGwYJviSfi1MdwdxDgp4\`), OR
-3. A **page id** from "Available Pendo Pages" (e.g. \`BbvoQ1eYtS49wzhdbTn2rPnS3ac\`).
+1. An exact **event name** from "Available Pendo Events" (Track events — custom pendo.track() calls), OR
+2. A **feature id** from "Available Pendo Features" (tagged UI elements), OR
+3. A **page id** from "Available Pendo Pages" (product screens/URLs).
 
-For page views and navigation, prefer **Pages** (they track visits to product screens). For UI clicks and interactions, use **Features**. For custom instrumented actions, use **Events**.
+For page views and navigation, prefer **Pages**. For UI clicks and interactions, use **Features**. For custom instrumented actions (e.g. workflow steps), use **Events** (Track events).
 Check the "Entities most related to this feature" section first — these were pre-matched using smart keyword and abbreviation matching.
+
+## Task Success: Start vs Complete and Track events vs Features
+
+For **Task Success** (completion_rate or success_rate with two eventIds):
+- **Order matters**: eventIds[0] = "start", eventIds[1] = "complete". The dashboard shows "X completions out of Y starts"; if complete > start, it will warn the user to check config or use Track events.
+- **Do NOT use a Page as eventIds[0]** for Task Success. A Page represents page views; using it as "start" makes the ratio "second-event count / page views" (e.g. link clicks per page view). The dashboard will label that as "Page→action rate," not a task completion funnel. For true task success, the first event must be a **Track event** or **Feature** that means "user started the task," not a Page.
+- **Prefer two Track events** when the product has a clear Started → Completed pair (e.g. \`App.Recruiting.BulkOnboarding.Started\` and \`App.Recruiting.BulkOnboarding.Completed\`). That gives a proper funnel (completions ≤ starts). Using two **Features** (e.g. two different button clicks) often yields more "completions" than "starts" because users may hit the second action without the first.
+- If you recommend two items for Task Success, prefer: (1) two Track events that form a start/complete pair, or (2) one event/feature for "start" and one for "complete" in that order — and **never** use a Page id as eventIds[0]. Avoid recommending two unrelated Features just because they are high-usage.
+
+## Happiness and Frustration
+
+- **Happiness** uses frustration signals (rage clicks, dead clicks, etc.) for the score; survey (NPS/satisfaction) is optional. Recommend frustrationEventIds that reflect user struggle (errors, retries, setup, etc.). If no page-specific frustration data exists, the dashboard may fall back to app-wide visitor counts and show a note.
 
 ## CRITICAL RULES - READ CAREFULLY
 
@@ -220,6 +232,7 @@ Skip a category if ANY of these are true:
 - The description is empty/sparse and you're just guessing (and no user direction was provided)
 - The only matching events are generic (like "PageView", "Login", "Meeting") that aren't specific to this feature
 - You're tempted to pick high-usage events that aren't related just to fill the category
+- **For Task Success only**: The only plausible pair would put a **Page** as the first event (eventIds[0]). That would show page→action rate (e.g. link clicks per page view), not task completion — skip Task Success unless you can recommend two Track events or at least a non-Page "start."
 
 IMPORTANT: Each value in eventIds must EXACTLY match an event name from "Available Pendo Events", a feature id from "Available Pendo Features", or a page id from "Available Pendo Pages".
 

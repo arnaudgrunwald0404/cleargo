@@ -16,7 +16,7 @@ const WINDOW_OPTIONS: { value: HeartTrackerWindow; label: string }[] = [
   { value: 'Max', label: 'Max' },
 ];
 
-function getWindowBounds(window: HeartTrackerWindow): { start: Date; end: Date } {
+export function getWindowBounds(window: HeartTrackerWindow): { start: Date; end: Date } {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   const start = new Date(end);
@@ -49,7 +49,7 @@ function getWindowBounds(window: HeartTrackerWindow): { start: Date; end: Date }
   return { start, end };
 }
 
-function toDateKey(d: Date): string {
+export function toDateKey(d: Date): string {
   return d.toISOString().split('T')[0];
 }
 
@@ -160,6 +160,10 @@ interface HeartMetricTrackerProps {
   showFill?: boolean;
   /** When true, chart stretches to full width of container (no fixed 400px) */
   fullWidth?: boolean;
+  /** Controlled chart window (e.g. 1M); when set, cards show period average for this window */
+  window?: HeartTrackerWindow;
+  /** Called when user changes the period; use with window to sync cards with chart */
+  onWindowChange?: (window: HeartTrackerWindow) => void;
 }
 
 export function HeartMetricTracker({
@@ -168,13 +172,17 @@ export function HeartMetricTracker({
   height = 200,
   showFill = true,
   fullWidth = false,
+  window: controlledWindow,
+  onWindowChange,
 }: HeartMetricTrackerProps) {
-  const [window, setWindow] = useState<HeartTrackerWindow>('1M');
+  const [internalWindow, setInternalWindow] = useState<HeartTrackerWindow>('1M');
+  const window = controlledWindow ?? internalWindow;
+  const setWindow = onWindowChange ?? setInternalWindow;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
 
   const { category, metric, latestSnapshot, history = [], historyUnit, metricContext } = item;
 
-  const { points, windowStart, windowEnd, releaseIndex, valueMin, valueMax, yTickValues, displayUnit } = useMemo(() => {
+  const { points, windowStart, windowEnd, displayWindowEnd, releaseIndex, valueMin, valueMax, yTickValues, displayUnit } = useMemo(() => {
     const { start, end } = getWindowBounds(window);
     const startKey = toDateKey(start);
     const endKey = toDateKey(end);
@@ -194,7 +202,20 @@ export function HeartMetricTracker({
     }
 
     const sortedDates = Array.from(pointMap.keys()).sort();
-    const points = sortedDates.map((date) => ({ date, value: pointMap.get(date)! }));
+    let points = sortedDates.map((date) => ({ date, value: pointMap.get(date)! }));
+
+    // Adoption: show period-level adoption (matches card), not daily %, so chart is ~3% not 90s
+    const raw = metricContext?.raw;
+    if (
+      metric?.measurement_type === 'unique_users_percentage' &&
+      typeof raw?.uniqueVisitors === 'number' &&
+      typeof raw?.totalAppVisitors === 'number' &&
+      raw.totalAppVisitors > 0 &&
+      points.length > 0
+    ) {
+      const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
+      points = points.map((p) => ({ date: p.date, value: periodPct }));
+    }
     const values = points.map((p) => p.value);
     const dataMin = values.length > 0 ? Math.min(...values) : 0;
     const dataMax = values.length > 0 ? Math.max(...values) : 1;
@@ -240,17 +261,22 @@ export function HeartMetricTracker({
       yTickValues = nice.ticks;
     }
 
+    // Cap right edge to last data date when data doesn't extend to window end (avoids empty gap)
+    const lastDataKey = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1]! : null;
+    const displayWindowEnd = lastDataKey && lastDataKey < endKey ? lastDataKey : endKey;
+
     return {
       points,
       windowStart: startKey,
       windowEnd: endKey,
+      displayWindowEnd,
       releaseIndex,
       valueMin,
       valueMax,
       yTickValues,
       displayUnit: unit,
     };
-  }, [window, history, latestSnapshot, releaseDate, metric?.measurement_type, historyUnit]);
+  }, [window, history, latestSnapshot, releaseDate, metric?.measurement_type, historyUnit, metricContext?.raw]);
 
   if (points.length < 1) {
     return (
@@ -279,9 +305,9 @@ export function HeartMetricTracker({
   const innerW = chartWidth - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
   const toTime = (date: string) => new Date(date).getTime();
-  // X-axis spans the full selected window (e.g. 1M = 30 days), not just data points
+  // X-axis ends at last data date when data doesn't reach window end (avoids gap before Release)
   const minTime = toTime(windowStart);
-  const maxTime = toTime(windowEnd);
+  const maxTime = toTime(displayWindowEnd);
   const timeRange = Math.max(maxTime - minTime, 86400000);
 
   const xForDate = (date: string) =>
@@ -320,21 +346,29 @@ export function HeartMetricTracker({
     releaseDate && minTime <= maxTime
       ? (() => {
           const rt = new Date(releaseDate).getTime();
-          if (rt < minTime || rt > maxTime) return null;
-          return padding.left + ((rt - minTime) / timeRange) * innerW;
+          if (rt < minTime) return null;
+          // If release is after display end, clamp to right edge so line isn't in empty gap
+          const clampedT = rt > maxTime ? maxTime : rt;
+          return padding.left + ((clampedT - minTime) / timeRange) * innerW;
         })()
       : null;
 
+  // Bridge gap at release: extend pre to release line, start post from release line (no empty space)
+  if (releaseX != null && pre.length > 0 && post.length > 0) {
+    pre.push({ x: releaseX, y: pre[pre.length - 1]!.y });
+    post.unshift({ x: releaseX, y: post[0]!.y });
+  }
+
   const isPctAxis = displayUnit === '%';
 
-  // X-axis labels: window start, middle, end (so user sees full range, e.g. 30 days for 1M)
+  // X-axis labels: window start, middle, display end (capped to last data to avoid gap)
   const xAxisLabels = [
     { key: windowStart, x: padding.left },
-    { key: windowEnd, x: chartWidth - padding.right },
+    { key: displayWindowEnd, x: chartWidth - padding.right },
   ];
-  const midKey = windowStart < windowEnd ? (() => {
+  const midKey = windowStart < displayWindowEnd ? (() => {
     const start = new Date(windowStart).getTime();
-    const end = new Date(windowEnd).getTime();
+    const end = new Date(displayWindowEnd).getTime();
     const mid = new Date((start + end) / 2);
     return toDateKey(mid);
   })() : windowStart;
@@ -346,9 +380,22 @@ export function HeartMetricTracker({
   return (
     <Stack gap="xs">
       <Group justify="space-between" wrap="nowrap">
-        <Text size="xs" c="dimmed">
-          {category.name}{historyUnit === 'frustration' ? ' · Frustration Signals' : historyUnit === 'completions' ? ' · Completions' : ''} · {window}
-        </Text>
+        <Stack gap={0}>
+          <Text size="xs" c="dimmed">
+            {category.name}{historyUnit === 'frustration' ? ' · Frustration Signals' : historyUnit === 'completions' ? ' · Completions' : ''} · {window}
+          </Text>
+          {metric?.measurement_type === 'unique_users_percentage' && (
+            <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>Period-level adoption % (one value for the whole period — flat line matches card)</Text>
+          )}
+          {(metric?.measurement_type === 'return_rate_7_days' || metric?.measurement_type === 'return_rate_14_days' || metric?.measurement_type === 'return_rate_30_days') && (
+            <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>
+              Each point = return rate as of that day (rolling window). 0% = no baseline usage in the first period, so rate could not be computed — not “nobody returned”.
+            </Text>
+          )}
+          {(category.id === 'happiness' || metric?.measurement_type === 'happiness_composite_score') && (
+            <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>Chart: frustration signals. Card: Happiness = inverse (0 frustration = 100).</Text>
+          )}
+        </Stack>
         <SegmentedControl
           size="xs"
           data={WINDOW_OPTIONS}
@@ -356,24 +403,6 @@ export function HeartMetricTracker({
           onChange={(v) => setWindow(v as HeartTrackerWindow)}
         />
       </Group>
-      {metricContext && (
-        <Stack gap={2}>
-          <Text size="xs" c="dimmed" style={{ lineHeight: 1.3 }}>
-            {metricContext.description}
-          </Text>
-          {metricContext.trackingEvents.length > 0 && (
-            <Text size="xs" c="dimmed" style={{ opacity: 0.7 }}>
-              Tracking: {metricContext.trackingEvents.join(', ')}
-              {metricContext.segmentName && ` · Segment: ${metricContext.segmentName}`}
-            </Text>
-          )}
-          {metricContext.segmentName && metricContext.trackingEvents.length === 0 && (
-            <Text size="xs" c="dimmed" style={{ opacity: 0.7 }}>
-              Segment: {metricContext.segmentName}
-            </Text>
-          )}
-        </Stack>
-      )}
 
       <svg
         width="100%"
@@ -436,7 +465,7 @@ export function HeartMetricTracker({
         {/* X axis: window start, middle, end */}
         {xAxisLabels.map(({ key, x: xx }) => {
           const date = new Date(key);
-          const isEnd = key === windowEnd;
+          const isEnd = key === displayWindowEnd;
           return (
             <g key={key}>
               <text
@@ -597,13 +626,64 @@ export function HeartMetricTracker({
       <Group gap="xs" wrap="nowrap">
         <Group gap={4}>
           <span style={{ width: 10, height: 3, backgroundColor: 'var(--mantine-color-blue-5)', display: 'inline-block' }} />
-          <Text size="xs" c="dimmed">Pre-release (then)</Text>
+          <Text size="xs" c="dimmed">Pre-release</Text>
         </Group>
         <Group gap={4}>
           <span style={{ width: 10, height: 3, backgroundColor: 'var(--mantine-color-green-6)', display: 'inline-block' }} />
-          <Text size="xs" c="dimmed">Post-release (now)</Text>
+          <Text size="xs" c="dimmed">Post-release</Text>
         </Group>
       </Group>
+
+      {metricContext && (
+        <Stack gap={6} mt="sm" p="sm" style={{ backgroundColor: 'var(--mantine-color-gray-0)', borderRadius: 8, border: '1px solid var(--mantine-color-default-border)' }}>
+          <Text size="xs" fw={600} c="dimmed">Metric details</Text>
+          <Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
+            {metricContext.description}
+          </Text>
+          {metric?.measurement_type === 'unique_users_percentage' && (
+            <Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
+              Chart and card both show <strong>period-level</strong> adoption % (unique visitors ÷ total visitors in the period). The line is flat because we use one value for the whole period so the chart matches the card.
+            </Text>
+          )}
+          {(metric?.measurement_type === 'return_rate_7_days' || metric?.measurement_type === 'return_rate_14_days' || metric?.measurement_type === 'return_rate_30_days') && (
+            <Text size="xs" c="dimmed" style={{ lineHeight: 1.4 }}>
+              Chart: each point is the return rate <strong>as of that day</strong> (rolling window). Before release, 0% usually means there was no (or negligible) usage in the <strong>first</strong> 30-day window, so the rate could not be computed — it does not mean “nobody returned.”
+            </Text>
+          )}
+          {metricContext.isPageToActionRate && (
+            <Text size="xs" c="orange.7" style={{ lineHeight: 1.4 }}>
+              First event is a <strong>Page</strong> (page views), so this ratio is <strong>page→action rate</strong> (e.g. link clicks per page view), not a task start→complete funnel. For true task completion rate, use two <strong>Track events</strong> in Edit Metrics (e.g. Started → Completed).
+            </Text>
+          )}
+          {metricContext.usedAppWideFallback && (
+            <Text size="xs" c="orange.7">
+              Visitor count is app-wide (no data on selected pages).
+            </Text>
+          )}
+          {metricContext.measurementTypeLabel && (
+            <Text size="xs" c="dimmed">
+              <Text span fw={500}>Measurement type:</Text> {metricContext.measurementTypeLabel}
+            </Text>
+          )}
+          {((metricContext.trackingItems?.length ?? 0) > 0 || metricContext.trackingEvents.length > 0) && (
+            <Text size="xs" c="dimmed">
+              <Text span fw={500}>Tracking:</Text>{' '}
+              {(metricContext.trackingItems?.length ?? 0) > 0
+                ? metricContext.trackingItems!.map(({ id, name, type }) => {
+                    const typeLabel = type ? ` (${type})` : (name !== id ? ` (${id})` : '');
+                    return `${name}${typeLabel}`;
+                  }).join(', ')
+                : metricContext.trackingEvents.join(', ')}
+            </Text>
+          )}
+          {metricContext.segmentName && (
+            <Text size="xs" c="dimmed">
+              <Text span fw={500}>Segment:</Text> {metricContext.segmentName}
+              <Text span> — metric is limited to visitors in this Pendo segment.</Text>
+            </Text>
+          )}
+        </Stack>
+      )}
     </Stack>
   );
 }

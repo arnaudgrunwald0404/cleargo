@@ -12,6 +12,7 @@ import {
   calculateFrustrationHealth,
   calculateHappinessCompositeScore,
 } from './happiness-composite';
+import { createEpicSnapshots } from './snapshot-calculator';
 
 // Use admin client for HEART operations since these run in API routes
 // and RLS policies may not have proper auth context
@@ -41,6 +42,8 @@ import type {
   DefaultMilestone,
   HeartHappinessCompositeConfig,
   MetricContext,
+  EpicHeartReleaseView,
+  HeartReleaseViewMonth,
 } from './types';
 
 const HEART_SYSTEM_DEFAULTS: Record<HeartCategoryId, { targetValue: number; targetTimeframeDays: number }> = {
@@ -50,6 +53,29 @@ const HEART_SYSTEM_DEFAULTS: Record<HeartCategoryId, { targetValue: number; targ
   retention: { targetValue: 60, targetTimeframeDays: 30 },
   task_success: { targetValue: 85, targetTimeframeDays: 14 },
 };
+
+/** Human-readable label for measurement type (for chart details) */
+const MEASUREMENT_TYPE_LABELS: Record<string, string> = {
+  events_per_user: 'Events per user',
+  events_per_user_per_week: 'Events per user per week',
+  unique_users_percentage: 'Unique users %',
+  unique_users_count: 'Unique users count',
+  unique_companies_count: 'Unique companies count',
+  return_rate_7_days: '7-day return rate',
+  return_rate_14_days: '14-day return rate',
+  return_rate_30_days: '30-day return rate',
+  completion_rate: 'Completion rate',
+  success_rate: 'Success rate',
+  survey_score: 'Survey score',
+  nps_score: 'NPS score',
+  happiness_composite_score: 'Happiness composite',
+  manual_numeric: 'Manual (numeric)',
+  manual_percentage: 'Manual (%)',
+};
+
+function getMeasurementTypeLabel(measurementType: string): string {
+  return MEASUREMENT_TYPE_LABELS[measurementType] ?? measurementType.replace(/_/g, ' ');
+}
 
 // ============================================================================
 // Pendo Client Helper
@@ -154,6 +180,7 @@ async function getFrustrationHealthScore(
   let totalEvents: number;
   let uniqueUsers: number;
 
+  let usedFallback = false;
   if (eventIds.length > 0) {
     // Prefer scoped: native frustration and visitors for the configured pages only.
     const [frustrationSeries, scopedVisitors] = await Promise.all([
@@ -169,6 +196,7 @@ async function getFrustrationHealthScore(
     uniqueUsers = scopedVisitors;
     // Fallback to app-wide when scoped has no data so we don't show "0 frustration signals across 0 visitors".
     if (totalEvents === 0 && uniqueUsers === 0) {
+      usedFallback = true;
       const [appFrustration, appVisitors] = await Promise.all([
         client.getFrustrationTimeSeries({ days }),
         client.getTotalUniqueVisitors({ startDate, endDate, segmentId: segmentId ?? undefined }),
@@ -191,7 +219,7 @@ async function getFrustrationHealthScore(
     config.frustrationEventsPer100UsersAtMaxPenalty
   );
 
-  return { health, penalty, totalEvents, uniqueUsers, per100Users: eventsPer100Users };
+  return { health, penalty, totalEvents, uniqueUsers, per100Users: eventsPer100Users, usedFallback };
 }
 
 /**
@@ -301,10 +329,14 @@ export async function fetchLiveMetricValue(
         } else {
           value = 0;
         }
+        const rateExplanation = measurementType === 'events_per_user_per_week'
+          ? ' Card value is the rate: events per user per week for the selected period (not a user count).'
+          : ' Card value is events per user in the period (not a user count).';
         metricContext = {
-          description: `${totalEvents.toLocaleString()} events across ${uniqueUsers.toLocaleString()} users`,
+          description: `${totalEvents.toLocaleString()} events across ${uniqueUsers.toLocaleString()} users (who triggered this event).${rateExplanation}`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
           raw: { totalEvents, uniqueVisitors: uniqueUsers },
         };
         break;
@@ -325,10 +357,13 @@ export async function fetchLiveMetricValue(
           }),
         ]);
         value = totalVis > 0 ? (uniqueVis / totalVis) * 100 : 0;
+        const periodPct = totalVis > 0 ? ((uniqueVis / totalVis) * 100).toFixed(1) : '0';
+        const inSegmentPhrase = resolvedSegmentName ? ` in this segment` : '';
         metricContext = {
-          description: `${uniqueVis.toLocaleString()} unique visitors out of ${totalVis.toLocaleString()} total app visitors`,
+          description: `${uniqueVis.toLocaleString()} unique visitors (this feature) out of ${totalVis.toLocaleString()} total app visitors${inSegmentPhrase} in this period. Adoption = ${periodPct}% (${uniqueVis.toLocaleString()} ÷ ${totalVis.toLocaleString()}).`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
           raw: { uniqueVisitors: uniqueVis, totalAppVisitors: totalVis },
         };
         break;
@@ -345,6 +380,7 @@ export async function fetchLiveMetricValue(
           description: `${(value ?? 0).toLocaleString()} unique users triggered this event`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
           raw: { uniqueVisitors: value ?? 0 },
         };
         break;
@@ -361,6 +397,7 @@ export async function fetchLiveMetricValue(
           description: `${(value ?? 0).toLocaleString()} unique accounts triggered this event`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
           raw: {},
         };
         break;
@@ -408,6 +445,7 @@ export async function fetchLiveMetricValue(
           description: `${uniqueVis.toLocaleString()} users returned within ${retentionDays} days (period-over-period comparison)`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
           raw: { uniqueVisitors: uniqueVis, returningVisitors: uniqueVis },
         };
         break;
@@ -415,48 +453,47 @@ export async function fetchLiveMetricValue(
       
       case 'completion_rate':
       case 'success_rate': {
+        const daysForSeries = 30;
         if (eventIds.length >= 2) {
           const startEventId = eventIds[0];
           const completeEventId = eventIds[1];
 
-          const startCount = await client.getEventCount({
-            eventId: startEventId,
-            startDate,
-            endDate,
-            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-          });
-
-          const completeCount = await client.getEventCount({
-            eventId: completeEventId,
-            startDate,
-            endDate,
-            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-          });
+          const [startSeries, completeSeries] = await Promise.all([
+            client.getDailyMetricTimeSeries({ eventId: startEventId, days: daysForSeries }),
+            client.getDailyMetricTimeSeries({ eventId: completeEventId, days: daysForSeries }),
+          ]);
+          const startCount = startSeries.reduce((s, d) => s + d.events, 0);
+          const completeCount = completeSeries.reduce((s, d) => s + d.events, 0);
 
           if (startCount > 0) {
             value = (completeCount / startCount) * 100;
           } else {
             value = 0;
           }
+          const totalEvents = startCount + completeCount;
+          let description: string;
+          if (completeCount > startCount) {
+            description = `First event (start): ${startCount.toLocaleString()} · Second event (complete): ${completeCount.toLocaleString()} · Total: ${totalEvents.toLocaleString()}. Complete exceeds start—swap the two in metric config, or use two Track events (Edit Metrics → Task Success → Track Events tab, e.g. Started → Completed) for a clear funnel.`;
+          } else {
+            description = `${completeCount.toLocaleString()} completions out of ${startCount.toLocaleString()} starts. This is the ratio of event counts in the period (how often the second action fired vs the first), not necessarily the % of users who completed the task—e.g. if users trigger "start" many times per session, the ratio can be low even when most users eventually complete.`;
+          }
           metricContext = {
-            description: `${completeCount.toLocaleString()} completions out of ${startCount.toLocaleString()} starts`,
+            description,
             trackingEvents: eventNames,
             segmentName: resolvedSegmentName,
+            descriptionScope: measurementPeriod,
             raw: { totalEvents: startCount, completionCount: completeCount },
           };
         } else {
-          const completionCount = await client.getEventCount({
-            eventId: eventIds[0],
-            startDate,
-            endDate,
-            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-          });
+          const completeSeries = await client.getDailyMetricTimeSeries({ eventId: eventIds[0], days: daysForSeries });
+          const completionCount = completeSeries.reduce((s, d) => s + d.events, 0);
           value = completionCount;
           measurementPeriod = measurementPeriod ? `${measurementPeriod} (completions)` : 'Completions';
           metricContext = {
             description: `${completionCount.toLocaleString()} total completions (single event tracked)`,
             trackingEvents: eventNames,
             segmentName: resolvedSegmentName,
+            descriptionScope: measurementPeriod,
             raw: { completionCount },
           };
         }
@@ -509,13 +546,19 @@ export async function fetchLiveMetricValue(
           descParts.push(`Survey: ${survey.responseCount} responses (${survey.surveyType})`);
         }
         descParts.push(`${frustration.totalEvents.toLocaleString()} frustration signals across ${frustration.uniqueUsers.toLocaleString()} visitors`);
+        if (frustration.usedFallback) {
+          descParts.push('Visitor count is app-wide (no data on selected pages)');
+        }
         if (!hasSurvey) {
           descParts.push('No survey configured — score based on frustration health only');
         }
+        descParts.push('Happiness = inverse of frustration (0 frustration = 100). Survey weight will be added later.');
         metricContext = {
           description: descParts.join(' · '),
           trackingEvents: eventNames.length > 0 ? eventNames : ['All pages (native frustration)'],
           segmentName: resolvedSegmentName,
+          descriptionScope: measurementPeriod,
+          usedAppWideFallback: frustration.usedFallback,
           raw: { frustrationSignals: frustration.totalEvents, uniqueVisitors: frustration.uniqueUsers },
         };
         break;
@@ -1159,6 +1202,170 @@ export async function getSnapshots(
   return data || [];
 }
 
+/**
+ * Get latest snapshot for a metric on or before a given date (for as-of view).
+ */
+export async function getLatestSnapshotAsOf(
+  metricId: string,
+  asOfDate: string
+): Promise<EpicHeartSnapshot | null> {
+  const supabase = getClient();
+  const { data, error } = await supabase
+    .from('epic_heart_snapshots')
+    .select('*')
+    .eq('epic_heart_metric_id', metricId)
+    .lte('snapshot_date', asOfDate)
+    .order('snapshot_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) {
+    console.error('Error fetching latest snapshot as of:', error);
+    return null;
+  }
+  return data;
+}
+
+/**
+ * Get release-centric view: baseline (pre-release 30d) and Month 1, 2, ... from stored snapshots.
+ * Used for "How did this release impact users?" view. No Pendo calls.
+ */
+export async function getEpicHeartReleaseView(epicId: string): Promise<EpicHeartReleaseView> {
+  const supabase = getClient();
+  const config = await getEpicHeartConfig(epicId);
+  if (!config) {
+    return { releaseDate: null, baseline: {}, months: [] };
+  }
+  const metrics = await getEpicHeartMetrics(config.id);
+  if (!metrics.length) {
+    return { releaseDate: null, baseline: {}, months: [] };
+  }
+
+  const { data: epic } = await supabase
+    .from('epic')
+    .select('target_launch_date, aha_fields')
+    .eq('id', epicId)
+    .single();
+
+  const isValidDateStr = (s: string | null | undefined): boolean => {
+    if (!s) return false;
+    return !isNaN(new Date(s).getTime()) && /^\d{4}-\d{2}-\d{2}/.test(s);
+  };
+  let rawLaunchDate: string | null = null;
+  if (isValidDateStr(epic?.target_launch_date)) {
+    rawLaunchDate = epic!.target_launch_date;
+  } else {
+    const ahaFields = (epic?.aha_fields as any) || {};
+    const sf = ahaFields?.standard_fields;
+    const releaseName = sf?.aha_release_name || sf?.release?.name || null;
+    if (releaseName) {
+      const { data: schedule } = await supabase
+        .from('release_schedule')
+        .select('launch_date')
+        .eq('release_name', releaseName)
+        .maybeSingle();
+      if (isValidDateStr(schedule?.launch_date)) {
+        rawLaunchDate = schedule!.launch_date;
+      }
+    }
+  }
+  if (!rawLaunchDate) {
+    return { releaseDate: null, baseline: {}, months: [] };
+  }
+
+  const releaseDate = new Date(rawLaunchDate);
+  const releaseKey = rawLaunchDate.split('T')[0]!;
+  const metricIdToCategory = new Map<string, HeartCategoryId>();
+  for (const m of metrics) {
+    if (m.heart_category) {
+      metricIdToCategory.set(m.id, m.heart_category as HeartCategoryId);
+    }
+  }
+
+  const baselineStart = new Date(releaseDate);
+  baselineStart.setDate(baselineStart.getDate() - 30);
+  const baselineEnd = new Date(releaseDate);
+  baselineEnd.setDate(baselineEnd.getDate() - 1);
+  const baselineStartKey = baselineStart.toISOString().split('T')[0]!;
+  const baselineEndKey = baselineEnd.toISOString().split('T')[0]!;
+
+  const metricIds = metrics.map((m) => m.id);
+  const { data: baselineSnapshots } = await supabase
+    .from('epic_heart_snapshots')
+    .select('epic_heart_metric_id, value')
+    .in('epic_heart_metric_id', metricIds)
+    .gte('snapshot_date', baselineStartKey)
+    .lte('snapshot_date', baselineEndKey);
+
+  const baseline: Partial<Record<HeartCategoryId, number | null>> = {};
+  if (baselineSnapshots?.length) {
+    const byMetric = new Map<string, number[]>();
+    for (const row of baselineSnapshots) {
+      if (row.value != null && typeof row.value === 'number') {
+        const arr = byMetric.get(row.epic_heart_metric_id) ?? [];
+        arr.push(row.value);
+        byMetric.set(row.epic_heart_metric_id, arr);
+      }
+    }
+    for (const [metricId, values] of byMetric) {
+      const cat = metricIdToCategory.get(metricId);
+      if (cat) {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length;
+        baseline[cat] = Math.round(avg * 100) / 100;
+      }
+    }
+  }
+
+  const months: HeartReleaseViewMonth[] = [];
+  const numMonths = 6;
+  for (let i = 1; i <= numMonths; i++) {
+    const monthStart = new Date(releaseDate);
+    monthStart.setDate(monthStart.getDate() + (i - 1) * 30);
+    const monthEnd = new Date(releaseDate);
+    monthEnd.setDate(monthEnd.getDate() + i * 30 - 1);
+    const startKey = monthStart.toISOString().split('T')[0]!;
+    const endKey = monthEnd.toISOString().split('T')[0]!;
+
+    const { data: monthSnapshots } = await supabase
+      .from('epic_heart_snapshots')
+      .select('epic_heart_metric_id, value')
+      .in('epic_heart_metric_id', metricIds)
+      .gte('snapshot_date', startKey)
+      .lte('snapshot_date', endKey);
+
+    const metricsByCat: Partial<Record<HeartCategoryId, number | null>> = {};
+    if (monthSnapshots?.length) {
+      const byMetric = new Map<string, number[]>();
+      for (const row of monthSnapshots) {
+        if (row.value != null && typeof row.value === 'number') {
+          const arr = byMetric.get(row.epic_heart_metric_id) ?? [];
+          arr.push(row.value);
+          byMetric.set(row.epic_heart_metric_id, arr);
+        }
+      }
+      for (const [metricId, values] of byMetric) {
+        const cat = metricIdToCategory.get(metricId);
+        if (cat) {
+          const avg = values.reduce((a, b) => a + b, 0) / values.length;
+          metricsByCat[cat] = Math.round(avg * 100) / 100;
+        }
+      }
+    }
+    months.push({
+      monthIndex: i,
+      label: `Month ${i}`,
+      startDate: startKey,
+      endDate: endKey,
+      metrics: metricsByCat,
+    });
+  }
+
+  return {
+    releaseDate: releaseKey,
+    baseline,
+    months,
+  };
+}
+
 // ============================================================================
 // Milestone Functions
 // ============================================================================
@@ -1314,19 +1521,24 @@ export function getCurrentMilestone(
 
 /**
  * Get full HEART dashboard for an epic
- * Fetches LIVE data from Pendo API instead of stored snapshots
+ * Fetches LIVE data from Pendo API; when asOfDate is set, uses only stored snapshots (no Pendo).
  */
-export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDashboard | null> {
+export async function getEpicHeartDashboard(
+  epicId: string,
+  options?: { asOfDate?: string }
+): Promise<EpicHeartDashboard | null> {
+  const asOfDate = options?.asOfDate ?? null;
+
   // Get config
   const config = await getEpicHeartConfig(epicId);
   if (!config) return null;
-  
+
   // Get categories
   const categories = await getHeartCategories();
-  
+
   // Get metrics
   const metrics = await getEpicHeartMetrics(config.id);
-  
+
   // Get epic launch date for calculations
   const supabase = getClient();
   const { data: epic } = await supabase
@@ -1334,7 +1546,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     .select('target_launch_date, scheduled_ga_dev_date, aha_fields')
     .eq('id', epicId)
     .single();
-  
+
   const isValidDateStr = (s: string | null | undefined): boolean => {
     if (!s) return false;
     return !isNaN(new Date(s).getTime()) && /^\d{4}-\d{2}-\d{2}/.test(s);
@@ -1360,14 +1572,47 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
   }
   const epicLaunchDate = rawLaunchDate ? new Date(rawLaunchDate) : null;
 
+  const referenceDate = asOfDate ? new Date(asOfDate) : new Date();
   let daysSinceLaunch: number | null = null;
   if (epicLaunchDate) {
-    const today = new Date();
-    daysSinceLaunch = Math.floor((today.getTime() - epicLaunchDate.getTime()) / (1000 * 60 * 60 * 24));
+    daysSinceLaunch = Math.floor((referenceDate.getTime() - epicLaunchDate.getTime()) / (1000 * 60 * 60 * 24));
   }
-  
-  // Try to get Pendo client for live data
-  const pendoClient = await getPendoClient();
+
+  // When asOfDate is set, use only stored snapshots (no Pendo)
+  const pendoClient = asOfDate ? null : await getPendoClient();
+
+  // Build id -> display name and id -> entity type (for Metric details: Page / Feature / Track event)
+  let pendoEventIdToName: Record<string, string> = {};
+  let pendoEventIdToType: Record<string, 'Page' | 'Feature' | 'Track event'> = {};
+  if (pendoClient) {
+    try {
+      const [events, features, pages] = await Promise.all([
+        pendoClient.getEvents().catch(() => []),
+        pendoClient.getFeatures().catch(() => []),
+        pendoClient.getPages().catch(() => []),
+      ]);
+      for (const e of events) {
+        if (e.name) {
+          pendoEventIdToName[e.name] = e.name;
+          pendoEventIdToType[e.name] = 'Track event';
+        }
+      }
+      for (const f of features) {
+        if (f.id && f.name) {
+          pendoEventIdToName[f.id] = f.name;
+          pendoEventIdToType[f.id] = 'Feature';
+        }
+      }
+      for (const p of pages) {
+        if (p.id && p.name) {
+          pendoEventIdToName[p.id] = p.name;
+          pendoEventIdToType[p.id] = 'Page';
+        }
+      }
+    } catch {
+      // Non-fatal; UI will fall back to showing IDs
+    }
+  }
 
   // Build metrics display with live data from Pendo
   const metricsWithLiveData: HeartMetricDisplay[] = [];
@@ -1399,7 +1644,26 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
       isPreLaunch = liveData.isPreLaunch;
       measurementPeriod = liveData.measurementPeriod;
       metricContext = liveData.metricContext;
-      
+
+      // Enrich context with display names, entity type, and measurement type for chart details
+      if (metricContext && metric) {
+        metricContext.measurementTypeLabel = getMeasurementTypeLabel(metric.measurement_type);
+        const ids = metric.pendo_event_ids ?? [];
+        if (ids.length > 0) {
+          metricContext.trackingItems = ids.map((id) => ({
+            id,
+            name: pendoEventIdToName[id] || id,
+            type: pendoEventIdToType[id],
+          }));
+          // Task Success with Page as first "event" = page views as denominator → page→action rate, not task completion funnel
+          const isCompletionRate =
+            metric.measurement_type === 'completion_rate' || metric.measurement_type === 'success_rate';
+          if (isCompletionRate && metricContext.trackingItems.length >= 2 && metricContext.trackingItems[0]?.type === 'Page') {
+            metricContext.isPageToActionRate = true;
+          }
+        }
+      }
+
       if (liveData.value !== null || !liveData.error) {
         const snapshotDate = new Date().toISOString().split('T')[0];
 
@@ -1432,76 +1696,37 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
             .catch((err: any) => console.warn('[HeartService] snapshot auto-save failed:', err.message));
         }
       }
-      
+
+      // Prefer stored snapshots for chart history (dates < today); use Pendo only for today
+      const todayObj = new Date();
+      const todayKey = todayObj.toISOString().split('T')[0]!;
+      const yesterdayObj = new Date(todayObj);
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      const yesterdayKey = yesterdayObj.toISOString().split('T')[0]!;
+      const rangeStart = new Date(todayObj);
+      rangeStart.setDate(rangeStart.getDate() - 180);
+      if (epicLaunchDate && epicLaunchDate > rangeStart) {
+        rangeStart.setTime(epicLaunchDate.getTime());
+      }
+      const rangeStartKey = rangeStart.toISOString().split('T')[0]!;
+      const storedHistory = await getSnapshots(metric.id, rangeStartKey, yesterdayKey);
+
+      if (storedHistory.length > 0) {
+        history = storedHistory;
+        if (latestSnapshot && latestSnapshot.snapshot_date === todayKey) {
+          history = [...history, latestSnapshot];
+        }
+      } else {
+        // No stored history yet: build from Pendo (same as before)
       // Fetch daily time-series from Pendo and compute actual metric values per day
       const allEventIds = metric.pendo_event_ids ?? [];
-      if (allEventIds.length > 0 && pendoClient) {
+      // Happiness uses frustration time series (same scope as live card/description), not event counts
+      if (category.id === 'happiness' && pendoClient) {
         try {
-          // Fetch time series for all events and aggregate
-          const allDailySeries = await Promise.all(
-            allEventIds.map(eid => pendoClient.getDailyMetricTimeSeries({ eventId: eid, days: 30 }))
+          const pageIdsForChart = metric?.pendo_event_ids ?? [];
+          const frustrationCounts = await pendoClient.getFrustrationTimeSeries(
+            pageIdsForChart.length > 0 ? { days: 30, pageIds: pageIdsForChart } : { days: 30 }
           );
-          // Merge: sum events and take max unique visitors per day across events
-          const dailyMap = new Map<string, { date: string; events: number; visitors: number }>();
-          for (const series of allDailySeries) {
-            for (const d of series) {
-              const existing = dailyMap.get(d.date);
-              if (existing) {
-                existing.events += d.events;
-                existing.visitors = Math.max(existing.visitors, d.visitors);
-              } else {
-                dailyMap.set(d.date, { ...d });
-              }
-            }
-          }
-          const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-          if (daily.length > 0) {
-            const totalVisitorsInPeriod = new Set(daily.map(d => d.visitors)).size > 0
-              ? daily.reduce((sum, d) => sum + d.visitors, 0) / daily.length
-              : 1;
-            const maxVisitorsInADay = Math.max(...daily.map(d => d.visitors), 1);
-
-            history = daily.map(d => {
-              let metricValue: number;
-              switch (metric.measurement_type) {
-                case 'unique_users_percentage':
-                  metricValue = (d.visitors / Math.max(1, maxVisitorsInADay)) * 100;
-                  break;
-                case 'events_per_user_per_week':
-                  metricValue = d.visitors > 0 ? d.events / d.visitors : 0;
-                  break;
-                case 'return_rate_14_days':
-                case 'return_rate_30_days':
-                  metricValue = (d.visitors / Math.max(1, maxVisitorsInADay)) * 100;
-                  break;
-                case 'success_rate':
-                case 'completion_rate':
-                  metricValue = d.events;
-                  historyUnit = 'completions';
-                  break;
-                default:
-                  metricValue = d.events;
-              }
-              return {
-                id: `ts-${metric.id}-${d.date}`,
-                epic_heart_metric_id: metric.id,
-                snapshot_date: d.date,
-                value: Math.round(metricValue * 100) / 100,
-                target_at_snapshot: metric.target_value,
-                status: 'PENDING' as HeartMetricStatus,
-                pendo_raw_data: { events: d.events, visitors: d.visitors },
-                calculated_at: new Date().toISOString(),
-              };
-            });
-          } else {
-            history = await getSnapshots(metric.id);
-          }
-        } catch {
-          history = await getSnapshots(metric.id);
-        }
-      } else if (category.id === 'happiness' && pendoClient) {
-        try {
-          const frustrationCounts = await pendoClient.getFrustrationTimeSeries({ days: 30 });
           if (frustrationCounts.length > 0) {
             history = frustrationCounts.map(d => ({
               id: `frust-${metric.id}-${d.date}`,
@@ -1520,14 +1745,193 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
         } catch {
           history = await getSnapshots(metric.id);
         }
+      } else if (
+        (metric.measurement_type === 'completion_rate' || metric.measurement_type === 'success_rate') &&
+        allEventIds.length >= 2 &&
+        pendoClient
+      ) {
+        // Task Success with 2 events: build history as daily completion rate (%), not summed count
+        try {
+          const [startSeries, completeSeries] = await Promise.all([
+            pendoClient.getDailyMetricTimeSeries({ eventId: allEventIds[0], days: 30 }),
+            pendoClient.getDailyMetricTimeSeries({ eventId: allEventIds[1], days: 30 }),
+          ]);
+          const startByDate = new Map<string, number>();
+          for (const d of startSeries) {
+            startByDate.set(d.date, d.events);
+          }
+          const completeByDate = new Map<string, number>();
+          for (const d of completeSeries) {
+            completeByDate.set(d.date, d.events);
+          }
+          const allDates = Array.from(new Set([...startByDate.keys(), ...completeByDate.keys()])).sort();
+          if (allDates.length > 0) {
+            history = allDates.map((date) => {
+              const startCount = startByDate.get(date) ?? 0;
+              const completeCount = completeByDate.get(date) ?? 0;
+              const metricValue = startCount > 0 ? (completeCount / startCount) * 100 : 0;
+              return {
+                id: `ts-${metric.id}-${date}`,
+                epic_heart_metric_id: metric.id,
+                snapshot_date: date,
+                value: Math.round(metricValue * 100) / 100,
+                target_at_snapshot: metric.target_value,
+                status: 'PENDING' as HeartMetricStatus,
+                pendo_raw_data: { startCount, completeCount },
+                calculated_at: new Date().toISOString(),
+              };
+            });
+            // Do not set historyUnit = 'completions' so card averages and displays as %
+          } else {
+            history = await getSnapshots(metric.id);
+          }
+        } catch {
+          history = await getSnapshots(metric.id);
+        }
+      } else if (allEventIds.length > 0 && pendoClient) {
+        // Retention: build chart history from Pendo (return rate per day) so chart has data without waiting for stored snapshots
+        if (
+          metric.measurement_type === 'return_rate_7_days' ||
+          metric.measurement_type === 'return_rate_14_days' ||
+          metric.measurement_type === 'return_rate_30_days'
+        ) {
+          const retentionDays = metric.measurement_type === 'return_rate_7_days' ? 7 :
+            metric.measurement_type === 'return_rate_14_days' ? 14 : 30;
+          const primaryEventId = allEventIds[0]!;
+          const segmentId = metric.pendo_segment_id ?? undefined;
+          const filters = segmentId ? { segmentId } : undefined;
+          try {
+            const today = new Date();
+            const daysToCompute = 30;
+            const dates: string[] = [];
+            for (let i = daysToCompute - 1; i >= 0; i--) {
+              const d = new Date(today);
+              d.setDate(d.getDate() - i);
+              dates.push(d.toISOString().split('T')[0]!);
+            }
+            const historyPromises = dates.map(async (dateStr) => {
+              const periodEnd = new Date(dateStr);
+              const periodMid = new Date(periodEnd);
+              periodMid.setDate(periodMid.getDate() - retentionDays);
+              const periodStart = new Date(periodMid);
+              periodStart.setDate(periodStart.getDate() - retentionDays);
+              const [firstPct, secondPct] = await Promise.all([
+                pendoClient.getEventPercentage({
+                  eventId: primaryEventId,
+                  startDate: periodStart.toISOString().split('T')[0]!,
+                  endDate: periodMid.toISOString().split('T')[0]!,
+                  filters,
+                }),
+                pendoClient.getEventPercentage({
+                  eventId: primaryEventId,
+                  startDate: periodMid.toISOString().split('T')[0]!,
+                  endDate: periodEnd.toISOString().split('T')[0]!,
+                  filters,
+                }),
+              ]);
+              // When there's no baseline usage in the first period, omit the point so we don't draw a misleading 0% line
+              if (firstPct <= 0) return null;
+              const value = Math.min(100, (secondPct / firstPct) * 100);
+              return {
+                id: `ret-${metric.id}-${dateStr}`,
+                epic_heart_metric_id: metric.id,
+                snapshot_date: dateStr,
+                value: Math.round(value * 100) / 100,
+                target_at_snapshot: metric.target_value,
+                status: 'PENDING' as HeartMetricStatus,
+                pendo_raw_data: { firstPeriodPercentage: firstPct, secondPeriodPercentage: secondPct, retentionDays },
+                calculated_at: new Date().toISOString(),
+              };
+            });
+            const computedRaw = await Promise.all(historyPromises);
+            const computed = computedRaw.filter((s): s is NonNullable<typeof s> => s != null);
+            if (computed.length > 0) {
+              history = computed;
+            } else {
+              history = await getSnapshots(metric.id);
+              if (latestSnapshot && latestSnapshot.value !== null) {
+                const todayKey = today.toISOString().split('T')[0]!;
+                if (!history.some((s) => s.snapshot_date === todayKey)) {
+                  history = [...history, latestSnapshot];
+                }
+              }
+            }
+          } catch {
+            history = await getSnapshots(metric.id);
+            if (latestSnapshot && latestSnapshot.value !== null) {
+              const todayKey = new Date().toISOString().split('T')[0]!;
+              if (!history.some((s) => s.snapshot_date === todayKey)) {
+                history = [...history, latestSnapshot];
+              }
+            }
+          }
+        } else {
+          try {
+            // Fetch time series for all events and aggregate
+            const allDailySeries = await Promise.all(
+              allEventIds.map((eid) => pendoClient.getDailyMetricTimeSeries({ eventId: eid, days: 30 }))
+            );
+            // Merge: sum events and take max unique visitors per day across events
+            const dailyMap = new Map<string, { date: string; events: number; visitors: number }>();
+            for (const series of allDailySeries) {
+              for (const d of series) {
+                const existing = dailyMap.get(d.date);
+                if (existing) {
+                  existing.events += d.events;
+                  existing.visitors = Math.max(existing.visitors, d.visitors);
+                } else {
+                  dailyMap.set(d.date, { ...d });
+                }
+              }
+            }
+            const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
+            if (daily.length > 0) {
+              const maxVisitorsInADay = Math.max(...daily.map((d) => d.visitors), 1);
+
+              history = daily.map((d) => {
+                let metricValue: number;
+                switch (metric.measurement_type) {
+                  case 'unique_users_percentage':
+                    metricValue = (d.visitors / Math.max(1, maxVisitorsInADay)) * 100;
+                    break;
+                  case 'events_per_user_per_week':
+                    metricValue = d.visitors > 0 ? d.events / d.visitors : 0;
+                    break;
+                  case 'success_rate':
+                  case 'completion_rate':
+                    metricValue = d.events;
+                    historyUnit = 'completions';
+                    break;
+                  default:
+                    metricValue = d.events;
+                }
+                return {
+                  id: `ts-${metric.id}-${d.date}`,
+                  epic_heart_metric_id: metric.id,
+                  snapshot_date: d.date,
+                  value: Math.round(metricValue * 100) / 100,
+                  target_at_snapshot: metric.target_value,
+                  status: 'PENDING' as HeartMetricStatus,
+                  pendo_raw_data: { events: d.events, visitors: d.visitors },
+                  calculated_at: new Date().toISOString(),
+                };
+              });
+            } else {
+              history = await getSnapshots(metric.id);
+            }
+          } catch {
+            history = await getSnapshots(metric.id);
+          }
+        }
       } else {
         history = await getSnapshots(metric.id);
         if (latestSnapshot && latestSnapshot.value !== null) {
-          const todayKey = new Date().toISOString().split('T')[0];
-          if (!history.some(s => s.snapshot_date === todayKey)) {
+          const todayKeyFallback = new Date().toISOString().split('T')[0];
+          if (!history.some(s => s.snapshot_date === todayKeyFallback)) {
             history = [...history, latestSnapshot];
           }
         }
+      }
       }
       if (history.length >= 2) {
         const prevH = history[history.length - 2];
@@ -1539,20 +1943,30 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
         }
       }
     } else if (metric) {
-      // No Pendo client - fall back to stored snapshots
-      latestSnapshot = await getLatestSnapshot(metric.id);
-      
-      if (latestSnapshot) {
-        const snapshots = await getSnapshots(metric.id);
-        history = snapshots;
-        if (snapshots.length >= 2) {
-          const prev = snapshots[snapshots.length - 2];
-          const curr = snapshots[snapshots.length - 1];
-          if (prev.value !== null && curr.value !== null) {
-            if (curr.value > prev.value) trend = 'up';
-            else if (curr.value < prev.value) trend = 'down';
-            else trend = 'stable';
-          }
+      // No Pendo client - use stored snapshots (or as-of date view)
+      if (asOfDate) {
+        const rangeStart = new Date(asOfDate);
+        rangeStart.setDate(rangeStart.getDate() - 180);
+        if (epicLaunchDate && epicLaunchDate > rangeStart) {
+          rangeStart.setTime(epicLaunchDate.getTime());
+        }
+        const rangeStartKey = rangeStart.toISOString().split('T')[0]!;
+        history = await getSnapshots(metric.id, rangeStartKey, asOfDate);
+        latestSnapshot = history.length > 0 ? history[history.length - 1]! : await getLatestSnapshotAsOf(metric.id, asOfDate);
+      } else {
+        latestSnapshot = await getLatestSnapshot(metric.id);
+        if (latestSnapshot) {
+          const snapshots = await getSnapshots(metric.id);
+          history = snapshots;
+        }
+      }
+      if (latestSnapshot && history.length >= 2) {
+        const prev = history[history.length - 2];
+        const curr = history[history.length - 1];
+        if (prev.value !== null && curr.value !== null) {
+          if (curr.value > prev.value) trend = 'up';
+          else if (curr.value < prev.value) trend = 'down';
+          else trend = 'stable';
         }
       }
     }
@@ -1707,25 +2121,6 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     else if (statuses.every(s => s === 'ON_TRACK')) overallStatus = 'ON_TRACK';
   }
 
-  // Build id -> display name map so UI can show names instead of Pendo IDs (especially for features)
-  let pendoEventIdToName: Record<string, string> = {};
-  if (pendoClient) {
-    try {
-      const [events, features] = await Promise.all([
-        pendoClient.getEvents().catch(() => []),
-        pendoClient.getFeatures().catch(() => []),
-      ]);
-      for (const e of events) {
-        if (e.name) pendoEventIdToName[e.name] = e.name;
-      }
-      for (const f of features) {
-        if (f.id && f.name) pendoEventIdToName[f.id] = f.name;
-      }
-    } catch {
-      // Non-fatal; UI will fall back to showing IDs
-    }
-  }
-  
   return {
     config,
     metrics: metricsWithLiveData,
@@ -1733,6 +2128,7 @@ export async function getEpicHeartDashboard(epicId: string): Promise<EpicHeartDa
     daysSinceLaunch,
     launchDate: rawLaunchDate,
     pendoEventIdToName,
+    ...(asOfDate ? { asOfDate } : {}),
   };
 }
 
@@ -1968,41 +2364,59 @@ export async function createInitialSnapshots(epicId: string): Promise<{
 }
 
 /**
- * Create daily snapshots for all active HEART configs
- * Called by scheduled job (cron)
+ * Create snapshots for yesterday (closed day) for all active HEART configs.
+ * Called by daily cron (e.g. 01:00 UTC) so we accumulate one immutable row per metric per day.
+ */
+export async function createYesterdaySnapshots(): Promise<{
+  epicsProcessed: number;
+  snapshotsCreated: number;
+  errors: string[];
+}> {
+  const supabase = getClient();
+
+  const { data: configs, error } = await supabase
+    .from('epic_heart_configs')
+    .select('epic_id')
+    .eq('status', 'active');
+
+  if (error || !configs) {
+    console.error('[HeartService] Failed to fetch active configs:', error);
+    return { epicsProcessed: 0, snapshotsCreated: 0, errors: [error?.message || 'Unknown error'] };
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  yesterday.setHours(0, 0, 0, 0);
+
+  const allErrors: string[] = [];
+  let totalSnapshots = 0;
+
+  for (const config of configs) {
+    try {
+      const snapshots = await createEpicSnapshots(config.epic_id, yesterday);
+      totalSnapshots += snapshots.length;
+    } catch (err: any) {
+      allErrors.push(`Epic ${config.epic_id}: ${err?.message || String(err)}`);
+    }
+  }
+
+  console.log(`[HeartService] Yesterday snapshots: ${configs.length} epics, ${totalSnapshots} snapshots for ${yesterday.toISOString().split('T')[0]}`);
+
+  return {
+    epicsProcessed: configs.length,
+    snapshotsCreated: totalSnapshots,
+    errors: allErrors,
+  };
+}
+
+/**
+ * Create daily snapshots for all active HEART configs.
+ * Writes yesterday (closed day) so we accumulate immutable history. Call at e.g. 01:00 UTC.
  */
 export async function createDailySnapshots(): Promise<{
   epicsProcessed: number;
   snapshotsCreated: number;
   errors: string[];
 }> {
-  const supabase = getClient();
-  
-  // Get all active configs
-  const { data: configs, error } = await supabase
-    .from('epic_heart_configs')
-    .select('epic_id')
-    .eq('status', 'active');
-  
-  if (error || !configs) {
-    console.error('[HeartService] Failed to fetch active configs:', error);
-    return { epicsProcessed: 0, snapshotsCreated: 0, errors: [error?.message || 'Unknown error'] };
-  }
-  
-  const allErrors: string[] = [];
-  let totalSnapshots = 0;
-  
-  for (const config of configs) {
-    const result = await createInitialSnapshots(config.epic_id);
-    totalSnapshots += result.created;
-    allErrors.push(...result.errors.map(e => `Epic ${config.epic_id}: ${e}`));
-  }
-  
-  console.log(`[HeartService] Daily snapshots: ${configs.length} epics, ${totalSnapshots} snapshots created`);
-  
-  return {
-    epicsProcessed: configs.length,
-    snapshotsCreated: totalSnapshots,
-    errors: allErrors,
-  };
+  return createYesterdaySnapshots();
 }

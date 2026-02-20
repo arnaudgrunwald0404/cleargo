@@ -57,9 +57,10 @@ export async function GET(
     const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
     const rules = await getEffectivePermissionRules();
     const canEdit = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules);
-    
-    const dashboard = await getEpicHeartDashboard(epicId);
-    
+
+    const asOf = req.nextUrl.searchParams.get('asOf') ?? undefined;
+    const dashboard = await getEpicHeartDashboard(epicId, { asOfDate: asOf });
+
     if (!dashboard) {
       return NextResponse.json({ 
         configured: false,

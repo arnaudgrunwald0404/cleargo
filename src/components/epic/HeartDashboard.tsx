@@ -24,6 +24,7 @@ import {
   Autocomplete,
   Tabs,
   Box,
+  Table,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -39,7 +40,8 @@ import {
 import { notifications } from '@mantine/notifications';
 import { HeartSetupWizard } from './HeartSetupWizard';
 import { HeartManualConfigForm } from './HeartManualConfigForm';
-import { HeartMetricTracker } from './HeartMetricTracker';
+import { HeartMetricTracker, getWindowBounds, toDateKey } from './HeartMetricTracker';
+import type { HeartTrackerWindow } from './HeartMetricTracker';
 import type {
   EpicHeartDashboard as DashboardData,
   HeartMetricDisplay,
@@ -48,7 +50,9 @@ import type {
   HeartCustomMetricTemplate,
   HeartMeasurementType,
   HeartCategoryId,
+  EpicHeartReleaseView,
 } from '@/lib/heart/types';
+import { calculateFrustrationHealth } from '@/lib/heart/happiness-composite';
 
 interface HeartDashboardProps {
   epicId: string;
@@ -65,6 +69,10 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   const [showEditForm, setShowEditForm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showAddCustomMetric, setShowAddCustomMetric] = useState(false);
+  const [chartWindow, setChartWindow] = useState<HeartTrackerWindow>('1M');
+  const [releaseView, setReleaseView] = useState<EpicHeartReleaseView | null>(null);
+  const [loadingReleaseView, setLoadingReleaseView] = useState(false);
+  const [asOfDate, setAsOfDate] = useState<string | null>(null);
   const fetchInProgressRef = React.useRef(false);
 
   const handleReset = async () => {
@@ -103,11 +111,14 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   const fetchDashboard = async () => {
     if (fetchInProgressRef.current) return;
     fetchInProgressRef.current = true;
-    
+
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/epics/${epicId}/heart`);
+      const url = asOfDate
+        ? `/api/epics/${epicId}/heart?asOf=${encodeURIComponent(asOfDate)}`
+        : `/api/epics/${epicId}/heart`;
+      const res = await fetch(url);
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to fetch HEART data');
@@ -129,7 +140,23 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
 
   useEffect(() => {
     fetchDashboard();
-  }, [epicId]);
+  }, [epicId, asOfDate]);
+
+  useEffect(() => {
+    if (!configured || !epicId) return;
+    let cancelled = false;
+    setLoadingReleaseView(true);
+    fetch(`/api/epics/${epicId}/heart/release-view`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: EpicHeartReleaseView | null) => {
+        if (!cancelled && data) setReleaseView(data);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoadingReleaseView(false);
+      });
+    return () => { cancelled = true; };
+  }, [epicId, configured]);
 
   if (loading) {
     return (
@@ -212,11 +239,13 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
 
   const { config, metrics, overallStatus, daysSinceLaunch } = dashboard;
 
+  const todayStr = new Date().toISOString().split('T')[0]!;
+
   return (
     <Stack gap="md" style={{ width: '100%', maxWidth: '100%', alignItems: 'stretch' }}>
       {/* Header */}
       <Card withBorder padding="md">
-        <Group justify="space-between">
+        <Group justify="space-between" wrap="wrap" gap="sm">
           <div>
             <Group gap="xs">
               <Text size="lg" fw={600}>HEART Metrics</Text>
@@ -231,9 +260,6 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
                  overallStatus === 'AT_RISK' ? 'At Risk' :
                  overallStatus === 'MISSED' ? 'Missed' : 'Pending'}
               </Badge>
-              {config.setup_method === 'auto' && (
-                <Badge size="xs" color="green" variant="light">Auto-configured</Badge>
-              )}
             </Group>
             {daysSinceLaunch !== null && daysSinceLaunch >= 0 && (
               <Text size="sm" c="dimmed">
@@ -241,43 +267,63 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
               </Text>
             )}
           </div>
-          {canEdit && (
-            <Group gap="xs">
-              <Tooltip label="Refresh data">
-                <ActionIcon variant="subtle" onClick={fetchDashboard}>
-                  <IconRefresh size={18} />
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Reset and reconfigure">
-                <ActionIcon 
-                  variant="subtle" 
-                  color="red"
-                  onClick={handleReset}
-                  loading={resetting}
-                >
-                  <IconTrash size={18} />
-                </ActionIcon>
-              </Tooltip>
-              <Button
-                variant="light"
-                size="xs"
-                leftSection={<IconPlus size={14} />}
-                onClick={() => setShowAddCustomMetric(true)}
-              >
-                Add Metric
-              </Button>
-              <Button
-                variant="light"
-                size="xs"
-                leftSection={<IconEdit size={14} />}
-                onClick={() => setShowEditForm(true)}
-              >
-                Edit Metrics
-              </Button>
-            </Group>
-          )}
+          <Group gap="xs" align="center">
+            {/* Compact View as of (inline in header) */}
+            {!dashboard?.asOfDate ? (
+              <Group gap={4} align="center" wrap="nowrap">
+                <Text size="xs" c="dimmed">As of</Text>
+                <input
+                  type="date"
+                  value={asOfDate ?? todayStr}
+                  onChange={(e) => {
+                    const v = e.target.value || null;
+                    setAsOfDate(v && v !== todayStr ? v : null);
+                  }}
+                  style={{ width: 132, padding: '2px 6px', fontSize: 12, border: '1px solid var(--mantine-color-default-border)', borderRadius: 4 }}
+                />
+                {asOfDate && (
+                  <Button variant="subtle" size="xs" onClick={() => setAsOfDate(null)}>Clear</Button>
+                )}
+              </Group>
+            ) : (
+              <Group gap={4} align="center">
+                <Text size="xs" c="dimmed">As of {(dashboard?.asOfDate ?? asOfDate) ?? ''}</Text>
+                <Button variant="subtle" size="xs" onClick={() => setAsOfDate(null)}>Live</Button>
+              </Group>
+            )}
+            {canEdit && (
+              <>
+                <Tooltip label="Refresh data">
+                  <ActionIcon variant="subtle" size="sm" onClick={fetchDashboard}>
+                    <IconRefresh size={18} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Reset and reconfigure">
+                  <ActionIcon variant="subtle" color="red" size="sm" onClick={handleReset} loading={resetting}>
+                    <IconTrash size={18} />
+                  </ActionIcon>
+                </Tooltip>
+                <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => setShowAddCustomMetric(true)}>
+                  Add Metric
+                </Button>
+                <Button variant="light" size="xs" leftSection={<IconEdit size={14} />} onClick={() => setShowEditForm(true)}>
+                  Edit Metrics
+                </Button>
+              </>
+            )}
+          </Group>
         </Group>
       </Card>
+
+      {/* As-of date view banner (compact, only when viewing a past date) */}
+      {(dashboard?.asOfDate || asOfDate) && (
+        <Alert color="blue" variant="light" py="xs" px="sm">
+          <Group justify="space-between" gap="xs">
+            <Text size="xs">Snapshot data as of {(dashboard?.asOfDate ?? asOfDate) ?? ''}. Not live.</Text>
+            <Button variant="subtle" size="xs" onClick={() => setAsOfDate(null)}>Show live</Button>
+          </Group>
+        </Alert>
+      )}
 
       {/* Data Collection Info Banner */}
       <DataCollectionInfo 
@@ -299,17 +345,25 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
         }}
       />
 
-      {/* HEART Cards — compact summary only (no chart inside card) */}
+      {/* HEART Cards — show period average/sum over selected chart window (e.g. 1M) */}
       <Grid>
-        {metrics.filter(item => !item.metric?.is_custom).map((item) => (
-          <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 2.4 }}>
-            <HeartMetricCard
-              item={item}
-              eventIdToName={dashboard?.pendoEventIdToName}
-              releaseDate={dashboard?.launchDate || null}
-            />
-          </Grid.Col>
-        ))}
+        {metrics.filter(item => !item.metric?.is_custom).map((item) => {
+          const releaseDate = dashboard?.launchDate ?? null;
+          const periodResult = getPeriodValue(item, chartWindow, releaseDate);
+          const periodTrend = getPeriodTrend(item, chartWindow, releaseDate);
+          return (
+            <Grid.Col key={item.category.id} span={{ base: 12, sm: 6, md: 2.4 }}>
+              <HeartMetricCard
+                item={item}
+                periodValue={periodResult.value}
+                periodTrend={periodTrend}
+                isPostReleaseOnly={periodResult.isPostReleaseOnly}
+                eventIdToName={dashboard?.pendoEventIdToName}
+                releaseDate={releaseDate}
+              />
+            </Grid.Col>
+          );
+        })}
       </Grid>
 
       {/* HEART Trends — one tab per metric (H, E, A, R, T), full-width chart */}
@@ -341,11 +395,69 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
                       height={280}
                       showFill
                       fullWidth
+                      window={chartWindow}
+                      onWindowChange={setChartWindow}
                     />
                   </Box>
                 </Tabs.Panel>
               ))}
           </Tabs>
+        </Card>
+      )}
+
+      {/* Release impact: baseline vs Month 1, 2, ... from stored snapshots */}
+      {releaseView?.releaseDate && (
+        <Card withBorder padding="lg" style={{ width: '100%', maxWidth: 'none' }}>
+          <Text size="sm" fw={600} c="dimmed" mb="xs">Release impact</Text>
+          <Text size="xs" c="dimmed" mb="md">
+            Pre-release baseline (30d before launch) and monthly averages from stored snapshots. Data builds as the daily snapshot job runs.
+          </Text>
+          {loadingReleaseView ? (
+            <Skeleton height={120} />
+          ) : (
+            <Table withTableBorder withColumnBorders striped>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Metric</Table.Th>
+                  <Table.Th>Baseline (pre-release)</Table.Th>
+                  {releaseView.months.map((m) => (
+                    <Table.Th key={m.monthIndex}>{m.label}</Table.Th>
+                  ))}
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {(
+                  [
+                    ['happiness', 'Happiness'],
+                    ['engagement', 'Engagement'],
+                    ['adoption', 'Adoption'],
+                    ['retention', 'Retention'],
+                    ['task_success', 'Task Success'],
+                  ] as const
+                ).map(([id, label]) => (
+                  <Table.Tr key={id}>
+                    <Table.Td fw={500}>{label}</Table.Td>
+                    <Table.Td>
+                      {releaseView.baseline[id] != null
+                        ? typeof releaseView.baseline[id] === 'number'
+                          ? Number(releaseView.baseline[id]).toFixed(2)
+                          : String(releaseView.baseline[id])
+                        : '—'}
+                    </Table.Td>
+                    {releaseView.months.map((m) => (
+                      <Table.Td key={m.monthIndex}>
+                        {m.metrics[id] != null
+                          ? typeof m.metrics[id] === 'number'
+                            ? Number(m.metrics[id]).toFixed(2)
+                            : String(m.metrics[id])
+                          : '—'}
+                      </Table.Td>
+                    ))}
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          )}
         </Card>
       )}
 
@@ -383,43 +495,239 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   );
 }
 
+/** Result of getPeriodValue: value and whether it was restricted to post-release days. */
+function getPeriodValue(
+  item: HeartMetricDisplay,
+  window: HeartTrackerWindow,
+  releaseDate?: string | null
+): { value: number | null; isPostReleaseOnly?: boolean } {
+  const history = item.history ?? [];
+  const { start, end } = getWindowBounds(window);
+  const startKey = toDateKey(start);
+  const endKey = toDateKey(end);
+  const releaseKey = releaseDate ? releaseDate.split('T')[0] : null;
+  const releaseInWindow =
+    releaseKey && releaseKey >= startKey && releaseKey <= endKey;
+
+  // Adoption (unique_users_percentage): use period-level ratio (unique visitors ÷ total app visitors), not average of daily %
+  const raw = item.metricContext?.raw;
+  if (
+    item.metric?.measurement_type === 'unique_users_percentage' &&
+    typeof raw?.uniqueVisitors === 'number' &&
+    typeof raw?.totalAppVisitors === 'number' &&
+    raw.totalAppVisitors > 0
+  ) {
+    const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
+    return {
+      value: Math.round(periodPct * 10) / 10,
+      isPostReleaseOnly: releaseInWindow ?? false,
+    };
+  }
+
+  // Happiness = inverse of frustration: 0 frustration → 100. Use frustration health from raw counts when available.
+  if (
+    (item.category.id === 'happiness' || item.metric?.measurement_type === 'happiness_composite_score') &&
+    typeof raw?.frustrationSignals === 'number' &&
+    typeof raw?.uniqueVisitors === 'number'
+  ) {
+    const maxPenalty = item.metric?.composite_config?.happiness?.frustrationEventsPer100UsersAtMaxPenalty ?? 30;
+    const { health } = calculateFrustrationHealth(
+      raw.frustrationSignals,
+      raw.uniqueVisitors,
+      maxPenalty
+    );
+    return {
+      value: Math.round(health * 10) / 10,
+      isPostReleaseOnly: releaseInWindow ?? false,
+    };
+  }
+
+  if (history.length === 0) return { value: null };
+  const inRange = (s: { snapshot_date: string }) => {
+    if (s.snapshot_date < startKey || s.snapshot_date > endKey) return false;
+    if (releaseInWindow && releaseKey && s.snapshot_date < releaseKey) return false;
+    return true;
+  };
+
+  // Task Success (completion_rate/success_rate) with raw counts: use period-level rate = sum(completions)/sum(starts)*100
+  const isTaskSuccessRate =
+    item.metric?.measurement_type === 'completion_rate' ||
+    item.metric?.measurement_type === 'success_rate';
+  if (isTaskSuccessRate) {
+    let totalStarts = 0;
+    let totalCompletions = 0;
+    for (const s of history) {
+      if (!inRange(s)) continue;
+      const raw = s.pendo_raw_data as { startCount?: number; completeCount?: number } | undefined;
+      if (raw && typeof raw.startCount === 'number' && typeof raw.completeCount === 'number') {
+        totalStarts += raw.startCount;
+        totalCompletions += raw.completeCount;
+      }
+    }
+    if (totalStarts > 0) {
+      const periodRate = (totalCompletions / totalStarts) * 100;
+      return {
+        value: Math.round(periodRate * 100) / 100,
+        isPostReleaseOnly: releaseInWindow ?? false,
+      };
+    }
+  }
+
+  let values: number[] = [];
+  for (const s of history) {
+    if (s.value === null || s.value === undefined) continue;
+    if (inRange(s)) values.push(s.value);
+  }
+  if (values.length === 0)
+    return { value: null, isPostReleaseOnly: releaseInWindow ?? false };
+  const sum = values.reduce((a, b) => a + b, 0);
+  if (item.historyUnit === 'completions' || item.historyUnit === 'frustration') {
+    return {
+      value: sum,
+      isPostReleaseOnly: releaseInWindow ?? false,
+    };
+  }
+  return {
+    value: sum / values.length,
+    isPostReleaseOnly: releaseInWindow ?? false,
+  };
+}
+
+/** Trend over the selected period: first half vs second half (and post-release filter when applicable). */
+function getPeriodTrend(
+  item: HeartMetricDisplay,
+  window: HeartTrackerWindow,
+  releaseDate?: string | null
+): 'up' | 'down' | 'stable' | null {
+  const history = item.history ?? [];
+  if (history.length < 2) return null;
+  const { start, end } = getWindowBounds(window);
+  const startKey = toDateKey(start);
+  const endKey = toDateKey(end);
+  const releaseKey = releaseDate ? releaseDate.split('T')[0] : null;
+  const releaseInWindow =
+    releaseKey && releaseKey >= startKey && releaseKey <= endKey;
+
+  const inRange = (s: { snapshot_date: string }) => {
+    if (s.snapshot_date < startKey || s.snapshot_date > endKey) return false;
+    if (releaseInWindow && releaseKey && s.snapshot_date < releaseKey) return false;
+    return true;
+  };
+
+  const points: { date: string; value: number }[] = [];
+  for (const s of history) {
+    if (s.value === null || s.value === undefined) continue;
+    if (inRange(s)) points.push({ date: s.snapshot_date, value: s.value });
+  }
+  points.sort((a, b) => a.date.localeCompare(b.date));
+  // Require enough points so first-half vs second-half trend is meaningful; otherwise avoid misleading red/green
+  if (points.length < 2) return null;
+  const MIN_POINTS_FOR_TREND = 4;
+  if (points.length < MIN_POINTS_FOR_TREND) return null;
+
+  const mid = Math.floor(points.length / 2);
+  const firstHalf = points.slice(0, mid);
+  const secondHalf = points.slice(mid);
+
+  // Task Success with raw counts: compare period rate in first half vs second half
+  const isTaskSuccessRate =
+    item.metric?.measurement_type === 'completion_rate' ||
+    item.metric?.measurement_type === 'success_rate';
+  if (isTaskSuccessRate) {
+    const firstDates = new Set(firstHalf.map((p) => p.date));
+    const secondDates = new Set(secondHalf.map((p) => p.date));
+    let s1 = 0; let c1 = 0; let s2 = 0; let c2 = 0;
+    for (const s of history) {
+      if (!inRange(s)) continue;
+      const raw = s.pendo_raw_data as { startCount?: number; completeCount?: number } | undefined;
+      if (!raw || typeof raw.startCount !== 'number' || typeof raw.completeCount !== 'number') continue;
+      if (firstDates.has(s.snapshot_date)) {
+        s1 += raw.startCount;
+        c1 += raw.completeCount;
+      } else if (secondDates.has(s.snapshot_date)) {
+        s2 += raw.startCount;
+        c2 += raw.completeCount;
+      }
+    }
+    const rate1 = s1 > 0 ? (c1 / s1) * 100 : 0;
+    const rate2 = s2 > 0 ? (c2 / s2) * 100 : 0;
+    if (rate2 > rate1) return 'up';
+    if (rate2 < rate1) return 'down';
+    return 'stable';
+  }
+
+  const isSum =
+    item.historyUnit === 'completions' || item.historyUnit === 'frustration';
+  const firstAgg = isSum
+    ? firstHalf.reduce((a, p) => a + p.value, 0)
+    : firstHalf.reduce((a, p) => a + p.value, 0) / firstHalf.length;
+  const secondAgg = isSum
+    ? secondHalf.reduce((a, p) => a + p.value, 0)
+    : secondHalf.reduce((a, p) => a + p.value, 0) / secondHalf.length;
+
+  if (secondAgg > firstAgg) return 'up';
+  if (secondAgg < firstAgg) return 'down';
+  return 'stable';
+}
+
 // Individual HEART metric card
 function HeartMetricCard({
   item,
+  periodValue,
+  periodTrend,
+  isPostReleaseOnly,
   eventIdToName: _eventIdToName,
   releaseDate: _releaseDate,
 }: {
   item: HeartMetricDisplay;
+  /** When set, card shows this value (period average/sum over chart window) instead of latest snapshot */
+  periodValue?: number | null;
+  /** Period trend (first half vs second half); kept for possible future neutral indicator; color is status-only */
+  periodTrend?: 'up' | 'down' | 'stable' | null;
+  /** When true, value is aggregate over post-release days only; show "Post-release" label */
+  isPostReleaseOnly?: boolean;
   eventIdToName?: Record<string, string>;
   releaseDate?: string | null;
 }) {
-  const { category, metric, latestSnapshot, trend, historyUnit } = item;
+  const { category, metric, latestSnapshot, historyUnit } = item;
 
   let displayValue = '--';
   let displayUnit = '';
 
-  if (latestSnapshot && latestSnapshot.value !== null) {
-    const value = latestSnapshot.value;
-    if (historyUnit === 'completions') {
+  const value = periodValue !== undefined && periodValue !== null
+    ? periodValue
+    : (latestSnapshot && latestSnapshot.value !== null ? latestSnapshot.value : null);
+
+  if (value !== null) {
+    // Happiness = 0–100 score (inverse of frustration); show as whole number
+    if (category.id === 'happiness' || metric?.measurement_type === 'happiness_composite_score') {
+      displayValue = value.toFixed(0);
+      displayUnit = ' out of 100';
+    } else if (historyUnit === 'completions' || historyUnit === 'frustration') {
       displayValue = value >= 1000 ? `${(value / 1000).toFixed(1)}K` : value.toLocaleString();
-    } else if (metric?.measurement_type.includes('percentage') || metric?.measurement_type.includes('rate')) {
+    } else if (metric?.measurement_type?.includes('percentage') || metric?.measurement_type?.includes('rate')) {
       displayValue = value.toFixed(1);
       displayUnit = '%';
-    } else if (metric?.measurement_type.includes('per_user')) {
+    } else if (metric?.measurement_type?.includes('per_user')) {
       const rounded = Math.round(value);
       displayValue = rounded >= 10000
         ? `${(rounded / 1000).toFixed(0)}K`
         : rounded >= 1000
         ? rounded.toLocaleString()
         : String(rounded);
-      displayUnit = '/user';
+      displayUnit = metric.measurement_type === 'events_per_user_per_week' ? 'events/user/week' : 'events per user';
     } else {
       displayValue = value.toFixed(0);
     }
   }
 
-  const trendColor = !trend || trend === 'stable' ? 'gray.7' :
-    trend === 'up' ? 'green.7' : 'red.6';
+  // Color by target status only (HEART framework: progress toward goals, not raw trend). Strict: green = on track, red = missed target, orange = at risk; no trend-based red/green.
+  const status = latestSnapshot?.status;
+  const valueColor =
+    status === 'ON_TRACK' ? 'green.7' :
+    status === 'MISSED' ? 'red.6' :
+    status === 'AT_RISK' ? 'orange.6' :
+    'gray.7';
 
   return (
     <Paper withBorder p="md" h="100%" radius="md" bg="white">
@@ -427,14 +735,19 @@ function HeartMetricCard({
         <Text size="sm" fw={600} c="dimmed">{category.name}</Text>
 
         <Group gap={6} align="baseline" wrap="nowrap">
-          <Text size="34px" fw={700} lh={1} c={trendColor}>
+          <Text size="34px" fw={700} lh={1} c={valueColor}>
             {displayValue}
           </Text>
           {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}
+          {(metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null && (
+            <Text size="xs" c="dimmed">completion rate</Text>
+          )}
         </Group>
 
-        {metric?.name && (
-          <Text size="xs" c="dimmed" lineClamp={1}>{metric.name}</Text>
+        {(isPostReleaseOnly || item.metricContext?.isPageToActionRate) && (
+          <Text size="xs" c="dimmed" lineClamp={1}>
+            {[isPostReleaseOnly ? 'Post-release' : null, item.metricContext?.isPageToActionRate ? 'Page→action rate' : null].filter(Boolean).join(' · ')}
+          </Text>
         )}
       </Stack>
     </Paper>

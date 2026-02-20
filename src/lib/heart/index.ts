@@ -29,12 +29,14 @@ export {
   // Dashboard
   getEpicHeartDashboard,
   getEpicsHeartList,
+  getEpicHeartReleaseView,
   // Surveys
   createHeartSurvey,
   getHeartSurvey,
   // Initial & Daily Snapshots
   createInitialSnapshots,
   createDailySnapshots,
+  createYesterdaySnapshots,
   // Live Data
   fetchLiveMetricValue,
 } from './service';
