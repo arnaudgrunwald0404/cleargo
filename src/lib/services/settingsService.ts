@@ -198,31 +198,83 @@ export async function refreshAhaFieldsFromAha() {
   return res.json();
 }
 
+const MAX_SYNC_ITERATIONS = 100; // Safety cap: 100 batches × 10 epics = 1000 epics max per run
+
 export async function syncAhaFields() {
-  const res = await fetch("/api/settings/aha-fields/sync", { method: "POST" });
-  if (!res.ok) {
-    // Handle non-JSON error responses (e.g., HTML error pages from Netlify timeouts)
-    let errorData: any = {};
-    const contentType = res.headers.get("content-type");
-    if (contentType && contentType.includes("application/json")) {
-      try {
-        errorData = await res.json();
-      } catch (e) {
-        // If JSON parsing fails, use status-based error message
-        errorData = {};
+  let totalSynced = 0;
+  let totalFailed = 0;
+  let total = 0;
+  const allErrors: Array<{ aha_id: string; name: string; error: string }> = [];
+  let iteration = 0;
+  let lastMessage = "";
+  let cursor: string | null = null;
+
+  while (iteration < MAX_SYNC_ITERATIONS) {
+    const res: Response = await fetch("/api/settings/aha-fields/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(cursor ? { cursor } : {}),
+    });
+    if (!res.ok) {
+      let errorData: any = {};
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        try {
+          errorData = await res.json();
+        } catch (e) {
+          errorData = {};
+        }
+      } else {
+        const statusText = res.status === 504
+          ? "Request timed out. The sync operation may have taken too long."
+          : res.status === 502
+          ? "Bad gateway. The server may be temporarily unavailable."
+          : `Server error (${res.status})`;
+        throw new Error(statusText);
       }
-    } else {
-      // For HTML or other non-JSON responses (like 504 timeout pages)
-      const statusText = res.status === 504 
-        ? "Request timed out. The sync operation may have taken too long."
-        : res.status === 502
-        ? "Bad gateway. The server may be temporarily unavailable."
-        : `Server error (${res.status})`;
-      throw new Error(statusText);
+      throw new Error(errorData.error || "Failed to synchronize fields");
     }
-    throw new Error(errorData.error || "Failed to synchronize fields");
+
+    const data = await res.json();
+    totalSynced += data.synced ?? 0;
+    totalFailed += data.failed ?? 0;
+    total = data.total ?? total;
+    if (Array.isArray(data.errors)) allErrors.push(...data.errors);
+    lastMessage = data.message ?? "";
+
+    const remaining = data.remaining ?? 0;
+    const partial = data.partial === true;
+    cursor = data.lastProcessedId ?? null;
+
+    if (!partial || remaining <= 0) {
+      return {
+        success: true,
+        message: iteration === 0 ? lastMessage : `Synchronized ${totalSynced} epic${totalSynced !== 1 ? "s" : ""}${totalFailed > 0 ? `, ${totalFailed} failed` : ""}.`,
+        synced: totalSynced,
+        failed: totalFailed,
+        total,
+        processed: totalSynced + totalFailed,
+        remaining: 0,
+        partial: false,
+        errors: allErrors.length > 0 ? allErrors : undefined,
+      };
+    }
+
+    iteration++;
+    await new Promise((r) => setTimeout(r, 300));
   }
-  return res.json();
+
+  return {
+    success: true,
+    message: `Synchronized ${totalSynced} epics (stopped after ${MAX_SYNC_ITERATIONS} batches). ${total - totalSynced - totalFailed} may still remain.`,
+    synced: totalSynced,
+    failed: totalFailed,
+    total,
+    processed: totalSynced + totalFailed,
+    remaining: total - totalSynced - totalFailed,
+    partial: true,
+    errors: allErrors.length > 0 ? allErrors : undefined,
+  };
 }
 
 export async function getEmailTemplates() {

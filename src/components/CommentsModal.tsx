@@ -1414,7 +1414,65 @@ export function CommentsModal({
           }
         }
       }
-      
+
+      // Fallback: definition list <dt>keyword</dt><dd>content</dd> (common in Aha-style two-column layouts)
+      const dts = doc.querySelectorAll('dt');
+      const kwLower = keyword.toLowerCase();
+      for (const dt of dts) {
+        const dtText = dt.textContent?.trim() || '';
+        if (dtText.toLowerCase().includes(kwLower)) {
+          const dd = dt.nextElementSibling;
+          if (dd && dd.tagName.toLowerCase() === 'dd') {
+            const ddHTML = dd.innerHTML?.trim() || '';
+            const ddText = dd.textContent?.trim() || '';
+            if (ddHTML && ddText) {
+              const result = cleanExtractedHTML(ddHTML);
+              if (result.trim()) return result;
+            }
+          }
+          break;
+        }
+      }
+
+      // Fallback: two-column layout where label and content are siblings
+      // (e.g. <div>Label</div><div>content</div> or <dt/>/<dd/> already handled above)
+      const allElements = doc.body.querySelectorAll('*');
+      for (const el of allElements) {
+        const text = el.textContent?.trim() || '';
+        if (!text.toLowerCase().includes(kwLower)) continue;
+        const tag = el.tagName.toLowerCase();
+        const labelLike = tag === 'dt' || tag === 'th' || tag === 'strong' || tag === 'b';
+        const next = el.nextElementSibling;
+        if (!next) continue;
+        const nextHTML = next.innerHTML?.trim() || '';
+        const nextText = next.textContent?.trim() || '';
+        const useNext = nextHTML && nextText.length > 10 && (labelLike || text.length < 300);
+        if (useNext) {
+          const result = cleanExtractedHTML(nextHTML);
+          if (result.trim()) return result;
+        }
+      }
+
+      // Fallback: section header in text (e.g. <strong>Label</strong><br>content or paragraphs)
+      const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const headerPattern = new RegExp(
+        `(?:<strong>|<b>|\\*\\*)\\s*[^<*]*${escapedKeyword}[^<*]*(?:</strong>|</b>|\\*\\*)`,
+        'i'
+      );
+      const headerMatch = htmlDescription.match(headerPattern);
+      if (headerMatch && headerMatch.index !== undefined) {
+        const contentStart = headerMatch.index + headerMatch[0].length;
+        const afterHeader = htmlDescription.substring(contentStart);
+        const nextHeaderPattern = /(?:<strong>|<b>|\*\*)\s*[^<*]+(?:<\/strong>|<\/b>|\*\*)/i;
+        const nextMatch = afterHeader.match(nextHeaderPattern);
+        const contentEnd = nextMatch && nextMatch.index !== undefined ? nextMatch.index : afterHeader.length;
+        const sectionContent = afterHeader.substring(0, contentEnd).trim();
+        if (sectionContent) {
+          const result = cleanExtractedHTML(sectionContent);
+          if (result.trim()) return result;
+        }
+      }
+
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1241',message:'No match found',data:{keyword,matchCount},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
       // #endregion

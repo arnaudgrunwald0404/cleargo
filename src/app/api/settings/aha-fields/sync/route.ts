@@ -42,31 +42,56 @@ export async function POST(req: NextRequest) {
         const settings = await getSettings();
         const fieldsToLoad = settings.aha_fields_to_load || [];
 
-        // Fetch all epics that have an aha_id
-        const { data: epics, error: epicsError } = await supabase
+        // Cursor: process next batch after this epic id (so each request syncs different epics)
+        let body: { cursor?: string } = {};
+        try {
+            body = await req.json().catch(() => ({}));
+        } catch {
+            body = {};
+        }
+        const cursor = typeof body.cursor === 'string' && body.cursor ? body.cursor : null;
+
+        const MAX_EPICS_PER_REQUEST = 10;
+
+        // Fetch one page of epics in deterministic order (id); if cursor provided, only id > cursor
+        let query = supabase
             .from('epic')
             .select('id, aha_id, name')
-            .not('aha_id', 'is', null);
-
-        if (epicsError) {
-            throw new Error(`Failed to fetch epics: ${epicsError.message}`);
+            .not('aha_id', 'is', null)
+            .order('id', { ascending: true });
+        if (cursor) {
+            query = query.gt('id', cursor);
         }
+        const { data: epicsPage, error: pageError } = await query.limit(MAX_EPICS_PER_REQUEST + 1);
+        if (pageError) {
+            throw new Error(`Failed to fetch epics: ${pageError.message}`);
+        }
+        const epicsPageList = epicsPage || [];
 
-        if (!epics || epics.length === 0) {
+        if (epicsPageList.length === 0) {
             return NextResponse.json({
                 success: true,
-                message: 'No epics found to synchronize',
+                message: cursor ? 'No more epics to synchronize' : 'No epics found to synchronize',
                 synced: 0,
                 failed: 0,
                 total: 0,
+                lastProcessedId: null,
+                remaining: 0,
             });
         }
 
-        // Limit the number of epics processed per request to prevent timeouts
-        // Process in batches to avoid hitting Netlify's timeout limits
-        const MAX_EPICS_PER_REQUEST = 10; // Conservative limit for serverless
-        const epicsToProcess = epics.slice(0, MAX_EPICS_PER_REQUEST);
-        const hasMore = epics.length > MAX_EPICS_PER_REQUEST;
+        const epicsToProcess = epicsPageList.slice(0, MAX_EPICS_PER_REQUEST);
+        const hasMore = epicsPageList.length > MAX_EPICS_PER_REQUEST;
+
+        // Total count only on first request (no cursor) for UI message
+        let total = 0;
+        if (!cursor) {
+            const { count, error: countError } = await supabase
+                .from('epic')
+                .select('*', { count: 'exact', head: true })
+                .not('aha_id', 'is', null);
+            if (!countError) total = count ?? 0;
+        }
 
         let synced = 0;
         let failed = 0;
@@ -78,16 +103,18 @@ export async function POST(req: NextRequest) {
         for (const epicRecord of epicsToProcess) {
             // Check timeout more frequently (before each epic)
             if (Date.now() - startTime > MAX_EXECUTION_TIME) {
+                const lastId = epicsToProcess[Math.min(synced + failed, epicsToProcess.length) - 1]?.id ?? cursor;
                 console.warn(`Sync timeout approaching, stopping at ${synced + failed} of ${epicsToProcess.length} epics`);
                 return NextResponse.json({
                     success: true,
                     message: `Partial synchronization completed (timeout protection)`,
                     synced,
                     failed,
-                    total: epics.length,
+                    total,
                     partial: true,
                     processed: synced + failed,
-                    remaining: epics.length - (synced + failed),
+                    remaining: hasMore ? 1 : 0,
+                    lastProcessedId: lastId,
                     errors: errors.length > 0 ? errors : undefined,
                 });
             }
@@ -163,17 +190,19 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        const lastProcessedId = epicsToProcess[epicsToProcess.length - 1]?.id ?? null;
         return NextResponse.json({
             success: true,
-            message: hasMore 
-                ? `Synchronized ${synced} of ${epicsToProcess.length} epics (${epics.length - epicsToProcess.length} remaining)`
+            message: hasMore
+                ? `Synchronized ${synced} of ${epicsToProcess.length} epics (more remaining)`
                 : `Synchronized ${synced} epic${synced !== 1 ? 's' : ''}`,
             synced,
             failed,
-            total: epics.length,
+            total,
             processed: synced + failed,
-            remaining: hasMore ? epics.length - epicsToProcess.length : 0,
+            remaining: hasMore ? 1 : 0,
             partial: hasMore,
+            lastProcessedId,
             errors: errors.length > 0 ? errors : undefined,
         });
     } catch (error: any) {

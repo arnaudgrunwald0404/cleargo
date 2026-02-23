@@ -452,6 +452,18 @@
     "weekly_release_fix_version": {
       "label": "Weekly Release (Fix Version)",
       "key": "weekly_release_fix_version"
+    },
+    "orgs_with_soft_commitment_": {
+      "label": "Orgs with Soft Commitment ",
+      "key": "orgs_with_soft_commitment"
+    },
+    "roadmap_screenshot_or_gif": {
+      "label": "Roadmap Screenshot or GIF",
+      "key": "roadmap_screenshot_or_gif"
+    },
+    "uiux_impact": {
+      "label": "UI/UX Impact",
+      "key": "uiux_impact"
     }
   }
 }
