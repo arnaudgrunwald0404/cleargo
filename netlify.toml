@@ -1,6 +1,10 @@
 [build]
   command = "npm run build"
 
+[functions]
+  # Allow long-running API routes (e.g. HEART setup: Pendo + AI)
+  timeout = 180
+
 # Important: Don't cache auth routes
 [[headers]]
   for = "/auth/*"
