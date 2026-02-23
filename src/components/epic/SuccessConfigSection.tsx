@@ -14,7 +14,7 @@ import {
   ActionIcon,
   Tooltip,
 } from '@mantine/core';
-import { IconLock, IconEdit, IconAlertCircle, IconCalendarClock, IconPlus, IconTrash, IconPencil } from '@tabler/icons-react';
+import { IconLock, IconEdit, IconAlertCircle, IconCalendarClock, IconPlus, IconTrash, IconPencil, IconWorldShare, IconWorldOff } from '@tabler/icons-react';
 import { SuccessConfigForm } from './SuccessConfigForm';
 import { DelegationModal, DelegationType } from '../DelegationModal';
 import { MetricSelectionModal } from './MetricSelectionModal';
@@ -36,6 +36,8 @@ interface SuccessConfigSectionProps {
   config: EpicSuccessConfigWithDetails | null;
   metrics: EpicSuccessMetricWithDetails[];
   isAdmin: boolean;
+  /** Can configure success metrics (CPO, PRODUCT, PRODUCT_OPS). When false, section is read-only. */
+  canConfigureSuccessMetrics?: boolean;
   onRefresh: () => Promise<void>;
   epicOwnerId?: string | null;
   pmOwner?: { name?: string; email?: string; avatar_url?: string } | null;
@@ -48,6 +50,7 @@ export function SuccessConfigSection({
   config,
   metrics,
   isAdmin,
+  canConfigureSuccessMetrics = false,
   onRefresh,
   epicOwnerId,
   pmOwner,
@@ -166,8 +169,9 @@ export function SuccessConfigSection({
     );
   }
 
-  const canEdit = !config.locked || isAdmin;
+  const canEdit = canConfigureSuccessMetrics && (!config.locked || isAdmin);
   const configLocked = config?.locked || false;
+  const isPublished = !!(config?.success_metrics_published_at);
 
   const handleAddMetric = async (metricId: string) => {
     // This is now handled by MetricSelectionModal with full config
@@ -229,15 +233,24 @@ export function SuccessConfigSection({
     <>
       <Card withBorder padding="md">
         <Stack gap="md">
-          <Group justify="space-between">
+          <Group justify="space-between" wrap="wrap" gap="xs">
             <Text size="lg" fw={500}>
               Success Configuration
             </Text>
-            {config?.locked && (
-              <Badge leftSection={<IconLock size={12} />} color="orange">
-                Locked
-              </Badge>
-            )}
+            <Group gap="xs">
+              {config?.locked && (
+                <Badge leftSection={<IconLock size={12} />} color="orange">
+                  Locked
+                </Badge>
+              )}
+              {canConfigureSuccessMetrics && (
+                isPublished ? (
+                  <Badge leftSection={<IconWorldShare size={12} />} color="green">Published</Badge>
+                ) : (
+                  <Badge leftSection={<IconWorldOff size={12} />} color="gray">Draft</Badge>
+                )
+              )}
+            </Group>
           </Group>
 
           <div>

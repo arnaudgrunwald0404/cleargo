@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# netlify (local link state; site id is not secret but keep local)
+.netlify
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -214,7 +214,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
   "meetings.read": ["CPO", "SUPERADMIN"],
   "analytics.read": ["CPO"],
-  "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS"],
+  "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "SUPERADMIN"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;
@@ -232,9 +232,10 @@ export function canRolesPerformWithRules(
   capability: CapabilityId,
   rules: Record<string, string[]>
 ): boolean {
-  if (!roles || roles.length === 0) return false;
+  if (!roles || (Array.isArray(roles) ? roles.length === 0 : !String(roles).trim())) return false;
 
-  const normalizedRoles = roles.map((r) => String(r).toUpperCase());
+  const roleArray = Array.isArray(roles) ? roles : [String(roles)];
+  const normalizedRoles = roleArray.map((r) => String(r).toUpperCase());
 
   if (normalizedRoles.includes("SUPERADMIN")) {
     return true;

@@ -24,7 +24,6 @@ import {
   Autocomplete,
   Tabs,
   Box,
-  Table,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -36,6 +35,8 @@ import {
   IconTrash,
   IconPlus,
   IconCalendar,
+  IconWorldShare,
+  IconWorldOff,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { HeartSetupWizard } from './HeartSetupWizard';
@@ -50,16 +51,30 @@ import type {
   HeartCustomMetricTemplate,
   HeartMeasurementType,
   HeartCategoryId,
-  EpicHeartReleaseView,
 } from '@/lib/heart/types';
 import { calculateFrustrationHealth } from '@/lib/heart/happiness-composite';
+
+/** Minimal success config for Publish/Unpublish in header (only on Success Metrics page). */
+export interface HeartDashboardSuccessConfig {
+  success_metrics_published_at?: string | null;
+}
 
 interface HeartDashboardProps {
   epicId: string;
   epicName: string;
+  /** When provided, Publish/Unpublish is shown in the HEART Metrics header (Success Metrics page only). */
+  successConfig?: HeartDashboardSuccessConfig | null;
+  canConfigureSuccessMetrics?: boolean;
+  onSuccessConfigRefresh?: () => Promise<void>;
 }
 
-export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
+export function HeartDashboard({
+  epicId,
+  epicName,
+  successConfig = null,
+  canConfigureSuccessMetrics = false,
+  onSuccessConfigRefresh,
+}: HeartDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
@@ -69,11 +84,45 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
   const [showEditForm, setShowEditForm] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [showAddCustomMetric, setShowAddCustomMetric] = useState(false);
-  const [chartWindow, setChartWindow] = useState<HeartTrackerWindow>('1M');
-  const [releaseView, setReleaseView] = useState<EpicHeartReleaseView | null>(null);
-  const [loadingReleaseView, setLoadingReleaseView] = useState(false);
+  const [chartWindow, setChartWindow] = useState<HeartTrackerWindow>('7D');
   const [asOfDate, setAsOfDate] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const fetchInProgressRef = React.useRef(false);
+
+  const isSuccessPublished = !!(successConfig?.success_metrics_published_at);
+  const handlePublishSuccess = async () => {
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/config/publish`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to publish');
+      }
+      await onSuccessConfigRefresh?.();
+      notifications.show({ title: 'Success metrics published', message: 'Everyone can now see these metrics.', color: 'green' });
+    } catch (err: any) {
+      notifications.show({ title: 'Failed to publish', message: err.message, color: 'red' });
+    } finally {
+      setPublishing(false);
+    }
+  };
+  const handleUnpublishSuccess = async () => {
+    if (!confirm('Unpublish success metrics? Only users who can configure them will see the configuration until you publish again.')) return;
+    setPublishing(true);
+    try {
+      const res = await fetch(`/api/epics/${epicId}/success/config/unpublish`, { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to unpublish');
+      }
+      await onSuccessConfigRefresh?.();
+      notifications.show({ title: 'Success metrics unpublished', message: 'Metrics are now in draft. Only configurers can see them.', color: 'blue' });
+    } catch (err: any) {
+      notifications.show({ title: 'Failed to unpublish', message: err.message, color: 'red' });
+    } finally {
+      setPublishing(false);
+    }
+  };
 
   const handleReset = async () => {
     if (!confirm('Are you sure you want to reset HEART metrics? This will delete all current configuration.')) {
@@ -115,9 +164,10 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
     setLoading(true);
     setError(null);
     try {
-      const url = asOfDate
-        ? `/api/epics/${epicId}/heart?asOf=${encodeURIComponent(asOfDate)}`
-        : `/api/epics/${epicId}/heart`;
+      const params = new URLSearchParams();
+      if (asOfDate) params.set('asOf', asOfDate);
+      if (chartWindow) params.set('window', chartWindow);
+      const url = `/api/epics/${epicId}/heart${params.toString() ? `?${params.toString()}` : ''}`;
       const res = await fetch(url);
       if (!res.ok) {
         const data = await res.json();
@@ -140,23 +190,7 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
 
   useEffect(() => {
     fetchDashboard();
-  }, [epicId, asOfDate]);
-
-  useEffect(() => {
-    if (!configured || !epicId) return;
-    let cancelled = false;
-    setLoadingReleaseView(true);
-    fetch(`/api/epics/${epicId}/heart/release-view`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: EpicHeartReleaseView | null) => {
-        if (!cancelled && data) setReleaseView(data);
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!cancelled) setLoadingReleaseView(false);
-      });
-    return () => { cancelled = true; };
-  }, [epicId, configured]);
+  }, [epicId, asOfDate, chartWindow]);
 
   if (loading) {
     return (
@@ -267,8 +301,71 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
               </Text>
             )}
           </div>
-          <Group gap="xs" align="center">
-            {/* Compact View as of (inline in header) */}
+          <Group gap="sm" align="center" wrap="wrap">
+            {/* Publish first so it's always visible */}
+            {canConfigureSuccessMetrics && (
+              <>
+                {successConfig ? (
+                  <>
+                    {isSuccessPublished ? (
+                      <Badge leftSection={<IconWorldShare size={12} />} color="green" variant="light">Published</Badge>
+                    ) : (
+                      <Badge leftSection={<IconWorldOff size={12} />} color="gray" variant="light">Draft</Badge>
+                    )}
+                    {isSuccessPublished ? (
+                      <Button size="xs" variant="light" color="gray" leftSection={<IconWorldOff size={14} />} onClick={handleUnpublishSuccess} loading={publishing}>
+                        Unpublish
+                      </Button>
+                    ) : (
+                      <Button size="xs" color="green" leftSection={<IconWorldShare size={14} />} onClick={handlePublishSuccess} loading={publishing}>
+                        Publish
+                      </Button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <Badge leftSection={<IconWorldOff size={12} />} color="gray" variant="light">Draft</Badge>
+                    {dashboard ? (
+                      <Tooltip label="Make these metrics visible to everyone">
+                        <Button size="xs" color="green" leftSection={<IconWorldShare size={14} />} onClick={handlePublishSuccess} loading={publishing}>
+                          Publish
+                        </Button>
+                      </Tooltip>
+                    ) : (
+                      <Tooltip label="Set up HEART metrics above first">
+                        <span>
+                          <Button size="xs" color="green" leftSection={<IconWorldShare size={14} />} disabled>
+                            Publish
+                          </Button>
+                        </span>
+                      </Tooltip>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {canEdit && (
+              <>
+                <Box component="span" style={{ width: 1, alignSelf: 'stretch', background: 'var(--mantine-color-default-border)', margin: '0 2px' }} aria-hidden />
+                <Tooltip label="Refresh data">
+                  <ActionIcon variant="subtle" size="sm" onClick={fetchDashboard}>
+                    <IconRefresh size={18} />
+                  </ActionIcon>
+                </Tooltip>
+                <Tooltip label="Reset and reconfigure">
+                  <ActionIcon variant="subtle" color="red" size="sm" onClick={handleReset} loading={resetting}>
+                    <IconTrash size={18} />
+                  </ActionIcon>
+                </Tooltip>
+                <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => setShowAddCustomMetric(true)}>
+                  Add Metric
+                </Button>
+                <Button variant="light" size="xs" leftSection={<IconEdit size={14} />} onClick={() => setShowEditForm(true)}>
+                  Edit Metrics
+                </Button>
+              </>
+            )}
+            {/* As of (inline in header) */}
             {!dashboard?.asOfDate ? (
               <Group gap={4} align="center" wrap="nowrap">
                 <Text size="xs" c="dimmed">As of</Text>
@@ -290,26 +387,6 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
                 <Text size="xs" c="dimmed">As of {(dashboard?.asOfDate ?? asOfDate) ?? ''}</Text>
                 <Button variant="subtle" size="xs" onClick={() => setAsOfDate(null)}>Live</Button>
               </Group>
-            )}
-            {canEdit && (
-              <>
-                <Tooltip label="Refresh data">
-                  <ActionIcon variant="subtle" size="sm" onClick={fetchDashboard}>
-                    <IconRefresh size={18} />
-                  </ActionIcon>
-                </Tooltip>
-                <Tooltip label="Reset and reconfigure">
-                  <ActionIcon variant="subtle" color="red" size="sm" onClick={handleReset} loading={resetting}>
-                    <IconTrash size={18} />
-                  </ActionIcon>
-                </Tooltip>
-                <Button variant="light" size="xs" leftSection={<IconPlus size={14} />} onClick={() => setShowAddCustomMetric(true)}>
-                  Add Metric
-                </Button>
-                <Button variant="light" size="xs" leftSection={<IconEdit size={14} />} onClick={() => setShowEditForm(true)}>
-                  Edit Metrics
-                </Button>
-              </>
             )}
           </Group>
         </Group>
@@ -402,62 +479,6 @@ export function HeartDashboard({ epicId, epicName }: HeartDashboardProps) {
                 </Tabs.Panel>
               ))}
           </Tabs>
-        </Card>
-      )}
-
-      {/* Release impact: baseline vs Month 1, 2, ... from stored snapshots */}
-      {releaseView?.releaseDate && (
-        <Card withBorder padding="lg" style={{ width: '100%', maxWidth: 'none' }}>
-          <Text size="sm" fw={600} c="dimmed" mb="xs">Release impact</Text>
-          <Text size="xs" c="dimmed" mb="md">
-            Pre-release baseline (30d before launch) and monthly averages from stored snapshots. Data builds as the daily snapshot job runs.
-          </Text>
-          {loadingReleaseView ? (
-            <Skeleton height={120} />
-          ) : (
-            <Table withTableBorder withColumnBorders striped>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>Metric</Table.Th>
-                  <Table.Th>Baseline (pre-release)</Table.Th>
-                  {releaseView.months.map((m) => (
-                    <Table.Th key={m.monthIndex}>{m.label}</Table.Th>
-                  ))}
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {(
-                  [
-                    ['happiness', 'Happiness'],
-                    ['engagement', 'Engagement'],
-                    ['adoption', 'Adoption'],
-                    ['retention', 'Retention'],
-                    ['task_success', 'Task Success'],
-                  ] as const
-                ).map(([id, label]) => (
-                  <Table.Tr key={id}>
-                    <Table.Td fw={500}>{label}</Table.Td>
-                    <Table.Td>
-                      {releaseView.baseline[id] != null
-                        ? typeof releaseView.baseline[id] === 'number'
-                          ? Number(releaseView.baseline[id]).toFixed(2)
-                          : String(releaseView.baseline[id])
-                        : '—'}
-                    </Table.Td>
-                    {releaseView.months.map((m) => (
-                      <Table.Td key={m.monthIndex}>
-                        {m.metrics[id] != null
-                          ? typeof m.metrics[id] === 'number'
-                            ? Number(m.metrics[id]).toFixed(2)
-                            : String(m.metrics[id])
-                          : '—'}
-                      </Table.Td>
-                    ))}
-                  </Table.Tr>
-                ))}
-              </Table.Tbody>
-            </Table>
-          )}
         </Card>
       )}
 
@@ -715,7 +736,7 @@ function HeartMetricCard({
         : rounded >= 1000
         ? rounded.toLocaleString()
         : String(rounded);
-      displayUnit = metric.measurement_type === 'events_per_user_per_week' ? 'events/user/week' : 'events per user';
+      displayUnit = metric.measurement_type === 'events_per_user_per_week' ? 'events/user/wk' : 'events per user';
     } else {
       displayValue = value.toFixed(0);
     }
@@ -730,19 +751,23 @@ function HeartMetricCard({
     'gray.7';
 
   return (
-    <Paper withBorder p="md" h="100%" radius="md" bg="white">
-      <Stack gap={8} h="100%" justify="space-between">
+    <Paper withBorder p="md" h="100%" radius="md" bg="white" style={{ minWidth: 0 }}>
+      <Stack gap={8} h="100%" justify="space-between" style={{ minWidth: 0 }}>
         <Text size="sm" fw={600} c="dimmed">{category.name}</Text>
 
-        <Group gap={6} align="baseline" wrap="nowrap">
+        <Stack gap={4}>
           <Text size="34px" fw={700} lh={1} c={valueColor}>
             {displayValue}
           </Text>
-          {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}
-          {(metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null && (
-            <Text size="xs" c="dimmed">completion rate</Text>
+          {(displayUnit || (metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null) && (
+            <Group gap={6} wrap="wrap">
+              {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}
+              {(metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null && (
+                <Text size="xs" c="dimmed">completion rate</Text>
+              )}
+            </Group>
           )}
-        </Group>
+        </Stack>
 
         {(isPostReleaseOnly || item.metricContext?.isPageToActionRate) && (
           <Text size="xs" c="dimmed" lineClamp={1}>

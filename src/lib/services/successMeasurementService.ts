@@ -200,6 +200,8 @@ export interface EpicSuccessConfigWithDetails {
   post_launch_owner: string; // Keep the ID for compatibility
   delegated_post_launch_owner_id?: string | null;
   track_offline?: boolean;
+  /** When set, success metrics are published and visible to all users; when null, draft. */
+  success_metrics_published_at?: string | null;
   locked: boolean;
   locked_at: string | null;
   created_at: string;
@@ -222,15 +224,15 @@ export interface EpicSuccessConfigWithDetails {
 
 /**
  * Resolve product manager user ID from epic
- * Priority: pod mapping > AHA assigned_to_user > PM Foundation criteria accountable
+ * Priority: epic owner_id > epic owner_email (Aha) > pod mapping > AHA assigned_to_user > PM Foundation criteria
  */
 export async function resolveProductManagerUserId(epicId: string): Promise<string | null> {
   const supabase = createClient();
   
-  // Get epic with AHA fields
+  // Get epic with owner and AHA fields
   const { data: epic, error: epicError } = await supabase
     .from('epic')
-    .select('pod, aha_fields')
+    .select('owner_id, owner_email, pod, aha_fields')
     .eq('id', epicId)
     .single();
 
@@ -238,14 +240,25 @@ export async function resolveProductManagerUserId(epicId: string): Promise<strin
     return null;
   }
 
+  // Use epic owner_id when set (e.g. from Aha sync)
+  if (epic.owner_id) {
+    return epic.owner_id;
+  }
+
   const { getSettings } = await import('../settings-db');
   const settings = await getSettings();
   const podMapping = settings.pod_product_manager_mapping || {};
   
   let pmEmail: string | null = null;
+
+  // Epic owner_email from Aha (assigned_to_user) when owner_id not yet resolved
+  if (epic.owner_email && typeof epic.owner_email === 'string' && epic.owner_email.trim()) {
+    pmEmail = epic.owner_email.trim().toLowerCase();
+  }
+
   const pod = epic.pod || (epic.aha_fields as any)?.custom_fields?.dev_backlog_pod || null;
 
-  // First priority: pod mapping
+  // Pod mapping (can override owner_email if pod is set)
   if (pod) {
     if (podMapping[pod]) {
       pmEmail = podMapping[pod];
@@ -448,17 +461,65 @@ export async function createEpicSuccessConfig(
     if (resolvedPmId) {
       postLaunchOwner = resolvedPmId;
     } else {
-      // Fallback to epic owner if PM resolution fails
+      // Fallback: epic owner_id or owner_email (Aha assigned_to_user)
       const { data: epic, error: epicError } = await supabase
         .from('epic')
-        .select('owner_id')
+        .select('owner_id, owner_email')
         .eq('id', epicId)
         .single();
       
-      if (epicError || !epic?.owner_id) {
+      if (epicError || !epic) {
         throw new Error('Post-launch owner is required and could not be resolved. Please set a product manager or epic owner.');
       }
-      postLaunchOwner = epic.owner_id;
+      if (epic.owner_id) {
+        postLaunchOwner = epic.owner_id;
+      } else if (epic.owner_email && typeof epic.owner_email === 'string' && epic.owner_email.trim()) {
+        const { data: user } = await supabase
+          .from('app_user')
+          .select('id')
+          .eq('email', epic.owner_email.trim().toLowerCase())
+          .single();
+        if (user?.id) {
+          postLaunchOwner = user.id;
+        }
+      }
+      // Last resort: use same epic shape as API (owner expand + aha_fields) so we match what the UI shows
+      if (!postLaunchOwner) {
+        const { getEpic } = await import('@/lib/epics');
+        const fullEpic = await getEpic(epicId);
+        const anyEpic = fullEpic as any;
+        // #region agent log
+        try {
+          const aha = anyEpic?.aha_fields;
+          const std = aha?.standard_fields || aha?.standardFields;
+          const assigned = std?.assigned_to_user || std?.assignedToUser;
+          const emailFromAha = assigned?.email;
+          fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'successMeasurementService.ts:createEpicSuccessConfig', message: 'post-launch owner resolution', data: { epicId, hasFullEpic: !!fullEpic, ownerId: anyEpic?.owner?.id, ownerEmail: anyEpic?.owner?.email, emailFromAha: typeof emailFromAha === 'string' ? emailFromAha : null, hasAhaFields: !!aha }, timestamp: Date.now(), hypothesisId: 'owner-resolve' }) }).catch(() => {});
+        } catch (_) {}
+        // #endregion
+        if (fullEpic) {
+          const owner = anyEpic.owner;
+          if (owner?.id) {
+            postLaunchOwner = owner.id;
+          } else if (owner?.email && typeof owner.email === 'string') {
+            const { data: u } = await supabase.from('app_user').select('id').eq('email', owner.email.trim().toLowerCase()).single();
+            if (u?.id) postLaunchOwner = u.id;
+          }
+          if (!postLaunchOwner) {
+            const aha = anyEpic.aha_fields;
+            const std = aha?.standard_fields || aha?.standardFields;
+            const assigned = std?.assigned_to_user || std?.assignedToUser;
+            const email = assigned?.email;
+            if (email && typeof email === 'string') {
+              const { data: u } = await supabase.from('app_user').select('id').eq('email', email.trim().toLowerCase()).single();
+              if (u?.id) postLaunchOwner = u.id;
+            }
+          }
+        }
+      }
+      if (!postLaunchOwner) {
+        throw new Error('Post-launch owner is required and could not be resolved. Please set a product manager or epic owner.');
+      }
     }
   }
   
@@ -553,6 +614,35 @@ export async function lockEpicSuccessConfig(epicId: string): Promise<EpicSuccess
     }
     console.error('Error locking epic success config:', error);
     throw new Error(`Failed to lock epic success config: ${error.message}`);
+  }
+
+  return config as EpicSuccessConfig;
+}
+
+/**
+ * Set success metrics published state for an epic. When published, all users can see metrics; when draft, only users with Configure Success Metrics permission see them.
+ */
+export async function setEpicSuccessMetricsPublished(
+  epicId: string,
+  published: boolean
+): Promise<EpicSuccessConfig> {
+  const supabase = createClient();
+  const { data: config, error } = await supabase
+    .from('epic_success_configs')
+    .update({
+      success_metrics_published_at: published ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('epic_id', epicId)
+    .select()
+    .single();
+
+  if (error) {
+    if (error.code === 'PGRST116') {
+      throw new Error('Epic success config not found');
+    }
+    console.error('Error setting success metrics published state:', error);
+    throw new Error(`Failed to set success metrics published state: ${error.message}`);
   }
 
   return config as EpicSuccessConfig;

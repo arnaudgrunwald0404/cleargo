@@ -92,4 +92,16 @@ Summary of what ClearGO/Pendo is collecting and how it maps to HEART, so we can 
 | Retention | TrackType (return events) | Same event in two periods |
 | Task Success | Feature or TrackType (start + complete) | Link / Copy Link (features); BulkOnboarding Started/Completed (track) |
 
+---
+
+## Chart window (7D, 1M, etc.) and card values
+
+**All HEART metrics use the selected chart window.** When you change the timeframe (7D, 1M, 3M, etc.):
+
+- The **API** is called with `?window=7D` (or 1M, etc.).
+- **Every metric** (Happiness, Engagement, Adoption, Retention, Task Success) is fetched from Pendo using that window’s date range (`startDate`/`endDate`).
+- Card values and metric details (e.g. “Last 7 days”, “Last 30 days”) match the selected window.
+
+So 7D shows last 7 days of Pendo data; 1M shows last 30 days. You can confirm in Pendo (e.g. Activity for the same event/feature for 7D vs 30D) that counts differ by window. Example (ClearCompany app): *App.Requisition.Synced.LinkedIn* in 7D ≈ 21.8K events, 2 unique visitors; in 30D ≈ 114.6K events, 3 unique visitors.
+
 This file was generated using Pendo MCP (list_all_applications, accountMetadataSchema, visitorMetadataSchema, searchEntities, activityQuery, productEngagementScore, segmentList).

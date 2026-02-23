@@ -311,6 +311,8 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 ### 5. Success Measurement (Post-Launch Tracking)
 
 #### 5.1 Success Configuration
+- **Draft and Publish**: Success metrics are configured in **draft** by users with Configure Success Metrics permission (CPO, Product, Product Ops). Only they see the full configuration until they **Publish**. Once published, all users can see the success metrics. PMs can **Unpublish** to return to draft (visible only to configurers again).
+- **"In Progress" for Other Users**: When success metrics are in draft, other users see a message that metrics are being configured by the product team and will appear once published.
 - **Benchmark Selection**: PMs select adoption benchmarks matching epic tier (TIER_1, TIER_2, TIER_3)
 - **Metric Mapping**: PMs select 3-7 success metrics to track (adoption, revenue, retention, enablement, friction)
 - **Post-Launch Owner Assignment**: Assign post-launch owner responsible for monitoring
@@ -1105,6 +1107,8 @@ The system uses the following launch stage phases:
 - `delegated_post_launch_owner_id` (UUID, Foreign Key → app_user, Nullable, ON DELETE SET NULL)
 - `locked` (Boolean, Default: false)
 - `locked_at` (Timestamp, Nullable)
+- `success_metrics_published_at` (Timestamp, Nullable) - When set, success metrics are published and visible to all users; when null, draft (only users with Configure Success Metrics permission see them).
+- `track_offline` (Boolean, Default: false)
 - `created_at` (Timestamp)
 - `updated_at` (Timestamp)
 

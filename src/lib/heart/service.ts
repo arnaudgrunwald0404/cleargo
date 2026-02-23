@@ -13,6 +13,7 @@ import {
   calculateHappinessCompositeScore,
 } from './happiness-composite';
 import { createEpicSnapshots } from './snapshot-calculator';
+import { getWindowDateRange, type HeartTrackerWindow } from './window';
 
 // Use admin client for HEART operations since these run in API routes
 // and RLS policies may not have proper auth context
@@ -231,7 +232,8 @@ export async function fetchLiveMetricValue(
   client: PendoClient,
   epicLaunchDate: Date | null,
   targetValue: number | null,
-  targetTimeframeDays?: number | null
+  targetTimeframeDays?: number | null,
+  dateRangeOverride?: { startDate: string; endDate: string }
 ): Promise<LiveMetricValue> {
   const measurementType = metric.measurement_type as HeartMeasurementType;
   const eventIds = metric.pendo_event_ids;
@@ -253,32 +255,34 @@ export async function fetchLiveMetricValue(
     ? Math.floor((today.getTime() - epicLaunchDate.getTime()) / (1000 * 60 * 60 * 24))
     : null;
 
-  // Calculate date range
-  const endDate = today.toISOString().split('T')[0];
-
-  // Default to last 30 days (matches Pendo timeSeries window)
+  // Calculate date range — when chart window is provided, use it for all metrics so card and chart match
+  let endDate = today.toISOString().split('T')[0];
   const rangeStart = new Date(today);
   rangeStart.setDate(rangeStart.getDate() - 30);
   let startDate = rangeStart.toISOString().split('T')[0];
   let measurementPeriod = 'Last 30 days';
 
-  // Override period label based on measurement type
-  if (measurementType === 'return_rate_7_days') {
-    measurementPeriod = 'Last 14 days';
-  } else if (measurementType === 'return_rate_14_days') {
-    measurementPeriod = 'Last 28 days';
-  } else if (measurementType === 'return_rate_30_days') {
-    measurementPeriod = 'Last 60 days';
-  } else if (measurementType === 'happiness_composite_score') {
-    measurementPeriod = 'Last 30 days';
+  if (dateRangeOverride) {
+    startDate = dateRangeOverride.startDate;
+    endDate = dateRangeOverride.endDate;
+    const days = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
+    measurementPeriod = days <= 7 ? 'Last 7 days' : days <= 31 ? 'Last 30 days' : days <= 93 ? 'Last 3 months' : days <= 186 ? 'Last 6 months' : days <= 366 ? 'Last year' : 'Selected period';
+  } else {
+    if (measurementType === 'return_rate_7_days') {
+      measurementPeriod = 'Last 14 days';
+    } else if (measurementType === 'return_rate_14_days') {
+      measurementPeriod = 'Last 28 days';
+    } else if (measurementType === 'return_rate_30_days') {
+      measurementPeriod = 'Last 60 days';
+    } else if (measurementType === 'happiness_composite_score') {
+      measurementPeriod = 'Last 30 days';
+    }
+    if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users')) {
+      startDate = epicLaunchDate.toISOString().split('T')[0];
+      measurementPeriod = daysSinceLaunch !== null ? `Since release (Day ${daysSinceLaunch})` : 'Since release';
+    }
   }
 
-  // For adoption metrics, use release date if available and released
-  if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users')) {
-    startDate = epicLaunchDate.toISOString().split('T')[0];
-    measurementPeriod = daysSinceLaunch !== null ? `Since release (Day ${daysSinceLaunch})` : 'Since release';
-  }
-  
   try {
     const primaryEventId = eventIds[0];
     let value: number | null = null;
@@ -1522,12 +1526,15 @@ export function getCurrentMilestone(
 /**
  * Get full HEART dashboard for an epic
  * Fetches LIVE data from Pendo API; when asOfDate is set, uses only stored snapshots (no Pendo).
+ * When window is set (e.g. 7D, 1M), adoption metrics use that date range so the card matches the chart.
  */
 export async function getEpicHeartDashboard(
   epicId: string,
-  options?: { asOfDate?: string }
+  options?: { asOfDate?: string; window?: HeartTrackerWindow }
 ): Promise<EpicHeartDashboard | null> {
   const asOfDate = options?.asOfDate ?? null;
+  const chartWindow = options?.window ?? null;
+  const dateRangeOverride = chartWindow ? getWindowDateRange(chartWindow) : undefined;
 
   // Get config
   const config = await getEpicHeartConfig(epicId);
@@ -1624,6 +1631,11 @@ export async function getEpicHeartDashboard(
     let latestSnapshot: EpicHeartSnapshot | null = null;
     let trend: 'up' | 'down' | 'stable' | null = null;
     let history: EpicHeartSnapshot[] = [];
+    // #region agent log
+    let storedHistoryLength = 0;
+    let usedPendoFallback = false;
+    let pendoRawLength = 0;
+    // #endregion
     
     // Track context for display
     let isPreLaunch: boolean | undefined;
@@ -1632,13 +1644,14 @@ export async function getEpicHeartDashboard(
     let metricContext: MetricContext | undefined;
 
     if (metric && pendoClient) {
-      // Fetch LIVE data from Pendo
+      // Fetch LIVE data from Pendo; when chart window is set, all metrics use it so card and chart match
       const liveData = await fetchLiveMetricValue(
-        metric, 
-        pendoClient, 
+        metric,
+        pendoClient,
         epicLaunchDate,
         metric.target_value,
-        metric.target_timeframe_days
+        metric.target_timeframe_days,
+        dateRangeOverride
       );
 
       isPreLaunch = liveData.isPreLaunch;
@@ -1697,27 +1710,9 @@ export async function getEpicHeartDashboard(
         }
       }
 
-      // Prefer stored snapshots for chart history (dates < today); use Pendo only for today
-      const todayObj = new Date();
-      const todayKey = todayObj.toISOString().split('T')[0]!;
-      const yesterdayObj = new Date(todayObj);
-      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-      const yesterdayKey = yesterdayObj.toISOString().split('T')[0]!;
-      const rangeStart = new Date(todayObj);
-      rangeStart.setDate(rangeStart.getDate() - 180);
-      if (epicLaunchDate && epicLaunchDate > rangeStart) {
-        rangeStart.setTime(epicLaunchDate.getTime());
-      }
-      const rangeStartKey = rangeStart.toISOString().split('T')[0]!;
-      const storedHistory = await getSnapshots(metric.id, rangeStartKey, yesterdayKey);
-
-      if (storedHistory.length > 0) {
-        history = storedHistory;
-        if (latestSnapshot && latestSnapshot.snapshot_date === todayKey) {
-          history = [...history, latestSnapshot];
-        }
-      } else {
-        // No stored history yet: build from Pendo (same as before)
+      // Live view (no asOfDate): always build chart history from Pendo (-30d). Stored snapshots are only used when user selects "As of" date.
+      usedPendoFallback = true;
+      const todayKey = new Date().toISOString().split('T')[0]!;
       // Fetch daily time-series from Pendo and compute actual metric values per day
       const allEventIds = metric.pendo_event_ids ?? [];
       // Happiness uses frustration time series (same scope as live card/description), not event counts
@@ -1728,6 +1723,7 @@ export async function getEpicHeartDashboard(
             pageIdsForChart.length > 0 ? { days: 30, pageIds: pageIdsForChart } : { days: 30 }
           );
           if (frustrationCounts.length > 0) {
+            pendoRawLength = frustrationCounts.length;
             history = frustrationCounts.map(d => ({
               id: `frust-${metric.id}-${d.date}`,
               epic_heart_metric_id: metric.id,
@@ -1766,6 +1762,7 @@ export async function getEpicHeartDashboard(
           }
           const allDates = Array.from(new Set([...startByDate.keys(), ...completeByDate.keys()])).sort();
           if (allDates.length > 0) {
+            pendoRawLength = allDates.length;
             history = allDates.map((date) => {
               const startCount = startByDate.get(date) ?? 0;
               const completeCount = completeByDate.get(date) ?? 0;
@@ -1846,6 +1843,7 @@ export async function getEpicHeartDashboard(
             const computedRaw = await Promise.all(historyPromises);
             const computed = computedRaw.filter((s): s is NonNullable<typeof s> => s != null);
             if (computed.length > 0) {
+              pendoRawLength = computed.length;
               history = computed;
             } else {
               history = await getSnapshots(metric.id);
@@ -1886,6 +1884,7 @@ export async function getEpicHeartDashboard(
             }
             const daily = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
             if (daily.length > 0) {
+              pendoRawLength = daily.length;
               const maxVisitorsInADay = Math.max(...daily.map((d) => d.visitors), 1);
 
               history = daily.map((d) => {
@@ -1931,7 +1930,6 @@ export async function getEpicHeartDashboard(
             history = [...history, latestSnapshot];
           }
         }
-      }
       }
       if (history.length >= 2) {
         const prevH = history[history.length - 2];
@@ -2002,6 +2000,9 @@ export async function getEpicHeartDashboard(
       }
     }
 
+    // #region agent log
+    fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'heart/service.ts:buildDashboard',message:'HEART history built',data:{categoryId:category.id,historyLength:history.length,storedHistoryLength,usedPendoFallback,pendoRawLength},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
     metricsWithLiveData.push({
       category,
       metric,
@@ -2045,7 +2046,8 @@ export async function getEpicHeartDashboard(
         pendoClient,
         epicLaunchDate,
         metric.target_value,
-        metric.target_timeframe_days
+        metric.target_timeframe_days,
+        dateRangeOverride
       );
 
       isPreLaunch = liveData.isPreLaunch;

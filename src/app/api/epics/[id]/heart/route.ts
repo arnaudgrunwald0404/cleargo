@@ -18,6 +18,7 @@ import {
   createInitialSnapshots,
 } from '@/lib/heart/service';
 import type { HeartSetupMethod } from '@/lib/heart/types';
+import type { HeartTrackerWindow } from '@/lib/heart/window';
 
 function forbid() {
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -59,7 +60,12 @@ export async function GET(
     const canEdit = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules);
 
     const asOf = req.nextUrl.searchParams.get('asOf') ?? undefined;
-    const dashboard = await getEpicHeartDashboard(epicId, { asOfDate: asOf });
+    const windowParam = req.nextUrl.searchParams.get('window') ?? undefined;
+    const validWindow: HeartTrackerWindow | undefined = windowParam && ['7D', '1M', '3M', '6M', '1Y', 'YTD', 'Max'].includes(windowParam) ? windowParam as HeartTrackerWindow : undefined;
+    const dashboard = await getEpicHeartDashboard(epicId, {
+      asOfDate: asOf,
+      window: validWindow,
+    });
 
     if (!dashboard) {
       return NextResponse.json({ 

@@ -3,8 +3,10 @@
 import React, { useMemo, useState } from 'react';
 import { Group, SegmentedControl, Stack, Text } from '@mantine/core';
 import type { HeartMetricDisplay } from '@/lib/heart/types';
+import { getWindowBounds, type HeartTrackerWindow } from '@/lib/heart/window';
 
-export type HeartTrackerWindow = '7D' | '1M' | '3M' | '6M' | '1Y' | 'YTD' | 'Max';
+export type { HeartTrackerWindow };
+export { getWindowBounds };
 
 const WINDOW_OPTIONS: { value: HeartTrackerWindow; label: string }[] = [
   { value: '7D', label: '7D' },
@@ -15,39 +17,6 @@ const WINDOW_OPTIONS: { value: HeartTrackerWindow; label: string }[] = [
   { value: 'YTD', label: 'YTD' },
   { value: 'Max', label: 'Max' },
 ];
-
-export function getWindowBounds(window: HeartTrackerWindow): { start: Date; end: Date } {
-  const end = new Date();
-  end.setHours(23, 59, 59, 999);
-  const start = new Date(end);
-
-  switch (window) {
-    case '7D':
-      start.setDate(start.getDate() - 7);
-      break;
-    case '1M':
-      start.setMonth(start.getMonth() - 1);
-      break;
-    case '3M':
-      start.setMonth(start.getMonth() - 3);
-      break;
-    case '6M':
-      start.setMonth(start.getMonth() - 6);
-      break;
-    case '1Y':
-      start.setFullYear(start.getFullYear() - 1);
-      break;
-    case 'YTD':
-      start.setMonth(0, 1);
-      start.setHours(0, 0, 0, 0);
-      break;
-    case 'Max':
-      start.setFullYear(start.getFullYear() - 5); // arbitrary "max" back in time
-      break;
-  }
-  start.setHours(0, 0, 0, 0);
-  return { start, end };
-}
 
 export function toDateKey(d: Date): string {
   return d.toISOString().split('T')[0];
@@ -175,7 +144,7 @@ export function HeartMetricTracker({
   window: controlledWindow,
   onWindowChange,
 }: HeartMetricTrackerProps) {
-  const [internalWindow, setInternalWindow] = useState<HeartTrackerWindow>('1M');
+  const [internalWindow, setInternalWindow] = useState<HeartTrackerWindow>('7D');
   const window = controlledWindow ?? internalWindow;
   const setWindow = onWindowChange ?? setInternalWindow;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -278,6 +247,9 @@ export function HeartMetricTracker({
     };
   }, [window, history, latestSnapshot, releaseDate, metric?.measurement_type, historyUnit, metricContext?.raw]);
 
+  // #region agent log
+  fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HeartMetricTracker.tsx:chartData',message:'Chart data',data:{categoryId:item.category?.id,historyLength:history?.length??0,pointsLength:points.length,window},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+  // #endregion
   if (points.length < 1) {
     return (
       <Stack gap="xs">

@@ -2,8 +2,11 @@ import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { resolveRole } from '@/lib/roles';
 import { getEpic } from '@/lib/epics';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import {
   getEpicSuccessMetrics,
+  getEpicSuccessConfig,
   addEpicSuccessMetric,
 } from '@/lib/services/successMeasurementService';
 import { createEpicSuccessMetricSchema } from '@/lib/success/validation';
@@ -22,6 +25,23 @@ export async function GET(
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const config = await getEpicSuccessConfig(epicId);
+    const rules = await getEffectivePermissionRules();
+    const { data: me } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+    const canConfigure = canRolesPerformWithRules(
+      (me?.roles as string[]) || [],
+      'settings.successMeasurement.update',
+      rules
+    );
+    // If not published, only users who can configure success metrics see the metrics
+    if (config && config.success_metrics_published_at == null && !canConfigure) {
+      return NextResponse.json([]);
     }
 
     const metrics = await getEpicSuccessMetrics(epicId);

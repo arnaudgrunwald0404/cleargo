@@ -58,6 +58,8 @@ export interface EpicSuccessConfig {
   locked: boolean;
   locked_at: string | null;
   track_offline: boolean;
+  /** When set, success metrics are published and visible to all users; when null, draft (only configurers see). Omitted if migration not yet applied. */
+  success_metrics_published_at?: string | null;
   created_at: string;
   updated_at: string;
 }

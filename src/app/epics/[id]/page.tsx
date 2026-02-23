@@ -6,17 +6,17 @@ import { useParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
 import Matrix from "@/components/Matrix";
 import { createClient } from "@/lib/supabase/client";
-import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack } from "@mantine/core";
+import { Button, Select, Avatar, Group, Badge, Tabs, Tooltip, Stack, Alert } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconInfoCircle, IconUsers } from "@tabler/icons-react";
 import EpicFieldsSidebar from "@/components/EpicFieldsSidebar";
 import { fetchWithRateLimit, batchFetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { PurpleLoader } from "@/components/PurpleLoader";
-import { SuccessConfigSection } from "@/components/epic/SuccessConfigSection";
 import { EpicMetricsManager } from "@/components/epic/EpicMetricsManager";
 import type { EpicSuccessConfigWithDetails, EpicSuccessMetricWithDetails } from "@/lib/services/successMeasurementService";
 import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
+import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
@@ -64,6 +64,7 @@ export default function EpicDetailPage() {
     const [successMetrics, setSuccessMetrics] = useState<EpicSuccessMetricWithDetails[]>([]);
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
+    const [canConfigureSuccessMetrics, setCanConfigureSuccessMetrics] = useState(false);
     const isMobile = useMediaQuery("(max-width: 768px)");
 
     // Memoize status options based on admin status
@@ -125,29 +126,29 @@ export default function EpicDetailPage() {
         lastLoadDataRef.current = Date.now();
 
         try {
-            // Get current user email and create supabase client once
+            // Get current user email and roles from server (GET /api/me) so roles are not blocked by RLS
             const supabase = createClient();
             const { data: { user } } = await supabase.auth.getUser();
             if (user?.email) {
                 setCurrentUserEmail(user.email);
-                
-                // Check if user is admin and set isAdmin state
-                const { data: me } = await supabase
-                    .from('app_user')
-                    .select('roles')
-                    .eq('email', user.email)
-                    .single();
-                const userRoles = (me?.roles as string[]) || [];
-                const adminStatus = userRoles.includes('SUPERADMIN') ||
-                    userRoles.includes('PRODUCT_OPS') ||
-                    userRoles.includes('CPO');
-                console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
-                setIsAdmin(adminStatus);
             }
 
             // Use shared rate-limit-aware fetch utility
             const fetchWithRetry = (url: string) => fetchWithRateLimit(url, { maxRetries: 1 });
 
+            // Resolve roles from /api/me (server reads app_user; client-side Supabase can be blocked by RLS)
+            const meRes = await fetchWithRetry('/api/me');
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                const rawRoles = meData?.user?.roles;
+                const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
+                const adminStatus = userRoles.includes('SUPERADMIN') ||
+                    userRoles.includes('PRODUCT_OPS') ||
+                    userRoles.includes('CPO');
+                console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
+                setIsAdmin(adminStatus);
+                setCanConfigureSuccessMetrics(canRolesPerform(userRoles, 'settings.successMeasurement.update'));
+            }
 
             // Priority 1: Critical data (epic, settings, criteria) - fetch first
             const [epicRes, settingsRes, criteriaRes] = await Promise.all([
@@ -997,21 +998,21 @@ export default function EpicDetailPage() {
                 setSuccessMetrics([]);
             }
 
-            // Check if user is admin
-            const supabase = createClient();
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user?.email) {
-                const { data: me } = await supabase
-                    .from('app_user')
-                    .select('roles')
-                    .eq('email', user.email)
-                    .single();
-                const userRoles = (me?.roles as string[]) || [];
-                const adminStatus = userRoles.includes('SUPERADMIN') ||
-                    userRoles.includes('PRODUCT_OPS') ||
-                    userRoles.includes('CPO');
-                console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
-                setIsAdmin(adminStatus);
+            // Resolve roles from /api/me (same as loadData; client-side app_user can be blocked by RLS)
+            try {
+                const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                const meRes = await fetchWithRateLimit('/api/me', { maxRetries: 1 });
+                if (meRes.ok) {
+                    const meData = await meRes.json();
+                    const rawRoles = meData?.user?.roles;
+                    const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
+                    setCanConfigureSuccessMetrics(canRolesPerform(userRoles, 'settings.successMeasurement.update'));
+                    const adminStatus = userRoles.includes('SUPERADMIN') || userRoles.includes('PRODUCT_OPS') || userRoles.includes('CPO');
+                    console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
+                    setIsAdmin(adminStatus);
+                }
+            } catch (permErr) {
+                console.warn('Failed to resolve success metrics permission:', permErr);
             }
         } catch (error) {
             console.error('Error fetching success data:', error);
@@ -1965,22 +1966,10 @@ export default function EpicDetailPage() {
                                     <HeartDashboard
                                         epicId={epic.id}
                                         epicName={epic.name}
+                                        successConfig={successConfig}
+                                        canConfigureSuccessMetrics={canConfigureSuccessMetrics}
+                                        onSuccessConfigRefresh={fetchSuccessData}
                                     />
-                                    
-                                    {/* Legacy Success Config - for backward compatibility */}
-                                    {successConfig && (
-                                        <SuccessConfigSection
-                                            epicId={epic.id}
-                                            epicName={epic.name}
-                                            epicTier={epic.tier}
-                                            config={successConfig}
-                                            metrics={successMetrics}
-                                            isAdmin={isAdmin}
-                                            onRefresh={fetchSuccessData}
-                                            epicOwnerId={epic.owner_id}
-                                            pmOwner={pmOwner}
-                                        />
-                                    )}
                                 </Stack>
                             </Suspense>
                         )}
