@@ -211,7 +211,10 @@ export async function POST(
     if (jobError || !job?.id) {
       console.error('Failed to create HEART setup job:', jobError);
       return NextResponse.json(
-        { error: 'Failed to start HEART setup' },
+        {
+          error: 'Failed to start HEART setup',
+          details: jobError?.message ?? (jobError as { code?: string })?.code ?? null,
+        },
         { status: 500 }
       );
     }
