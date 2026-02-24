@@ -32,7 +32,7 @@ interface CacheRow {
  * e.g. "pendo:events:activeOnly=false&days=3"
  */
 export function buildCacheKey(
-  type: 'events' | 'features' | 'segments',
+  type: 'events' | 'features' | 'pages' | 'segments',
   params?: Record<string, string | null | undefined>,
 ): string {
   const parts = [`pendo:${type}`];
