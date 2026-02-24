@@ -541,7 +541,7 @@ function getPeriodValue(
     const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
     return {
       value: Math.round(periodPct * 10) / 10,
-      isPostReleaseOnly: releaseInWindow ?? false,
+      isPostReleaseOnly: Boolean(releaseInWindow),
     };
   }
 
@@ -559,7 +559,7 @@ function getPeriodValue(
     );
     return {
       value: Math.round(health * 10) / 10,
-      isPostReleaseOnly: releaseInWindow ?? false,
+      isPostReleaseOnly: Boolean(releaseInWindow),
     };
   }
 
@@ -589,7 +589,7 @@ function getPeriodValue(
       const periodRate = (totalCompletions / totalStarts) * 100;
       return {
         value: Math.round(periodRate * 100) / 100,
-        isPostReleaseOnly: releaseInWindow ?? false,
+        isPostReleaseOnly: Boolean(releaseInWindow),
       };
     }
   }
@@ -600,17 +600,17 @@ function getPeriodValue(
     if (inRange(s)) values.push(s.value);
   }
   if (values.length === 0)
-    return { value: null, isPostReleaseOnly: releaseInWindow ?? false };
+    return { value: null, isPostReleaseOnly: Boolean(releaseInWindow) };
   const sum = values.reduce((a, b) => a + b, 0);
   if (item.historyUnit === 'completions' || item.historyUnit === 'frustration') {
     return {
       value: sum,
-      isPostReleaseOnly: releaseInWindow ?? false,
+      isPostReleaseOnly: Boolean(releaseInWindow),
     };
   }
   return {
     value: sum / values.length,
-    isPostReleaseOnly: releaseInWindow ?? false,
+    isPostReleaseOnly: Boolean(releaseInWindow),
   };
 }
 

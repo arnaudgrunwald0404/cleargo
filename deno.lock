@@ -1,0 +1,60 @@
+{
+  "version": "5",
+  "remote": {
+    "https://edge.netlify.com/": "fd941d61d88673d5f28aab283fb86fcc50f08a3bc80ee5470498fcfa88c65cfb",
+    "https://edge.netlify.com/bootstrap/config.ts": "6a2ce0e544e15e8f8883a5c18da5948e37fd0f2619f68cb31f3af53c51817025",
+    "https://edge.netlify.com/bootstrap/context.ts": "e97240232121e2f369f6546ce961490f34d961ea1ea54be3ff09633e3f08373f",
+    "https://edge.netlify.com/bootstrap/cookie.ts": "8b0baae708989ca183c6f3b4ab3d029e6abcbc2e43f93edeb0ff447b3bbc3a05",
+    "https://edge.netlify.com/bootstrap/edge_function.ts": "b8253e86aa83c67341f5cfedeba5049d77fbf84dcab7eceff7566b7728ae9b39",
+    "https://edge.netlify.com/bootstrap/globals/types.ts": "eaa6148ded3121d8dee62dd91c86e7fe76601df0f3ca8d7962243a30f4c8935f"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@ai-sdk/anthropic@^3.0.23",
+        "npm:@ai-sdk/google@^3.0.10",
+        "npm:@mantine/core@^8.3.9",
+        "npm:@mantine/form@^8.3.9",
+        "npm:@mantine/hooks@^8.3.9",
+        "npm:@mantine/notifications@^8.3.9",
+        "npm:@modelcontextprotocol/sdk@^1.26.0",
+        "npm:@playwright/test@^1.57.0",
+        "npm:@supabase/ssr@0.7",
+        "npm:@supabase/supabase-js@^2.84.0",
+        "npm:@tabler/icons-react@^3.35.0",
+        "npm:@tailwindcss/postcss@^4.1.17",
+        "npm:@testing-library/jest-dom@^6.9.1",
+        "npm:@testing-library/react@^16.3.0",
+        "npm:@types/jest@30",
+        "npm:@types/node@^20.11.0",
+        "npm:@types/react-dom@^18.2.18",
+        "npm:@types/react@^18.2.45",
+        "npm:ai@^6.0.42",
+        "npm:baseline-browser-mapping@^2.9.19",
+        "npm:cookie@0.6",
+        "npm:dotenv@^17.2.3",
+        "npm:eslint-config-next@14.2.5",
+        "npm:eslint@^8.57.0",
+        "npm:jest-environment-jsdom@^30.2.0",
+        "npm:jest@^30.2.0",
+        "npm:jose@^5.2.3",
+        "npm:netlify@^23.15.1",
+        "npm:next@^16.0.10",
+        "npm:postcss-preset-mantine@^1.18.0",
+        "npm:postcss-simple-vars@^7.0.1",
+        "npm:react-dom@^19.2.3",
+        "npm:react@^19.2.3",
+        "npm:resend@^3.2.0",
+        "npm:supabase@^2.72.8",
+        "npm:tailwindcss@^4.1.17",
+        "npm:ts-jest@^29.4.5",
+        "npm:ts-node@^10.9.2",
+        "npm:tsx@^4.21.0",
+        "npm:typescript@^5.4.5",
+        "npm:whatwg-fetch@^3.6.20",
+        "npm:xlsx@~0.18.5",
+        "npm:zod@^3.25.76"
+      ]
+    }
+  }
+}

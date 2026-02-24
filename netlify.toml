@@ -1,6 +1,9 @@
 [build]
   command = "npm run build"
 
+[build.environment]
+  NEXT_DISABLE_NETLIFY_EDGE = "true"
+
 # Function timeout: set in Netlify UI (Site settings > Functions) or contact support.
 # Max is 26s for sync functions. HEART AI setup uses a background function (netlify/functions/heart-setup-background.ts) for 15 min limit.
 # Env: NETLIFY_HEART_SETUP_SECRET, NETLIFY_URL (or URL).

@@ -227,6 +227,17 @@ export class PendoClient {
     return `${field} >= ${startMs} && ${field} < ${endMs}`;
   }
 
+  /** Days to request in timeSeries when no custom range; cap for custom range (Pendo max is 367). */
+  private getTimeSeriesCount(params: { startDate?: string; endDate?: string }): number {
+    if (params.startDate && params.endDate) {
+      const start = new Date(params.startDate).getTime();
+      const end = new Date(params.endDate).getTime();
+      const days = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+      return Math.min(367, Math.max(1, days));
+    }
+    return 30;
+  }
+
   /**
    * Get count of events for a given event ID and date range.
    * Routes to the correct Pendo source: trackEvents, featureEvents, or pageEvents.
@@ -235,7 +246,19 @@ export class PendoClient {
     try {
       const sourceType = await this.resolveSourceType(params.eventId);
       const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
-      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
+
+      let timeSeries: { period: 'dayRange'; first: string; count: number };
+      let useDateFilter = false;
+      if (params.startDate && params.endDate) {
+        const start = new Date(params.startDate);
+        const end = new Date(params.endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        timeSeries = { period: 'dayRange' as const, first: `date("${params.endDate}")`, count: -daysDiff };
+      } else {
+        const count = -this.getTimeSeriesCount(params);
+        timeSeries = { period: 'dayRange' as const, first: 'now()', count };
+        useDateFilter = false;
+      }
 
       let pipeline: any[];
       if (sourceType === 'trackEvents') {
@@ -246,7 +269,7 @@ export class PendoClient {
         pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
-      if (params.startDate && params.endDate) {
+      if (useDateFilter && params.startDate && params.endDate) {
         pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
       }
       if (params.filters?.segmentId && sourceType !== 'trackEvents') {
@@ -265,12 +288,14 @@ export class PendoClient {
   }
 
   /**
-   * Get daily events AND unique visitors for a given event ID over the last N days.
-   * Returns both values so the caller can compute the actual metric (%, ratio, etc.).
+   * Get daily events AND unique visitors for a given event ID over a time window.
+   * Use either days (rolling from now) or startDate+endDate (calendar-aligned).
    */
   async getDailyMetricTimeSeries(params: {
     eventId: string;
-    days: number;
+    days?: number;
+    startDate?: string;
+    endDate?: string;
   }): Promise<Array<{ date: string; events: number; visitors: number }>> {
     try {
       const sourceType = await this.resolveSourceType(params.eventId);
@@ -281,22 +306,33 @@ export class PendoClient {
         uniqueVisitors: { count: 'visitorId' },
       };
 
+      let timeSeries: { period: 'dayRange'; first: string; count: number };
+      if (params.startDate && params.endDate) {
+        const start = new Date(params.startDate);
+        const end = new Date(params.endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        timeSeries = { period: 'dayRange' as const, first: `date("${params.endDate}")`, count: -daysDiff };
+      } else {
+        const days = params.days ?? 30;
+        timeSeries = { period: 'dayRange' as const, first: 'now()', count: -days };
+      }
+
       let pipeline: any[];
       if (sourceType === 'trackEvents') {
         pipeline = [
-          { source: { trackEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { source: { trackEvents: null, timeSeries } },
           { filter: `trackTypeId == "${resolvedId}"` },
           { group: { group: ['day'], fields } },
         ];
       } else if (sourceType === 'pageEvents') {
         pipeline = [
-          { source: { pageEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { source: { pageEvents: null, timeSeries } },
           { filter: `pageId == "${params.eventId}"` },
           { group: { group: ['day'], fields } },
         ];
       } else {
         pipeline = [
-          { source: { featureEvents: null, timeSeries: { period: 'dayRange', first: 'now()', count: -(params.days) } } },
+          { source: { featureEvents: null, timeSeries } },
           { filter: `featureId == "${params.eventId}"` },
           { group: { group: ['day'], fields } },
         ];
@@ -388,7 +424,20 @@ export class PendoClient {
     try {
       const sourceType = await this.resolveSourceType(params.eventId);
       const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
-      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
+
+      // Use calendar-aligned window when dates provided (matches getTotalUniqueVisitors so adoption % is consistent)
+      let timeSeries: { period: 'dayRange'; first: string; count: number };
+      let useDateFilter = false;
+      if (params.startDate && params.endDate) {
+        const start = new Date(params.startDate);
+        const end = new Date(params.endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        timeSeries = { period: 'dayRange' as const, first: `date("${params.endDate}")`, count: -daysDiff };
+      } else {
+        const count = -this.getTimeSeriesCount(params);
+        timeSeries = { period: 'dayRange' as const, first: 'now()', count };
+        useDateFilter = false;
+      }
 
       let pipeline: any[];
       if (sourceType === 'trackEvents') {
@@ -399,7 +448,7 @@ export class PendoClient {
         pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
-      if (params.startDate && params.endDate) {
+      if (useDateFilter && params.startDate && params.endDate) {
         pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
       }
       if (params.filters?.segmentId && sourceType !== 'trackEvents') {
@@ -425,7 +474,19 @@ export class PendoClient {
     try {
       const sourceType = await this.resolveSourceType(params.eventId);
       const resolvedId = sourceType === 'trackEvents' ? await this.resolveTrackTypeId(params.eventId) : params.eventId;
-      const timeSeries = { period: 'dayRange' as const, first: 'now()', count: -30 };
+
+      let timeSeries: { period: 'dayRange'; first: string; count: number };
+      let useDateFilter = false;
+      if (params.startDate && params.endDate) {
+        const start = new Date(params.startDate);
+        const end = new Date(params.endDate);
+        const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        timeSeries = { period: 'dayRange' as const, first: `date("${params.endDate}")`, count: -daysDiff };
+      } else {
+        const count = -this.getTimeSeriesCount(params);
+        timeSeries = { period: 'dayRange' as const, first: 'now()', count };
+        useDateFilter = false;
+      }
 
       let pipeline: any[];
       if (sourceType === 'trackEvents') {
@@ -436,7 +497,7 @@ export class PendoClient {
         pipeline = [{ source: { featureEvents: null, timeSeries } }, { filter: `featureId == "${params.eventId}"` }];
       }
 
-      if (params.startDate && params.endDate) {
+      if (useDateFilter && params.startDate && params.endDate) {
         pipeline.push({ filter: this.buildDateFilter(params.startDate, params.endDate, sourceType) });
       }
       if (params.filters?.segmentId && sourceType !== 'trackEvents') {

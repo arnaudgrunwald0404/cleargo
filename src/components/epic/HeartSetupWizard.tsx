@@ -389,8 +389,8 @@ export function HeartSetupWizard({
               <Text size="sm" component="span">{error}</Text>
               {availableEventNames && availableEventNames.length > 0 && (
                 <Text size="xs" c="dimmed" mt="xs" component="div">
-                  Pendo events considered ({availableEventNames.length}): {availableEventNames.slice(0, 8).join(', ')}
-                  {availableEventNames.length > 8 && ` … +${availableEventNames.length - 8} more`}. Add event names to your context above and try again, or use Manual setup.
+                  Pendo events, features, and pages considered ({availableEventNames.length}): {availableEventNames.slice(0, 8).join(', ')}
+                  {availableEventNames.length > 8 && ` … +${availableEventNames.length - 8} more`}. Use Manual setup to pick specific Features (e.g. AI Notetaker) by id, or add product-area context and retry.
                 </Text>
               )}
             </Alert>

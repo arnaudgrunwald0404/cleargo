@@ -191,12 +191,14 @@ ${segmentsText}
 ## Your Task
 Recommend HEART metrics for this feature. For each dimension, select the most appropriate Pendo event(s) and/or feature(s) and explain your reasoning.
 
+**Important:** Many product features (e.g. "AI Notetaker", "Interview", "Recruiting" tabs) are tracked as **Pendo Features** (tagged UI elements), not as custom track events. If the epic name or description mentions a specific product area or feature, **prefer "Available Pendo Features" and "Available Pendo Pages"** and use their **id** in eventIds. Only use "Available Pendo Events" (App.* track events) when they clearly match the workflow.
+
 **eventIds can contain ANY of:**
 1. An exact **event name** from "Available Pendo Events" (Track events — custom pendo.track() calls), OR
-2. A **feature id** from "Available Pendo Features" (tagged UI elements), OR
+2. A **feature id** from "Available Pendo Features" (tagged UI elements — use the **id** column, e.g. asvoQcmYc_l51OnEA_I0R1JLqcg), OR
 3. A **page id** from "Available Pendo Pages" (product screens/URLs).
 
-For page views and navigation, prefer **Pages**. For UI clicks and interactions, use **Features**. For custom instrumented actions (e.g. workflow steps), use **Events** (Track events).
+For UI clicks, tabs, and in-app feature usage, prefer **Features**. For page views and navigation, prefer **Pages**. For custom instrumented actions (e.g. workflow steps), use **Events** (Track events).
 Check the "Entities most related to this feature" section first — these were pre-matched using smart keyword and abbreviation matching.
 
 ## Task Success: Start vs Complete and Track events vs Features

@@ -173,7 +173,7 @@ async function getFrustrationHealthScore(
   fallbackSegmentId: string | null | undefined,
   startDate: string,
   endDate: string
-): Promise<{ health: number; penalty: number; totalEvents: number; uniqueUsers: number; per100Users: number }> {
+): Promise<{ health: number; penalty: number; totalEvents: number; uniqueUsers: number; per100Users: number; usedFallback: boolean }> {
   const segmentId = config.frustrationSegmentId ?? fallbackSegmentId ?? null;
   const eventIds = config.frustrationEventIds?.length ? config.frustrationEventIds : fallbackEventIds;
   const days = Math.max(1, Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1);
@@ -265,8 +265,17 @@ export async function fetchLiveMetricValue(
   if (dateRangeOverride) {
     startDate = dateRangeOverride.startDate;
     endDate = dateRangeOverride.endDate;
-    const days = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
+    let days = Math.round((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24));
     measurementPeriod = days <= 7 ? 'Last 7 days' : days <= 31 ? 'Last 30 days' : days <= 93 ? 'Last 3 months' : days <= 186 ? 'Last 6 months' : days <= 366 ? 'Last year' : 'Selected period';
+    // Pendo feature-event queries can return 0 for long ranges; cap at 30 days for live card so adoption/retention show a value.
+    if (days > 30) {
+      const end = new Date(endDate);
+      const startTrimmed = new Date(end);
+      startTrimmed.setDate(startTrimmed.getDate() - 30);
+      startDate = startTrimmed.toISOString().split('T')[0]!;
+      days = 30;
+      measurementPeriod = 'Last 30 days';
+    }
   } else {
     if (measurementType === 'return_rate_7_days') {
       measurementPeriod = 'Last 14 days';
@@ -277,9 +286,11 @@ export async function fetchLiveMetricValue(
     } else if (measurementType === 'happiness_composite_score') {
       measurementPeriod = 'Last 30 days';
     }
-    if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users')) {
+    // Use "Since release" for adoption only when launch is old enough that the Pendo window has data.
+    // For the first 90 days use "Last 30 days" so adoption shows a stable, comparable number (and matches Pendo).
+    if (epicLaunchDate && !isPreLaunch && measurementType.includes('unique_users') && daysSinceLaunch !== null && daysSinceLaunch > 90) {
       startDate = epicLaunchDate.toISOString().split('T')[0];
-      measurementPeriod = daysSinceLaunch !== null ? `Since release (Day ${daysSinceLaunch})` : 'Since release';
+      measurementPeriod = `Since release (Day ${daysSinceLaunch})`;
     }
   }
 
@@ -307,24 +318,34 @@ export async function fetchLiveMetricValue(
     switch (measurementType) {
       case 'events_per_user':
       case 'events_per_user_per_week': {
-        const [totalEvents, uniqueUsers] = await Promise.all([
-          client.getEventCount({
-            eventId: primaryEventId,
-            startDate,
-            endDate,
-            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-          }),
-          client.getUniqueVisitors({
-            eventId: primaryEventId,
-            startDate,
-            endDate,
-            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-          })
-        ]);
-        
+        // When multiple event IDs are configured (e.g. engagement = 3 tabs), aggregate across all so the metric
+        // reflects activity on any of them. Using only the first ID would show 0 if that specific feature has no data.
+        const eventIdsToUse = eventIds.length > 1 ? eventIds : [primaryEventId];
+        const countPromises = eventIdsToUse.map((eid) =>
+          Promise.all([
+            client.getEventCount({
+              eventId: eid,
+              startDate,
+              endDate,
+              filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+            }),
+            client.getUniqueVisitors({
+              eventId: eid,
+              startDate,
+              endDate,
+              filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+            }),
+          ])
+        );
+        const perEvent = await Promise.all(countPromises);
+        const totalEvents = perEvent.reduce((sum, [ev]) => sum + ev, 0);
+        // Union of users across events is not available from API. Use sum of per-event unique visitors
+        // as denominator (conservative: may overcount users who did multiple events, so rate is a lower bound).
+        const uniqueUsers = perEvent.reduce((sum, [, u]) => sum + u, 0);
+
         if (uniqueUsers > 0) {
           value = totalEvents / uniqueUsers;
-          
+
           if (measurementType === 'events_per_user_per_week') {
             const days = (today.getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24);
             const weeks = Math.max(1, days / 7);
@@ -337,7 +358,7 @@ export async function fetchLiveMetricValue(
           ? ' Card value is the rate: events per user per week for the selected period (not a user count).'
           : ' Card value is events per user in the period (not a user count).';
         metricContext = {
-          description: `${totalEvents.toLocaleString()} events across ${uniqueUsers.toLocaleString()} users (who triggered this event).${rateExplanation}`,
+          description: `${totalEvents.toLocaleString()} events across ${uniqueUsers.toLocaleString()} users (who triggered ${eventIdsToUse.length > 1 ? 'these events' : 'this event'}).${rateExplanation}`,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
           descriptionScope: measurementPeriod,
@@ -457,14 +478,16 @@ export async function fetchLiveMetricValue(
       
       case 'completion_rate':
       case 'success_rate': {
-        const daysForSeries = 30;
+        const seriesParams = startDate && endDate
+          ? { startDate, endDate }
+          : { days: 30 as number };
         if (eventIds.length >= 2) {
           const startEventId = eventIds[0];
           const completeEventId = eventIds[1];
 
           const [startSeries, completeSeries] = await Promise.all([
-            client.getDailyMetricTimeSeries({ eventId: startEventId, days: daysForSeries }),
-            client.getDailyMetricTimeSeries({ eventId: completeEventId, days: daysForSeries }),
+            client.getDailyMetricTimeSeries({ eventId: startEventId, ...seriesParams }),
+            client.getDailyMetricTimeSeries({ eventId: completeEventId, ...seriesParams }),
           ]);
           const startCount = startSeries.reduce((s, d) => s + d.events, 0);
           const completeCount = completeSeries.reduce((s, d) => s + d.events, 0);
@@ -489,7 +512,7 @@ export async function fetchLiveMetricValue(
             raw: { totalEvents: startCount, completionCount: completeCount },
           };
         } else {
-          const completeSeries = await client.getDailyMetricTimeSeries({ eventId: eventIds[0], days: daysForSeries });
+          const completeSeries = await client.getDailyMetricTimeSeries({ eventId: eventIds[0], ...seriesParams });
           const completionCount = completeSeries.reduce((s, d) => s + d.events, 0);
           value = completionCount;
           measurementPeriod = measurementPeriod ? `${measurementPeriod} (completions)` : 'Completions';
@@ -908,16 +931,22 @@ export async function setupHeartMetricsWithAI(
     agentResult.recommendations.happiness;
   
   if (!hasUsableMetrics) {
-    // AI couldn't find any relevant events - don't create config
-    const availableEventNames = agentResult.context?.pendo.events
-      ? agentResult.context.pendo.events.slice(0, 40).map((e) => e.name)
-      : undefined;
+    // AI couldn't find any relevant events/features/pages - don't create config.
+    // Surface events, features, AND pages so the user sees we considered all (e.g. AI Notetaker is in Features).
+    const pendo = agentResult.context?.pendo;
+    const availableEventNames: string[] = [];
+    if (pendo) {
+      const eventNames = (pendo.events || []).slice(0, 25).map((e) => e.name);
+      const featureNames = (pendo.features || []).slice(0, 25).map((f) => `${f.name}`);
+      const pageNames = (pendo.pages || []).slice(0, 10).map((p) => `${p.name}`);
+      availableEventNames.push(...eventNames, ...featureNames, ...pageNames);
+    }
     return {
       config: null as any,
       metrics: [],
       recommendations: agentResult.recommendations,
-      error: 'AI could not find relevant Pendo events for this epic. The feature may not have enough usage data yet, or the product area may need to be configured. Try manual setup instead.',
-      availableEventNames,
+      error: 'AI could not find relevant Pendo events, features, or pages for this epic. Many product features (e.g. AI Notetaker) are tracked as Pendo Features (tagged UI elements), not track events. Try manual setup and pick from Features, or add product-area context and retry.',
+      availableEventNames: availableEventNames.length > 0 ? availableEventNames : undefined,
     };
   }
   
@@ -1707,8 +1736,7 @@ export async function getEpicHeartDashboard(
               pendo_raw_data: liveData.rawData || {},
               calculated_at: new Date().toISOString(),
             }, { onConflict: 'epic_heart_metric_id,snapshot_date' })
-            .then(() => {})
-            .catch((err: any) => console.warn('[HeartService] snapshot auto-save failed:', err.message));
+            .then(() => {}, (err: any) => console.warn('[HeartService] snapshot auto-save failed:', err?.message));
         }
       }
 
