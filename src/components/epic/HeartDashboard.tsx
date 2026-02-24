@@ -228,7 +228,7 @@ export function HeartDashboard({
           <Stack gap="sm">
             <Text size="lg" fw={600}>HEART Metrics</Text>
             <Text size="sm" c="dimmed">
-              HEART metrics are not configured for this epic. Only users with Configure Success Metrics permission (CPO, Product, or Product Ops) can set this up.
+              Success Metrics have not been configured for this epic yet. Someone with Configure Success Metrics access can set this up.
             </Text>
           </Stack>
         </Card>

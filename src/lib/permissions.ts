@@ -214,7 +214,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
   "meetings.read": ["CPO", "SUPERADMIN"],
   "analytics.read": ["CPO"],
-  "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "SUPERADMIN"],
+  "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "PM", "PMM", "SUPERADMIN"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

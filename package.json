@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "node -e \"process.env.NEXT_DISABLE_NETLIFY_EDGE='true'; require('child_process').execSync('next build --webpack', {stdio:'inherit', env:process.env})\"",
+    "build": "node scripts/netlify-build.js",
     "start": "next start",
     "lint": "next lint",
     "test": "jest",
@@ -39,6 +39,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@netlify/plugin-nextjs": "^5.15.0",
     "@playwright/test": "^1.57.0",
     "@tailwindcss/postcss": "^4.1.17",
     "@testing-library/jest-dom": "^6.9.1",
