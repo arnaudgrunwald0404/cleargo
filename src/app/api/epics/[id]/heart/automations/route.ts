@@ -31,8 +31,8 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
     }
 
     const { data: me } = await supabase.from('app_user').select('roles').eq('email', user.email).single();
-    const rules = await getEffectivePermissionRules();
-    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', rules)) {
+    const permissionRules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.successMeasurement.update', permissionRules)) {
       return forbid();
     }
 
