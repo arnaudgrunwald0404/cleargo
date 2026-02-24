@@ -155,35 +155,100 @@ export async function POST(
     }
     
     // AI-powered setup (auto or ai_assisted)
-    const result = await setupHeartMetricsWithAI(epicId, appUserId, setupMethod, { userContext });
-    
-    // If AI couldn't find metrics, return error (config was not created)
-    if (result.error && !result.config) {
-      return NextResponse.json({
-        success: false,
-        error: result.error,
-        recommendations: result.recommendations,
-        availableEventNames: result.availableEventNames,
-      }, { status: 422 }); // Unprocessable - AI couldn't find data
+    const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
+    const isNetlifyProduction =
+      baseUrl &&
+      !baseUrl.includes('localhost') &&
+      Boolean(process.env.NETLIFY_HEART_SETUP_SECRET);
+
+    if (!isNetlifyProduction) {
+      // Local or missing env: run synchronously (no 26s limit in next dev)
+      const result = await setupHeartMetricsWithAI(epicId, appUserId, setupMethod, { userContext });
+      if (result.error && !result.config) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: result.error,
+            recommendations: result.recommendations,
+            availableEventNames: result.availableEventNames,
+          },
+          { status: 422 }
+        );
+      }
+      if (result.metrics.length > 0) {
+        createInitialSnapshots(epicId)
+          .then((snapshotResult) => {
+            console.log(`[HEART Setup] Initial snapshots for ${epicId}: ${snapshotResult.created} created`);
+            if (snapshotResult.errors.length > 0) {
+              console.warn(`[HEART Setup] Snapshot errors:`, snapshotResult.errors);
+            }
+          })
+          .catch((err) => console.error(`[HEART Setup] Failed to create initial snapshots:`, err));
+      }
+      return NextResponse.json({ success: true, ...result });
     }
-    
-    // Create initial snapshots in the background (don't wait)
-    // This establishes baseline data for trend tracking
-    if (result.metrics.length > 0) {
-      createInitialSnapshots(epicId).then((snapshotResult) => {
-        console.log(`[HEART Setup] Initial snapshots for ${epicId}: ${snapshotResult.created} created`);
-        if (snapshotResult.errors.length > 0) {
-          console.warn(`[HEART Setup] Snapshot errors:`, snapshotResult.errors);
-        }
-      }).catch((err) => {
-        console.error(`[HEART Setup] Failed to create initial snapshots:`, err);
-      });
+
+    // Netlify production: run in background function (15 min limit), return 202 + job_id
+    const adminClient = createAdminClient();
+    const { data: job, error: jobError } = await adminClient
+      .from('heart_setup_jobs')
+      .insert({
+        epic_id: epicId,
+        app_user_id: appUserId,
+        setup_method: setupMethod,
+        user_context: userContext ?? null,
+        status: 'pending',
+      })
+      .select('id')
+      .single();
+
+    if (jobError || !job?.id) {
+      console.error('Failed to create HEART setup job:', jobError);
+      return NextResponse.json(
+        { error: 'Failed to start HEART setup' },
+        { status: 500 }
+      );
     }
-    
-    return NextResponse.json({
-      success: true,
-      ...result,
+
+    const secret = process.env.NETLIFY_HEART_SETUP_SECRET!;
+    const bgUrl = `${baseUrl}/.netlify/functions/heart-setup-background`;
+    const triggerRes = await fetch(bgUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        jobId: job.id,
+        epicId,
+        appUserId,
+        setupMethod,
+        userContext: userContext ?? undefined,
+        secret,
+      }),
     });
+
+    if (!triggerRes.ok) {
+      const errText = await triggerRes.text();
+      console.error('Failed to trigger HEART background function:', triggerRes.status, errText);
+      await adminClient
+        .from('heart_setup_jobs')
+        .update({
+          status: 'failed',
+          result: { error: 'Failed to start background setup' },
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', job.id);
+      return NextResponse.json(
+        { error: 'Failed to start HEART setup. Try again or use Manual setup.' },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        job_id: job.id,
+        message: 'HEART setup started. Poll setup-status for completion.',
+      },
+      { status: 202 }
+    );
   } catch (error) {
     console.error('Error setting up HEART metrics:', error);
     return NextResponse.json(

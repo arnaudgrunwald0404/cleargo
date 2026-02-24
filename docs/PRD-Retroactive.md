@@ -439,7 +439,8 @@ The HEART framework (Google: Happiness, Engagement, Adoption, Retention, Task Su
 - **Pendo Query Resilience**: Track-event aggregation uses resilient filter logic across `track` and `trackType` entity representations and both name/id fields (`trackType`, `trackTypeId`, `id`, `name`) to reduce false zeroes when subscriptions expose different schemas.
 - **HEART Dashboard**: Epic-level dashboard shows config, metrics with latest snapshot, trend, milestone progress, measurement period; list view of epics with HEART and overall status
 - **Admin Defaults & Templates**: Category defaults (target value, timeframe, measurement type, guidance, example events, default milestones); custom metric templates (reusable across epics) with name, category label, measurement type, Pendo event pattern, defaults
-- **API Surface**: `GET/POST /api/epics/[id]/heart`, `GET/POST /api/epics/[id]/heart/metrics`, `GET/POST /api/epics/[id]/heart/recommendations`, `POST /api/epics/[id]/heart/apply-recommendations`, `GET /api/epics/[id]/heart/snapshots`, `GET /api/epics/[id]/heart/release-view`, `GET/POST /api/epics/[id]/heart/automations`, `GET/POST /api/settings/success-measurement/heart/defaults`, `GET/POST /api/settings/success-measurement/heart/templates`; Pendo check and metrics by ID
+- **API Surface**: `GET/POST /api/epics/[id]/heart`, `GET /api/epics/[id]/heart/setup-status` (poll for background job), `GET/POST /api/epics/[id]/heart/metrics`, `GET/POST /api/epics/[id]/heart/recommendations`, `POST /api/epics/[id]/heart/apply-recommendations`, `GET /api/epics/[id]/heart/snapshots`, `GET /api/epics/[id]/heart/release-view`, `GET/POST /api/epics/[id]/heart/automations`, `GET/POST /api/settings/success-measurement/heart/defaults`, `GET/POST /api/settings/success-measurement/heart/templates`; Pendo check and metrics by ID
+- **HEART AI setup (Netlify)**: For `auto` and `ai_assisted` setup, the API enqueues a job and invokes a Netlify **background function** (15 min limit) to run `setupHeartMetricsWithAI`; the client receives `202` and polls `GET .../heart/setup-status?job_id=` until completed/failed. Requires env: `NETLIFY_HEART_SETUP_SECRET`, `NETLIFY_URL` (or `URL`) so the API can trigger `/.netlify/functions/heart-setup-background`.
 
 #### 5.8 Happiness Automations & CSM Nudges
 
@@ -1194,6 +1195,7 @@ The system uses the following launch stage phases:
 - **epic_heart_snapshot**: Daily snapshot per metric (value, target_at_snapshot, status, data_confidence)
 - **heart_category**: HEART categories (happiness, engagement, adoption, retention, task_success) with defaults
 - **heart_custom_metric_template**: Reusable custom metric templates
+- **heart_setup_jobs**: Background job queue for HEART AI setup (epic_id, app_user_id, setup_method, status: pending/running/completed/failed, result JSONB); client polls `GET .../heart/setup-status?job_id=`
 - **happiness_automation_rule**: Trigger + action rules (segment non-usage, usage drop, CSM notification, Slack alert, etc.)
 - **happiness_csm_nudge**: CSM nudge records (account, assigned CSM, status, context)
 - **happiness_action_execution**, **happiness_automation_metrics**: Execution and metrics for automations

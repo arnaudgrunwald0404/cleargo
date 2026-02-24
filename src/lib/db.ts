@@ -5,6 +5,12 @@
 import { createClient, createAdminClient } from './supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+/** Optional override for admin client (e.g. Netlify background function where Next server client is not available) */
+let _overrideAdminClient: SupabaseClient | null = null;
+export function setOverrideAdminClient(client: SupabaseClient | null): void {
+  _overrideAdminClient = client;
+}
+
 /**
  * Execute a raw SQL query using Supabase
  * Note: Supabase doesn't support raw SQL directly, so this is a placeholder
@@ -36,6 +42,7 @@ export function getClient(): SupabaseClient {
  * Get an admin Supabase client (bypasses RLS)
  */
 export function getAdminClient(): SupabaseClient {
+  if (_overrideAdminClient) return _overrideAdminClient;
   return createAdminClient();
 }
 

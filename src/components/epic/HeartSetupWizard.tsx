@@ -142,9 +142,10 @@ export function HeartSetupWizard({
       return;
     }
 
-    // AI-powered setup (auto or ai_assisted)
+    // AI-powered setup (auto or ai_assisted) — runs in background; poll for completion
     setLoading(true);
     setStep('loading');
+    let isPolling = false;
 
     try {
       const res = await fetch(`/api/epics/${epicId}/heart`, {
@@ -157,8 +158,108 @@ export function HeartSetupWizard({
       });
 
       const data = await res.json();
-      
-      // Handle case where AI couldn't find metrics (422 status)
+
+      if (res.status === 202 && data.job_id) {
+        isPolling = true;
+        // Background job started; poll setup-status until completed or failed
+        const jobId = data.job_id as string;
+        const pollIntervalMs = 2500;
+        const pollTimeoutMs = 5 * 60 * 1000; // 5 minutes
+        const startedAt = Date.now();
+        let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+        const stopPolling = () => {
+          isPolling = false;
+          if (pollTimer) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+          }
+          setLoading(false);
+        };
+
+        const poll = async () => {
+          if (Date.now() - startedAt > pollTimeoutMs) {
+            stopPolling();
+            setError('Setup is taking longer than expected. Please refresh and check HEART metrics, or try Manual setup.');
+            setStep('choose');
+            notifications.show({
+              title: 'Setup Timeout',
+              message: 'HEART setup did not finish in time. Refresh the page to see if it completed.',
+              color: 'yellow',
+            });
+            return;
+          }
+          const statusRes = await fetch(
+            `/api/epics/${epicId}/heart/setup-status?job_id=${encodeURIComponent(jobId)}`
+          );
+          const statusData = await statusRes.json();
+          if (!statusRes.ok) {
+            stopPolling();
+            setError(statusData.error || 'Failed to get setup status');
+            setStep('choose');
+            return;
+          }
+          if (statusData.status === 'completed') {
+            stopPolling();
+            setAvailableEventNames(null);
+            setConfig(statusData.config ?? null);
+            setMetrics(Array.isArray(statusData.metrics) ? statusData.metrics : []);
+            setRecommendations(statusData.recommendations ?? null);
+            if (method === 'auto') {
+              setStep('complete');
+              notifications.show({
+                title: 'HEART Metrics Configured',
+                message: `${(statusData.metrics?.length ?? 0)} metrics automatically configured.`,
+                color: 'green',
+                icon: <IconSparkles size={16} />,
+              });
+            } else {
+              if (statusData.recommendations) {
+                setStep('review');
+              } else {
+                setStep('complete');
+                notifications.show({
+                  title: 'Setup Complete',
+                  message: 'AI could not generate recommendations. You can configure metrics manually.',
+                  color: 'yellow',
+                });
+              }
+            }
+            onSetupComplete?.();
+            return;
+          }
+          if (statusData.status === 'failed') {
+            stopPolling();
+            const err = statusData.error || 'HEART setup failed.';
+            setError(err);
+            setAvailableEventNames(statusData.availableEventNames ?? null);
+            setStep('choose');
+            if (statusData.recommendations || statusData.availableEventNames?.length) {
+              notifications.show({
+                title: 'No Metrics Found',
+                message: statusData.availableEventNames?.length
+                  ? 'Add specific Pendo event names to your context above and try again, or use Manual setup.'
+                  : 'AI could not find relevant Pendo events. Try manual setup or check product area configuration.',
+                color: 'yellow',
+              });
+            } else {
+              notifications.show({
+                title: 'Setup Failed',
+                message: err,
+                color: 'red',
+              });
+            }
+            return;
+          }
+          // still pending or running; next poll will run on timer
+        };
+
+        await poll(); // first poll immediately
+        pollTimer = setInterval(poll, pollIntervalMs);
+        return;
+      }
+
+      // Non-202 response: error (e.g. 400, 409, 502)
       if (!res.ok) {
         if (res.status === 422 && data.error) {
           setAvailableEventNames(data.availableEventNames ?? null);
@@ -177,14 +278,12 @@ export function HeartSetupWizard({
         throw new Error(data.error || 'Failed to setup HEART metrics');
       }
 
+      // Legacy 200 response (sync path; should not happen for auto/ai_assisted on Netlify)
       setAvailableEventNames(null);
-
       setConfig(data.config);
       setMetrics(data.metrics || []);
       setRecommendations(data.recommendations);
-
       if (method === 'auto') {
-        // Auto mode - already applied, go to complete
         setStep('complete');
         notifications.show({
           title: 'HEART Metrics Configured',
@@ -193,11 +292,9 @@ export function HeartSetupWizard({
           icon: <IconSparkles size={16} />,
         });
       } else {
-        // AI-assisted - show recommendations for review
         if (data.recommendations) {
           setStep('review');
         } else {
-          // No recommendations available, fallback to manual
           setStep('complete');
           notifications.show({
             title: 'Setup Complete',
@@ -206,11 +303,12 @@ export function HeartSetupWizard({
           });
         }
       }
+      onSetupComplete?.();
     } catch (err: any) {
       setError(err.message);
       setStep('choose');
     } finally {
-      setLoading(false);
+      if (!isPolling) setLoading(false);
     }
   };
 
