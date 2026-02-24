@@ -449,6 +449,8 @@ export interface HeartMetricDisplay {
   historyUnit?: string;
   /** Context explaining what the metric measures and its raw data */
   metricContext?: MetricContext;
+  /** When live Pendo fetch failed, the error message (so UI can show it instead of silent "--") */
+  liveError?: string;
 }
 
 export interface EpicHeartDashboard {

@@ -1629,6 +1629,7 @@ export async function getEpicHeartDashboard(
     
     // Create a "live snapshot" object (not stored, just for display)
     let latestSnapshot: EpicHeartSnapshot | null = null;
+    let liveError: string | undefined;
     let trend: 'up' | 'down' | 'stable' | null = null;
     let history: EpicHeartSnapshot[] = [];
     // #region agent log
@@ -1657,6 +1658,7 @@ export async function getEpicHeartDashboard(
       isPreLaunch = liveData.isPreLaunch;
       measurementPeriod = liveData.measurementPeriod;
       metricContext = liveData.metricContext;
+      liveError = liveData.error ?? undefined;
 
       // Enrich context with display names, entity type, and measurement type for chart details
       if (metricContext && metric) {
@@ -2017,6 +2019,7 @@ export async function getEpicHeartDashboard(
       milestoneProgress,
       currentMilestone,
       nextMilestone,
+      liveError,
     });
   }
 
@@ -2035,6 +2038,7 @@ export async function getEpicHeartDashboard(
     };
 
     let latestSnapshot: EpicHeartSnapshot | null = null;
+    let liveError: string | undefined;
     let trend: 'up' | 'down' | 'stable' | null = null;
     let isPreLaunch: boolean | undefined;
     let measurementPeriod: string | undefined;
@@ -2052,6 +2056,7 @@ export async function getEpicHeartDashboard(
 
       isPreLaunch = liveData.isPreLaunch;
       measurementPeriod = liveData.measurementPeriod;
+      liveError = liveData.error ?? undefined;
 
       if (liveData.value !== null || !liveData.error) {
         latestSnapshot = {
@@ -2108,6 +2113,7 @@ export async function getEpicHeartDashboard(
       milestoneProgress,
       currentMilestone,
       nextMilestone,
+      liveError,
     });
   }
   

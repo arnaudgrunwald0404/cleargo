@@ -749,7 +749,6 @@ function HeartMetricCard({
     status === 'MISSED' ? 'red.6' :
     status === 'AT_RISK' ? 'orange.6' :
     'gray.7';
-
   return (
     <Paper withBorder p="md" h="100%" radius="md" bg="white" style={{ minWidth: 0 }}>
       <Stack gap={8} h="100%" justify="space-between" style={{ minWidth: 0 }}>
@@ -759,6 +758,11 @@ function HeartMetricCard({
           <Text size="34px" fw={700} lh={1} c={valueColor}>
             {displayValue}
           </Text>
+          {item.liveError && (
+            <Text size="xs" c="red.6" lineClamp={2} title={item.liveError}>
+              {item.liveError}
+            </Text>
+          )}
           {(displayUnit || (metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null) && (
             <Group gap={6} wrap="wrap">
               {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}

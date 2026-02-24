@@ -234,7 +234,14 @@ export function HeartSetupWizard({
             setError(err);
             setAvailableEventNames(statusData.availableEventNames ?? null);
             setStep('choose');
-            if (statusData.recommendations || statusData.availableEventNames?.length) {
+            const isPendoUnavailable = /no pendo events|connect pendo|integration (not )?connected|no pendo events, features, or pages/i.test(err);
+            if (isPendoUnavailable) {
+              notifications.show({
+                title: 'Pendo not ready',
+                message: 'Connect the Pendo integration in Settings → Success Measurement first, then try again.',
+                color: 'yellow',
+              });
+            } else if (statusData.recommendations || statusData.availableEventNames?.length) {
               notifications.show({
                 title: 'No Metrics Found',
                 message: statusData.availableEventNames?.length
@@ -259,8 +266,19 @@ export function HeartSetupWizard({
         return;
       }
 
-      // Non-202 response: error (e.g. 400, 409, 502)
+      // Non-202 response: error (e.g. 400, 409, 502, 503)
       if (!res.ok) {
+        if (res.status === 503 && data.error) {
+          setAvailableEventNames(null);
+          setError(data.error);
+          setStep('choose');
+          notifications.show({
+            title: 'Pendo not ready',
+            message: 'Connect the Pendo integration in Settings → Success Measurement first, then try again.',
+            color: 'yellow',
+          });
+          return;
+        }
         if (res.status === 422 && data.error) {
           setAvailableEventNames(data.availableEventNames ?? null);
           setError(data.error);

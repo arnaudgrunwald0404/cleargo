@@ -165,6 +165,12 @@ export async function POST(
       // Local or missing env: run synchronously (no 26s limit in next dev)
       const result = await setupHeartMetricsWithAI(epicId, appUserId, setupMethod, { userContext });
       if (result.error && !result.config) {
+        // No Pendo data / integration not ready → 503; AI found no matching metrics → 422
+        const isPendoUnavailable =
+          /no pendo events|connect pendo|integration (not )?connected|no pendo events, features, or pages/i.test(
+            result.error
+          );
+        const status = isPendoUnavailable ? 503 : 422;
         return NextResponse.json(
           {
             success: false,
@@ -172,7 +178,7 @@ export async function POST(
             recommendations: result.recommendations,
             availableEventNames: result.availableEventNames,
           },
-          { status: 422 }
+          { status }
         );
       }
       if (result.metrics.length > 0) {

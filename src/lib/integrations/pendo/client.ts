@@ -260,7 +260,7 @@ export class PendoClient {
       return items?.[0]?.total ?? 0;
     } catch (error: any) {
       console.error('Error fetching Pendo event count:', error, { eventId: params.eventId, startDate: params.startDate, endDate: params.endDate });
-      return 0;
+      throw new Error(`Pendo event count failed: ${error?.message ?? error}`);
     }
   }
 
@@ -414,7 +414,7 @@ export class PendoClient {
       return this.extractUniqueVisitorCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo unique visitors:', error);
-      return 0;
+      throw new Error(`Pendo unique visitors failed: ${error?.message ?? error}`);
     }
   }
 
@@ -451,7 +451,7 @@ export class PendoClient {
       return this.extractUniqueAccountCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo unique accounts:', error);
-      return 0;
+      throw new Error(`Pendo unique accounts failed: ${error?.message ?? error}`);
     }
   }
 
@@ -489,7 +489,7 @@ export class PendoClient {
       return this.extractUniqueVisitorCount(response);
     } catch (error: any) {
       console.error('Error fetching unique visitors for page IDs:', error);
-      return 0;
+      throw new Error(`Pendo unique visitors for pages failed: ${error?.message ?? error}`);
     }
   }
 
@@ -539,7 +539,7 @@ export class PendoClient {
       return this.extractUniqueVisitorCount(response);
     } catch (error: any) {
       console.error('Error fetching Pendo total unique visitors:', error);
-      return 0;
+      throw new Error(`Pendo total unique visitors failed: ${error?.message ?? error}`);
     }
   }
 
@@ -561,7 +561,7 @@ export class PendoClient {
       return (eventCount / totalCount) * 100;
     } catch (error: any) {
       console.error('Error fetching Pendo event percentage:', error);
-      return 0;
+      throw new Error(`Pendo event percentage failed: ${error?.message ?? error}`);
     }
   }
 
