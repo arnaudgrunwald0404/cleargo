@@ -47,6 +47,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     // Filter state
     const [filters, setFilters] = useState({
         search: "",
+        module: "ALL",
         tier: "ALL",
         status: "ALL",
         risk: "ALL"
@@ -279,22 +280,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     };
 
-    const filteredEpics = epics.filter(l => {
-        // Exclude archived epics
-        // #region agent log
-        if (l.aha_id && (l.archived === true || l.archived === undefined || l.archived === null)) {
-            // Filter archived epics
-        }
-        // #endregion
-        if (l.archived === true) return false;
-        
-        if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
-        if (filters.tier !== "ALL" && l.tier !== filters.tier) return false;
-        if (filters.status !== "ALL" && l.status !== filters.status) return false;
-        if (filters.risk !== "ALL" && (l.risk_level || 'LOW') !== filters.risk) return false;
-        return true;
-    });
-
     const getModuleFromEpic = (epic: Epic): string | null => {
         if (!epic.aha_fields || typeof epic.aha_fields !== 'object') return null;
         const fields = epic.aha_fields as any;
@@ -307,6 +292,26 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
         return null;
     };
+
+    const filteredEpics = epics.filter(l => {
+        // Exclude archived epics
+        // #region agent log
+        if (l.aha_id && (l.archived === true || l.archived === undefined || l.archived === null)) {
+            // Filter archived epics
+        }
+        // #endregion
+        if (l.archived === true) return false;
+        
+        if (filters.search && !l.name.toLowerCase().includes(filters.search.toLowerCase())) return false;
+        if (filters.module !== "ALL") {
+            const m = getModuleFromEpic(l);
+            if (m !== filters.module) return false;
+        }
+        if (filters.tier !== "ALL" && l.tier !== filters.tier) return false;
+        if (filters.status !== "ALL" && l.status !== filters.status) return false;
+        if (filters.risk !== "ALL" && (l.risk_level || 'LOW') !== filters.risk) return false;
+        return true;
+    });
 
     // Extract release name from epic's aha_fields
     const getReleaseName = (epic: Epic): string | null => {
@@ -334,6 +339,29 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
         return null;
     };
+
+    const moduleOptions = useMemo(() => {
+        const set = new Set<string>();
+        epics.forEach(e => {
+            const m = getModuleFromEpic(e);
+            if (m) set.add(m);
+        });
+        const list = Array.from(set);
+        if (podOrder.length > 0) {
+            const normalizedOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
+            list.sort((a, b) => {
+                const i = normalizedOrder.indexOf(a.toLowerCase());
+                const j = normalizedOrder.indexOf(b.toLowerCase());
+                if (i !== -1 && j !== -1) return i - j;
+                if (i !== -1) return -1;
+                if (j !== -1) return 1;
+                return a.localeCompare(b);
+            });
+        } else {
+            list.sort((a, b) => a.localeCompare(b));
+        }
+        return [{ value: "ALL", label: "All Modules" }, ...list.map(m => ({ value: m, label: m }))];
+    }, [epics, podOrder]);
 
     // Create a map of release names to dates from release schedule
     const releaseDateMap = useMemo(() => {
@@ -1296,7 +1324,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         style={{ fontFamily: 'var(--font-body)' }}
                     >
                         Filters
-                        {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                        {(filters.search || filters.module !== "ALL" || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
                             <span className="ml-1.5 inline-flex items-center justify-center rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs font-medium text-indigo-800">
                                 on
                             </span>
@@ -1332,6 +1360,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     input: {
                                         borderRadius: 8,
                                         border: '1px solid var(--color-gray-300)',
+                                        fontFamily: 'var(--font-body)'
+                                    }
+                                }}
+                            />
+                            <Select
+                                placeholder="Module"
+                                value={filters.module}
+                                onChange={(value) => setFilters({ ...filters, module: value || "ALL" })}
+                                data={moduleOptions}
+                                clearable
+                                style={{ width: '100%' }}
+                                styles={{
+                                    input: {
+                                        borderRadius: 8,
+                                        border: '1px solid var(--color-gray-300)',
+                                        backgroundColor: 'var(--color-gray-50)',
                                         fontFamily: 'var(--font-body)'
                                     }
                                 }}
@@ -1401,14 +1445,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     }
                                 }}
                             />
-                            {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                            {(filters.search || filters.module !== "ALL" || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
                                 <Button
                                     variant="light"
                                     color="red"
                                     size="sm"
                                     leftSection={<IconX size={16} />}
                                     onClick={() => {
-                                        setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
+                                        setFilters({ search: "", module: "ALL", tier: "ALL", status: "ALL", risk: "ALL" });
                                         setSelectedRelease(null);
                                     }}
                                     style={{ fontFamily: 'var(--font-body)', fontWeight: 500 }}
@@ -1458,6 +1502,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             input: {
                                 borderRadius: 8,
                                 border: '1px solid var(--color-gray-300)',
+                                fontFamily: 'var(--font-body)'
+                            }
+                        }}
+                    />
+                    <Select
+                        placeholder="Module"
+                        value={filters.module}
+                        onChange={(value) => setFilters({ ...filters, module: value || "ALL" })}
+                        data={moduleOptions}
+                        clearable
+                        style={{ minWidth: 140 }}
+                        styles={{
+                            input: {
+                                borderRadius: 8,
+                                border: '1px solid var(--color-gray-300)',
+                                backgroundColor: 'var(--color-gray-50)',
                                 fontFamily: 'var(--font-body)'
                             }
                         }}
@@ -1527,14 +1587,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             }
                         }}
                     />
-                    {(filters.search || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
+                    {(filters.search || filters.module !== "ALL" || filters.tier !== "ALL" || filters.status !== "ALL" || filters.risk !== "ALL" || selectedRelease) && (
                         <Button
                             variant="light"
                             color="red"
                             size="sm"
                             leftSection={<IconX size={16} />}
                             onClick={() => {
-                                setFilters({ search: "", tier: "ALL", status: "ALL", risk: "ALL" });
+                                setFilters({ search: "", module: "ALL", tier: "ALL", status: "ALL", risk: "ALL" });
                                 setSelectedRelease(null);
                             }}
                             style={{
