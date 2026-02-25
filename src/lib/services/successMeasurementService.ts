@@ -488,15 +488,6 @@ export async function createEpicSuccessConfig(
         const { getEpic } = await import('@/lib/epics');
         const fullEpic = await getEpic(epicId);
         const anyEpic = fullEpic as any;
-        // #region agent log
-        try {
-          const aha = anyEpic?.aha_fields;
-          const std = aha?.standard_fields || aha?.standardFields;
-          const assigned = std?.assigned_to_user || std?.assignedToUser;
-          const emailFromAha = assigned?.email;
-          fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'successMeasurementService.ts:createEpicSuccessConfig', message: 'post-launch owner resolution', data: { epicId, hasFullEpic: !!fullEpic, ownerId: anyEpic?.owner?.id, ownerEmail: anyEpic?.owner?.email, emailFromAha: typeof emailFromAha === 'string' ? emailFromAha : null, hasAhaFields: !!aha }, timestamp: Date.now(), hypothesisId: 'owner-resolve' }) }).catch(() => {});
-        } catch (_) {}
-        // #endregion
         if (fullEpic) {
           const owner = anyEpic.owner;
           if (owner?.id) {

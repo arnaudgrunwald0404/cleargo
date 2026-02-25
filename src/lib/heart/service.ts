@@ -1614,8 +1614,11 @@ export async function getEpicHeartDashboard(
     daysSinceLaunch = Math.floor((referenceDate.getTime() - epicLaunchDate.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  // When asOfDate is set, use only stored snapshots (no Pendo)
-  const pendoClient = asOfDate ? null : await getPendoClient();
+  // When asOfDate is set, or in production (Netlify), use only stored snapshots to avoid timeout
+  const useSnapshotOnly =
+    Boolean(asOfDate) ||
+    Boolean(process.env.NETLIFY || process.env.HEART_DASHBOARD_SNAPSHOT_ONLY);
+  const pendoClient = useSnapshotOnly ? null : await getPendoClient();
 
   // Build id -> display name and id -> entity type (for Metric details: Page / Feature / Track event)
   let pendoEventIdToName: Record<string, string> = {};
@@ -1829,7 +1832,7 @@ export async function getEpicHeartDashboard(
           const filters = segmentId ? { segmentId } : undefined;
           try {
             const today = new Date();
-            const daysToCompute = 30;
+            const daysToCompute = 14; // Reduced from 30 to stay under Netlify function timeout
             const dates: string[] = [];
             for (let i = daysToCompute - 1; i >= 0; i--) {
               const d = new Date(today);
@@ -2030,9 +2033,6 @@ export async function getEpicHeartDashboard(
       }
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'heart/service.ts:buildDashboard',message:'HEART history built',data:{categoryId:category.id,historyLength:history.length,storedHistoryLength,usedPendoFallback,pendoRawLength},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion
     metricsWithLiveData.push({
       category,
       metric,
@@ -2164,7 +2164,7 @@ export async function getEpicHeartDashboard(
     daysSinceLaunch,
     launchDate: rawLaunchDate,
     pendoEventIdToName,
-    ...(asOfDate ? { asOfDate } : {}),
+    ...(asOfDate ? { asOfDate } : useSnapshotOnly ? { asOfDate: referenceDate.toISOString().split('T')[0]! } : {}),
   };
 }
 

@@ -6,7 +6,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { setOverrideAdminClient } from '../../src/lib/db';
-import { setupHeartMetricsWithAI } from '../../src/lib/heart/service';
+import { setupHeartMetricsWithAI, createInitialSnapshots } from '../../src/lib/heart/service';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY!;
@@ -104,6 +104,19 @@ export default async (req: Request): Promise<Response> => {
         })
         .eq('id', jobId)
         .eq('epic_id', epicId);
+
+      // Create initial snapshots so the dashboard has data without live Pendo (avoids timeout in production)
+      if (result.metrics && result.metrics.length > 0) {
+        try {
+          const snapshotResult = await createInitialSnapshots(epicId);
+          console.log(`[heart-setup-background] Initial snapshots for ${epicId}: ${snapshotResult.created} created`);
+          if (snapshotResult.errors.length > 0) {
+            console.warn('[heart-setup-background] Snapshot errors:', snapshotResult.errors);
+          }
+        } catch (snapErr) {
+          console.warn('[heart-setup-background] Failed to create initial snapshots:', snapErr);
+        }
+      }
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

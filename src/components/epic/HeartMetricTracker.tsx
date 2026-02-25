@@ -247,9 +247,6 @@ export function HeartMetricTracker({
     };
   }, [window, history, latestSnapshot, releaseDate, metric?.measurement_type, historyUnit, metricContext?.raw]);
 
-  // #region agent log
-  fetch('http://127.0.0.1:7244/ingest/c39c2b6a-2244-4c07-9113-3b97dda884e1',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'HeartMetricTracker.tsx:chartData',message:'Chart data',data:{categoryId:item.category?.id,historyLength:history?.length??0,pointsLength:points.length,window},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
-  // #endregion
   if (points.length < 1) {
     return (
       <Stack gap="xs">

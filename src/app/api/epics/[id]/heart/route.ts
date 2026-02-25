@@ -62,10 +62,26 @@ export async function GET(
     const asOf = req.nextUrl.searchParams.get('asOf') ?? undefined;
     const windowParam = req.nextUrl.searchParams.get('window') ?? undefined;
     const validWindow: HeartTrackerWindow | undefined = windowParam && ['7D', '1M', '3M', '6M', '1Y', 'YTD', 'Max'].includes(windowParam) ? windowParam as HeartTrackerWindow : undefined;
-    const dashboard = await getEpicHeartDashboard(epicId, {
-      asOfDate: asOf,
-      window: validWindow,
-    });
+
+    // Netlify serverless timeout is ~26s; race with 22s so we return 503 instead of 502
+    const DASHBOARD_TIMEOUT_MS = 22_000;
+    let dashboard: Awaited<ReturnType<typeof getEpicHeartDashboard>>;
+    try {
+      dashboard = await Promise.race([
+        getEpicHeartDashboard(epicId, { asOfDate: asOf, window: validWindow }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('DASHBOARD_TIMEOUT')), DASHBOARD_TIMEOUT_MS)
+        ),
+      ]);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'DASHBOARD_TIMEOUT') {
+        return NextResponse.json(
+          { error: 'Dashboard request timed out. Try a shorter time window or try again.' },
+          { status: 503 }
+        );
+      }
+      throw err;
+    }
 
     if (!dashboard) {
       return NextResponse.json({ 
