@@ -195,8 +195,8 @@ export async function POST(
     }
 
     // Netlify production: run in background function (15 min limit), return 202 + job_id
-    const adminClient = createAdminClient();
-    const { data: job, error: jobError } = await adminClient
+    // Use user's supabase client so RLS allows insert when service_role key is not configured.
+    const { data: job, error: jobError } = await supabase
       .from('heart_setup_jobs')
       .insert({
         epic_id: epicId,
@@ -237,7 +237,7 @@ export async function POST(
     if (!triggerRes.ok) {
       const errText = await triggerRes.text();
       console.error('Failed to trigger HEART background function:', triggerRes.status, errText);
-      await adminClient
+      await supabase
         .from('heart_setup_jobs')
         .update({
           status: 'failed',
