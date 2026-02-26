@@ -1,0 +1,25 @@
+# Normalize line endings to LF in the repo (avoids Windows CRLF vs LF "modified" noise)
+* text=auto eol=lf
+
+# Explicitly treat as text
+*.ts text
+*.tsx text
+*.js text
+*.jsx text
+*.json text
+*.md text
+*.css text
+*.html text
+*.yml text
+*.yaml text
+
+# Binary files (no line-ending conversion)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
