@@ -1115,7 +1115,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             </Box>
 
             <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }} mt="sm" mb="md">
-                Epics appear below when in Aha!: ClearGO Candidate = Yes
+                Epics appear below when in Aha!: ClearGO Candidate = Yes or Yes - UI Framework
                 {canSyncWithAha && (
                     <>
                         {' — '}

@@ -181,7 +181,7 @@ export async function upsertEpicFromAha(
     // Status is now computed from dates; only store 'Cancelled' override when needed
 
     // Determine archived status based on cleargo_candidate field
-    // Archive if cleargo_candidate is not "Yes", unarchive if it is "Yes"
+    // Archive if cleargo_candidate is not "Yes" or "Yes - UI Framework"; unarchive if it is either
     const isClearGOCandidate = getClearGOCandidateValue(epicData);
     const shouldBeArchived = !isClearGOCandidate;
 

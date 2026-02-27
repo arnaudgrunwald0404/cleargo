@@ -530,7 +530,7 @@ export async function POST(req: NextRequest) {
                     }
                 }
 
-                // Only refresh epics that have ClearGO Candidate = Yes in Aha (we do not write to Aha)
+                // Only refresh epics that have ClearGO Candidate = Yes or Yes - UI Framework in Aha (we do not write to Aha)
                 const cleargoCandidate = Array.isArray(fullEpic.custom_fields)
                     ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')
                     : null;
