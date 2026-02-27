@@ -187,8 +187,8 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Activity History**: Timeline of all changes
 
 #### 1.4 Epic Archiving
-- **Automatic Archiving**: Epics are automatically archived when the `cleargo_candidate` custom field in Aha! is not "Yes"
-- **Automatic Unarchiving**: Epics are automatically unarchived when `cleargo_candidate` becomes "Yes"
+- **Automatic Archiving**: Epics are automatically archived when the `cleargo_candidate` custom field in Aha! is not "Yes" or "Yes - UI Framework"
+- **Automatic Unarchiving**: Epics are automatically unarchived when `cleargo_candidate` becomes "Yes" or "Yes - UI Framework"
 - **Archived Filter**: Archived epics are filtered out from the main epic list view by default
 - **Database Field**: `archived` (Boolean, default: false) - tracks whether an epic is archived
 - **Index**: Indexed for efficient filtering of archived epics
@@ -217,10 +217,11 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
   - Category (Security, Support, Marketing, etc.)
   - Gate status (blocking vs. non-blocking)
   - Tier applicability (TIER_1, TIER_2, TIER_3, ALL)
+  - **UI Framework only**: When set, the criterion applies only to epics with ClearGO Candidate = "Yes - UI Framework" in Aha (e.g. UI Framework rollout-specific steps); configurable in Admin → Settings → Criteria
   - Decision owner role
   - Status definitions (GO/CONDITIONAL/NO_GO)
   - Sort order
-- **Auto-Instantiation**: Criteria automatically instantiated for new epics based on tier
+- **Auto-Instantiation**: Criteria automatically instantiated for new epics based on tier and ClearGO Candidate value (UI Framework-only criteria only for "Yes - UI Framework" epics)
 - **Status Definitions**: Custom definitions per criterion for what constitutes GO/CONDITIONAL/NO_GO
 - **Import/Export**: Import criteria from Excel template
 
@@ -826,7 +827,7 @@ The system uses the following launch stage phases:
 - `pricing_model` (Text)
 - `modified_rice_score` (JSONB)
 - `wsjf_score` (JSONB)
-- `aha_fields` (JSONB) - Full Aha! field mapping (includes `standard_fields.integrations` for external links like Jira)
+- `aha_fields` (JSONB) - Full Aha! field mapping (includes `standard_fields.integrations` for external links like Jira). Custom fields include `cleargo_candidate` and `uiux_impact` (UI/UX Impact Level 1-5); both are always synced for UI Framework rollouts.
 - `archived` (Boolean, Default: false) - Whether the epic is archived. Epics are automatically archived when cleargo_candidate is not "Yes" and unarchived when it becomes "Yes" again.
 - `jira_epic_key` (Text, Nullable) - Cached Jira epic key for linking to Jira tickets
 - `created_at` (Timestamp)

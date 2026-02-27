@@ -156,6 +156,19 @@ export function mapTierToAha(dbValue: string): string {
     }
 }
 
+/** For UI Framework epics: Level (UI/UX Impact) maps to Tier — Level 1 → Tier 1, Level 2 → Tier 2, Level 3 → Tier 3. */
+export function mapUiLevelToTier(uiuxImpactValue: any): string | null {
+    if (uiuxImpactValue == null) return null;
+    const s = typeof uiuxImpactValue === 'object' && uiuxImpactValue?.name != null
+        ? String(uiuxImpactValue.name)
+        : String(uiuxImpactValue);
+    const lower = s.toLowerCase().trim();
+    if (lower.includes('level 1') || lower === '1') return 'TIER_1';
+    if (lower.includes('level 2') || lower === '2') return 'TIER_2';
+    if (lower.includes('level 3') || lower === '3') return 'TIER_3';
+    return null;
+}
+
 export interface MappedEpicData {
     aha_id: string;
     aha_url: string;
@@ -252,6 +265,17 @@ export async function mapEpicToEpic(
         }
     }
 
+    // ALWAYS extract UI/UX Impact (Level 1-5) for UI Framework rollouts; different levels have different requirements
+    if (Array.isArray(epic.custom_fields)) {
+        const uiImpactField = epic.custom_fields.find((f: any) => f?.key === 'uiux_impact');
+        if (uiImpactField) {
+            const value = uiImpactField.value;
+            customFields.uiux_impact = typeof value === 'object' && value?.name != null
+                ? value.name
+                : value;
+        }
+    }
+
     // Store the full release name in standard fields (no parsing)
     const releaseName = epic.release?.name || null;
     if (releaseName) {
@@ -291,11 +315,16 @@ export async function mapEpicToEpic(
         return String(value);
     };
 
+    // For UI Framework epics, Tier = Level (Level 1 → Tier 1, Level 2 → Tier 2, Level 3 → Tier 3)
+    const isUiFramework = customFields.cleargo_candidate === 'Yes - UI Framework';
+    const tierFromUiLevel = isUiFramework ? mapUiLevelToTier(customFields.uiux_impact) : null;
+    const tier = tierFromUiLevel ?? mapTierFromAha(await getCustomFieldValue(epic, 'launch_tier'));
+
     return {
         aha_id: epic.reference_num || epic.id,
         aha_url: epic.url,
         name: epic.name,
-        tier: mapTierFromAha(await getCustomFieldValue(epic, 'launch_tier')),
+        tier,
         target_launch_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
         scheduled_ga_dev_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
         owner_email: epic.assigned_to_user?.email ?? null,
@@ -335,7 +364,7 @@ export async function shouldProcessEpic(epic: AhaEpic): Promise<boolean> {
             }
         }
 
-        isClearGOCandidate = fieldValue === 'Yes' || fieldValue === true;
+        isClearGOCandidate = fieldValue === 'Yes' || fieldValue === 'Yes - UI Framework' || fieldValue === true;
     } catch (error) {
         console.debug('cleargo_candidate field not configured');
     }

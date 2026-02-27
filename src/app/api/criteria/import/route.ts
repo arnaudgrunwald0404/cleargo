@@ -101,12 +101,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
         }
 
-        const buffer = await file.arrayBuffer();
+        const fileName = (file.name || "").toLowerCase();
+        const isCsv = fileName.endsWith(".csv");
+        let rows: any[] = [];
 
-        const workbook = XLSX.read(buffer, { type: "array" });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet, { header: 1 }); // Use array of arrays
+        if (isCsv) {
+            const text = await file.text();
+            const workbook = XLSX.read(text, { type: "string", raw: true });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        } else {
+            const buffer = await file.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: "array" });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        }
 
         // Fetch launch stages to map names to IDs
         const { data: launchStages, error: stagesError } = await supabase
@@ -131,11 +142,17 @@ export async function POST(req: NextRequest) {
         let currentCategory: string = "";
         let sortOrder = 0;
 
-        // Start from row 19 (index 18) - data starts on row 19
-        const startRowIndex = 18; // Row 19 in Excel (0-indexed)
-
-        console.log(`[Import] Starting data parse from row ${startRowIndex + 1} (row 19)`);
-        console.log(`[Import] Column mapping: A=index 0 (Category), B=index 1 (Criteria), C=index 2 (Stakeholder), D=index 3 (Ready By), F=index 5 (GO), G=index 6 (Conditional Go), H=index 7 (No Go)`);
+        // Detect start row: if first row looks like a header (contains "category", "criteria", or "label"), start from row 1
+        let startRowIndex = 0;
+        const firstCell = rows[0] && rows[0][0] ? String(rows[0][0]).toLowerCase().trim() : "";
+        const looksLikeHeader = /category|criteria|label/.test(firstCell);
+        if (looksLikeHeader && rows.length > 1) {
+            startRowIndex = 1;
+            console.log(`[Import] Detected header row; data starts at row 2 (index 1)`);
+        } else {
+            console.log(`[Import] Data starts at row 1 (index 0)`);
+        }
+        console.log(`[Import] Column mapping: A=Category, B=Label, C=Decision Owner, D=Ready By, E=GO, F=CONDITIONAL GO, G=NO GO, H=UI Framework Only, I=Gate, J=Tier`);
 
         for (let i = startRowIndex; i < rows.length; i++) {
             const row = rows[i];
@@ -155,12 +172,26 @@ export async function POST(req: NextRequest) {
             const colC = row[2] ? row[2].toString().trim() : "";
             // Column D (index 3): Ready By - the timing by which the criteria needs to be rated
             const colD = row[3] ? row[3].toString().trim() : "";
-            // Column F (index 5): GO definition
+            // Column E (index 4): GO definition
+            const colE = row[4] ? row[4].toString().trim() : "";
+            // Column F (index 5): CONDITIONAL GO definition
             const colF = row[5] ? row[5].toString().trim() : "";
-            // Column G (index 6): CONDITIONAL GO definition
+            // Column G (index 6): NO GO definition
             const colG = row[6] ? row[6].toString().trim() : "";
-            // Column H (index 7): NO GO definition
-            const colH = row[7] ? row[7].toString().trim() : "";
+            // Column H (index 7, optional): UI Framework Only
+            const colH = row[7] ? row[7].toString().trim().toLowerCase() : "";
+            const uiFrameworkOnly = /^(true|yes|1)$/.test(colH);
+            // Column I (index 8, optional): Gate - blocks launch if NO_GO
+            const colI = row[8] ? row[8].toString().trim().toLowerCase() : "";
+            const gate = /^(true|yes|1)$/.test(colI);
+            // Column J (index 9, optional): Tier applicability - ALL, TIER_1_ONLY, TIER_1_AND_2, TIER_2_ONLY, TIER_3_ONLY
+            const colJ = row[9] ? row[9].toString().trim().toUpperCase().replace(/\s/g, "_") : "";
+            const tierRaw = colJ || "ALL";
+            const tierApplicability: TierApplicability =
+                tierRaw === "TIER_1_ONLY" ? "TIER_1_ONLY" :
+                tierRaw === "TIER_1_AND_2" ? "TIER_1_AND_2" :
+                tierRaw === "TIER_2_ONLY" ? "TIER_2_ONLY" :
+                tierRaw === "TIER_3_ONLY" ? "TIER_3_ONLY" : "ALL";
 
             // Label should be in column B (index 1), skip if empty
             if (!colB) {
@@ -230,20 +261,21 @@ export async function POST(req: NextRequest) {
                 }
             }
             
-            // Status definitions: GO is in Column F (index 5), CONDITIONAL GO is in Column G (index 6), NO GO is in Column H (index 7)
-            const statusGo = colF || null;
-            const statusConditional = colG || null;
-            const statusNoGo = colH || null;
+            // Status definitions: GO (E/4), CONDITIONAL GO (F/5), NO GO (G/6)
+            const statusGo = colE || null;
+            const statusConditional = colF || null;
+            const statusNoGo = colG || null;
             
-            console.log(`[Import] Row ${rowNumber}: Ready By (D, index 3)="${colD}" -> rating_timing_id=${ratingTimingId}, GO (F, index 5)="${colF}", Conditional Go (G, index 6)="${colG}", No Go (H, index 7)="${colH}"`);
+            console.log(`[Import] Row ${rowNumber}: Ready By="${colD}" -> rating_timing_id=${ratingTimingId}, Gate=${gate}, Tier=${tierApplicability}, UI Fwk=${uiFrameworkOnly}, GO/Cond/NoGo`);
 
             try {
                 criteria.push({
                     label: label,
                     description: undefined,
                     category: category,
-                    gate: false, // Default to false, no source column for gate
-                    tier_applicability: "ALL", // Default
+                    gate,
+                    tier_applicability: tierApplicability,
+                    ui_framework_only: uiFrameworkOnly,
                     decision_owner_email: decisionOwnerEmail,
                     rating_timing: ratingTimingId,
                     status_definition_go: statusGo,

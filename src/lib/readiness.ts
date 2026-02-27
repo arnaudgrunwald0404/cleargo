@@ -65,10 +65,12 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     }
 
     // Helper to determine applicability by tier
-    const applies = (app: 'ALL'|'TIER_1_ONLY'|'TIER_1_AND_2', tier: 'TIER_1'|'TIER_2'|'TIER_3') =>
+    const applies = (app: string, tier: 'TIER_1'|'TIER_2'|'TIER_3') =>
         app === 'ALL' ||
         (app === 'TIER_1_ONLY' && tier === 'TIER_1') ||
-        (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2'));
+        (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) ||
+        (app === 'TIER_2_ONLY' && tier === 'TIER_2') ||
+        (app === 'TIER_3_ONLY' && tier === 'TIER_3');
 
     const tier = (epic?.tier as any) || 'TIER_3';
 

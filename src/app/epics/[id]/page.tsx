@@ -509,21 +509,43 @@ export default function EpicDetailPage() {
                 deduplicated.map((it: any) => [it.criterion_id, it])
             );
 
+            // Normalize tier so applicability is never wrong (undefined → TIER_3)
+            const epicTier: 'TIER_1' | 'TIER_2' | 'TIER_3' =
+                (data.tier === 'TIER_1' || data.tier === 'TIER_2' || data.tier === 'TIER_3')
+                    ? data.tier
+                    : 'TIER_3';
+
             // Helper for applicability
-            const applies = (app: 'ALL' | 'TIER_1_ONLY' | 'TIER_1_AND_2', tier: 'TIER_1' | 'TIER_2' | 'TIER_3') =>
+            const applies = (app: string, tier: 'TIER_1' | 'TIER_2' | 'TIER_3') =>
                 app === 'ALL' ||
                 (app === 'TIER_1_ONLY' && tier === 'TIER_1') ||
-                (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2'));
+                (app === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) ||
+                (app === 'TIER_2_ONLY' && tier === 'TIER_2') ||
+                (app === 'TIER_3_ONLY' && tier === 'TIER_3');
 
-            // Merge: existing statuses + synthetic rows for non-applicable active criteria
-            const merged: any[] = [...deduplicated];
-            (allActiveCriteria || []).forEach((c: any) => {
+            // UI Framework only: criteria with ui_framework_only apply only when epic has ClearGO Candidate = "Yes - UI Framework"
+            const cleargoCandidateRaw = (data as any)?.aha_fields?.custom_fields?.cleargo_candidate;
+            const cleargoCandidateValue = typeof cleargoCandidateRaw === 'object' && cleargoCandidateRaw?.name
+                ? cleargoCandidateRaw.name
+                : (typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : undefined);
+            const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
+
+            const criteriaApplicableToEpic = (allActiveCriteria || []).filter((c: any) =>
+                !c.ui_framework_only || isUiFrameworkEpic
+            );
+
+            // Merge: existing statuses (excluding UI Framework-only rows when epic is not UI Framework) + synthetic rows
+            const deduplicatedApplicable = deduplicated.filter((row: any) => {
+                const c = row.criterion;
+                return !c?.ui_framework_only || isUiFrameworkEpic;
+            });
+            const merged: any[] = [...deduplicatedApplicable];
+            criteriaApplicableToEpic.forEach((c: any) => {
                 if (!statusByCriterion.has(c.id)) {
                     const isApplicable = c?.tier_applicability
-                        ? applies(c.tier_applicability as any, (data.tier as any))
+                        ? applies(c.tier_applicability as any, epicTier)
                         : true;
                     const notReq = !isApplicable;
-                    // Add all criteria that don't have status rows yet (both applicable and non-applicable)
                     merged.push({
                         id: `virtual-${c.id}`,
                         criterion_id: c.id,
@@ -536,12 +558,11 @@ export default function EpicDetailPage() {
                 }
             });
 
-
             // Annotate applicability for existing statuses
             const withApplicability = merged.map((item: any) => ({
                 ...item,
                 notRequired: item.notRequired === true || (item?.criterion?.tier_applicability
-                    ? !applies(item.criterion.tier_applicability as any, (data.tier as any))
+                    ? !applies(item.criterion.tier_applicability as any, epicTier)
                     : false),
             }));
 

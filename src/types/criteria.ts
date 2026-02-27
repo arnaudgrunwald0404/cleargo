@@ -10,7 +10,7 @@ export type CriterionCategory =
   | "STRATEGY"
   | "OTHER";
 
-export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2";
+export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2" | "TIER_2_ONLY" | "TIER_3_ONLY";
 
 export type DecisionOwnerRole =
   | "CPO"
@@ -50,6 +50,8 @@ export type Criterion = {
   status_definition_no_go?: string;
   is_active: boolean;
   sort_order: number;
+  /** When true, this criterion only applies to epics with ClearGO Candidate = "Yes - UI Framework" in Aha. */
+  ui_framework_only?: boolean;
   data_sources?: DataSource[] | null;
   created_at: string; // ISO
   updated_at: string; // ISO

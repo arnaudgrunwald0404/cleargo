@@ -146,7 +146,8 @@ export async function getSettings(client?: SupabaseClient): Promise<AppSettings>
                 'reason_for_release_change',
                 'release_target_after_pod_planning',
                 'ux_needs',
-                'cleargo_candidate'
+                'cleargo_candidate',
+                'uiux_impact'
             ],
             updated_at: new Date().toISOString(),
             permissions: {},
@@ -171,7 +172,8 @@ export async function getSettings(client?: SupabaseClient): Promise<AppSettings>
             'reason_for_release_change',
             'release_target_after_pod_planning',
             'ux_needs',
-            'cleargo_candidate'
+            'cleargo_candidate',
+            'uiux_impact'
         ];
     }
 

@@ -25,6 +25,7 @@ const createSchema = z.object({
   status_definition_no_go: z.string().optional(),
   is_active: z.boolean().default(true),
   sort_order: z.number().int().default(0),
+  ui_framework_only: z.boolean().default(false).optional(),
   data_sources: z.array(dataSourceSchema).max(5).nullable().optional(),
 });
 

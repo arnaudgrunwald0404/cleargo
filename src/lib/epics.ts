@@ -24,21 +24,13 @@ export async function instantiateEpicMatrix(epicId: string, tier: string) {
         return; // Nothing to instantiate
     }
 
-    // 2. Filter based on tier applicability
-    // tier_applicability can be 'ALL', 'TIER_1_ONLY', 'TIER_1_AND_2'
-    // If it's 'ALL', it applies to all tiers (TIER_1, TIER_2, TIER_3)
-    // If it's 'TIER_1_ONLY', it applies only to TIER_1
-    // If it's 'TIER_1_AND_2', it applies to TIER_1 and TIER_2
-    // For TIER_3, only 'ALL' criteria apply
-
+    // 2. Filter based on tier applicability (ALL, TIER_1_ONLY, TIER_1_AND_2, TIER_2_ONLY, TIER_3_ONLY)
     const applicableCriteria = criteria.filter((c) => {
-        // ALL criteria apply to all tiers
         if (c.tier_applicability === 'ALL') return true;
-        // TIER_1_ONLY applies only to TIER_1
         if (c.tier_applicability === 'TIER_1_ONLY' && tier === 'TIER_1') return true;
-        // TIER_1_AND_2 applies to TIER_1 and TIER_2
         if (c.tier_applicability === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) return true;
-        // For TIER_3, only ALL criteria apply (already handled above)
+        if (c.tier_applicability === 'TIER_2_ONLY' && tier === 'TIER_2') return true;
+        if (c.tier_applicability === 'TIER_3_ONLY' && tier === 'TIER_3') return true;
         return false;
     });
 

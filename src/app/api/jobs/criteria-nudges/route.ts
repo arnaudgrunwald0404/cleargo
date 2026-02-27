@@ -192,8 +192,8 @@ export async function GET(request: NextRequest) {
                     // #endregion
                     return false;
                 }
-                // Only return true for "Yes" (case-insensitive)
-                if (lowerValue === 'yes') {
+                // Only return true for "Yes" or "Yes - UI Framework" (case-insensitive)
+                if (lowerValue === 'yes' || lowerValue === 'yes - ui framework') {
                     // #region agent log
                     fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:131',message:'cleargo_candidate is "yes" - INCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
                     // #endregion

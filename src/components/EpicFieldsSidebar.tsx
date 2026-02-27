@@ -34,6 +34,7 @@ const FIELD_ORDER = [
     'assigned_to_user',
     'integrations',
     'cleargo_candidate',
+    'uiux_impact',
     '---', // Separator
     'tier',
     'tags',

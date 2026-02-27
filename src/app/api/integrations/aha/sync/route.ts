@@ -223,9 +223,9 @@ export async function POST(req: NextRequest) {
                                     ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')?.value
                                     : null;
                                 const cleargoCandidateValue = cleargoCandidate?.name || cleargoCandidate;
-                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === 'Yes - UI Framework' || cleargoCandidateValue === true;
                                 
-                                // Archive if cleargo_candidate is not "Yes"
+                                // Archive if cleargo_candidate is not "Yes" or "Yes - UI Framework"
                                 // Check if archived field exists (migration may not have run yet)
                                 const currentArchived = (existingEpic as any).archived;
                                 if (!isClearGOCandidate && currentArchived !== true) {
@@ -325,9 +325,9 @@ export async function POST(req: NextRequest) {
                                     ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')?.value
                                     : null;
                                 const cleargoCandidateValue = cleargoCandidate?.name || cleargoCandidate;
-                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === 'Yes - UI Framework' || cleargoCandidateValue === true;
                                 
-                                // Archive if cleargo_candidate is not "Yes"
+                                // Archive if cleargo_candidate is not "Yes" or "Yes - UI Framework"
                                 // Check if archived field exists (migration may not have run yet)
                                 const currentArchived = (existingEpic as any).archived;
                                 if (!isClearGOCandidate && currentArchived !== true) {
@@ -535,9 +535,9 @@ export async function POST(req: NextRequest) {
                     ? fullEpic.custom_fields.find((f: any) => f?.key === 'cleargo_candidate')
                     : null;
                 const cleargoCandidateValue = cleargoCandidate?.value?.name ?? cleargoCandidate?.value;
-                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === true;
+                const isClearGOCandidate = cleargoCandidateValue === 'Yes' || cleargoCandidateValue === 'Yes - UI Framework' || cleargoCandidateValue === true;
                 if (!isClearGOCandidate) {
-                    console.log(`⏭️  Skipping epic ${ahaEpic.reference_num || ahaEpic.id}: ClearGO Candidate is not Yes`);
+                    console.log(`⏭️  Skipping epic ${ahaEpic.reference_num || ahaEpic.id}: ClearGO Candidate is not Yes or Yes - UI Framework`);
                     results.skipped_cleargo_no++;
                     results.skipped++;
                     continue;

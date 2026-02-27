@@ -23,6 +23,7 @@ type Item = {
   category: string;
   gate: boolean;
   tier_applicability: string;
+  ui_framework_only?: boolean;
   decision_owner_email?: string | null;
   rating_timing?: number | null; // Foreign key to launch_stages.id
   status_definition_go?: string;
@@ -43,7 +44,7 @@ interface LaunchStage {
   details?: string | null;
 }
 
-const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2"];
+const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2", "TIER_2_ONLY", "TIER_3_ONLY"];
 const ROLES = [
   "CPO",
   "CSM",
@@ -70,6 +71,7 @@ export function CriteriaManager() {
     category: "PRODUCT_TECH",
     gate: false,
     tier_applicability: "ALL",
+    ui_framework_only: false,
     is_active: true,
     sort_order: 0,
   });
@@ -91,6 +93,12 @@ export function CriteriaManager() {
   }>>({});
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [criteriaToDelete, setCriteriaToDelete] = useState<Item | null>(null);
+  const [listFilter, setListFilter] = useState<"all" | "ui_framework">("all");
+
+  const filteredItems = useMemo(() => {
+    if (listFilter === "ui_framework") return items.filter((c) => !!c.ui_framework_only);
+    return items;
+  }, [items, listFilter]);
 
   const toggleCategory = (category: string) => {
     setExpandedCategories(prev => {
@@ -249,6 +257,7 @@ export function CriteriaManager() {
       category: form.category,
       gate: !!form.gate,
       tier_applicability: form.tier_applicability,
+      ui_framework_only: !!form.ui_framework_only,
       status_definition_go: form.status_definition_go || "",
       status_definition_conditional: form.status_definition_conditional || "",
       status_definition_no_go: form.status_definition_no_go || "",
@@ -272,6 +281,7 @@ export function CriteriaManager() {
       category: "PRODUCT_TECH",
       gate: false,
       tier_applicability: "ALL",
+      ui_framework_only: false,
       is_active: true,
       sort_order: 0,
     });
@@ -431,14 +441,21 @@ export function CriteriaManager() {
               </div>
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Import from Excel</h3>
-                <p className="text-sm text-gray-500">Upload a .xlsx file to bulk create or update criteria. Matches by Label.</p>
+                <p className="text-sm text-gray-500">Upload a .xlsx or .csv to bulk create or update criteria (match by Label). Columns: Category, Label, Decision Owner Email, Ready By (launch stage name), GO, CONDITIONAL GO, NO GO, UI Framework Only (true/yes/1), Gate (true/yes/1), Tier (ALL, TIER_1_ONLY, TIER_1_AND_2, TIER_2_ONLY, TIER_3_ONLY). Ready By maps to launch stages by name. Missing columns use defaults (e.g. Gate=false, Tier=ALL, UI Framework Only=false).</p>
+                <a
+                  href="/api/criteria/import/template"
+                  download="criteria-import-template.csv"
+                  className="text-sm text-indigo-600 hover:text-indigo-800 font-medium mt-1 inline-block"
+                >
+                  Download template (CSV)
+                </a>
               </div>
             </div>
 
             <div className="flex gap-3 items-center mb-4">
               <input
                 type="file"
-                accept=".xlsx"
+                accept=".xlsx,.csv"
                 onChange={(e) => setImportFile(e.target.files?.[0] || null)}
                 className="flex-1 text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100"
               />
@@ -468,6 +485,9 @@ export function CriteriaManager() {
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Label</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Rating Stage</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">Gate</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-20">Tier</th>
+                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase w-16">UI Fwk</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Stakeholder</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">GO Definition</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">CONDITIONAL GO</th>
@@ -501,6 +521,9 @@ export function CriteriaManager() {
                                   <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
                                   <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{item.gate ? "Yes" : "No"}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{item.tier_applicability ?? "ALL"}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{item.ui_framework_only ? "Yes" : "No"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">
                                     {item.decision_owner_email ? (
                                       <UserDisplay
@@ -530,6 +553,9 @@ export function CriteriaManager() {
                                     <td className="px-3 py-2 text-sm text-gray-500 pl-8">{detailItem.category}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.label}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.gate ? "Yes" : "No"}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.tier_applicability ?? "ALL"}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.ui_framework_only ? "Yes" : "No"}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
                                       {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
@@ -551,6 +577,9 @@ export function CriteriaManager() {
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.category}</td>
                                   <td className="px-3 py-2 text-sm text-gray-900">{detailItem.label}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.gate ? "Yes" : "No"}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.tier_applicability ?? "ALL"}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{detailItem.ui_framework_only ? "Yes" : "No"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.decision_owner_email || <span className="text-gray-400">—</span>}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600 max-w-xs truncate" title={detailItem.status_definition_go || ""}>
                                     {detailItem.status_definition_go || <span className="text-gray-400">—</span>}
@@ -602,17 +631,83 @@ export function CriteriaManager() {
                 </div>
                 <div>
                   <h3 className="text-md font-semibold text-gray-900">Existing Criteria</h3>
-                  <p className="text-sm text-gray-500">{items.length} criteria configured</p>
+                  <p className="text-sm text-gray-500">
+                    {listFilter === "ui_framework"
+                      ? `${filteredItems.length} of ${items.length} criteria (UI Framework only)`
+                      : `${items.length} criteria configured`}
+                  </p>
                 </div>
               </div>
-              <button
+              <div className="flex items-center gap-3">
+                <Select
+                  size="xs"
+                  value={listFilter}
+                  onChange={(v) => setListFilter((v as "all" | "ui_framework") || "all")}
+                  data={[
+                    { value: "all", label: "Show: All" },
+                    { value: "ui_framework", label: "Show: UI Framework only" },
+                  ]}
+                  w={200}
+                />
+                <button
                 onClick={() => setShowCreateForm(!showCreateForm)}
                 className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                + New
+                {showCreateForm ? "Cancel" : "+ New"}
               </button>
+              </div>
             </div>
           </div>
+
+          {showCreateForm && (
+            <div className="mb-6 p-5 bg-indigo-50/50 border border-indigo-100 rounded-xl">
+              <h4 className="text-sm font-semibold text-gray-900 mb-4">Add criterion</h4>
+              <form onSubmit={submitCreate} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextInput
+                    label="Label"
+                    placeholder="e.g. UX Validation Complete"
+                    value={form.label || ""}
+                    onChange={(e) => setForm({ ...form, label: e.target.value })}
+                    required
+                  />
+                  <Select
+                    label="Category"
+                    value={form.category || "OTHER"}
+                    onChange={(value) => setForm({ ...form, category: value || "OTHER" })}
+                    data={["PRODUCT_TECH", "PRODUCT_DOCUMENTATION", "GTM", "SUPPORT", "DATA_ANALYTICS", "ANALYTICS_AND_METRICS", "LEGAL_SECURITY", "OPS", "STRATEGY", "OTHER"]}
+                  />
+                </div>
+                <Stack gap="sm">
+                  <Checkbox
+                    label="Gate (blocks launch if NO_GO)"
+                    checked={!!form.gate}
+                    onChange={(e) => setForm({ ...form, gate: e.target.checked })}
+                  />
+                  <Stack gap={2}>
+                    <Checkbox
+                      label="UI Framework only"
+                      checked={!!form.ui_framework_only}
+                      onChange={(e) => setForm({ ...form, ui_framework_only: e.target.checked })}
+                    />
+                    <Text size="xs" c="dimmed" className="ml-[22px]">
+                      Only for epics with ClearGO Candidate = Yes - UI Framework
+                    </Text>
+                  </Stack>
+                </Stack>
+                <Select
+                  label="Tier applicability"
+                  value={form.tier_applicability || "ALL"}
+                  onChange={(value) => setForm({ ...form, tier_applicability: value || "ALL" })}
+                  data={TIERS}
+                />
+                <Group>
+                  <Button type="submit" size="sm">Save criterion</Button>
+                  <Button type="button" variant="subtle" size="sm" onClick={() => setShowCreateForm(false)}>Cancel</Button>
+                </Group>
+              </form>
+            </div>
+          )}
 
           <div>
             <table className="w-full divide-y divide-gray-200">
@@ -623,12 +718,13 @@ export function CriteriaManager() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label/Category</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Gate</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tier</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-20" title="Only for epics with ClearGO Candidate = Yes - UI Framework">UI Fwk</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ready by</th>
                   <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {items.map((c, index) => (
+                {filteredItems.map((c, index) => (
                   <tr
                     key={c.id}
                     onDragOver={(e) => {
@@ -718,6 +814,21 @@ export function CriteriaManager() {
                         }}
                         data={TIERS}
                         size="xs"
+                      />
+                    </td>
+                    <td
+                      className="px-4 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                      title="Only for epics with ClearGO Candidate = Yes - UI Framework"
+                    >
+                      <Checkbox
+                        size="xs"
+                        checked={!!c.ui_framework_only}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          submitEdit(c.id, { ui_framework_only: e.currentTarget.checked });
+                        }}
+                        aria-label="UI Framework only"
                       />
                     </td>
                     <td
@@ -1003,6 +1114,13 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                 onChange={(value) => setPatch({ ...patch, tier_applicability: value || "" })}
                 data={TIERS}
                 required
+              />
+
+              <Checkbox
+                label="UI Framework only"
+                description="Only apply this criterion to epics with ClearGO Candidate = Yes - UI Framework in Aha"
+                checked={!!patch.ui_framework_only}
+                onChange={(e) => setPatch({ ...patch, ui_framework_only: e.target.checked })}
               />
 
               <Select

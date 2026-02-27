@@ -97,29 +97,27 @@ export async function clearAhaRecordNotFound(epicId: string): Promise<void> {
     await supabase.from('epic').update({ aha_record_not_found: false }).eq('id', epicId);
 }
 
+/** Values from Aha ClearGO Candidate field that indicate the epic is a ClearGO candidate (shown in app, not archived). */
+export const CLEARGO_CANDIDATE_VALUES = ['Yes', 'Yes - UI Framework'] as const;
+
 /**
- * Extract cleargo_candidate value from epic data
- * Returns true if cleargo_candidate is "Yes" or true, false otherwise
+ * Extract cleargo_candidate value from epic data.
+ * Returns true if cleargo_candidate is "Yes", "Yes - UI Framework", or true; false otherwise.
  */
 function getClearGOCandidateValue(epicData: MappedEpicData): boolean {
-    const ahaFields = epicData.aha_fields;
-    if (!ahaFields || typeof ahaFields !== 'object') {
-        return false;
-    }
+    const raw = getClearGOCandidateRawValue(epicData);
+    return raw === 'Yes' || raw === 'Yes - UI Framework' || raw === true;
+}
 
-    const customFields = ahaFields.custom_fields;
-    if (!customFields || typeof customFields !== 'object') {
-        return false;
-    }
-
-    const cleargoCandidate = customFields.cleargo_candidate;
-
-    if (cleargoCandidate === null || cleargoCandidate === undefined) {
-        return false;
-    }
-
-    // Check if value is "Yes" or true
-    return cleargoCandidate === 'Yes' || cleargoCandidate === true;
+/**
+ * Get raw cleargo_candidate value from epic data (for UI Framework filtering).
+ * Returns the string value from Aha (e.g. "Yes", "Yes - UI Framework", "No") or undefined.
+ */
+export function getClearGOCandidateRawValue(epicData: { aha_fields?: { custom_fields?: Record<string, unknown> } | null }): string | boolean | undefined {
+    const customFields = epicData.aha_fields?.custom_fields;
+    if (!customFields || typeof customFields !== 'object') return undefined;
+    const v = (customFields as Record<string, unknown>).cleargo_candidate;
+    return v === null || v === undefined ? undefined : (v as string | boolean);
 }
 
 export async function upsertEpicFromAha(
@@ -405,10 +403,10 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Epic tier is required (epicId: ${epicId})`);
     }
 
-    // Get epic info (for target_launch_date and pod)
+    // Get epic info (for target_launch_date, pod, and cleargo_candidate for UI Framework criteria)
     const { data: epic, error: epicError } = await sb
         .from('epic')
-        .select('id, target_launch_date, pod')
+        .select('id, target_launch_date, pod, aha_fields')
         .eq('id', epicId)
         .single();
 
@@ -417,10 +415,10 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Failed to fetch epic: ${epicError.message}`);
     }
 
-    // Get all active criteria applicable to this tier (with decision_owner_email and rating_timing)
+    // Get all active criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
-        .select('id, label, description, tier_applicability, decision_owner_email, rating_timing')
+        .select('id, label, description, tier_applicability, decision_owner_email, rating_timing, ui_framework_only')
         .eq('is_active', true);
 
     if (criteriaError) {
@@ -433,14 +431,21 @@ export async function instantiateCriteriaForEpic(
         return; // Nothing to instantiate
     }
 
+    const cleargoCandidateRaw = getClearGOCandidateRawValue({ aha_fields: epic?.aha_fields });
+    const cleargoCandidateValue = typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : (cleargoCandidateRaw === true ? 'Yes' : undefined);
+    const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
+
     const applicableCriteria = criteria.filter((c) => {
+        // UI Framework only: include only when epic has ClearGO Candidate = "Yes - UI Framework"
+        if ((c as { ui_framework_only?: boolean }).ui_framework_only === true) {
+            if (!isUiFrameworkEpic) return false;
+        }
         // ALL criteria apply to all tiers
         if (c.tier_applicability === 'ALL') return true;
-        // TIER_1_ONLY applies only to TIER_1
         if (c.tier_applicability === 'TIER_1_ONLY' && tier === 'TIER_1') return true;
-        // TIER_1_AND_2 applies to TIER_1 and TIER_2
         if (c.tier_applicability === 'TIER_1_AND_2' && (tier === 'TIER_1' || tier === 'TIER_2')) return true;
-        // For TIER_3, only ALL criteria apply (already handled above)
+        if (c.tier_applicability === 'TIER_2_ONLY' && tier === 'TIER_2') return true;
+        if (c.tier_applicability === 'TIER_3_ONLY' && tier === 'TIER_3') return true;
         return false;
     });
 

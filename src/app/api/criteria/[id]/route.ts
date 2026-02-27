@@ -25,6 +25,7 @@ const updateSchema = z.object({
   is_active: z.boolean().optional(),
   sort_order: z.number().int().optional(),
   rating_timing: z.number().int().nullable().optional(),
+  ui_framework_only: z.boolean().optional(),
   data_sources: z.array(dataSourceSchema).max(5).nullable().optional(),
 });
 

@@ -605,6 +605,37 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         
         return shown;
     });
+
+    // When the set of criteria changes (e.g. epic load or criteria instantiated), recompute which items
+    // are shown by default so Tier-specific criteria (e.g. Level 3 for a Tier 3 epic) appear correctly
+    const itemIdsKey = items.map(i => i.id).sort().join(',');
+    useEffect(() => {
+        if (items.length === 0) return;
+        const categoryGroups = items.reduce((acc, item) => {
+            const cat = item.criterion.category || 'OTHER';
+            if (!acc[cat]) acc[cat] = [];
+            acc[cat].push(item);
+            return acc;
+        }, {} as Record<string, MatrixItem[]>);
+        const nextShown = new Set<string>();
+        Object.keys(categoryGroups).forEach(cat => {
+            const categoryItems = categoryGroups[cat];
+            const hasSignoff = categoryItems.some(item =>
+                item.criterion.label?.toLowerCase().includes('signoff')
+            );
+            if (hasSignoff) {
+                categoryItems.forEach(item => {
+                    if (item.criterion.label?.toLowerCase().includes('signoff')) nextShown.add(item.id);
+                });
+            } else {
+                categoryItems.forEach(item => {
+                    if (!item.notRequired) nextShown.add(item.id);
+                });
+            }
+        });
+        setShownItems(nextShown);
+    }, [itemIdsKey]); // eslint-disable-line react-hooks/exhaustive-deps -- only sync when criterion set changes, not on every items reference change
+
     // Removed notes editing - using comments instead
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
