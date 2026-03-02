@@ -881,7 +881,11 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     }
   };
 
+  const isSuccessDefinedCriterion = (item: MyItem): boolean =>
+    (item.criterion?.label ?? '').toLowerCase().includes('success defined');
+
   const releaseGroups: ReleaseGroup[] = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
     const releaseDateMap = new Map<string, string | null>();
     const releaseNameByDate = new Map<string, string>();
     releaseSchedule.forEach(release => {
@@ -912,6 +916,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     });
 
     const groups: ReleaseGroup[] = Array.from(releaseGroupsMap.entries()).map(([releaseName, items]) => {
+      const releaseDateNorm = normalizeDateStr(releaseDateMap.get(releaseName) ?? null);
+      const releaseDatePassed = releaseDateNorm != null && releaseDateNorm < today;
+
       const sorted = [...items].sort((a, b) => {
         const nameCmp = (a.launch?.name ?? '').localeCompare(b.launch?.name ?? '');
         if (nameCmp !== 0) return nameCmp;
@@ -919,10 +926,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         const orderB = b.criterion?.sort_order ?? 0;
         return orderA - orderB;
       });
+
+      const filteredItems = releaseDatePassed
+        ? sorted.filter(
+            (item) =>
+              isSuccessDefinedCriterion(item) && item.status !== 'GO'
+          )
+        : sorted.filter((item) => item.status !== 'NOT_APPLICABLE');
+
       return {
         releaseName,
         releaseDate: releaseDateMap.get(releaseName) || null,
-        items: sorted
+        items: filteredItems
       };
     });
 
@@ -932,9 +947,11 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       return nameA.localeCompare(nameB);
     });
 
-    let releasesToShow = groups;
-    if (showAllItems && groups.length > 10) {
-      releasesToShow = groups.slice(0, 10);
+    const groupsWithItems = groups.filter((g) => g.items.length > 0);
+
+    let releasesToShow = groupsWithItems;
+    if (showAllItems && groupsWithItems.length > 10) {
+      releasesToShow = groupsWithItems.slice(0, 10);
     }
 
     if (ungroupedItems.length > 0 && !isLoadingReleaseNames) {
@@ -956,8 +973,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   }, [items, releaseSchedule, epicReleaseMap, showAllItems, isLoadingReleaseNames]);
 
   const headingStats = useMemo(() => {
-    const totalCriteria = items.length;
-    
+    const totalCriteria = releaseGroups.reduce((sum, g) => sum + g.items.length, 0);
+
     const releasesWithDates = releaseSchedule
       .filter(r => r.release_name && r.launch_date)
       .map(r => ({
@@ -966,19 +983,17 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       }))
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 2);
-    
+
     const nextTwoReleaseNames = new Set(releasesWithDates.map(r => r.name));
-    
-    const criteriaForNextTwoReleases = items.filter(item => {
-      const releaseName = epicReleaseMap.get(item.launch.id);
-      return releaseName && nextTwoReleaseNames.has(releaseName);
-    }).length;
-    
+    const criteriaForNextTwoReleases = releaseGroups
+      .filter(g => nextTwoReleaseNames.has(g.releaseName))
+      .reduce((sum, g) => sum + g.items.length, 0);
+
     return {
       total: totalCriteria,
       forNextTwoReleases: criteriaForNextTwoReleases
     };
-  }, [items, releaseSchedule, epicReleaseMap]);
+  }, [releaseGroups, releaseSchedule]);
 
   useEffect(() => {
     setCriteriaCount(headingStats.total);

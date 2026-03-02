@@ -142,7 +142,8 @@ export async function GET(req: NextRequest) {
     // Transform comments to include read status and epic/criterion context
     const commentsWithStatus = comments
       .map((comment: any) => {
-        const isRead = readStatusMap.has(comment.id);
+        const isAuthoredByMe = comment.created_by?.id === userId;
+        const isRead = isAuthoredByMe || readStatusMap.has(comment.id);
         const readAt = readStatusMap.get(comment.id);
 
         // Extract nested data

@@ -20,6 +20,7 @@ import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
+import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
 
 // Lazy load tab components for code splitting
 const DecisionList = lazy(() => import("@/components/DecisionList").then(m => ({ default: m.default })));
@@ -1120,26 +1121,33 @@ export default function EpicDetailPage() {
         const targetDate = releaseDate || epic?.target_launch_date;
         if (!targetDate) return null;
 
-        let totalDurationDays = 0;
+        let daysBetweenGoNoGoAndRelease = 0;
 
         if (launchStages.length > 0) {
-            // Target release date is the beginning of Cohort 1 Live (sort_order 3)
-            // Go/No-Go date should only consider pre-launch phases (before Cohort 1 Live)
-            // This includes: GTM Access (sort_order 1) + Internal Readiness (sort_order 2)
-            totalDurationDays = launchStages
-                .filter(stage =>
-                    stage.duration_days !== null &&
-                    stage.sort_order < 3 // Only stages before Cohort 1 Live
-                )
-                .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+            const sorted = [...launchStages].sort((a, b) => a.sort_order - b.sort_order);
+            const gtmAccess = sorted.find(s => s.name.toLowerCase().includes('gtm access'));
+            const cohort1 = sorted.find(s => s.name.toLowerCase().includes('cohort 1'));
+            // Per launch stage settings: "Go/No Go typically happens here about 1 week in GTM Access".
+            // So days from Go/No-Go to Release = (Internal Readiness) + (GTM Access duration - 7).
+            if (gtmAccess != null && cohort1 != null && gtmAccess.duration_days != null) {
+                const internalReadinessDays = sorted
+                    .filter(stage =>
+                        stage.duration_days != null &&
+                        stage.sort_order > gtmAccess.sort_order &&
+                        stage.sort_order < cohort1.sort_order
+                    )
+                    .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
+                const gtmDaysIntoPhase = 7; // about 1 week in
+                daysBetweenGoNoGoAndRelease = internalReadinessDays + (gtmAccess.duration_days - gtmDaysIntoPhase);
+            }
         }
 
-        if (totalDurationDays === 0) {
-            totalDurationDays = 35; // Default: GTM Access (14) + Internal Readiness (21)
+        if (daysBetweenGoNoGoAndRelease <= 0) {
+            daysBetweenGoNoGoAndRelease = 28; // Default: 21 (IR) + (14 - 7) (GTM)
         }
 
         const calculatedDate = new Date(targetDate);
-        calculatedDate.setDate(calculatedDate.getDate() - totalDurationDays);
+        calculatedDate.setDate(calculatedDate.getDate() - daysBetweenGoNoGoAndRelease);
         return calculatedDate;
     }, [releaseDate, epic?.target_launch_date, launchStages]);
 
@@ -1588,172 +1596,203 @@ export default function EpicDetailPage() {
                     </div>
                 </div>
 
-                <div className="epic-detail-stats-grid mt-6 grid grid-cols-1 md:grid-cols-5 gap-6" style={{ alignItems: "start" }}>
+                <div
+                    className={`epic-detail-stats-grid mt-6 grid grid-cols-1 gap-6 ${launchStages.length === 0 ? 'md:grid-cols-4' : ''} ${launchStages.length > 0 ? 'epic-detail-stats-grid-with-chart' : ''}`}
+                    style={{
+                        alignItems: "start",
+                        ...(launchStages.length > 0 ? { gridTemplateColumns: 'minmax(0, 4fr) minmax(140px, 1fr) minmax(120px, 1fr)' } : {}),
+                    }}
+                >
                     {(() => {
                         return (
                             <>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--spacing-1)',
-                                    textAlign: 'right'
-                                }}>
-                                    <div style={{
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        color: 'var(--color-gray-500)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>Target Release Date</div>
-                                    <div style={{
-                                        fontSize: '17px',
-                                        fontWeight: 'var(--font-weight-bold)',
-                                        color: 'var(--color-gray-900)',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>
-                                        {releaseDate ? new Date(releaseDate).toLocaleDateString() : epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set'}
-                                    </div>
-                                </div>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--spacing-1)',
-                                    textAlign: 'right'
-                                }}>
-                                    <div style={{
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        color: 'var(--color-gray-500)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>Approx Go/NoGo Date</div>
-                                    <div style={{
-                                        fontSize: '17px',
-                                        fontWeight: 'var(--font-weight-bold)',
-                                        color: 'var(--color-gray-900)',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>
-                                        {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
-                                    </div>
-                                </div>
-                                <div
-                                    className="epic-detail-readiness-score"
-                                    style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        gap: 'var(--spacing-1)',
-                                        textAlign: 'right'
-                                    }}
-                                >
-                                    <div style={{
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        color: 'var(--color-gray-500)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'flex-end',
-                                        gap: 'var(--spacing-1)'
-                                    }}>
-                                        Readiness Score
-                                        <Tooltip
-                                            label={
-                                                <div style={{ maxWidth: '300px' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                    <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                        The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
-                                                    </div>
-                                                </div>
-                                            }
-                                            withArrow
-                                            multiline
-                                        >
-                                            <IconInfoCircle
-                                                size={14}
-                                                style={{
-                                                    color: 'var(--color-gray-400)',
-                                                    cursor: 'help'
-                                                }}
+                                {launchStages.length > 0 ? (
+                                    <>
+                                        <div className="min-w-0" style={{ marginLeft: 0, width: '100%' }}>
+                                            <LaunchStagesChart
+                                                stages={launchStages}
+                                                targetReleaseDate={releaseDate || epic?.target_launch_date || null}
+                                                goNoGoDate={goNoGoDate ?? null}
+                                                showHeading={false}
+                                                noContainer
                                             />
-                                        </Tooltip>
-                                    </div>
-                                    <div style={{
-                                        fontSize: '17px',
-                                        fontWeight: 'var(--font-weight-bold)',
-                                        color: 'var(--color-gray-900)',
-                                        fontFamily: 'var(--font-body)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'flex-end',
-                                        gap: 'var(--spacing-1)'
-                                    }}>
-                                        {matrix.length === 0 ? 'N/A' : (typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A')}
-                                    </div>
-                                </div>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--spacing-1)',
-                                    textAlign: 'right'
-                                }}>
-                                    <div style={{
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        color: 'var(--color-gray-500)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'flex-end',
-                                        gap: 'var(--spacing-1)'
-                                    }}>
-                                        <div>
-                                            Readiness Status
-                                            <br />
-                                            <span className="readiness-status-aka" style={{ textTransform: 'none', fontSize: '0.9em', fontWeight: 'normal' }}>aka "Are we ready to release?"</span>
                                         </div>
-                                        <Tooltip
-                                            label={
-                                                <div style={{ maxWidth: '250px' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '4px' }}>Readiness Status</div>
-                                                    <div style={{ fontSize: '12px' }}>
-                                                        Answers: "Can we launch now?" Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
-                                                    </div>
-                                                </div>
-                                            }
-                                            withArrow
-                                            multiline
+                                        <div
+                                            className="epic-detail-readiness-score min-w-0"
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 'var(--spacing-1)',
+                                                textAlign: 'left',
+                                                paddingLeft: 'var(--spacing-2)'
+                                            }}
                                         >
-                                            <IconInfoCircle
-                                                size={14}
-                                                style={{
-                                                    color: 'var(--color-gray-400)',
-                                                    cursor: 'help'
-                                                }}
-                                            />
-                                        </Tooltip>
-                                    </div>
-                                    <div style={{
-                                        fontSize: '17px',
-                                        fontWeight: 'var(--font-weight-bold)',
-                                        color: 'var(--color-gray-900)',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>
-                                        {matrix.length === 0 ? 'Not evaluated' : (epic.readiness_status || 'NO GO')}
-                                    </div>
-                                </div>
-                                <div style={{
-                                    display: 'flex',
-                                    flexDirection: 'column',
-                                    gap: 'var(--spacing-1)',
-                                    textAlign: 'right'
-                                }}>
-                                    <div style={{
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                color: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-start',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
+                                                Readiness
+                                                <Tooltip
+                                                    label={
+                                                        <div style={{ maxWidth: '320px' }}>
+                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Score</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5', marginBottom: '10px' }}>
+                                                                How complete your launch preparation is. Criteria are grouped into categories; each criterion: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria count 3×. Categories are averaged (equal weight). Score is capped lower if there are gate blockers or missing criteria.
+                                                            </div>
+                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Status (aka &quot;Are we ready to release?&quot;)</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                Answers &quot;Can we launch now?&quot; Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    withArrow
+                                                    multiline
+                                                >
+                                                    <IconInfoCircle
+                                                        size={14}
+                                                        style={{
+                                                            color: 'var(--color-gray-400)',
+                                                            cursor: 'help'
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: 'var(--color-gray-900)',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-start',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
+                                                {matrix.length === 0
+                                                    ? 'N/A → Not evaluated'
+                                                    : `${typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A'} → ${epic.readiness_status || 'NO GO'}`}
+                                            </div>
+                                        </div>
+                                        <div
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 'var(--spacing-1)',
+                                                textAlign: 'left',
+                                                paddingLeft: 'var(--spacing-2)'
+                                            }}
+                                        >
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                color: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-start',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
+                                                Risk Level
+                                                <Tooltip
+                                                    label={
+                                                        <div style={{ maxWidth: '300px' }}>
+                                                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    withArrow
+                                                    multiline
+                                                >
+                                                    <IconInfoCircle
+                                                        size={14}
+                                                        style={{
+                                                            color: 'var(--color-gray-400)',
+                                                            cursor: 'help'
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                justifyContent: 'flex-start'
+                                            }}>
+                                                {epic.risk_level || 'LOW'}
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 'var(--spacing-1)',
+                                            textAlign: 'right'
+                                        }}>
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                color: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>Target Release Date</div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: 'var(--color-gray-900)',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>
+                                                {releaseDate ? new Date(releaseDate).toLocaleDateString() : epic?.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set'}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 'var(--spacing-1)',
+                                            textAlign: 'right'
+                                        }}>
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                color: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>Approx Go/NoGo Date</div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: 'var(--color-gray-900)',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>
+                                                {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
+                                            </div>
+                                        </div>
+                                        <div
+                                            className="epic-detail-readiness-score"
+                                            style={{
+                                                display: 'flex',
+                                                flexDirection: 'column',
+                                                gap: 'var(--spacing-1)',
+                                                textAlign: 'right'
+                                            }}
+                                        >
+                                            <div style={{
                                         fontSize: 'var(--font-size-xs)',
                                         fontWeight: 'var(--font-weight-medium)',
                                         color: 'var(--color-gray-500)',
@@ -1764,44 +1803,105 @@ export default function EpicDetailPage() {
                                         alignItems: 'center',
                                         justifyContent: 'flex-end',
                                         gap: 'var(--spacing-1)'
-                                    }}>
-                                        Risk Level
-                                        <Tooltip
-                                            label={
-                                                <div style={{ maxWidth: '300px' }}>
-                                                    <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                    <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                        Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                    </div>
-                                                </div>
-                                            }
-                                            withArrow
-                                            multiline
-                                        >
-                                            <IconInfoCircle
-                                                size={14}
-                                                style={{
-                                                    color: 'var(--color-gray-400)',
-                                                    cursor: 'help'
-                                                }}
-                                            />
-                                        </Tooltip>
-                                    </div>
-                                    <div style={{
-                                        fontSize: '17px',
-                                        fontWeight: 'var(--font-weight-bold)',
-                                        color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
-                                        fontFamily: 'var(--font-body)'
-                                    }}>
-                                        {epic.risk_level || 'LOW'}
-                                    </div>
-                                </div>
+                                            }}>
+                                                Readiness
+                                                <Tooltip
+                                                    label={
+                                                        <div style={{ maxWidth: '320px' }}>
+                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Score</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5', marginBottom: '10px' }}>
+                                                                How complete your launch preparation is. Criteria are grouped into categories; each criterion: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria count 3×. Categories are averaged (equal weight). Score is capped lower if there are gate blockers or missing criteria.
+                                                            </div>
+                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Status (aka &quot;Are we ready to release?&quot;)</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                Answers &quot;Can we launch now?&quot; Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    withArrow
+                                                    multiline
+                                                >
+                                                    <IconInfoCircle
+                                                        size={14}
+                                                        style={{
+                                                            color: 'var(--color-gray-400)',
+                                                            cursor: 'help'
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: 'var(--color-gray-900)',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-end',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
+                                                {matrix.length === 0
+                                                    ? 'N/A → Not evaluated'
+                                                    : `${typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A'} → ${epic.readiness_status || 'NO GO'}`}
+                                            </div>
+                                        </div>
+                                        <div style={{
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 'var(--spacing-1)',
+                                            textAlign: 'right'
+                                        }}>
+                                            <div style={{
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                color: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em',
+                                                fontFamily: 'var(--font-body)',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'flex-end',
+                                                gap: 'var(--spacing-1)'
+                                            }}>
+                                                Risk Level
+                                                <Tooltip
+                                                    label={
+                                                        <div style={{ maxWidth: '300px' }}>
+                                                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
+                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                                                Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                    withArrow
+                                                    multiline
+                                                >
+                                                    <IconInfoCircle
+                                                        size={14}
+                                                        style={{
+                                                            color: 'var(--color-gray-400)',
+                                                            cursor: 'help'
+                                                        }}
+                                                    />
+                                                </Tooltip>
+                                            </div>
+                                            <div style={{
+                                                fontSize: '17px',
+                                                fontWeight: 'var(--font-weight-bold)',
+                                                color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>
+                                                {epic.risk_level || 'LOW'}
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </>
                         );
                     })()}
                 </div>
 
-                <div className="epic-detail-tab-row" style={{ marginTop: "var(--spacing-8)", marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--spacing-2)", borderBottom: "1px solid var(--color-gray-900)" }}>
+                <div className="epic-detail-tab-row" style={{ marginTop: "var(--spacing-1)", marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--spacing-2)", borderBottom: "1px solid var(--color-gray-900)" }}>
                     {isMobile ? (
                         <Select
                             data={tabOptions}

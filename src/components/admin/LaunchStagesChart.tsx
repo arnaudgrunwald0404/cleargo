@@ -13,6 +13,14 @@ interface LaunchStage {
 
 interface LaunchStagesChartProps {
     stages: LaunchStage[];
+    /** When provided (e.g. epic detail), anchor the timeline so Release falls on this date */
+    targetReleaseDate?: string | Date | null;
+    /** When provided, show this date under the Go/No-Go label */
+    goNoGoDate?: string | Date | null;
+    /** When true, hide the "Launch Stages Timeline" heading (e.g. for embedding under Target Release Date) */
+    showHeading?: boolean;
+    /** When true, render only the timeline SVG without outer box, border, or padding */
+    noContainer?: boolean;
 }
 
 interface TimelineMilestone {
@@ -22,9 +30,37 @@ interface TimelineMilestone {
     isReleaseDate?: boolean; // Is this the release launch date (Cohort 1 Live start)
 }
 
-export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
-    const [launchDate] = useState<Date>(new Date()); // Default to today, could be made configurable
-    const [releaseLaunchDate] = useState<Date | null>(null); // Could be fetched from release_schedule
+function formatChartDate(d: string | Date | null | undefined): string {
+    if (d == null) return '';
+    const date = typeof d === 'string' ? new Date(d) : d;
+    return isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+}
+
+function formatChartDateNoYear(d: string | Date | null | undefined): string {
+    if (d == null) return '';
+    const date = typeof d === 'string' ? new Date(d) : d;
+    return isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+}
+
+export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showHeading = true, noContainer = false }: LaunchStagesChartProps) {
+    const sortedForAnchor = [...stages].sort((a, b) => a.sort_order - b.sort_order);
+    const cohort1ForAnchor = sortedForAnchor.find(s => s.name.toLowerCase().includes('cohort 1'));
+    const preLaunchDays = cohort1ForAnchor
+        ? sortedForAnchor
+            .filter(s => s.sort_order < cohort1ForAnchor.sort_order && s.duration_days != null)
+            .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
+        : 0;
+    const anchorDate = targetReleaseDate
+        ? (typeof targetReleaseDate === 'string' ? new Date(targetReleaseDate) : targetReleaseDate)
+        : null;
+    const launchDate = anchorDate && preLaunchDays > 0
+        ? (() => {
+            const d = new Date(anchorDate);
+            d.setDate(d.getDate() - preLaunchDays);
+            return d;
+        })()
+        : new Date();
+    const releaseLaunchDate = anchorDate ?? null;
     
     // Helper function to estimate text width
     const estimateTextWidth = (text: string, fontSize: number): number => {
@@ -57,8 +93,10 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
         return lines.length > 1 ? lines : [text];
     };
     
-    // Sort stages by sort_order
-    const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
+    // Sort stages by sort_order; exclude GA / Cohort 2 Live (not shown in timeline)
+    const sortedStages = [...stages]
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .filter(s => !s.name.toLowerCase().includes('cohort 2'));
     
     // Find Cohort 1 Live stage
     const cohort1Stage = sortedStages.find(s => s.name.toLowerCase().includes('cohort 1'));
@@ -89,9 +127,9 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
     
     // Calculate total timeline span
     const totalDays = cumulativeDays;
-    const timelineWidth = 1000;
-    const timelineHeight = 280;
-    const padding = 60;
+    const timelineWidth = 600;
+    const timelineHeight = 140;
+    const padding = noContainer ? 0 : 50;
     const timelineY = timelineHeight / 2;
     
     // Calculate positions for milestones
@@ -139,10 +177,10 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
         );
     }
 
-    return (
-        <Box className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">Launch Stages Timeline</h3>
-            <Box className="overflow-x-auto -mx-2">
+    const chartContent = (
+        <>
+            {showHeading && <h3 className="text-lg font-semibold text-gray-900 mb-2">Launch Stages Timeline</h3>}
+            <Box className={`overflow-x-auto ${noContainer ? '' : '-mx-1'}`} style={noContainer ? { padding: 0, margin: 0 } : undefined}>
                 <svg
                     width={timelineWidth}
                     height={timelineHeight}
@@ -186,39 +224,52 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                                     .reduce((sum, m) => sum + (m.stage.duration_days || 0), 0);
                                 const releaseX = padding + ((releaseOffset / totalDays) * (timelineWidth - padding * 2));
                                 
+                                const markerTop = timelineY - 28;
+                                const releaseDateStr = formatChartDate(actualReleaseDate ?? targetReleaseDate);
+                                // #region agent log
+                                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:Release',message:'Release date format',data:{markerType:'release',formatterUsed:'formatChartDate',formattedValue:releaseDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+                                // #endregion
                                 return (
                                     <>
-                                        {/* Orange dotted line marker - similar to Go/No-Go */}
+                                        {/* Orange dotted line marker - above chart, stops at top of bar */}
                                         <line
                                             x1={releaseX}
-                                            y1={timelineY - 20}
+                                            y1={markerTop}
                                             x2={releaseX}
-                                            y2={timelineY + 70}
+                                            y2={timelineY - 16}
                                             stroke="#F59E0B"
                                             strokeWidth="2.5"
                                             strokeDasharray="5 4"
                                             opacity="1"
                                         />
-                                        {/* Release Launch Date label with background */}
-                                        <rect
-                                            x={releaseX - 75}
-                                            y={timelineY + 58}
-                                            width="150"
-                                            height="18"
-                                            fill="white"
-                                            rx="3"
-                                            opacity="1"
-                                        />
                                         <text
                                             x={releaseX}
-                                            y={timelineY + 80}
+                                            y={markerTop - (releaseDateStr ? 30 : 10)}
                                             textAnchor="middle"
-                                            fontSize="16"
-                                            fontWeight="600"
-                                            fill="#D97706"
+                                            style={{
+                                                fontFamily: 'var(--font-body)',
+                                                fontSize: 'var(--font-size-xs)',
+                                                fontWeight: 'var(--font-weight-medium)',
+                                                fill: 'var(--color-gray-500)',
+                                                textTransform: 'uppercase',
+                                                letterSpacing: '0.05em'
+                                            }}
                                         >
-                                            Release Launch Date
+                                            Release
                                         </text>
+                                        {releaseDateStr && (
+                                            <text
+                                                x={releaseX}
+                                                y={markerTop - 4}
+                                                textAnchor="middle"
+                                                fontSize="17"
+                                                fontWeight="700"
+                                                fill="#000"
+                                                style={{ fontFamily: 'var(--font-body)' }}
+                                            >
+                                                {releaseDateStr}
+                                            </text>
+                                        )}
                                     </>
                                 );
                             })()}
@@ -245,75 +296,45 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                         const isGA = milestone.stage.name.toLowerCase().includes('ga') || 
                                     milestone.stage.name.toLowerCase().includes('cohort 2');
                         
-                        // Check for overlaps and wrap text if needed
-                        const fontSize = 18;
-                        const durationFontSize = 15;
-                        const textWidth = estimateTextWidth(milestone.stage.name, fontSize);
-                        const availableWidth = Math.min(stageWidth * 0.9, 200); // Use 90% of stage width or max 200px
-                        const wrappedText = textWidth > availableWidth ? wrapText(milestone.stage.name, availableWidth, fontSize) : [milestone.stage.name];
-                        
-                        // Calculate if name and duration will overlap
-                        // SVG text y-coordinate is the baseline, text extends upward
-                        const lineHeight = 22; // Approximate line height for wrapped text
-                        const nameY = timelineY - 45;
-                        const durationY = timelineY - 38;
-                        const nameBaseline = nameY;
-                        const nameTop = nameBaseline - (wrappedText.length * lineHeight); // Top of wrapped name text
-                        const durationBaseline = durationY;
-                        const durationTop = durationBaseline - durationFontSize; // Top of duration text
-                        const spacing = 5; // Minimum spacing between name bottom and duration top
-                        const overlapDetected = nameTop < durationTop + spacing;
-                        
-                        // Adjust name position upward if overlap detected
-                        const adjustedNameY = overlapDetected ? durationTop - (wrappedText.length * lineHeight) - spacing : nameY;
+                        // Labels inside the bar: "Stage Name (X days)" in one string
+                        const fontSize = 11;
+                        const labelStr = `${milestone.stage.name} (${milestone.stage.duration_days} days)`;
+                        const textWidth = estimateTextWidth(labelStr, fontSize);
+                        const availableWidth = Math.min(stageWidth * 0.90, 160);
+                        const wrappedText = textWidth > availableWidth ? wrapText(labelStr, availableWidth, fontSize) : [labelStr];
+                        const labelY = timelineY;
                         
                         return (
                             <g key={milestone.stage.id}>
-                                {/* Phase bar (for GTM Access and Internal Readiness) */}
+                                {/* Phase bar (for GTM Access and Internal Readiness) - same height and style as other stages */}
                                 {isPhase && (
                                     <>
                                         <rect
                                             x={stageStartX}
-                                            y={timelineY - 24}
+                                            y={timelineY - 16}
                                             width={stageWidth}
-                                            height="48"
+                                            height="32"
                                             fill={isGTMAccess ? "#DBEAFE" : isInternalReadiness ? "#E9D5FF" : milestone.isReleaseDate ? "#FED7AA" : "#C7D2FE"}
-                                            opacity="0.9"
-                                            rx="4"
-                                            stroke={isGTMAccess ? "#2563EB" : isInternalReadiness ? "#9333EA" : milestone.isReleaseDate ? "#F59E0B" : "#3B82F6"}
-                                            strokeWidth="2.5"
+                                            opacity="0.8"
                                         />
                                         
-                                        {/* Phase label centered on bar */}
+                                        {/* Phase label inside bar: "Name (X days)" */}
                                         <text
                                             x={stageCenterX}
-                                            y={adjustedNameY}
+                                            y={labelY}
                                             textAnchor="middle"
-                                            fontSize="18"
-                                            fontWeight="600"
+                                            fontSize={fontSize}
                                             fill="#1F2937"
                                         >
                                             {wrappedText.map((line, i) => (
                                                 <tspan
                                                     key={i}
                                                     x={stageCenterX}
-                                                    dy={i === 0 ? 0 : 20}
+                                                    dy={i === 0 ? 0 : 12}
                                                 >
                                                     {line}
                                                 </tspan>
                                             ))}
-                                        </text>
-                                        
-                                        {/* Duration label */}
-                                        <text
-                                            x={stageCenterX}
-                                            y={durationY}
-                                            textAnchor="middle"
-                                            fontSize="15"
-                                            fill="#6B7280"
-                                            fontWeight="500"
-                                        >
-                                            {milestone.stage.duration_days} days
                                         </text>
                                         
                                     </>
@@ -330,39 +351,25 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                                             height="32"
                                             fill={isCohort1 ? "#D1FAE5" : isGA ? "#6EE7B7" : milestone.isReleaseDate ? "#FED7AA" : "#C7D2FE"}
                                             opacity="0.8"
-                                            rx="4"
                                         />
                                         
-                                        {/* Milestone label */}
+                                        {/* Milestone label inside bar: "Name (X days)" */}
                                         <text
                                             x={stageCenterX}
-                                            y={adjustedNameY}
+                                            y={labelY}
                                             textAnchor="middle"
-                                            fontSize="18"
-                                            fontWeight="600"
+                                            fontSize={fontSize}
                                             fill="#1F2937"
                                         >
                                             {wrappedText.map((line, i) => (
                                                 <tspan
                                                     key={i}
                                                     x={stageCenterX}
-                                                    dy={i === 0 ? 0 : 20}
+                                                    dy={i === 0 ? 0 : 12}
                                                 >
                                                     {line}
                                                 </tspan>
                                             ))}
-                                        </text>
-                                        
-                                        {/* Duration label */}
-                                        <text
-                                            x={stageCenterX}
-                                            y={durationY}
-                                            textAnchor="middle"
-                                            fontSize="15"
-                                            fill="#6B7280"
-                                            fontWeight="500"
-                                        >
-                                            {milestone.stage.duration_days} days
                                         </text>
                                         
                                     </>
@@ -370,6 +377,48 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                             </g>
                         );
                     })}
+
+                    {/* Boundary date markers below the chart: end of Product Definition, end of GTM Access, end of Cohort 1 Live */}
+                    {(() => {
+                        const productDef = milestones.find(m => m.stage.name.toLowerCase().includes('product definition'));
+                        const gtmAccess = milestones.find(m => m.stage.name.toLowerCase().includes('gtm access') && m.stage.duration_days != null && m.stage.duration_days > 0);
+                        const cohort1 = milestones.find(m => m.stage.name.toLowerCase().includes('cohort 1') && m.stage.duration_days != null && m.stage.duration_days > 0);
+                        const barBottom = timelineY + 16;
+                        const dateY = barBottom + 24;
+                        const lineEndY = barBottom + 10;
+                        const strokeColor = '#6B7280';
+
+                        const renderBoundaryMarker = (endOffset: number, key: string, date: Date) => {
+                            const x = padding + ((endOffset / totalDays) * (timelineWidth - padding * 2));
+                            const dateStr = formatChartDateNoYear(date);
+                            // #region agent log
+                            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:boundary',message:'Boundary date format',data:{markerType:'boundary',key,formatterUsed:'formatChartDateNoYear',formattedValue:dateStr,fontWeight:400},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+                            // #endregion
+                            return (
+                                <g key={key}>
+                                    <line x1={x} y1={barBottom} x2={x} y2={lineEndY} stroke={strokeColor} strokeWidth="2" strokeDasharray="4 3" opacity="0.9" />
+                                    {dateStr && <text x={x} y={dateY} textAnchor="middle" fontSize="14" fontWeight="400" fill="#000" style={{ fontFamily: 'var(--font-body)' }}>{dateStr}</text>}
+                                </g>
+                            );
+                        };
+
+                        const markers: React.ReactNode[] = [];
+                        markers.push(renderBoundaryMarker(0, 'timeline-start', getMilestoneDate(0)));
+                        if (productDef && productDef.stage.duration_days != null) {
+                            const endOffset = productDef.dateOffset + productDef.stage.duration_days;
+                            markers.push(renderBoundaryMarker(endOffset, 'definition-end', getMilestoneDate(endOffset)));
+                        }
+                        if (gtmAccess && gtmAccess.stage.duration_days != null) {
+                            const endOffset = gtmAccess.dateOffset + gtmAccess.stage.duration_days;
+                            markers.push(renderBoundaryMarker(endOffset, 'gtm-end', getMilestoneDate(endOffset)));
+                        }
+                        if (cohort1 && cohort1.stage.duration_days != null) {
+                            const endOffset = cohort1.dateOffset + cohort1.stage.duration_days;
+                            markers.push(renderBoundaryMarker(endOffset, 'cohort1-end', getMilestoneDate(endOffset)));
+                        }
+                        if (markers.length === 0) return null;
+                        return <g>{markers}</g>;
+                    })()}
 
                     {/* Go/No-Go marker in GTM Access - rendered last to appear on top */}
                     {(() => {
@@ -384,39 +433,52 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                             const stageWidth = ((gtmAccessStage.stage.duration_days! / totalDays) * (timelineWidth - padding * 2));
                             const goNoGoX = stageStartX + stageWidth / 2;
                             
+                            const markerTop = timelineY - 28;
+                            const goNoGoDateStr = formatChartDate(goNoGoDate);
+                            // #region agent log
+                            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:GoNoGo',message:'Go/No-Go date format',data:{markerType:'goNoGo',formatterUsed:'formatChartDate',formattedValue:goNoGoDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+                            // #endregion
                             return (
                                 <g>
-                                    {/* Vertical dotted line marker - goes through GTM Access rectangle, rendered on top */}
+                                    {/* Vertical dotted line marker - above chart, stops at top of bar */}
                                     <line
                                         x1={goNoGoX}
-                                        y1={timelineY - 24}
+                                        y1={markerTop}
                                         x2={goNoGoX}
-                                        y2={timelineY + 70}
+                                        y2={timelineY - 16}
                                         stroke="#DC2626"
                                         strokeWidth="2.5"
                                         strokeDasharray="5 4"
                                         opacity="0.85"
                                     />
-                                    {/* Go/No-Go label with background for better visibility */}
-                                    <rect
-                                        x={goNoGoX - 35}
-                                        y={timelineY + 58}
-                                        width="70"
-                                        height="18"
-                                        fill="white"
-                                        rx="3"
-                                        opacity="1"
-                                    />
                                     <text
                                         x={goNoGoX}
-                                        y={timelineY + 80}
+                                        y={markerTop - (goNoGoDateStr ? 30 : 10)}
                                         textAnchor="middle"
-                                        fontSize="16"
-                                        fontWeight="600"
-                                        fill="#DC2626"
+                                        style={{
+                                            fontFamily: 'var(--font-body)',
+                                            fontSize: 'var(--font-size-xs)',
+                                            fontWeight: 'var(--font-weight-medium)',
+                                            fill: 'var(--color-gray-500)',
+                                            textTransform: 'uppercase',
+                                            letterSpacing: '0.05em'
+                                        }}
                                     >
                                         Go/No-Go
                                     </text>
+                                    {goNoGoDateStr && (
+                                        <text
+                                            x={goNoGoX}
+                                            y={markerTop - 4}
+                                            textAnchor="middle"
+                                            fontSize="17"
+                                            fontWeight="700"
+                                            fill="#000"
+                                            style={{ fontFamily: 'var(--font-body)' }}
+                                        >
+                                            {goNoGoDateStr}
+                                        </text>
+                                    )}
                                 </g>
                             );
                         }
@@ -424,6 +486,15 @@ export function LaunchStagesChart({ stages }: LaunchStagesChartProps) {
                     })()}
                 </svg>
             </Box>
+        </>
+    );
+
+    if (noContainer) {
+        return <Box className="min-w-0">{chartContent}</Box>;
+    }
+    return (
+        <Box className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            {chartContent}
         </Box>
     );
 }

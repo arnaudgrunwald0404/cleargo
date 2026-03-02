@@ -270,6 +270,27 @@ body {
   scrollbar-width: none;  /* Firefox */
 }
 
+/* Epic Detail – stats row with launch chart: align first box with pill/title (break out of container padding) */
+.epic-detail-stats-grid-with-chart {
+  margin-left: calc(-1 * var(--page-container-padding-x));
+  width: calc(100% + var(--page-container-padding-x));
+  padding-left: var(--page-container-padding-x);
+}
+@media (min-width: 640px) {
+  .epic-detail-stats-grid-with-chart {
+    margin-left: calc(-1 * var(--page-container-padding-x-sm));
+    width: calc(100% + var(--page-container-padding-x-sm));
+    padding-left: var(--page-container-padding-x-sm);
+  }
+}
+@media (min-width: 1024px) {
+  .epic-detail-stats-grid-with-chart {
+    margin-left: calc(-1 * var(--page-container-padding-x-lg));
+    width: calc(100% + var(--page-container-padding-x-lg));
+    padding-left: var(--page-container-padding-x-lg);
+  }
+}
+
 /* Epic Detail – mobile-only spacing (class applied when viewport ≤768px) */
 .epic-detail-mobile {
   padding-left: var(--spacing-2) !important;

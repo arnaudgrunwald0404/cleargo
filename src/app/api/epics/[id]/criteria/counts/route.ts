@@ -57,7 +57,7 @@ export async function POST(
         comment_text,
         created_at,
         updated_at,
-        created_by:app_user!criterion_comment_created_by_fkey(email, first_name, last_name)
+        created_by:app_user!criterion_comment_created_by_fkey(id, email, first_name, last_name)
       `)
       .in('launch_criterion_status_id', realStatusIds)
       .order('created_at', { ascending: false });
@@ -120,8 +120,9 @@ export async function POST(
         // Increment count
         commentCounts.set(statusId, (commentCounts.get(statusId) || 0) + 1);
 
-        // Track unread count (if user is authenticated and comment is not read)
-        if (userId && !readStatusMap.has(comment.id)) {
+        // Track unread count (exclude comments authored by current user — those are read by default)
+        const isAuthoredByMe = comment.created_by?.id === userId;
+        if (userId && !readStatusMap.has(comment.id) && !isAuthoredByMe) {
           unreadCounts.set(statusId, (unreadCounts.get(statusId) || 0) + 1);
         }
 

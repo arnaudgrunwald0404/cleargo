@@ -41,6 +41,10 @@ const debugLog = (location: string, message: string, data: any, hypothesisId: st
     }
 };
 
+// Match Home list rules: Success Defined criterion (metrics, goals, reporting)
+const isSuccessDefinedCriterion = (c: { criterion?: { label?: string } | null }): boolean =>
+    ((c.criterion?.label ?? '') as string).toLowerCase().includes('success defined');
+
 // Normalize release names by removing "Release " prefix (handles multiple occurrences)
 const normalizeReleaseName = (name: string): string => {
     if (!name) return name;
@@ -761,13 +765,13 @@ export async function GET(request: NextRequest) {
                 debugLog('route.ts:634', 'Checking release date', {epicId:epic.id,releaseName,releaseDate,releaseDateObj:releaseDateObj.toISOString(),today:today.toISOString(),daysDiff,willExclude,action:willExclude?'EXCLUDING':'KEEPING',criterionId:c.id,epicName:c.epic?.name}, 'F');
                 // #endregion
                 
-                // Exclude if release date is in the past
+                // Past release: only notify for Success Defined criterion that is still due (not GO)
                 if (willExclude) {
-                    return false;
+                    return isSuccessDefinedCriterion(c) && c.status !== 'GO';
                 }
                 
-                // Keep if release date is today or in the future
-                return true;
+                // Today or future: exclude items rated n/a (consistent with Home list)
+                return c.status !== 'NOT_APPLICABLE';
             });
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
