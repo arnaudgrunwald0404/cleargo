@@ -148,6 +148,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '32px' }}>
                         <Link 
                             href="/" 
+                            prefetch={false}
                             style={{
                                 display: 'flex',
                                 alignItems: 'center',
@@ -209,6 +210,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                                 key={tab.link}
                                                 component={Link}
                                                 href={tab.link}
+                                                prefetch={false}
                                                 style={{
                                                     fontWeight: active ? 700 : 500,
                                                     backgroundColor: active ? 'var(--color-gray-100)' : undefined
@@ -235,6 +237,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                         <Link
                                             key={tab.link}
                                             href={tab.link}
+                                            prefetch={false}
                                             style={{
                                                 color: active ? 'var(--nav-text, #FFFFFF)' : 'var(--color-blue-200, #BFDBFE)',
                                                 fontSize: 'var(--font-size-base, 14px)',
