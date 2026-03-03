@@ -35,6 +35,10 @@ export interface Epic {
     archived?: boolean;
     jira_epic_key?: string | null;
     aha_record_not_found?: boolean;
+    /** Number of criteria with NO_GO (red flag) rating for this epic. */
+    criteria_red_flag_count?: number;
+    /** Names of criteria with NO_GO rating (same order as dots). */
+    criteria_red_flag_names?: string[];
     product?: { name: string };
     owner?: { name?: string; email?: string };
     created_at: string;

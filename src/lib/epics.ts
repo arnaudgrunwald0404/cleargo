@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { CreateEpicDTO, Epic } from '@/types/epics';
 import {
     computeEpicReleaseStatus,
@@ -116,6 +116,37 @@ async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
     }
 }
 
+/** Attach criteria_red_flag_count and criteria_red_flag_names (NO_GO criteria) to each epic. Uses admin client so RLS does not hide rows. */
+async function enrichEpicsWithRedFlagCounts(epics: any[]): Promise<any[]> {
+    if (!epics?.length) return epics;
+    try {
+        const supabase = createAdminClient();
+        const ids = epics.map((e) => e.id);
+        const { data: rows } = await supabase
+            .from('epic_criterion_status')
+            .select('epic_id, criterion:criterion_id(label)')
+            .eq('status', 'NO_GO')
+            .in('epic_id', ids);
+        const namesByEpic = new Map<string, string[]>();
+        for (const row of rows || []) {
+            const label = (row.criterion as { label?: string } | null)?.label;
+            const list = namesByEpic.get(row.epic_id) ?? [];
+            list.push(typeof label === 'string' && label ? label : 'No Go criterion');
+            namesByEpic.set(row.epic_id, list);
+        }
+        return epics.map((e) => {
+            const names = namesByEpic.get(e.id) ?? [];
+            return {
+                ...e,
+                criteria_red_flag_count: names.length,
+                criteria_red_flag_names: names,
+            };
+        });
+    } catch {
+        return epics;
+    }
+}
+
 export async function getEpics() {
     // ALWAYS return empty array on any error - never throw
     try {
@@ -155,7 +186,8 @@ export async function getEpics() {
                 if (response.ok) {
                     const directData = await response.json();
                     if (directData && Array.isArray(directData)) {
-                        return await applyComputedStatusToEpics(directData);
+                        const withStatus = await applyComputedStatusToEpics(directData);
+                        return await enrichEpicsWithRedFlagCounts(withStatus);
                     }
                 }
             } catch (directError: any) {
@@ -229,7 +261,8 @@ export async function getEpics() {
                         
                         if (!retryResult.error) {
                             console.log('✅ Successfully used legacy keys for database query');
-                            return await applyComputedStatusToEpics(retryResult.data || []);
+                            const withStatus = await applyComputedStatusToEpics(retryResult.data || []);
+                            return await enrichEpicsWithRedFlagCounts(withStatus);
                         }
                         
                         // If epic table doesn't exist, try launch table
@@ -240,7 +273,8 @@ export async function getEpics() {
                                 .order('created_at', { ascending: false });
                             if (!launchResult.error) {
                                 console.log('✅ Successfully used legacy keys for database query');
-                                return await applyComputedStatusToEpics(launchResult.data || []);
+                                const withStatus = await applyComputedStatusToEpics(launchResult.data || []);
+                                return await enrichEpicsWithRedFlagCounts(withStatus);
                             }
                         }
                     } catch (fallbackError) {
@@ -356,7 +390,8 @@ export async function getEpics() {
             return [];
         }
 
-        return await applyComputedStatusToEpics(data || []);
+        const withStatus = await applyComputedStatusToEpics(data || []);
+        return await enrichEpicsWithRedFlagCounts(withStatus);
     } catch (error: any) {
         console.error('Exception in getEpics:', error?.message || String(error));
         return [];

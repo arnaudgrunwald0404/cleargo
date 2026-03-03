@@ -12,9 +12,11 @@ import {
   Text,
   Box,
   Badge,
+  SegmentedControl,
 } from '@mantine/core';
-import { IconRefresh, IconMessageCircle } from '@tabler/icons-react';
+import { IconRefresh } from '@tabler/icons-react';
 import { CommentsList } from '@/components/CommentsList';
+import { CommentsThreadList } from '@/components/CommentsThreadList';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { useRouter } from 'next/navigation';
@@ -68,6 +70,7 @@ export default function CommentsPage() {
     taskLabel: string;
   } | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'table' | 'threads'>('threads');
 
   // Fetch current user email
   useEffect(() => {
@@ -401,11 +404,34 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
+                <Group mb="md">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    View:
+                  </Text>
+                  <SegmentedControl
+                    value={viewMode}
+                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                    data={[
+                      { label: 'Table', value: 'table' },
+                      { label: 'Threads', value: 'threads' },
+                    ]}
+                    size="xs"
+                  />
+                </Group>
+
                 {/* Comments List */}
                 {loading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}>
                     <PurpleLoader />
                   </div>
+                ) : viewMode === 'threads' ? (
+                  <CommentsThreadList
+                    comments={filteredComments}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenThread={handleOpenCommentsModal}
+                    loading={loading}
+                    previewRepliesCount={3}
+                  />
                 ) : (
                   <CommentsList
                     comments={filteredComments}
@@ -497,7 +523,7 @@ export default function CommentsPage() {
                         },
                       }}
                     />
-                    {(selectedEpicId || selectedStatus || startDate || endDate) && (
+{(selectedEpicId || selectedStatus || startDate || endDate) && (
                       <Button
                         variant="subtle"
                         size="xs"
@@ -514,11 +540,34 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
+                <Group mb="md">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    View:
+                  </Text>
+                  <SegmentedControl
+                    value={viewMode}
+                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                    data={[
+                      { label: 'Table', value: 'table' },
+                      { label: 'Threads', value: 'threads' },
+                    ]}
+                    size="xs"
+                  />
+                </Group>
+
                 {/* Comments List */}
                 {loading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}>
                     <PurpleLoader />
                   </div>
+                ) : viewMode === 'threads' ? (
+                  <CommentsThreadList
+                    comments={filteredComments}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenThread={handleOpenCommentsModal}
+                    loading={loading}
+                    previewRepliesCount={3}
+                  />
                 ) : (
                   <CommentsList
                     comments={filteredComments}
@@ -530,7 +579,7 @@ export default function CommentsPage() {
                   />
                 )}
               </Stack>
-          </Tabs.Panel>
+            </Tabs.Panel>
 
             <Tabs.Panel value="my-epics" pt="md">
               <Stack gap="md">
@@ -610,11 +659,34 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
+                <Group mb="md">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    View:
+                  </Text>
+                  <SegmentedControl
+                    value={viewMode}
+                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                    data={[
+                      { label: 'Table', value: 'table' },
+                      { label: 'Threads', value: 'threads' },
+                    ]}
+                    size="xs"
+                  />
+                </Group>
+
                 {/* Comments List */}
                 {loading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}>
                     <PurpleLoader />
                   </div>
+                ) : viewMode === 'threads' ? (
+                  <CommentsThreadList
+                    comments={filteredComments}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenThread={handleOpenCommentsModal}
+                    loading={loading}
+                    previewRepliesCount={3}
+                  />
                 ) : (
                   <CommentsList
                     comments={filteredComments}

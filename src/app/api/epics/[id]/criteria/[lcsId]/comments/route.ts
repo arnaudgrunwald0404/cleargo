@@ -165,6 +165,7 @@ export async function POST(
         added_by_name: currentUserName,
         has_comment: true,
         has_attachment: false,
+        comment_text: textContent || undefined,
       };
 
       const toSlackUser = (u: { id: string; email: string; first_name?: string; last_name?: string; name?: string; slack_handle?: string }) => ({

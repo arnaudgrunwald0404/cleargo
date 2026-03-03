@@ -4,7 +4,7 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
@@ -55,7 +55,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const isMobile = useMediaQuery("(max-width: 768px)");
     const [filtersExpanded, setFiltersExpanded] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
-    
+    const [releasesView, setReleasesView] = useState<'upcoming' | 'recent' | 'all'>('upcoming');
+
     // Sync with Aha state
     const [refreshingEpics, setRefreshingEpics] = useState(false);
 
@@ -471,6 +472,34 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             g.releaseName === "Ungrouped" || releaseScheduleWithIds.some(r => r.release_name === g.releaseName)
         );
     }, [releaseGroups, releaseScheduleWithIds]);
+
+    const todayStart = useMemo(() => {
+        const d = new Date();
+        d.setHours(0, 0, 0, 0);
+        return d.getTime();
+    }, []);
+
+    const releaseGroupsForView = useMemo(() => {
+        const past = displayedReleaseGroups.filter(
+            g => g.releaseDate && new Date(g.releaseDate).getTime() < todayStart
+        );
+        const upcoming = displayedReleaseGroups.filter(
+            g => !g.releaseDate || new Date(g.releaseDate).getTime() >= todayStart
+        );
+        const recentFour = past.slice(-4);
+        if (releasesView === 'upcoming') return upcoming;
+        if (releasesView === 'recent') return recentFour;
+        return [...recentFour.reverse(), ...upcoming];
+    }, [displayedReleaseGroups, todayStart, releasesView]);
+
+    useEffect(() => {
+        if (selectedRelease && !releaseGroupsForView.some(g => g.releaseName === selectedRelease)) {
+            setSelectedRelease(null);
+            const params = new URLSearchParams(searchParams.toString());
+            params.delete('release');
+            router.replace(`/epics${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
+        }
+    }, [releaseGroupsForView, selectedRelease, searchParams, router]);
 
     // Fetch owner (PM) info from app_user for avatar and display name
     useEffect(() => {
@@ -906,8 +935,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
     });
 
-    // Calculate stats for each release group
-    const releaseStats = displayedReleaseGroups.map(group => {
+    // Calculate stats for each release group (using view-filtered list)
+    const releaseStats = releaseGroupsForView.map(group => {
         const highRiskCount = group.epics.filter(epic => epic.risk_level === 'HIGH').length;
         // Prefer cached count from releaseSchedule, fallback to ahaEpicCounts state
         const cachedCount = cachedAhaCounts.get(group.releaseName);
@@ -923,10 +952,10 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         };
     });
 
-    // Filter release groups if a release is selected
+    // Filter release groups if a release is selected (within view-filtered list)
     const filteredReleaseGroups = selectedRelease 
-        ? displayedReleaseGroups.filter(group => group.releaseName === selectedRelease)
-        : displayedReleaseGroups;
+        ? releaseGroupsForView.filter(group => group.releaseName === selectedRelease)
+        : releaseGroupsForView;
 
     // Check if we're still loading data (even if we have initial epics, we might be loading release schedule)
     // Show skeleton if:
@@ -1111,6 +1140,17 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         marginBottom: 'var(--spacing-6)',
                         margin: 0
                     }}>Releases</Title>
+                    <SegmentedControl
+                        value={releasesView}
+                        onChange={(v) => setReleasesView((v as 'upcoming' | 'recent' | 'all') || 'upcoming')}
+                        data={[
+                            { label: 'Upcoming', value: 'upcoming' },
+                            { label: 'Recent', value: 'recent' },
+                            { label: 'All', value: 'all' },
+                        ]}
+                        size="sm"
+                        style={{ fontFamily: 'var(--font-body)' }}
+                    />
                 </Group>
             </Box>
 
@@ -1173,7 +1213,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             {/* Release Cards - hidden on mobile */}
             {releaseStats.length > 0 && (
                 <div className="hidden md:block">
-                <Box mb="md">
+                <Box mb="sm">
                     <div className="flex gap-4 overflow-x-auto pb-4 -mx-4 px-4" style={{ scrollbarWidth: 'thin' }}>
                         {(loading || (isDeterminingOrder && releaseSchedule.length === 0)) ? (
                             // Show skeleton cards only when loading or when we truly don't have release data yet
@@ -2291,14 +2331,25 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         </div>
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24">
-                                                        {epic.risk_level && (
-                                                            <span className={`px-2 py-1 rounded text-xs font-medium ${epic.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
-                                                                epic.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
-                                                                    'bg-green-100 text-green-800'
-                                                                }`}>
-                                                                {epic.risk_level}
-                                                            </span>
-                                                        )}
+                                                        <span className="inline-flex items-center gap-1">
+                                                            {epic.risk_level && (
+                                                                <span className={`px-2 py-1 rounded text-xs font-medium ${epic.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                                    epic.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
+                                                                        'bg-green-100 text-green-800'
+                                                                    }`}>
+                                                                    {epic.risk_level}
+                                                                </span>
+                                                            )}
+                                                            {(epic.criteria_red_flag_count ?? 0) > 0 && (
+                                                                <span className="inline-flex items-center gap-0.5" aria-label={`${epic.criteria_red_flag_count} criteria with No Go`}>
+                                                                    {(epic.criteria_red_flag_names ?? Array.from({ length: epic.criteria_red_flag_count ?? 0 }, () => 'No Go criterion')).map((name, i) => (
+                                                                        <Tooltip key={i} label={name} withArrow>
+                                                                            <span className="rounded-full bg-red-500 shrink-0" style={{ width: 9, height: 9 }} aria-label={name} />
+                                                                        </Tooltip>
+                                                                    ))}
+                                                                </span>
+                                                            )}
+                                                        </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">

@@ -485,3 +485,9 @@ span[data-mention-user-id] {
   color: var(--color-copper) !important;
   font-weight: var(--font-weight-bold) !important;
 }
+
+/* Epic name in comment thread card: align left */
+.epic-name-link {
+  justify-content: flex-start !important;
+  text-align: left !important;
+}

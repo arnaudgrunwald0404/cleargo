@@ -1193,6 +1193,9 @@ function buildCombinedCriteriaNudgeMessage(
 /**
  * Criterion Comment or Attachment Notification
  */
+const SLACK_BLOCK_TEXT_LIMIT = 3000;
+const COMMENT_PREVIEW_MAX = 2960;
+
 export function buildCriterionCommentOrAttachmentMessage(
     data: {
         epic_name: string;
@@ -1202,6 +1205,7 @@ export function buildCriterionCommentOrAttachmentMessage(
         added_by_name: string;
         has_comment: boolean;
         has_attachment: boolean;
+        comment_text?: string;
     },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
@@ -1210,56 +1214,80 @@ export function buildCriterionCommentOrAttachmentMessage(
     if (data.has_attachment) actionTypes.push('attachment');
     const actionText = actionTypes.join(' and ');
 
+    const commentPreview = data.comment_text
+        ? (data.comment_text.length > COMMENT_PREVIEW_MAX
+            ? data.comment_text.slice(0, COMMENT_PREVIEW_MAX - 3) + '...'
+            : data.comment_text)
+              .replace(/&/g, '&amp;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+        : '';
+
+    const blocks: SlackBlock[] = [
+        {
+            type: 'header',
+            text: {
+                type: 'plain_text',
+                text: `${theme.emojis.comment} New Comment or Attachment`,
+                emoji: true,
+            },
+        },
+        {
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*${data.epic_name}*\n_${data.criterion_label}_`,
+            },
+        },
+        {
+            type: 'section',
+            fields: [
+                {
+                    type: 'mrkdwn',
+                    text: `*Added By:*\n${data.added_by_name}`,
+                },
+                {
+                    type: 'mrkdwn',
+                    text: `*Type:*\n${actionTypes.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' and ')}`,
+                },
+            ],
+        },
+    ];
+
+    if (commentPreview) {
+        blocks.push({
+            type: 'section',
+            text: {
+                type: 'mrkdwn',
+                text: `*Comment:*\n${commentPreview.split('\n').map((l: string) => `> ${l}`).join('\n')}`,
+            },
+        });
+    }
+
+    blocks.push(
+        {
+            type: 'actions',
+            elements: [
+                {
+                    type: 'button',
+                    text: {
+                        type: 'plain_text',
+                        text: 'View Comments & Attachments',
+                        emoji: true,
+                    },
+                    style: 'primary',
+                    url: `${APP_URL}/epics/${data.epic_id}?criterion=${data.criterion_status_id}&tab=comments`,
+                    action_id: 'view_comments',
+                },
+            ],
+        },
+        {
+            type: 'divider',
+        }
+    );
+
     return {
         text: `${data.added_by_name} added a ${actionText} on "${data.criterion_label}" for ${data.epic_name}`,
-        blocks: [
-            {
-                type: 'header',
-                text: {
-                    type: 'plain_text',
-                    text: `${theme.emojis.comment} New Comment or Attachment`,
-                    emoji: true,
-                },
-            },
-            {
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*${data.epic_name}*\n_${data.criterion_label}_`,
-                },
-            },
-            {
-                type: 'section',
-                fields: [
-                    {
-                        type: 'mrkdwn',
-                        text: `*Added By:*\n${data.added_by_name}`,
-                    },
-                    {
-                        type: 'mrkdwn',
-                        text: `*Type:*\n${actionTypes.map(t => t.charAt(0).toUpperCase() + t.slice(1)).join(' and ')}`,
-                    },
-                ],
-            },
-            {
-                type: 'actions',
-                elements: [
-                    {
-                        type: 'button',
-                        text: {
-                            type: 'plain_text',
-                            text: 'View Comments & Attachments',
-                            emoji: true,
-                        },
-                        style: 'primary',
-                        url: `${APP_URL}/epics/${data.epic_id}?criterion=${data.criterion_status_id}&tab=comments`,
-                        action_id: 'view_comments',
-                    },
-                ],
-            },
-            {
-                type: 'divider',
-            },
-        ],
+        blocks,
     };
 }
