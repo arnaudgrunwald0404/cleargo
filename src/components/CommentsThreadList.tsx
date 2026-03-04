@@ -362,11 +362,6 @@ function CommentRow({ comment }: { comment: CommentForThread }) {
                 size="xs"
               />
             )}
-            {isUnread && (
-              <Badge size="xs" color="blue" variant="light">
-                Unread
-              </Badge>
-            )}
           </Group>
           <Text size="xs" c="dimmed">
             {formatTimestamp(comment.created_at)}
