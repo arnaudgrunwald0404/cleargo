@@ -102,7 +102,7 @@ export async function POST(
         .select('id')
         .in('id', mentionIds);
       const validIds = new Set((mentionUsers || []).map((u) => u.id));
-      validatedMentionIds = mentionIds.filter((id) => validIds.has(id));
+      validatedMentionIds = mentionIds.filter((id) => validIds.has(id) && id !== commenterId);
     }
 
     // Insert comment

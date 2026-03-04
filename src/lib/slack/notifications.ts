@@ -149,6 +149,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         return;
     }
 
+    if (payload.recipients && payload.recipients.length === 1) {
+        payload.recipient = payload.recipients[0];
+        delete payload.recipients;
+        return sendSlackNotification(payload);
+    }
+
     if (payload.recipients && payload.recipients.length >= 2) {
         const valid: SlackUser[] = [];
         for (const r of payload.recipients) {
