@@ -274,20 +274,12 @@ export async function POST(
 
         if (templateError) throw templateError;
 
-        // Determine which epic IDs to update: current release epics (if any) + current epic
-        let epicIdsToUpdate: string[] = [epicId];
         const releaseName = getReleaseNameFromEpic(epic as any);
-        if (releaseName) {
-          const releaseEpics = await getEpicsForRelease(releaseName, supabase);
-          epicIdsToUpdate = (releaseEpics || []).map((e: any) => e.id);
-          if (!epicIdsToUpdate.includes(epicId)) epicIdsToUpdate.push(epicId);
-        }
 
-        // Update all matching epic_criterion_status rows
+        // Update matching epic_criterion_status rows across ALL existing epics
         const { data: affectedTasks, error: fetchAffectedError } = await supabase
           .from('epic_criterion_status')
           .select('id')
-          .in('epic_id', epicIdsToUpdate)
           .eq('criterion_id', criterionId);
 
         if (fetchAffectedError) throw fetchAffectedError;
@@ -486,24 +478,25 @@ export async function POST(
 
           if (error) throw error;
 
-          // Also update tasks in the current epic for consistency
-          const { data: currentEpicTasks } = await supabase
+          // Update tasks in ALL existing epics (not just the current one)
+          const { data: allEpicTasks, error: fetchAllError } = await supabase
             .from('epic_criterion_status')
             .select('id, criterion_id')
-            .eq('epic_id', epicId)
             .in('criterion_id', criteriaToUpdate);
 
-          if (currentEpicTasks && currentEpicTasks.length > 0) {
-            const currentTaskIds = currentEpicTasks.map((task: any) => task.id);
+          if (fetchAllError) throw fetchAllError;
+
+          if (allEpicTasks && allEpicTasks.length > 0) {
+            const allTaskIds = allEpicTasks.map((task: any) => task.id);
             await supabase
               .from('epic_criterion_status')
               .update({ decision_owner_id: newApproverId })
-              .in('id', currentTaskIds);
+              .in('id', allTaskIds);
 
-            delegatedTaskIds = currentTaskIds;
+            delegatedTaskIds = allTaskIds;
 
             // Log delegation to audit_log for each task
-            const auditLogs = currentTaskIds.map((tid: string) => ({
+            const auditLogs = allTaskIds.map((tid: string) => ({
               actor_id: delegatorId,
               entity_type: 'delegation',
               entity_id: tid,
@@ -516,7 +509,7 @@ export async function POST(
                 epic_id: epicId,
                 epic_name: epic.name,
                 template_update: true,
-                tasks_count: currentTaskIds.length,
+                tasks_count: allTaskIds.length,
               },
             }));
 
@@ -535,8 +528,14 @@ export async function POST(
         return NextResponse.json({ error: 'Invalid delegation type' }, { status: 400 });
     }
 
-    // Send grouped assignment notifications for delegated criteria
-    if (delegatedTaskIds.length > 0) {
+    // Send grouped assignment notifications for delegated criteria.
+    // Skip for template delegation types - they update all epics and would send
+    // one notification per epic, potentially flooding the new assignee.
+    const isTemplateDelegation = delegationType === 'TEMPLATE_SINGLE_TASK'
+      || delegationType === 'TEMPLATE_EXCLUDING_GATES'
+      || delegationType === 'TEMPLATE_INCLUDING_GATES';
+
+    if (delegatedTaskIds.length > 0 && !isTemplateDelegation) {
       try {
         await sendCriteriaAssignmentNotifications(epicId, delegatedTaskIds, supabase);
       } catch (notificationError) {
