@@ -251,11 +251,10 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                                                 fontSize: 'var(--font-size-xs)',
                                                 fontWeight: 'var(--font-weight-medium)',
                                                 fill: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
                                                 letterSpacing: '0.05em'
                                             }}
                                         >
-                                            Release
+                                            RELEASE · Cohort 1
                                         </text>
                                         {releaseDateStr && (
                                             <text
@@ -388,16 +387,18 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                         const lineEndY = barBottom + 10;
                         const strokeColor = '#6B7280';
 
-                        const renderBoundaryMarker = (endOffset: number, key: string, date: Date) => {
+                        const renderBoundaryMarker = (endOffset: number, key: string, date: Date, labelBelow?: string) => {
                             const x = padding + ((endOffset / totalDays) * (timelineWidth - padding * 2));
                             const dateStr = formatChartDateNoYear(date);
                             // #region agent log
                             fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:boundary',message:'Boundary date format',data:{markerType:'boundary',key,formatterUsed:'formatChartDateNoYear',formattedValue:dateStr,fontWeight:400},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
                             // #endregion
+                            const labelY = dateY + (dateStr ? 18 : 0);
                             return (
                                 <g key={key}>
                                     <line x1={x} y1={barBottom} x2={x} y2={lineEndY} stroke={strokeColor} strokeWidth="2" strokeDasharray="4 3" opacity="0.9" />
                                     {dateStr && <text x={x} y={dateY} textAnchor="middle" fontSize="14" fontWeight="400" fill="#000" style={{ fontFamily: 'var(--font-body)' }}>{dateStr}</text>}
+                                    {labelBelow && <text x={x} y={labelY} textAnchor="middle" fontSize="12" fontWeight="500" fill="var(--color-gray-700)" style={{ fontFamily: 'var(--font-body)' }}>{labelBelow}</text>}
                                 </g>
                             );
                         };
@@ -414,7 +415,7 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                         }
                         if (cohort1 && cohort1.stage.duration_days != null) {
                             const endOffset = cohort1.dateOffset + cohort1.stage.duration_days;
-                            markers.push(renderBoundaryMarker(endOffset, 'cohort1-end', getMilestoneDate(endOffset)));
+                            markers.push(renderBoundaryMarker(endOffset, 'cohort1-end', getMilestoneDate(endOffset), 'GA · Cohort 2'));
                         }
                         if (markers.length === 0) return null;
                         return <g>{markers}</g>;

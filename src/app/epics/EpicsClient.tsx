@@ -1131,7 +1131,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             className="sm:px-6 lg:px-8"
             >
             <Box mb="sm">
-                <Group align="center" gap="md">
+                <Group align="center" gap="md111">
                     <Title style={{ 
                         fontFamily: 'var(--font-marcellus), serif', 
                         color: 'var(--color-gray-900)', 
