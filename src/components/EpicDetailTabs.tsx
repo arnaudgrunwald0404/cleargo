@@ -7,7 +7,7 @@ interface EpicDetailTabsProps {
 
 const tabs = [
     { value: 'readiness', label: 'Readiness' },
-    { value: 'decisions', label: 'Decisions' },
+    { value: 'talktrack', label: 'Talk Track' },
     { value: 'adoption', label: 'Success Metrics' },
     { value: 'scorecard', label: 'Scorecard' },
     { value: 'retro', label: 'Retro' },

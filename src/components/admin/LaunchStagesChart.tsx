@@ -11,16 +11,28 @@ interface LaunchStage {
     details?: string | null;
 }
 
+/** Default stage config when used with only releaseDate (31, 14, 21, 28 days + GA) */
+const DEFAULT_STAGES: LaunchStage[] = [
+    { id: 0, name: 'Product Definition Complete', sort_order: 1, duration_days: 31, details: null },
+    { id: 0, name: 'GTM Access', sort_order: 2, duration_days: 14, details: null },
+    { id: 0, name: 'Internal Readiness', sort_order: 3, duration_days: 21, details: null },
+    { id: 0, name: 'Cohort 1 Live', sort_order: 4, duration_days: 28, details: null },
+    { id: 0, name: 'GA · Cohort 2', sort_order: 5, duration_days: null, details: null },
+];
+
 interface LaunchStagesChartProps {
-    stages: LaunchStage[];
-    /** When provided (e.g. epic detail), anchor the timeline so Release falls on this date */
-    targetReleaseDate?: string | Date | null;
-    /** When provided, show this date under the Go/No-Go label */
+    /** Release date (RELEASE · Cohort 1) — the single parameter for reuse; anchors the timeline. */
+    releaseDate?: string | Date | null;
+    /** Optional: custom stages from settings. When omitted, default stages (31, 14, 21, 28 days) are used. */
+    stages?: LaunchStage[];
+    /** Optional: Go/No-Go date. When omitted, derived as ~1 week into GTM Access (releaseDate - 28 days). */
     goNoGoDate?: string | Date | null;
-    /** When true, hide the "Launch Stages Timeline" heading (e.g. for embedding under Target Release Date) */
+    /** When true, hide the "Launch Stages Timeline" heading (e.g. for embedding under Target Release Date). */
     showHeading?: boolean;
-    /** When true, render only the timeline SVG without outer box, border, or padding */
+    /** When true, render only the timeline SVG without outer box, border, or padding. */
     noContainer?: boolean;
+    /** @deprecated Use releaseDate instead. When provided, anchors the timeline so Release falls on this date. */
+    targetReleaseDate?: string | Date | null;
 }
 
 interface TimelineMilestone {
@@ -54,7 +66,23 @@ function shiftDate(d: Date | string | null | undefined, days: number): Date | nu
     return out;
 }
 
-export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showHeading = true, noContainer = false }: LaunchStagesChartProps) {
+const DAYS_TO_GO_NO_GO_FROM_RELEASE = 28; // ~1 week into GTM Access (7 days into 14-day stage)
+
+/**
+ * Reusable launch stages timeline. Use with a single parameter for standalone display:
+ *   <LaunchStagesChart releaseDate="2026-03-19" />
+ * Optional: pass `stages` for custom durations/names, `goNoGoDate` to override derived date.
+ */
+export function LaunchStagesChart({
+    releaseDate: releaseDateProp,
+    stages: stagesProp,
+    goNoGoDate: goNoGoDateProp,
+    showHeading = true,
+    noContainer = false,
+    targetReleaseDate,
+}: LaunchStagesChartProps) {
+    const releaseDate = releaseDateProp ?? targetReleaseDate;
+    const stages = stagesProp ?? DEFAULT_STAGES;
     const sortedForAnchor = [...stages].sort((a, b) => a.sort_order - b.sort_order);
     const cohort1ForAnchor = sortedForAnchor.find(s => s.name.toLowerCase().includes('cohort 1'));
     const preLaunchDays = cohort1ForAnchor
@@ -62,8 +90,8 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
             .filter(s => s.sort_order < cohort1ForAnchor.sort_order && s.duration_days != null)
             .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
         : 0;
-    const anchorDate = targetReleaseDate
-        ? (typeof targetReleaseDate === 'string' ? new Date(targetReleaseDate) : targetReleaseDate)
+    const anchorDate = releaseDate
+        ? (typeof releaseDate === 'string' ? new Date(releaseDate) : releaseDate)
         : null;
     const launchDate = anchorDate && preLaunchDays > 0
         ? (() => {
@@ -73,6 +101,14 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
         })()
         : new Date();
     const releaseLaunchDate = anchorDate ?? null;
+    const derivedGoNoGoDate = anchorDate
+        ? (() => {
+            const d = new Date(anchorDate);
+            d.setDate(d.getDate() - DAYS_TO_GO_NO_GO_FROM_RELEASE);
+            return d;
+        })()
+        : null;
+    const goNoGoDate = goNoGoDateProp ?? (anchorDate ? derivedGoNoGoDate : null);
     
     // Helper function to estimate text width
     const estimateTextWidth = (text: string, fontSize: number): number => {
@@ -237,7 +273,7 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                                 const releaseX = padding + ((releaseOffset / totalDays) * (timelineWidth - padding * 2));
                                 
                                 const markerTop = timelineY - 28;
-                                const releaseDateStr = formatChartDate(shiftDate(actualReleaseDate ?? targetReleaseDate ?? null, TIMELINE_DAY_OFFSET));
+                                const releaseDateStr = formatChartDate(shiftDate(actualReleaseDate ?? null, TIMELINE_DAY_OFFSET));
                                 // #region agent log
                                 fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:Release',message:'Release date format',data:{markerType:'release',formatterUsed:'formatChartDate',formattedValue:releaseDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
                                 // #endregion
