@@ -4,6 +4,7 @@ import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
+import { toDateOnlyString } from "@/lib/date-utils";
 
 async function getHandler(request: NextRequest) {
     // #region agent log
@@ -70,7 +71,11 @@ async function getHandler(request: NextRequest) {
                 }
                 const fallbackResult = await fallbackQuery.order("launch_date", { ascending: true });
                 if (!fallbackResult.error) {
-                    return NextResponse.json(fallbackResult.data || []);
+                    const rows = (fallbackResult.data || []).map((r: any) => ({
+                        ...r,
+                        launch_date: toDateOnlyString(r.launch_date) ?? r.launch_date,
+                    }));
+                    return NextResponse.json(rows);
                 }
             }
             return NextResponse.json({ error: error.message }, { status: 500 });
@@ -84,8 +89,11 @@ async function getHandler(request: NextRequest) {
                 aha_epic_count: data[0].aha_epic_count
             });
         }
-
-        return NextResponse.json(data || []);
+        const rows = (data || []).map((r: any) => ({
+            ...r,
+            launch_date: toDateOnlyString(r.launch_date) ?? r.launch_date,
+        }));
+        return NextResponse.json(rows);
     } catch (error: any) {
         console.error("Error in GET /api/releases:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -167,14 +175,15 @@ async function postHandler(request: NextRequest) {
             );
         }
 
-        console.log("Attempting to upsert release:", { release_name, launch_date: parsedDate });
+        const normalizedDate = toDateOnlyString(parsedDate) ?? parsedDate;
+        console.log("Attempting to upsert release:", { release_name, launch_date: normalizedDate });
         
         const { data, error } = await supabase
             .from("release_schedule")
             .upsert(
                 {
                     release_name,
-                    launch_date: parsedDate,
+                    launch_date: normalizedDate,
                     updated_at: new Date().toISOString(),
                 },
                 {

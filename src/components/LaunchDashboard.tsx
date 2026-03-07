@@ -1,5 +1,6 @@
 'use client';
 
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { Epic } from '@/types/epics';
 import Link from 'next/link';
 
@@ -67,7 +68,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
+                                        {epic.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : '-'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap">
                                         <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
+import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import type { SlackCommandPayload, SlackBlock } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
@@ -145,12 +146,18 @@ export async function POST(request: NextRequest) {
         const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
 
         const targetDate = launch.target_launch_date
-            ? new Date(launch.target_launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+            ? formatDateOnlyForDisplay(launch.target_launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
             : 'Not set';
 
-        const daysToLaunch = launch.target_launch_date
-            ? Math.ceil((new Date(launch.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-            : null;
+        const daysToLaunch = (() => {
+            if (!launch.target_launch_date) return null;
+            const launchDay = parseDateOnlyLocal(launch.target_launch_date);
+            if (!launchDay) return null;
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            launchDay.setHours(0, 0, 0, 0);
+            return Math.ceil((launchDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+        })();
 
         const daysText = daysToLaunch !== null
             ? daysToLaunch > 0 ? `(${daysToLaunch} days away)` : `(${Math.abs(daysToLaunch)} days overdue)`

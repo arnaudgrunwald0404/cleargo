@@ -11,6 +11,7 @@ import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
+import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -432,7 +433,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             if (!a.releaseDate && !b.releaseDate) return 0;
             if (!a.releaseDate) return 1;
             if (!b.releaseDate) return -1;
-            return new Date(a.releaseDate).getTime() - new Date(b.releaseDate).getTime();
+            return a.releaseDate.localeCompare(b.releaseDate);
         });
 
         // Add ungrouped epics as a separate group at the end (also sorted by module order)
@@ -473,24 +474,23 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         );
     }, [releaseGroups, releaseScheduleWithIds]);
 
-    const todayStart = useMemo(() => {
+    const todayString = useMemo(() => {
         const d = new Date();
-        d.setHours(0, 0, 0, 0);
-        return d.getTime();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     }, []);
 
     const releaseGroupsForView = useMemo(() => {
         const past = displayedReleaseGroups.filter(
-            g => g.releaseDate && new Date(g.releaseDate).getTime() < todayStart
+            g => g.releaseDate && g.releaseDate < todayString
         );
         const upcoming = displayedReleaseGroups.filter(
-            g => !g.releaseDate || new Date(g.releaseDate).getTime() >= todayStart
+            g => !g.releaseDate || g.releaseDate >= todayString
         );
         const recentFour = past.slice(-4);
         if (releasesView === 'upcoming') return upcoming;
         if (releasesView === 'recent') return recentFour;
         return [...recentFour.reverse(), ...upcoming];
-    }, [displayedReleaseGroups, todayStart, releasesView]);
+    }, [displayedReleaseGroups, todayString, releasesView]);
 
     useEffect(() => {
         if (selectedRelease && !releaseGroupsForView.some(g => g.releaseName === selectedRelease)) {
@@ -1291,7 +1291,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     fontSize: 'var(--font-size-base)',
                                                     fontFamily: 'var(--font-body)'
                                                 }}>
-                                                    {new Date(stat.releaseDate).toLocaleDateString('en-US', { 
+                                                    {formatDateOnlyForDisplay(stat.releaseDate, { 
                                                         year: 'numeric', 
                                                         month: 'short', 
                                                         day: 'numeric' 
@@ -1764,7 +1764,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 color: 'var(--color-gray-500)',
                                                 fontFamily: 'var(--font-body)'
                                             }}>
-                                                - {new Date(group.releaseDate).toLocaleDateString()}
+                                                - {formatDateOnlyForDisplay(group.releaseDate)}
                                             </span>
                                         ) : fetchingReleaseDates.has(group.releaseName) ? (
                                             <span style={{ 
@@ -2295,7 +2295,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         })()}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
+                                                        {epic.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : '-'}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <span className="px-2 py-1 rounded text-xs font-medium" style={{

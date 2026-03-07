@@ -33,7 +33,7 @@ export async function sendMagicLinkEmail(to: string, link: string) {
         <div style="background-color: #f9fafb; border-left: 4px solid #4f46e5; padding: 16px; margin: 24px 0; border-radius: 4px;">
           <p style="color: #374151; font-weight: 600; margin-bottom: 8px; font-size: 14px;">🔒 Security Note</p>
           <p style="color: #4b5563; line-height: 1.6; margin: 0; font-size: 14px;">
-            This link expires in 30 minutes and can only be used once. If you didn't request this link, you can safely ignore this email.
+            This link expires in 12 hours and can only be used once. If you didn't request this link, you can safely ignore this email.
           </p>
         </div>
         <p style="color: #6b7280; font-size: 14px; line-height: 1.6; margin-top: 30px;">

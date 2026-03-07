@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Card, Title, Text, Box, Tooltip } from '@mantine/core';
 import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 interface Release {
   id: number;
   release_name: string;
@@ -242,7 +243,7 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
       if (!a.launch_date && !b.launch_date) return 0;
       if (!a.launch_date) return 1;
       if (!b.launch_date) return -1;
-      return new Date(a.launch_date).getTime() - new Date(b.launch_date).getTime();
+      return a.launch_date.localeCompare(b.launch_date);
     });
 
     return {
@@ -319,7 +320,7 @@ export function PostLaunchPerformanceGrid({ className }: PostLaunchPerformanceGr
                         <div style={{ fontWeight: 600 }}>{release.release_name}</div>
                         {release.launch_date && (
                           <div style={{ fontSize: '11px', marginTop: '4px' }}>
-                            {new Date(release.launch_date).toLocaleDateString()}
+                            {formatDateOnlyForDisplay(release.launch_date)}
                           </div>
                         )}
                         <div style={{ fontSize: '11px', marginTop: '4px' }}>

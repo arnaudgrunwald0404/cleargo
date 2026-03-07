@@ -5,6 +5,7 @@ import { TextInput, Box, Paper, Text, Group, Stack } from '@mantine/core';
 import { IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
 import type { Epic } from '@/types/epics';
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 
 interface EpicSearchProps {
   epics?: Epic[];
@@ -45,18 +46,10 @@ function getPMOwner(epic: Epic): string {
   return '-';
 }
 
-// Format release date
+// Format release date (date-only YYYY-MM-DD from Aha/DB as calendar date, no UTC shift)
 function formatReleaseDate(date: string | null | undefined): string {
   if (!date) return '-';
-  try {
-    return new Date(date).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
-    });
-  } catch {
-    return '-';
-  }
+  return formatDateOnlyForDisplay(date, { year: 'numeric', month: 'short', day: 'numeric' }) || '-';
 }
 
 export function EpicSearch({ epics: providedEpics, className, fetchEpics = false }: EpicSearchProps) {
