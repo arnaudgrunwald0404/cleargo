@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { getReleases, getReleaseEpics } from '@/lib/aha/client';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { toDateOnlyString } from '@/lib/date-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -274,13 +275,13 @@ export async function POST(req: NextRequest) {
                 // #region agent log
                 fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'sync-releases/route.ts:252',message:'About to upsert release',data:{releaseName:release.name,launchDate,externalDate:release.external_date,endDate:release.end_date,startDate:release.start_date},timestamp:Date.now(),runId:'debug1',hypothesisId:'H1'})}).catch(()=>{});
                 // #endregion
-                
+                const normalizedLaunchDate = toDateOnlyString(launchDate) ?? launchDate;
                 const { error } = await supabase
                     .from('release_schedule')
                     .upsert(
                         {
                             release_name: release.name,
-                            launch_date: launchDate,
+                            launch_date: normalizedLaunchDate,
                             updated_at: new Date().toISOString(),
                         },
                         {

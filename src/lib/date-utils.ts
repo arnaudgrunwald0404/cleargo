@@ -27,3 +27,16 @@ export function formatDateOnlyForDisplay(
   if (!date) return '';
   return date.toLocaleDateString('en-US', options ?? { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+/**
+ * Normalize an ISO or date string to YYYY-MM-DD (calendar date, no UTC shift).
+ * Use when saving to DB so we never store a value that displays as the wrong day.
+ */
+export function toDateOnlyString(isoDate: string | null | undefined): string | null {
+  const date = parseDateOnlyLocal(isoDate);
+  if (!date) return null;
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
