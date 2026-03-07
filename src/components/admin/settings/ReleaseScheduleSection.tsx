@@ -44,11 +44,14 @@ export default function ReleaseScheduleSection(props: Props) {
 
   const formatDateForDisplay = (dateString: string) => {
     if (!dateString) return "";
-    const date = new Date(dateString);
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const year = date.getFullYear();
-    return `${month}/${day}/${year}`;
+    const iso = dateString.split("T")[0];
+    const parts = iso.split("-");
+    if (parts.length !== 3) return dateString;
+    const [y, m, d] = parts.map(Number);
+    if (!y || !m || !d) return dateString;
+    const month = String(m).padStart(2, "0");
+    const day = String(d).padStart(2, "0");
+    return `${month}/${day}/${y}`;
   };
 
   const [syncing, setSyncing] = useState(false);

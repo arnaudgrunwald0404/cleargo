@@ -3,6 +3,7 @@
  */
 
 import type { SlackBlock } from '@/types/slack';
+import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import type { GroupedCriteria } from './notification-groups';
 import type { SlackThemeConfig } from './theme';
 import { defaultSlackTheme } from './theme';
@@ -342,14 +343,19 @@ export function buildLeadershipDigestMessage(
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
     const refDate = new Date();
+    refDate.setHours(0, 0, 0, 0);
     const daysAgo = (dateStr: string | null): number | null => {
         if (!dateStr) return null;
-        const d = new Date(dateStr);
+        const d = parseDateOnlyLocal(dateStr);
+        if (!d) return null;
+        d.setHours(0, 0, 0, 0);
         return Math.floor((refDate.getTime() - d.getTime()) / (24 * 60 * 60 * 1000));
     };
     const daysFromNow = (dateStr: string | null): number | null => {
         if (!dateStr) return null;
-        const d = new Date(dateStr);
+        const d = parseDateOnlyLocal(dateStr);
+        if (!d) return null;
+        d.setHours(0, 0, 0, 0);
         return Math.floor((d.getTime() - refDate.getTime()) / (24 * 60 * 60 * 1000));
     };
 
@@ -389,7 +395,8 @@ export function buildLeadershipDigestMessage(
         if (!release.launch_date) {
             return true; // Include releases without dates (they might be future releases)
         }
-        const launchDate = new Date(release.launch_date);
+        const launchDate = parseDateOnlyLocal(release.launch_date);
+        if (!launchDate) return true;
         launchDate.setHours(0, 0, 0, 0);
         return launchDate >= todayForFilter; // Only include future or today's releases
     });
@@ -398,7 +405,7 @@ export function buildLeadershipDigestMessage(
     if (filteredNextReleases.length > 0) {
         filteredNextReleases.forEach((release) => {
             const launchDateStr = release.launch_date
-                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                ? formatDateOnlyForDisplay(release.launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
                 : 'Date TBD';
             const inDays = daysFromNow(release.launch_date);
             // Only show positive days (future) or "today" - never show negative days (past releases shouldn't be here)
@@ -486,7 +493,7 @@ export function buildLeadershipDigestMessage(
     if (data.last_releases && data.last_releases.length > 0) {
         data.last_releases.forEach((release) => {
             const launchDateStr = release.launch_date
-                ? new Date(release.launch_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                ? formatDateOnlyForDisplay(release.launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
                 : 'Date TBD';
             const ago = daysAgo(release.launch_date);
             const dateSuffix = ago !== null ? ` = ${ago} days ago` : '';

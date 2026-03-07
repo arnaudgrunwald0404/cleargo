@@ -1,5 +1,6 @@
 'use client';
 
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { Epic } from '@/types/epics';
 import Link from 'next/link';
 
@@ -177,7 +178,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                                         color: 'var(--color-gray-500)',
                                         fontFamily: 'var(--font-body)'
                                     }}>
-                                        {epic.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : '-'}
+                                        {epic.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : '-'}
                                     </td>
                                     <td style={{
                                         padding: 'var(--table-cell-padding)',

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import { parseDateOnlyLocal } from '@/lib/date-utils';
 import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { SlackNotificationPayload } from '@/types/slack';
@@ -141,7 +142,13 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     // "HIGH if close to launch and below thresholds or gates not GO"
     let riskLevel = 'LOW';
     if (epic?.target_launch_date) {
-        const daysToLaunch = Math.ceil((new Date(epic.target_launch_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const { parseDateOnlyLocal } = await import('@/lib/date-utils');
+        const launch = parseDateOnlyLocal(epic.target_launch_date);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysToLaunch = launch
+            ? Math.ceil((launch.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
+            : 0;
 
         if (daysToLaunch < 14) {
             if (readinessStatus === 'NO_GO' || readinessStatus === 'CONDITIONAL_GO') {

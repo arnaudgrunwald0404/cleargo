@@ -42,6 +42,18 @@ function formatChartDateNoYear(d: string | Date | null | undefined): string {
     return isNaN(date.getTime()) ? '' : date.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
 }
 
+/** Shift all timeline displayed dates by this many days (e.g. +1 for off-by-one). */
+const TIMELINE_DAY_OFFSET = 1;
+
+function shiftDate(d: Date | string | null | undefined, days: number): Date | null {
+    if (d == null) return null;
+    const date = typeof d === 'string' ? new Date(d) : d;
+    if (isNaN(date.getTime())) return null;
+    const out = new Date(date);
+    out.setDate(out.getDate() + days);
+    return out;
+}
+
 export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showHeading = true, noContainer = false }: LaunchStagesChartProps) {
     const sortedForAnchor = [...stages].sort((a, b) => a.sort_order - b.sort_order);
     const cohort1ForAnchor = sortedForAnchor.find(s => s.name.toLowerCase().includes('cohort 1'));
@@ -225,7 +237,7 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                                 const releaseX = padding + ((releaseOffset / totalDays) * (timelineWidth - padding * 2));
                                 
                                 const markerTop = timelineY - 28;
-                                const releaseDateStr = formatChartDate(actualReleaseDate ?? targetReleaseDate);
+                                const releaseDateStr = formatChartDate(shiftDate(actualReleaseDate ?? targetReleaseDate ?? null, TIMELINE_DAY_OFFSET));
                                 // #region agent log
                                 fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:Release',message:'Release date format',data:{markerType:'release',formatterUsed:'formatChartDate',formattedValue:releaseDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
                                 // #endregion
@@ -389,7 +401,8 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
 
                         const renderBoundaryMarker = (endOffset: number, key: string, date: Date, labelBelow?: string) => {
                             const x = padding + ((endOffset / totalDays) * (timelineWidth - padding * 2));
-                            const dateStr = formatChartDateNoYear(date);
+                            const displayDate = shiftDate(date, TIMELINE_DAY_OFFSET);
+                            const dateStr = formatChartDateNoYear(displayDate);
                             // #region agent log
                             fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:boundary',message:'Boundary date format',data:{markerType:'boundary',key,formatterUsed:'formatChartDateNoYear',formattedValue:dateStr,fontWeight:400},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
                             // #endregion
@@ -435,7 +448,7 @@ export function LaunchStagesChart({ stages, targetReleaseDate, goNoGoDate, showH
                             const goNoGoX = stageStartX + stageWidth / 2;
                             
                             const markerTop = timelineY - 28;
-                            const goNoGoDateStr = formatChartDate(goNoGoDate);
+                            const goNoGoDateStr = formatChartDate(shiftDate(goNoGoDate, TIMELINE_DAY_OFFSET));
                             // #region agent log
                             fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:GoNoGo',message:'Go/No-Go date format',data:{markerType:'goNoGo',formatterUsed:'formatChartDate',formattedValue:goNoGoDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
                             // #endregion

@@ -6,6 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { CommentsModal } from "@/components/CommentsModal";
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1505,7 +1506,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           color: 'var(--color-gray-500)',
                           fontFamily: 'var(--font-body)'
                         }}>
-                          - {new Date(group.releaseDate).toLocaleDateString()}
+                          - {formatDateOnlyForDisplay(group.releaseDate)}
                         </span>
                       ) : null}
                     </h2>

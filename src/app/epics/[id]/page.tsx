@@ -21,6 +21,7 @@ import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
 // Lazy load tab components for code splitting
 const DecisionList = lazy(() => import("@/components/DecisionList").then(m => ({ default: m.default })));
@@ -1757,7 +1758,7 @@ export default function EpicDetailPage() {
                                                 color: 'var(--color-gray-900)',
                                                 fontFamily: 'var(--font-body)'
                                             }}>
-                                                {releaseDate ? new Date(releaseDate).toLocaleDateString() : epic?.target_launch_date ? new Date(epic.target_launch_date).toLocaleDateString() : 'Not set'}
+                                                {releaseDate ? formatDateOnlyForDisplay(releaseDate) : epic?.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : 'Not set'}
                                             </div>
                                         </div>
                                         <div style={{

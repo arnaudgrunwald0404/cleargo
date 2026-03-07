@@ -4,6 +4,7 @@
  */
 
 import { getClient } from '@/lib/db';
+import { parseDateOnlyLocal } from '@/lib/date-utils';
 import type { ScorecardStatus } from '@/lib/success/types';
 
 export interface SuccessMetricsSummary {
@@ -178,8 +179,12 @@ export async function getSuccessMetricsSummary(
       .single();
 
     if (epicData.data?.target_launch_date) {
-      const launchDate = new Date(epicData.data.target_launch_date);
-      const daysSinceLaunch = Math.floor((today.getTime() - launchDate.getTime()) / (1000 * 60 * 60 * 24));
+      const { parseDateOnlyLocal } = await import('@/lib/date-utils');
+      const launchDate = parseDateOnlyLocal(epicData.data.target_launch_date);
+      const launchMidnight = launchDate ? new Date(launchDate.getFullYear(), launchDate.getMonth(), launchDate.getDate()) : null;
+      const daysSinceLaunch = launchMidnight
+        ? Math.floor((today.getTime() - launchMidnight.getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
 
       if (daysSinceLaunch >= 30) retroStats.t30.total++;
       if (daysSinceLaunch >= 60) retroStats.t60.total++;

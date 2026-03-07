@@ -3,6 +3,7 @@
  */
 
 import type { DayMarker } from '@/lib/success/types';
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 
 interface Epic {
   id: string;
@@ -44,7 +45,7 @@ export function buildRetroReminderMessage(
           },
           {
             type: 'mrkdwn',
-            text: `*Launch Date:*\n${new Date(epic.target_launch_date).toLocaleDateString()}`,
+            text: `*Launch Date:*\n${formatDateOnlyForDisplay(epic.target_launch_date)}`,
           },
           {
             type: 'mrkdwn',
