@@ -23,8 +23,8 @@ import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
 import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
+import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 // Lazy load tab components for code splitting
-const DecisionList = lazy(() => import("@/components/DecisionList").then(m => ({ default: m.default })));
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
 const RetroPageContent = lazy(() => import("@/components/epic/RetroPageContent").then(m => ({ default: m.RetroPageContent })));
@@ -42,7 +42,6 @@ export default function EpicDetailPage() {
     const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [refreshDecisions, setRefreshDecisions] = useState(0);
     const [updatingTier, setUpdatingTier] = useState(false);
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -726,8 +725,10 @@ export default function EpicDetailPage() {
                 const dueDate = new Date(targetDate);
 
                 if (daysBefore !== undefined) {
-                    // Pre-launch stage: subtract days before launch
-                    dueDate.setDate(dueDate.getDate() - daysBefore);
+                    // Pre-launch stage: due date = start date of stage (first day of stage, not last)
+                    const stage = fetchedLaunchStages.find(s => s.id === ratingTimingId);
+                    const stageDuration = stage?.duration_days ?? 0;
+                    dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
                 } else if (daysAfter !== undefined) {
                     // Post-launch stage: add days after launch
                     dueDate.setDate(dueDate.getDate() + daysAfter);
@@ -1176,13 +1177,16 @@ export default function EpicDetailPage() {
         const dueDate = new Date(targetDate);
 
         if (daysBefore !== undefined) {
-            dueDate.setDate(dueDate.getDate() - daysBefore);
+            // Due date = start date of stage (first day of stage, e.g. Product Definition Complete)
+            const stage = launchStages.find(s => s.id === ratingTimingId);
+            const stageDuration = stage?.duration_days ?? 0;
+            dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
         } else if (daysAfter !== undefined) {
             dueDate.setDate(dueDate.getDate() + daysAfter);
         }
 
         return dueDate.toISOString().split('T')[0];
-    }, [releaseDate, epic, launchStages.length, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
+    }, [releaseDate, epic, launchStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
 
     // Memoize filtered matrix calculation
     const filteredMatrix = useMemo(() => {
@@ -1402,7 +1406,7 @@ export default function EpicDetailPage() {
 
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
-        { value: "decisions", label: "Decisions" },
+        { value: "talktrack", label: "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
@@ -1611,8 +1615,8 @@ export default function EpicDetailPage() {
                                     <>
                                         <div className="min-w-0" style={{ marginLeft: 0, width: '100%' }}>
                                             <LaunchStagesChart
+                                                releaseDate={releaseDate || epic?.target_launch_date || null}
                                                 stages={launchStages}
-                                                targetReleaseDate={releaseDate || epic?.target_launch_date || null}
                                                 goNoGoDate={goNoGoDate ?? null}
                                                 showHeading={false}
                                                 noContainer
@@ -1993,7 +1997,7 @@ export default function EpicDetailPage() {
                 >
                     <Tabs.List style={{ display: 'none' }}>
                         <Tabs.Tab value="readiness">Readiness</Tabs.Tab>
-                        <Tabs.Tab value="decisions">Decisions</Tabs.Tab>
+                        <Tabs.Tab value="talktrack">Talk Track</Tabs.Tab>
                         <Tabs.Tab value="adoption">Success Metrics</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
@@ -2066,16 +2070,18 @@ export default function EpicDetailPage() {
                         </div>
                     </Tabs.Panel>
 
-                    <Tabs.Panel value="decisions" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                    <Tabs.Panel value="talktrack" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
                         <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
-                            {activeTab === 'decisions' && (
-                                <Suspense fallback={<PurpleLoader size="md" />}>
-                                    <DecisionList
-                                        epicId={epic.id}
-                                        refreshTrigger={refreshDecisions}
-                                        onRefresh={() => setRefreshDecisions(prev => prev + 1)}
-                                    />
-                                </Suspense>
+                            {activeTab === 'talktrack' && (
+                                <TalkTrackTab
+                                    epicId={epic.id}
+                                    epicName={epic.name}
+                                    featureRef={(() => {
+                                        const ref = (epic as any)?.aha_fields?.standard_fields?.reference_num ?? epic.jira_epic_key;
+                                        return ref ? (ref.startsWith("[") ? ref : `[${ref}]`) : undefined;
+                                    })()}
+                                    epicRefForApi={((epic as any)?.aha_fields?.standard_fields?.reference_num ?? epic.jira_epic_key ?? "") as string}
+                                />
                             )}
                         </div>
                     </Tabs.Panel>

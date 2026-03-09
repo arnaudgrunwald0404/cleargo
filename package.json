@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:webpack": "next dev --turbopack=false",
     "build": "node scripts/netlify-build.js",
     "start": "next start",
     "lint": "next lint",

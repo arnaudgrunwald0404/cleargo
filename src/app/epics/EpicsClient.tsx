@@ -12,6 +12,7 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
+import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -57,6 +58,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [filtersExpanded, setFiltersExpanded] = useState(false);
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     const [releasesView, setReleasesView] = useState<'upcoming' | 'recent' | 'all'>('upcoming');
+    const [showTimelineForRelease, setShowTimelineForRelease] = useState<string | null>(null);
 
     // Sync with Aha state
     const [refreshingEpics, setRefreshingEpics] = useState(false);
@@ -1781,20 +1783,52 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 - <PurpleLoader size="sm" />
                                             </span>
                                         ) : null}
+                                        {group.releaseName !== "Ungrouped" && group.releaseDate && (
+                                            <span style={{
+                                                marginLeft: 'var(--spacing-2)',
+                                                fontSize: 'var(--font-size-sm)',
+                                                fontWeight: 'var(--font-weight-normal)',
+                                                color: 'var(--color-gray-500)',
+                                                fontFamily: 'var(--font-body)'
+                                            }}>
+                                                {'- '}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowTimelineForRelease(prev => prev === group.releaseName ? null : group.releaseName)}
+                                                    style={{
+                                                        fontSize: 'inherit',
+                                                        fontWeight: 'inherit',
+                                                        color: '#2196F3',
+                                                        background: 'none',
+                                                        border: 'none',
+                                                        cursor: 'pointer',
+                                                        padding: 0
+                                                    }}
+                                                    onMouseEnter={(e) => { e.currentTarget.style.color = '#1976D2'; e.currentTarget.style.textDecoration = 'underline'; }}
+                                                    onMouseLeave={(e) => { e.currentTarget.style.color = '#2196F3'; e.currentTarget.style.textDecoration = 'none'; }}
+                                                >
+                                                    {showTimelineForRelease === group.releaseName ? 'Hide Release Timeline' : 'Show Release Timeline'}
+                                                </button>
+                                            </span>
+                                        )}
                                     </h2>
                                     {group.releaseName !== "Ungrouped" && (
                                         <div className="flex items-center gap-3">
                                             <button
                                                 disabled={syncingReleaseName === group.releaseName}
-                                                className="font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                                style={{ 
-                                                    fontSize: '14px', 
-                                                    fontFamily: "'Public Sans', sans-serif",
-                                                    color: "#2196F3",
-                                                    fontWeight: 500
+                                                className="disabled:opacity-50 disabled:cursor-not-allowed"
+                                                style={{
+                                                    fontSize: 'var(--font-size-sm)',
+                                                    fontFamily: 'var(--font-body)',
+                                                    fontWeight: 'var(--font-weight-normal)',
+                                                    color: '#2196F3',
+                                                    background: 'none',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    padding: 0
                                                 }}
-                                                onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = "#1976D2")}
-                                                onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = "#2196F3")}
+                                                onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = '#1976D2')}
+                                                onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = '#2196F3')}
                                                 onClick={async () => {
                                                 if (!confirm(`Sync epics for release "${group.releaseName}"? This will sync all epics with matching tags for this release.`)) {
                                                     return;
@@ -1892,8 +1926,19 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </button>
                                         <button
                                             disabled={archivingReleaseName === group.releaseName}
-                                            className="text-indigo-600 hover:text-indigo-800 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                                            style={{ fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                                            className="disabled:opacity-50 disabled:cursor-not-allowed"
+                                            style={{
+                                                fontSize: 'var(--font-size-sm)',
+                                                fontFamily: 'var(--font-body)',
+                                                fontWeight: 'var(--font-weight-normal)',
+                                                color: '#2196F3',
+                                                background: 'none',
+                                                border: 'none',
+                                                cursor: 'pointer',
+                                                padding: 0
+                                            }}
+                                            onMouseEnter={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = '#1976D2')}
+                                            onMouseLeave={(e) => !e.currentTarget.disabled && (e.currentTarget.style.color = '#2196F3')}
                                             onClick={async () => {
                                                 const release = releaseScheduleWithIds.find(r => r.release_name === group.releaseName);
                                                 if (!release) return;
@@ -1941,6 +1986,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </div>
                                     )}
                                 </div>
+                                {showTimelineForRelease === group.releaseName && group.releaseDate && (
+                                    <div className="mt-3">
+                                        <LaunchStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
+                                    </div>
+                                )}
                                 <div className="rounded-lg" style={{ 
                                     border: "1px solid #E5E7EB",
                                     backgroundColor: "#FFFFFF",
