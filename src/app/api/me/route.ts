@@ -7,6 +7,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { isSuperAdmin } from "@/lib/auth-helpers";
 import { getEffectiveUserEmail, getImpersonatedEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
 import { trackLogin } from "@/lib/services/userActivityService";
+import { getUser } from "@/lib/auth/getUser";
 
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
@@ -127,11 +128,26 @@ async function getHandler(req: NextRequest) {
     const impersonateCookie = req.cookies.get(IMPERSONATE_COOKIE_NAME)?.value;
     const effectiveEmail = await getEffectiveUserEmail(realUserEmail, impersonateCookie);
 
-    const { data: profile, error } = await supabase
+    let { data: profile, error } = await supabase
         .from("app_user")
         .select("*")
         .eq("email", effectiveEmail)
         .single();
+
+    if (error?.code === 'PGRST116') {
+        try {
+            await getUser();
+        } catch {
+            return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+        }
+        const retry = await supabase
+            .from("app_user")
+            .select("*")
+            .eq("email", effectiveEmail)
+            .single();
+        profile = retry.data;
+        error = retry.error;
+    }
 
     if (error) {
         if (error.code === 'PGRST116') {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Drawer, Button, Group, Text, Stack, ActionIcon, ScrollArea, FileButton, Badge, Card, Image, TextInput, Tabs } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from './PurpleLoader';
-import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil } from '@tabler/icons-react';
+import { IconTrash, IconSend, IconPaperclip, IconX, IconPencil, IconRefresh } from '@tabler/icons-react';
 import { RichText, type RichTextMentionHandle } from './admin/RichText';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { LinkPreview, extractUrlsFromHtml } from './LinkPreview';
@@ -192,76 +192,52 @@ export function CommentsModal({
     issueType: string;
     url: string | null;
   }>>>({});
+  const [jiraTicketCounts, setJiraTicketCounts] = useState<Record<number, number>>({});
   const [jiraTicketsLoading, setJiraTicketsLoading] = useState<Record<number, boolean>>({});
 
-  // Fetch Jira epic key and domain when modal opens and epic is available
+  const fetchJiraEpicKeyFromApi = useCallback(async () => {
+    if (!epicId) return;
+    setJiraEpicKeyLoading(true);
+    try {
+      const response = await fetchWithRateLimit(`/api/epics/${epicId}/jira-epic-key`, {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.jiraEpicKey) {
+          setJiraEpicKey(data.jiraEpicKey);
+          setJiraEpicKeySource(data.source || null);
+        } else {
+          setJiraEpicKey(null);
+          setJiraEpicKeySource(null);
+        }
+      }
+      const settingsResponse = await fetchWithRateLimit('/api/settings', { credentials: 'include' });
+      if (settingsResponse.ok) {
+        const settings = await settingsResponse.json();
+        if (settings.jira_domain) setJiraDomain(settings.jira_domain);
+      }
+    } catch (error) {
+      console.error('Error fetching Jira epic key:', error);
+      setJiraEpicKey(null);
+    } finally {
+      setJiraEpicKeyLoading(false);
+    }
+  }, [epicId]);
+
   useEffect(() => {
     if (!opened || !epicId) return;
-
-    // Check if we already have a cached Jira epic key in the epic prop
     if (epic?.jira_epic_key) {
       setJiraEpicKey(epic.jira_epic_key);
       setJiraEpicKeySource('cached');
-      console.log(`✅ Using cached Jira epic key from epic prop: ${epic.jira_epic_key}`);
-      
-      // Still fetch Jira domain from settings
-      fetch('/api/settings', {
-        credentials: 'include',
-      })
+      fetch('/api/settings', { credentials: 'include' })
         .then(res => res.json())
-        .then(settings => {
-          if (settings.jira_domain) {
-            setJiraDomain(settings.jira_domain);
-          }
-        })
-        .catch(error => {
-          console.error('Error fetching Jira domain:', error);
-        });
-      
-      return; // Don't make API call if we have cached value
+        .then(settings => { if (settings.jira_domain) setJiraDomain(settings.jira_domain); })
+        .catch(() => {});
+      return;
     }
-
-    const fetchJiraEpicKey = async () => {
-      setJiraEpicKeyLoading(true);
-      try {
-        // Fetch Jira epic key from API (checks cache first, then tries integrations, then Jira search)
-        const response = await fetchWithRateLimit(`/api/epics/${epicId}/jira-epic-key`, {
-          credentials: 'include',
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.jiraEpicKey) {
-            setJiraEpicKey(data.jiraEpicKey);
-            setJiraEpicKeySource(data.source || null);
-            console.log(`✅ Jira epic key fetched: ${data.jiraEpicKey} (source: ${data.source})`);
-          } else {
-            setJiraEpicKey(null);
-            setJiraEpicKeySource(null);
-          }
-        }
-
-        // Fetch Jira domain from settings
-        const settingsResponse = await fetchWithRateLimit('/api/settings', {
-          credentials: 'include',
-        });
-        
-        if (settingsResponse.ok) {
-          const settings = await settingsResponse.json();
-          if (settings.jira_domain) {
-            setJiraDomain(settings.jira_domain);
-          }
-        }
-      } catch (error) {
-        console.error('Error fetching Jira epic key:', error);
-        setJiraEpicKey(null);
-      } finally {
-        setJiraEpicKeyLoading(false);
-      }
-    };
-
-    fetchJiraEpicKey();
-  }, [opened, epicId, epic?.jira_epic_key]);
+    fetchJiraEpicKeyFromApi();
+  }, [opened, epicId, epic?.jira_epic_key, fetchJiraEpicKeyFromApi]);
 
   const buildJiraIssuesUrlForOpenEpicTickets = (source: { value: string; label?: string } | null): string | null => {
     if (!jiraEpicKey || !jiraDomain) return null;
@@ -384,15 +360,22 @@ export function CommentsModal({
 
         setJiraTicketsLoading(prev => ({ ...prev, [index]: true }));
         try {
-          const response = await fetchWithRateLimit(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
-            credentials: 'include',
-          });
+          const [countRes, issuesRes] = await Promise.all([
+            fetchWithRateLimit(`/api/jira/issue-count?jql=${encodeURIComponent(jql)}`, { credentials: 'include' }),
+            fetchWithRateLimit(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, { credentials: 'include' }),
+          ]);
 
-          if (response.ok) {
-            const data = await response.json();
+          if (countRes.ok) {
+            const countData = await countRes.json();
+            if (typeof countData.count === 'number') {
+              setJiraTicketCounts(prev => ({ ...prev, [index]: countData.count }));
+            }
+          }
+          if (issuesRes.ok) {
+            const data = await issuesRes.json();
             setJiraTickets(prev => ({ ...prev, [index]: data.issues || [] }));
           } else {
-            console.error('Failed to fetch Jira tickets:', await response.text());
+            console.error('Failed to fetch Jira tickets:', await issuesRes.text());
             setJiraTickets(prev => ({ ...prev, [index]: [] }));
           }
         } catch (error) {
@@ -998,14 +981,8 @@ export function CommentsModal({
       
       if (data) {
         baseContent = data.current_status_notes || '';
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:939',message:'Base content before strip',data:{baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         // Strip any previously added data source content to prevent duplication
         baseContent = stripDataSourceContent(baseContent);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:941',message:'Base content after strip',data:{baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         baseContentRef.current = baseContent;
         // Load data source values if column exists
         if (data.data_source_values) {
@@ -1376,10 +1353,7 @@ export function CommentsModal({
       
       // Find all table rows
       const rows = doc.querySelectorAll('tr');
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1213',message:'parseDescriptionTable started',data:{keyword,rowsCount:rows.length,htmlDescriptionLength:htmlDescription?.length||0},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-      
+
       // Search for the row containing the keyword
       let matchCount = 0;
       for (const row of rows) {
@@ -1395,9 +1369,6 @@ export function CommentsModal({
           const firstCellText = firstCell.textContent?.trim() || '';
           if (firstCellText && firstCellText.toLowerCase().includes(keyword.toLowerCase())) {
             matchCount++;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1227',message:'Found matching row',data:{keyword,firstCellText,matchCount},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
             // Return the second column HTML content (preserves formatting)
             const secondCell = cells[1];
             const secondCellHTML = secondCell.innerHTML?.trim() || '';
@@ -1406,9 +1377,6 @@ export function CommentsModal({
             if (secondCellHTML && secondCellText) {
               // Clean the HTML to remove empty elements and make it more compact
               const result = cleanExtractedHTML(secondCellHTML);
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1235',message:'Returning extracted value',data:{keyword,matchCount,resultLength:result?.length||0,resultPreview:result?.substring(0,100)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-              // #endregion
               return result;
             }
           }
@@ -1473,9 +1441,6 @@ export function CommentsModal({
         }
       }
 
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1241',message:'No match found',data:{keyword,matchCount},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
       return null;
     } catch (error) {
       console.error('Error parsing description table:', error);
@@ -1666,9 +1631,6 @@ export function CommentsModal({
           // Remove the data source content from the beginning
           const beforeLength = cleaned.length;
           cleaned = cleaned.substring(endIndex).trim();
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:stripDataSourceContent',message:'Removed data source from beginning',data:{label,endIndex,cleanedLength:cleaned.length,originalLength:beforeLength,iteration:iterations},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-          // #endregion
           break; // Process one at a time, then check again
         }
       }
@@ -1683,12 +1645,9 @@ export function CommentsModal({
       if (dataSourcePattern.test(afterDoubleNewline.trim())) {
         // This looks like data source content, remove it
         cleaned = cleaned.substring(0, doubleNewlineIndex).trim();
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:stripDataSourceContent',message:'Removed data source from end',data:{doubleNewlineIndex,cleanedLength:cleaned.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
       }
     }
-    
+
     return cleaned;
   };
 
@@ -1698,9 +1657,6 @@ export function CommentsModal({
     fetchedDataSourceValues: Record<string, string | { url: string; assetName?: string }>,
     urlPreviews: Record<string, { title?: string; description?: string; image?: string; favicon?: string; domain?: string; url?: string } | null>
   ): string => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1358',message:'buildContentFromDataSources called',data:{baseContentLength:baseContent?.length||0,dataSourcesCount:criterion?.data_sources?.length||0,dataSources:criterion?.data_sources||[]},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     // Process all data sources in order
     const dataSourceItems: Array<{ content: string; type: string }> = [];
     if (criterion?.data_sources) {
@@ -1710,9 +1666,6 @@ export function CommentsModal({
       const customFields = ahaFieldsStruct?.custom_fields || {};
       
       criterion.data_sources.forEach((source, index) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1366',message:'Processing data source',data:{index,sourceType:source.type,sourceValue:source.value,sourceLabel:source.label},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         if (source.type === 'aha_field' && source.value) {
           let displayValue: string | null = null;
           
@@ -1750,9 +1703,6 @@ export function CommentsModal({
           let extractedValue: string | null = null;
           if (htmlContent) {
             extractedValue = parseDescriptionTable(htmlContent, source.value);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1403',message:'Extracted value from description table',data:{index,keyword:source.value,extractedValueLength:extractedValue?.length||0,extractedValuePreview:extractedValue?.substring(0,100)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
           }
           
           // Always show the description part label, with value or "N/A" on a new line (URLs as clickable links)
@@ -1760,9 +1710,6 @@ export function CommentsModal({
           const markdownContent = `**${source.value}**`;
           const convertedContent = convertMarkdownToHTML(markdownContent) + '<br>' + formatValueForHtmlDisplay(valueToShow);
           dataSourceItems.push({ content: convertedContent, type: 'aha_description_part' });
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1410',message:'Added data source item',data:{index,type:'aha_description_part',dataSourceItemsCount:dataSourceItems.length,contentPreview:convertedContent.substring(0,100)},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-          // #endregion
         } else if (source.type === 'url') {
           // Get URL value from fetched data source values
           const dataSourceValue = fetchedDataSourceValues[index.toString()];
@@ -1782,9 +1729,6 @@ export function CommentsModal({
       });
     }
 
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1428',message:'Finished processing data sources',data:{dataSourceItemsCount:dataSourceItems.length,dataSourceItemsTypes:dataSourceItems.map(i=>i.type),baseContentLength:baseContent?.length||0,baseContentPreview:baseContent?.substring(0,200)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     // Process baseContent to convert URLs to links if it contains HTML
     let processedBaseContent = baseContent;
     if (baseContent && looksLikeHtml(baseContent)) {
@@ -1811,9 +1755,6 @@ export function CommentsModal({
       
       const dataSection = processedContent.join('\n');
       finalContent = processedBaseContent ? processedBaseContent + '\n\n' + dataSection : dataSection.trim();
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'CommentsModal.tsx:1446',message:'Final content built',data:{finalContentLength:finalContent?.length||0,finalContentPreview:finalContent?.substring(0,500)||null},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-      // #endregion
     }
 
     // Process final content through checkbox formatter
@@ -2283,21 +2224,42 @@ export function CommentsModal({
                                 : 'No Jira epic key found. Searched Jira API by epic name, then AHA integrations field.'
                             }
                             rightSection={
-                              jiraEpicKeyLoading ? (
-                                <PurpleLoader size="sm" />
-                              ) : showJiraIcon ? (
-                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20 }}>
-                                  <img
-                                    src={jiraFaviconUrl}
-                                    alt="Jira"
-                                    style={{ width: 16, height: 16, objectFit: 'contain' }}
-                                    onError={(e) => {
-                                      // Fallback to Atlassian favicon if domain favicon fails
-                                      (e.target as HTMLImageElement).src = 'https://www.atlassian.com/favicon.ico';
-                                    }}
-                                  />
-                                </div>
-                              ) : undefined
+                              <Group gap={4} wrap="nowrap">
+                                {!jiraEpicKeyLoading && (
+                                  <ActionIcon
+                                    variant="subtle"
+                                    size="sm"
+                                    color="gray"
+                                    title="Retry Jira epic search"
+                                    onClick={() => fetchJiraEpicKeyFromApi()}
+                                  >
+                                    <IconRefresh size={16} />
+                                  </ActionIcon>
+                                )}
+                                {jiraEpicKeyLoading ? (
+                                  <PurpleLoader size="sm" />
+                                ) : showJiraIcon ? (
+                                  <Group gap={4} wrap="nowrap">
+                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20 }}>
+                                      <img
+                                        src={jiraFaviconUrl}
+                                        alt="Jira"
+                                        style={{ width: 16, height: 16, objectFit: 'contain' }}
+                                        onError={(e) => {
+                                          (e.target as HTMLImageElement).src = 'https://www.atlassian.com/favicon.ico';
+                                        }}
+                                      />
+                                    </div>
+                                    {jiraTicketsLoading[index] ? (
+                                      <Text size="xs" c="dimmed">…</Text>
+                                    ) : (jiraTicketCounts[index] ?? jiraTickets[index]?.length ?? 0) >= 0 ? (
+                                      <Text size="xs" c="dimmed" title={`${jiraTicketCounts[index] ?? jiraTickets[index]?.length ?? 0} open ticket(s)`}>
+                                        {jiraTicketCounts[index] ?? jiraTickets[index]?.length ?? 0}
+                                      </Text>
+                                    ) : null}
+                                  </Group>
+                                ) : null}
+                              </Group>
                             }
                           />
                           {jiraUrl && hasSavedUrl && (
@@ -2322,10 +2284,10 @@ export function CommentsModal({
                                   <PurpleLoader size="sm" />
                                   <Text size="xs" c="dimmed">Loading tickets...</Text>
                                 </Group>
-                              ) : jiraTickets[index] && jiraTickets[index].length > 0 ? (
+                              ) : (jiraTicketCounts[index] ?? 0) > 0 ? (
                                 <Card withBorder mt="xs" p="sm" style={{ backgroundColor: 'var(--mantine-color-gray-0)' }}>
                                   <Text size="xs" fw={500} mb="xs">
-                                    Found {jiraTickets[index].length} ticket{jiraTickets[index].length !== 1 ? 's' : ''}:
+                                    Found {jiraTicketCounts[index]} open ticket{(jiraTicketCounts[index] ?? 0) !== 1 ? 's' : ''}:
                                   </Text>
                                   <Stack gap="xs">
                                     {jiraTickets[index].slice(0, 10).map((ticket) => {
@@ -2371,14 +2333,14 @@ export function CommentsModal({
                                         </Group>
                                       );
                                     })}
-                                    {jiraTickets[index].length > 10 && (
+                                    {(jiraTicketCounts[index] ?? jiraTickets[index]?.length ?? 0) > 10 && (
                                       <Text size="xs" c="dimmed" mt="xs">
-                                        ... and {jiraTickets[index].length - 10} more
+                                        ... and {(jiraTicketCounts[index] ?? jiraTickets[index]?.length ?? 0) - 10} more
                                       </Text>
                                     )}
                                   </Stack>
                                 </Card>
-                              ) : jiraTickets[index] && jiraTickets[index].length === 0 ? (
+                              ) : typeof jiraTicketCounts[index] === 'number' && jiraTicketCounts[index] === 0 ? (
                                 <Text size="sm" fw={600} mt="xs" ta="center">
                                   🎉 No open tickets left - great job completing and cleaning the epic!  
                                 </Text>

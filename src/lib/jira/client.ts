@@ -327,6 +327,39 @@ export async function testJiraConnection(): Promise<{ success: boolean; message:
 }
 
 /**
+ * Get approximate count of issues matching a JQL query (no issue data).
+ * Uses Jira Cloud approximate-count endpoint; falls back to search response total when approximate-count returns 0.
+ */
+export async function getJiraIssueCount(jql: string): Promise<number> {
+    if (!jql || !jql.trim()) {
+        return 0;
+    }
+    const trimmedJql = jql.trim();
+    try {
+        const response = await jiraRequest<{ count?: number }>(
+            '/search/approximate-count',
+            {
+                method: 'POST',
+                body: JSON.stringify({ jql: trimmedJql }),
+            }
+        );
+        const fromApproximate = typeof response.count === 'number' ? response.count : 0;
+        if (fromApproximate > 0) {
+            return fromApproximate;
+        }
+    } catch (error) {
+        console.warn(`Jira approximate-count failed for JQL, trying search fallback:`, (error as Error)?.message);
+    }
+    try {
+        const issues = await searchJiraIssues(trimmedJql, ['key']);
+        return issues.length;
+    } catch (fallbackError) {
+        console.error(`Error getting Jira issue count for JQL "${trimmedJql.substring(0, 80)}..."`, fallbackError);
+        throw fallbackError;
+    }
+}
+
+/**
  * Search for Jira issues using a JQL query
  * Returns issues matching the JQL query
  */

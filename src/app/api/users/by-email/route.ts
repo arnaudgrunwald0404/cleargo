@@ -56,9 +56,11 @@ export async function GET(req: NextRequest) {
         
         if (error) {
             console.error('Error fetching users by email:', error);
+            const isUnavailable =
+                /fetch|timeout|ECONNREFUSED|ENOTFOUND|network|connection/i.test(error.message ?? '');
             return NextResponse.json(
                 { error: 'Failed to fetch user information', details: error.message },
-                { status: 500 }
+                { status: isUnavailable ? 503 : 500 }
             );
         }
         
@@ -80,9 +82,12 @@ export async function GET(req: NextRequest) {
         return NextResponse.json(userMap);
     } catch (error: any) {
         console.error('Error in /api/users/by-email:', error);
+        const msg = error?.message ?? '';
+        const isUnavailable =
+            /fetch|timeout|ECONNREFUSED|ENOTFOUND|network|connection/i.test(msg);
         return NextResponse.json(
-            { error: 'Internal server error', details: error.message },
-            { status: 500 }
+            { error: 'Internal server error', details: msg },
+            { status: isUnavailable ? 503 : 500 }
         );
     }
 }

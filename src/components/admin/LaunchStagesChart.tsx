@@ -274,9 +274,6 @@ export function LaunchStagesChart({
                                 
                                 const markerTop = timelineY - 28;
                                 const releaseDateStr = formatChartDate(shiftDate(actualReleaseDate ?? null, TIMELINE_DAY_OFFSET));
-                                // #region agent log
-                                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:Release',message:'Release date format',data:{markerType:'release',formatterUsed:'formatChartDate',formattedValue:releaseDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-                                // #endregion
                                 return (
                                     <>
                                         {/* Orange dotted line marker - above chart, stops at top of bar */}
@@ -439,9 +436,6 @@ export function LaunchStagesChart({
                             const x = padding + ((endOffset / totalDays) * (timelineWidth - padding * 2));
                             const displayDate = shiftDate(date, TIMELINE_DAY_OFFSET);
                             const dateStr = formatChartDateNoYear(displayDate);
-                            // #region agent log
-                            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:boundary',message:'Boundary date format',data:{markerType:'boundary',key,formatterUsed:'formatChartDateNoYear',formattedValue:dateStr,fontWeight:400},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-                            // #endregion
                             const labelY = dateY + (dateStr ? 18 : 0);
                             return (
                                 <g key={key}>
@@ -485,9 +479,6 @@ export function LaunchStagesChart({
                             
                             const markerTop = timelineY - 28;
                             const goNoGoDateStr = formatChartDate(shiftDate(goNoGoDate, TIMELINE_DAY_OFFSET));
-                            // #region agent log
-                            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'9158f3'},body:JSON.stringify({sessionId:'9158f3',location:'LaunchStagesChart.tsx:GoNoGo',message:'Go/No-Go date format',data:{markerType:'goNoGo',formatterUsed:'formatChartDate',formattedValue:goNoGoDateStr,fontWeight:700},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-                            // #endregion
                             return (
                                 <g>
                                     {/* Vertical dotted line marker - above chart, stops at top of bar */}

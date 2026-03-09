@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMediaQuery } from '@mantine/hooks';
@@ -31,6 +31,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
     const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
+    const unreadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // Fetch user roles and check settings access
     useEffect(() => {
@@ -75,6 +76,13 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         const fetchUnreadCount = async () => {
             try {
                 const res = await fetchWithRateLimit('/api/comments/all?myEpicsOnly=true&unread=true', { credentials: 'include', maxRetries: 1 });
+                if (res.status === 401) {
+                    if (unreadIntervalRef.current) {
+                        clearInterval(unreadIntervalRef.current);
+                        unreadIntervalRef.current = null;
+                    }
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
                     setUnreadCommentCount(data.unread_count ?? 0);
@@ -85,8 +93,13 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         };
 
         fetchUnreadCount();
-        const interval = setInterval(fetchUnreadCount, 60_000);
-        return () => clearInterval(interval);
+        unreadIntervalRef.current = setInterval(fetchUnreadCount, 60_000);
+        return () => {
+            if (unreadIntervalRef.current) {
+                clearInterval(unreadIntervalRef.current);
+                unreadIntervalRef.current = null;
+            }
+        };
     }, []);
 
     useEffect(() => {

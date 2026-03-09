@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { MappedEpicData } from '../aha/mapping';
 import { getReleases } from '../aha/client';
+import { resolveAndCacheJiraEpicKey } from '../jira/resolve-and-cache-epic-key';
 import { syncUserSlackHandle } from '../slack/notifications';
 import { pruneCriteria } from '../ai/client';
 import { isEnabled, FEATURE_AI_PRUNING } from '../flags';
@@ -247,6 +248,26 @@ export async function upsertEpicFromAha(
             // Don't fail the epic creation if audit logging fails
             console.warn('Failed to log epic_added activity:', auditError);
         }
+    }
+
+    // Resolve and cache Jira epic key as soon as epic exists (Aha integrations then Jira search)
+    if (finalEpic) {
+        resolveAndCacheJiraEpicKey(
+            {
+                id: finalEpic.id,
+                name: finalEpic.name,
+                aha_id: finalEpic.aha_id,
+                aha_fields: finalEpic.aha_fields ?? undefined,
+                jira_epic_key: finalEpic.jira_epic_key,
+            },
+            supabase
+        ).then((result) => {
+            if (result.jiraEpicKey) {
+                console.log(`✅ Jira epic key resolved for ${finalEpic.name} (${finalEpic.id}): ${result.jiraEpicKey} (source: ${result.source})`);
+            }
+        }).catch((err) => {
+            console.warn('Jira epic key resolution after epic upsert:', err?.message ?? err);
+        });
     }
 
     return finalEpic;

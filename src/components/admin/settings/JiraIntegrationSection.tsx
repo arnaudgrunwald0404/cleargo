@@ -1,7 +1,7 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import type { AppSettings } from "@/lib/settings-db";
-import { Button } from "@mantine/core";
+import { Button, Text } from "@mantine/core";
 
 type Props = {
   settings: AppSettings;
@@ -15,6 +15,29 @@ export default function JiraIntegrationSection({ settings, setSettings }: Props)
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [linking, setLinking] = useState(false);
+  const [linkResult, setLinkResult] = useState<{ message: string; total: number; linked: number; error?: boolean } | null>(null);
+  const [linkStats, setLinkStats] = useState<{ linked: number; notLinked: number; epicsWithOpenTickets?: number } | null>(null);
+
+  const fetchLinkStats = useCallback(async () => {
+    try {
+      const res = await fetch('/api/integrations/jira/link-all-epics', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        setLinkStats({
+          linked: data.linked ?? 0,
+          notLinked: data.notLinked ?? 0,
+          epicsWithOpenTickets: data.epicsWithOpenTickets,
+        });
+      }
+    } catch {
+      setLinkStats(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLinkStats();
+  }, [fetchLinkStats]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -42,6 +65,38 @@ export default function JiraIntegrationSection({ settings, setSettings }: Props)
       setTestResult({ success: false, message: error.message || 'Failed to save settings' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleLinkAllEpics = async () => {
+    setLinking(true);
+    setLinkResult(null);
+    try {
+      const response = await fetch('/api/integrations/jira/link-all-epics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to link epics');
+      }
+      setLinkResult({
+        message: data.message ?? `Processed ${data.processed ?? 0}; linked ${data.linked ?? 0} to Jira.`,
+        total: data.total ?? 0,
+        linked: data.linked ?? 0,
+        error: false,
+      });
+      fetchLinkStats();
+    } catch (err: unknown) {
+      setLinkResult({
+        message: err instanceof Error ? err.message : 'Failed to link epics',
+        total: 0,
+        linked: 0,
+        error: true,
+      });
+    } finally {
+      setLinking(false);
     }
   };
 
@@ -180,6 +235,49 @@ export default function JiraIntegrationSection({ settings, setSettings }: Props)
             <li>Epics are matched by exact name comparison</li>
             <li>Use the API endpoints to retrieve matched epics programmatically</li>
           </ul>
+        </div>
+
+        <div className="space-y-4 mt-4">
+          <Text size="sm" fw={600}>Link all ClearGO epics to Jira epics</Text>
+          <Text size="xs" c="dimmed">
+            System looks for a connection in all the epics where the connection has not been found yet.
+          </Text>
+          {linkStats !== null && (
+            <>
+              <Text size="sm" c="dimmed">
+                <strong>{linkStats.linked}</strong> epics linked to Jira · <strong>{linkStats.notLinked}</strong> not linked
+              </Text>
+              {linkStats.epicsWithOpenTickets !== undefined && (
+                <Text size="sm" c="dimmed">
+                  <strong>{linkStats.epicsWithOpenTickets}</strong> epics with open Jira tickets (tickets left &gt; 0)
+                </Text>
+              )}
+            </>
+          )}
+          <Button
+            variant="filled"
+            onClick={handleLinkAllEpics}
+            loading={linking}
+            disabled={linking}
+            style={{ alignSelf: 'flex-start' }}
+          >
+            {linking ? 'Linking…' : 'Link all ClearGO epics to Jira epics'}
+          </Button>
+          {linkResult && (
+            <div
+              className={`p-3 rounded-lg text-sm ${
+                linkResult.error
+                  ? 'bg-red-50 border border-red-200 text-red-800'
+                  : linkResult.linked > 0
+                    ? 'bg-green-50 border border-green-200 text-green-800'
+                    : linkResult.total === 0
+                      ? 'bg-gray-50 border border-gray-200 text-gray-700'
+                      : 'bg-amber-50 border border-amber-200 text-amber-800'
+              }`}
+            >
+              {linkResult.message}
+            </div>
+          )}
         </div>
       </div>
     </div>

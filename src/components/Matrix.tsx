@@ -540,8 +540,8 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                         const template = (source.value || '').trim() || defaultJql;
                         const jql = template.replace(/\{\{JIRA_EPIC\}\}/g, epic.jira_epic_key);
                         
-                        // Fetch ticket count
-                        fetch(`/api/jira/search-issues?jql=${encodeURIComponent(jql)}`, {
+                        // Fetch ticket count via approximate-count API (accurate total, not search page length)
+                        fetch(`/api/jira/issue-count?jql=${encodeURIComponent(jql)}`, {
                             credentials: 'include',
                         })
                             .then(res => res.json())
@@ -1487,6 +1487,34 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                         )}
                                                     </span>
                                                 )}
+                                                {epic?.jira_epic_key && (() => {
+                                                    const jiraSourceIdx = item.criterion.data_sources?.findIndex((s: { type: string }) => s.type === 'jira_jql') ?? -1;
+                                                    if (jiraSourceIdx < 0) return null;
+                                                    const ticketCount = jiraTicketCounts[`${item.id}-${jiraSourceIdx}`];
+                                                    const jiraFaviconUrl = jiraDomain
+                                                        ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
+                                                        : 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                    return (
+                                                        <Tooltip key="jira" label={ticketCount !== undefined && ticketCount !== null ? `${ticketCount} open ticket${ticketCount !== 1 ? 's' : ''}` : 'Jira epic'} position="top" withArrow>
+                                                            <span className="inline-flex items-center gap-1 flex-shrink-0 mr-1.5">
+                                                                <img
+                                                                    src={jiraFaviconUrl}
+                                                                    alt="Jira"
+                                                                    className="w-3 h-3"
+                                                                    style={{ width: 12, height: 12, objectFit: 'contain' }}
+                                                                    onError={(e) => {
+                                                                        const el = e.target as HTMLImageElement;
+                                                                        el.onerror = null;
+                                                                        el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                                                    }}
+                                                                />
+                                                                <span className="tabular-nums text-gray-600 text-xs">
+                                                                    {ticketCount !== undefined && ticketCount !== null ? ticketCount : '–'}
+                                                                </span>
+                                                            </span>
+                                                        </Tooltip>
+                                                    );
+                                                })()}
                                                 <button
                                                     onClick={() => handleOpenComments(item)}
                                                     className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer text-left"
@@ -1546,6 +1574,13 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             style={{
                                                                 opacity: hoveredAvatarId === item.id ? 0 : 1,
                                                                 transition: 'opacity 0.2s',
+                                                            }}
+                                                            imageProps={{
+                                                                onError: (e) => {
+                                                                    const el = e.target as HTMLImageElement;
+                                                                    el.onerror = null;
+                                                                    el.src = '';
+                                                                },
                                                             }}
                                                         >
                                                             {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
@@ -1684,21 +1719,29 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                     alt="Aha" 
                                                                                     className="w-3 h-3"
                                                                                     style={{ display: 'block' }}
+                                                                                    onError={(e) => {
+                                                                                        const el = e.target as HTMLImageElement;
+                                                                                        el.onerror = null;
+                                                                                        el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                                                                    }}
                                                                                 />
                                                                             ) : isJiraSource ? (
-                                                                                <img 
-                                                                                    src={jiraFaviconUrl}
-                                                                                    alt="Jira" 
-                                                                                    className="w-3 h-3"
-                                                                                    style={{ display: 'block', width: '12px', height: '12px', objectFit: 'contain' }}
-                                                                                    onError={(e) => {
-                                                                                        console.log(`Favicon failed to load, using fallback. Original URL: ${jiraFaviconUrl}`);
-                                                                                        (e.target as HTMLImageElement).src = 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
-                                                                                    }}
-                                                                                    onLoad={() => {
-                                                                                        console.log(`✅ Jira favicon loaded successfully for item ${item.id}, source ${idx}`);
-                                                                                    }}
-                                                                                />
+                                                                                <span className="inline-flex items-center gap-1">
+                                                                                    <img 
+                                                                                        src={jiraFaviconUrl}
+                                                                                        alt="Jira" 
+                                                                                        className="w-3 h-3"
+                                                                                        style={{ display: 'block', width: '12px', height: '12px', objectFit: 'contain' }}
+                                                                                        onError={(e) => {
+                                                                                            const el = e.target as HTMLImageElement;
+                                                                                            el.onerror = null;
+                                                                                            el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                                                                        }}
+                                                                                    />
+                                                                                    <span className="tabular-nums text-gray-600">
+                                                                                        {ticketCount !== undefined && ticketCount !== null ? ticketCount : '–'}
+                                                                                    </span>
+                                                                                </span>
                                                                             ) : IconComponent ? (
                                                                                 <IconComponent size={16} />
                                                                             ) : null}
@@ -1953,6 +1996,34 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             )}
                                                         </span>
                                                     )}
+                                                    {epic?.jira_epic_key && (() => {
+                                                        const jiraSourceIdx = item.criterion.data_sources?.findIndex((s: { type: string }) => s.type === 'jira_jql') ?? -1;
+                                                        if (jiraSourceIdx < 0) return null;
+                                                        const ticketCount = jiraTicketCounts[`${item.id}-${jiraSourceIdx}`];
+                                                        const jiraFaviconUrl = jiraDomain
+                                                            ? `https://${jiraDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')}/favicon.ico`
+                                                            : 'https://www.google.com/s2/favicons?domain=atlassian.com&sz=16';
+                                                        return (
+                                                            <Tooltip key="jira-mob" label={ticketCount !== undefined && ticketCount !== null ? `${ticketCount} open ticket${ticketCount !== 1 ? 's' : ''}` : 'Jira epic'} position="top" withArrow>
+                                                                <span className="inline-flex items-center gap-1 flex-shrink-0 mr-1.5">
+                                                                    <img
+                                                                        src={jiraFaviconUrl}
+                                                                        alt="Jira"
+                                                                        className="w-3 h-3"
+                                                                        style={{ width: 12, height: 12, objectFit: 'contain' }}
+                                                                        onError={(e) => {
+                                                                            const el = e.target as HTMLImageElement;
+                                                                            el.onerror = null;
+                                                                            el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                                                        }}
+                                                                    />
+                                                                    <span className="tabular-nums text-gray-600 text-xs">
+                                                                        {ticketCount !== undefined && ticketCount !== null ? ticketCount : '–'}
+                                                                    </span>
+                                                                </span>
+                                                            </Tooltip>
+                                                        );
+                                                    })()}
                                                     <button
                                                         onClick={() => handleOpenComments(item)}
                                                         className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer text-left"
@@ -2017,6 +2088,13 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                 style={{
                                                                     opacity: hoveredAvatarId === item.id ? 0 : 1,
                                                                     transition: 'opacity 0.2s',
+                                                                }}
+                                                                imageProps={{
+                                                                    onError: (e) => {
+                                                                        const el = e.target as HTMLImageElement;
+                                                                        el.onerror = null;
+                                                                        el.src = '';
+                                                                    },
                                                                 }}
                                                             >
                                                                 {getInitials(item.approverEmail, item.approverInfo?.first_name, item.approverInfo?.last_name)}
