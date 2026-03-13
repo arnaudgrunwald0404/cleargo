@@ -201,6 +201,20 @@ function buildCriteriaSummaries(
     return map;
 }
 
+/** Add calendar days (not business days). */
+function addCalendarDays(d: Date, days: number): Date {
+    const out = new Date(d);
+    out.setDate(out.getDate() + days);
+    return out;
+}
+
+/** Subtract calendar days. */
+function subtractCalendarDays(d: Date, days: number): Date {
+    const out = new Date(d);
+    out.setDate(out.getDate() - days);
+    return out;
+}
+
 function useTimelineData(
     releaseDate: string | Date | null | undefined,
     stages: LaunchStage[],
@@ -211,26 +225,53 @@ function useTimelineData(
 ) {
     const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
     const anchorDate = toDate(releaseDate);
-    const totalPreLaunchBusinessDays = sortedStages
-        .filter(s => s.sort_order < (sortedStages[sortedStages.length - 1]?.sort_order ?? 0))
-        .reduce((sum, s) => sum + (getEffectiveDuration(s, uiLevel) ?? 0), 0);
-
-    const startDate = anchorDate
-        ? subtractBusinessDays(anchorDate, totalPreLaunchBusinessDays)
-        : new Date();
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    let cursor = new Date(startDate);
-    const rawNodes = sortedStages.map(stage => {
-        const dur = getEffectiveDuration(stage, uiLevel) ?? 0;
-        const buf = getBufferDays(stage, uiLevel);
-        const date = new Date(cursor);
-        const node = { stage, date, durationDays: dur, bufferDays: buf, cumulativeDays: 0 };
-        cursor = dur > 0 ? addBusinessDays(cursor, dur) : new Date(cursor);
-        return node;
-    });
+    const isTraditionalRelease = uiLevel === undefined;
+
+    let rawNodes: { stage: LaunchStage; date: Date; durationDays: number; bufferDays: number; cumulativeDays: number }[];
+
+    if (isTraditionalRelease) {
+        // Original logic: calendar days, preLaunchDays = only stages before Cohort 1 (e.g. 31+14+21 = 66).
+        const cohort1Stage = sortedStages.find(s => s.name.toLowerCase().includes('cohort 1'));
+        const preLaunchDays = cohort1Stage
+            ? sortedStages
+                .filter(s => s.sort_order < cohort1Stage.sort_order && (s.duration_days != null))
+                .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
+            : 0;
+        const startDate = anchorDate && preLaunchDays > 0
+            ? subtractCalendarDays(anchorDate, preLaunchDays)
+            : anchorDate ?? new Date();
+
+        let cursor = new Date(startDate);
+        rawNodes = sortedStages.map(stage => {
+            const dur = stage.duration_days ?? 0;
+            const date = new Date(cursor);
+            const node = { stage, date, durationDays: dur, bufferDays: 0, cumulativeDays: 0 };
+            cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
+            return node;
+        });
+    } else {
+        // UI Rollout: business days, full pre-launch sum.
+        const totalPreLaunchBusinessDays = sortedStages
+            .filter(s => s.sort_order < (sortedStages[sortedStages.length - 1]?.sort_order ?? 0))
+            .reduce((sum, s) => sum + (getEffectiveDuration(s, uiLevel) ?? 0), 0);
+
+        const startDate = anchorDate
+            ? subtractBusinessDays(anchorDate, totalPreLaunchBusinessDays)
+            : new Date();
+
+        let cursor = new Date(startDate);
+        rawNodes = sortedStages.map(stage => {
+            const dur = getEffectiveDuration(stage, uiLevel) ?? 0;
+            const buf = getBufferDays(stage, uiLevel);
+            const date = new Date(cursor);
+            const node = { stage, date, durationDays: dur, bufferDays: buf, cumulativeDays: 0 };
+            cursor = dur > 0 ? addBusinessDays(cursor, dur) : new Date(cursor);
+            return node;
+        });
+    }
 
     const getStatus = (nodeDate: Date, nextNodeDate: Date | null, bufferDays: number): NodeStatus => {
         const targetEnd = nextNodeDate ?? nodeDate;
@@ -262,9 +303,13 @@ function useTimelineData(
         }
     }
 
-    // Cohort 1 Live: position second-to-last node at the release date (anchor) so it shows the actual go-live date
+    // Cohort 1 Live: position second-to-last node at the release date (anchor) so the go-live milestone shows the real date.
+    // For UI Rollout (business days), the previous phase would otherwise stretch to Apr 16; use computed end in tooltip.
+    // For traditional (calendar days), segment already ends near release, so no override.
+    let computedEndOfPhaseBeforeCohort1: Date | null = null;
     if (anchorDate && nodes.length >= 2) {
         const cohort1Node = nodes[nodes.length - 2];
+        if (!isTraditionalRelease) computedEndOfPhaseBeforeCohort1 = new Date(cohort1Node.date);
         const nextNodeDate = nodes[nodes.length - 1].date;
         nodes = [
             ...nodes.slice(0, -2),
@@ -276,12 +321,35 @@ function useTimelineData(
     const timelineStart = nodes[0]?.date ?? today;
     const timelineEnd = nodes[nodes.length - 1]?.date ?? today;
     const totalSpan = Math.max(1, diffDays(timelineStart, timelineEnd));
-    const todayPct = Math.max(0, Math.min(100, (diffDays(timelineStart, today) / totalSpan) * 100));
+    const todayPctDate = Math.max(0, Math.min(100, (diffDays(timelineStart, today) / totalSpan) * 100));
     const todayIsVisible = today >= timelineStart && today <= timelineEnd;
     const todayIsBefore = today < timelineStart;
     const allDone = today > timelineEnd;
 
-    return { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, timelineEnd, totalSpan };
+    // Position "today" by equal-width segments (slider is drawn with each segment same width, not by date span)
+    let todayPct = todayPctDate;
+    if (nodes.length >= 2 && todayIsVisible) {
+        const n = nodes.length;
+        for (let i = 0; i < n - 1; i++) {
+            const segStart = nodes[i].date.getTime();
+            const segEnd = nodes[i + 1].date.getTime();
+            const t = today.getTime();
+            if (t >= segStart && t < segEnd) {
+                const segSpan = segEnd - segStart;
+                const f = segSpan > 0 ? (t - segStart) / segSpan : 0;
+                todayPct = ((i + f) / (n - 1)) * 100;
+                break;
+            }
+            if (i === n - 2 && t >= segEnd) {
+                todayPct = 100;
+                break;
+            }
+        }
+    } else if (allDone && nodes.length >= 2) {
+        todayPct = 100;
+    }
+
+    return { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, timelineEnd, totalSpan, computedEndOfPhaseBeforeCohort1 };
 }
 
 function CriteriaBadge({ summary }: { summary: StageCriteriaSummary }) {
@@ -321,9 +389,10 @@ function CriteriaBadge({ summary }: { summary: StageCriteriaSummary }) {
 export type GateMarker = { date: Date; stageName: string };
 
 /* ─── Desktop: horizontal timeline ─── */
-function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan }: {
+function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1 }: {
     nodes: ComputedNode[]; today: Date; todayPct: number; todayIsVisible: boolean; todayIsBefore: boolean; allDone: boolean;
     showHeading: boolean; gateMarkers: GateMarker[]; timelineStart: Date; totalSpan: number;
+    computedEndOfPhaseBeforeCohort1?: Date | null;
 }) {
     const n = nodes.length;
     const INSET = 4;
@@ -352,10 +421,12 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
     return (
         <div style={{ fontFamily: 'var(--font-body)' }}>
             {showHeading && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-gray-900)' }} role="heading" aria-level={2}>
-                        Release Timeline
-                    </div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
+                    <Tooltip label="Phase dates are back-calculated from release date using stage durations (business days), not from actual epic status." withArrow position="top">
+                        <div style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-gray-900)', cursor: 'help' }} role="heading" aria-level={2}>
+                            Release Timeline
+                        </div>
+                    </Tooltip>
                     <span style={{ fontSize: 11, color: 'var(--color-gray-500)', fontWeight: 500 }}>
                         Today: {formatShortDate(today)}
                     </span>
@@ -396,9 +467,11 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                     const isDashed = node.isMilestone;
                     const barLabel = isDashed ? milestoneSpanLabel(node.stage.name) : node.stage.name;
                     const hasBuffer = node.bufferDays > 0;
+                    // When Cohort 1 is pinned to release, the previous phase (e.g. Internal Readiness) segment end is the computed end, not Apr 16
+                    const segmentEndDate = (i + 1 === n - 2 && computedEndOfPhaseBeforeCohort1) ? computedEndOfPhaseBeforeCohort1 : nodes[i + 1].date;
                     const tooltipText = hasBuffer
-                        ? `${barLabel}: ${formatShortDate(node.date)} – ${formatShortDate(nodes[i + 1].date)} (${node.durationDays}–${node.durationDays + node.bufferDays}d)`
-                        : `${barLabel}: ${formatShortDate(node.date)} – ${formatShortDate(nodes[i + 1].date)} (${node.durationDays}d)`;
+                        ? `${barLabel}: ${formatShortDate(node.date)} – ${formatShortDate(segmentEndDate)} (${node.durationDays}–${node.durationDays + node.bufferDays}d)`
+                        : `${barLabel}: ${formatShortDate(node.date)} – ${formatShortDate(segmentEndDate)} (${node.durationDays}d)`;
                     const isPhase = !node.isMilestone;
 
                     return (
@@ -596,11 +669,24 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                 <span style={{ fontSize: 10, color: dateColor, fontWeight: 500, lineHeight: 1, whiteSpace: 'nowrap' }}>
                                     {formatShortDate(node.date)}
                                 </span>
-                                {daysFromToday(today, node.date) > 0 && (
-                                    <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1, whiteSpace: 'nowrap' }}>
-                                        in {daysFromToday(today, node.date)} day{daysFromToday(today, node.date) !== 1 ? 's' : ''}
-                                    </span>
-                                )}
+                                {(() => {
+                                    const days = daysFromToday(today, node.date);
+                                    if (days > 0) {
+                                        return (
+                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                                                in {days} day{days !== 1 ? 's' : ''}
+                                            </span>
+                                        );
+                                    }
+                                    if (days < 0) {
+                                        return (
+                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-gray-500)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                                                {-days} day{-days !== 1 ? 's' : ''} ago
+                                            </span>
+                                        );
+                                    }
+                                    return null;
+                                })()}
                             </div>
 
                             {/* Duration range below date (target–max when buffer, else just target) */}
@@ -742,11 +828,24 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                                         <span style={{ fontSize: 11, color: dateColor, fontWeight: 500, whiteSpace: 'nowrap' }}>
                                             {formatShortDate(node.date)}
                                         </span>
-                                        {daysFromToday(today, node.date) > 0 && (
-                                            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-copper)', whiteSpace: 'nowrap' }}>
-                                                in {daysFromToday(today, node.date)} day{daysFromToday(today, node.date) !== 1 ? 's' : ''}
-                                            </span>
-                                        )}
+                                        {(() => {
+                                            const days = daysFromToday(today, node.date);
+                                            if (days > 0) {
+                                                return (
+                                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-copper)', whiteSpace: 'nowrap' }}>
+                                                        in {days} day{days !== 1 ? 's' : ''}
+                                                    </span>
+                                                );
+                                            }
+                                            if (days < 0) {
+                                                return (
+                                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-gray-500)', whiteSpace: 'nowrap' }}>
+                                                        {-days} day{-days !== 1 ? 's' : ''} ago
+                                                    </span>
+                                                );
+                                            }
+                                            return null;
+                                        })()}
                                     </div>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
                                         {hasBar && (() => {
@@ -841,7 +940,7 @@ export function LaunchStagesChart({
         );
     }
 
-    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date, stageIdBridge);
+    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1 } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date, stageIdBridge);
 
     const gateMarkers: GateMarker[] = (() => {
         const stageNames = new Set(sortedStages.map(s => s.name.toLowerCase().trim()));
@@ -871,7 +970,7 @@ export function LaunchStagesChart({
 
     const timeline = isMobile
         ? <VerticalTimeline nodes={nodes} today={today} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} showHeading={showHeading} gateMarkers={gateMarkers} />
-        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} />;
+        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} computedEndOfPhaseBeforeCohort1={computedEndOfPhaseBeforeCohort1} />;
 
     if (noContainer) {
         return <Box className="min-w-0">{timeline}</Box>;
