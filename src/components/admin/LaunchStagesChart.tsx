@@ -45,6 +45,7 @@ interface StageCriteriaSummary {
     gateBlocked: number;
 }
 
+/** Maps "other scope" stage id (e.g. release_schedule) to chart scope stage id (e.g. ui_rollout) so criteria with legacy ids are counted on the correct node. */
 interface LaunchStagesChartProps {
     releaseDate?: string | Date | null;
     cohort2Date?: string | Date | null;
@@ -55,6 +56,7 @@ interface LaunchStagesChartProps {
     targetReleaseDate?: string | Date | null;
     uiLevel?: number;
     criteriaItems?: CriterionItem[];
+    stageIdBridge?: Map<number, number> | null;
 }
 
 function toDate(d: string | Date | null | undefined): Date | null {
@@ -162,14 +164,24 @@ interface ComputedNode {
     criteriaSummary: StageCriteriaSummary | null;
 }
 
-function buildCriteriaSummaries(stages: LaunchStage[], criteriaItems?: CriterionItem[]): Map<number, StageCriteriaSummary> {
+function buildCriteriaSummaries(
+    stages: LaunchStage[],
+    criteriaItems?: CriterionItem[],
+    stageIdBridge?: Map<number, number> | null
+): Map<number, StageCriteriaSummary> {
     const map = new Map<number, StageCriteriaSummary>();
     if (!criteriaItems || criteriaItems.length === 0) return map;
+    const chartStageIds = new Set(stages.map(s => s.id));
 
     for (const item of criteriaItems) {
         if (item.notRequired) continue;
-        const stageId = item.criterion.rating_timing;
-        if (stageId == null) continue;
+        const rawId = item.criterion.rating_timing;
+        if (rawId == null) continue;
+
+        const stageId = chartStageIds.has(rawId)
+            ? rawId
+            : (stageIdBridge?.get(rawId) ?? null);
+        if (stageId == null || !chartStageIds.has(stageId)) continue;
 
         if (!map.has(stageId)) {
             map.set(stageId, { total: 0, go: 0, conditional: 0, noGo: 0, notSet: 0, gateTotal: 0, gateBlocked: 0 });
@@ -194,7 +206,8 @@ function useTimelineData(
     stages: LaunchStage[],
     uiLevel: number | undefined,
     criteriaItems?: CriterionItem[],
-    cohort2Date?: string | Date | null
+    cohort2Date?: string | Date | null,
+    stageIdBridge?: Map<number, number> | null
 ) {
     const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
     const anchorDate = toDate(releaseDate);
@@ -228,7 +241,7 @@ function useTimelineData(
         return 'upcoming';
     };
 
-    const summaries = buildCriteriaSummaries(stages, criteriaItems);
+    const summaries = buildCriteriaSummaries(stages, criteriaItems, stageIdBridge);
 
     let nodes: ComputedNode[] = rawNodes.map((node, i) => ({
         ...node,
@@ -810,6 +823,7 @@ export function LaunchStagesChart({
     targetReleaseDate,
     uiLevel,
     criteriaItems,
+    stageIdBridge,
 }: LaunchStagesChartProps) {
     const isMobile = useMediaQuery("(max-width: 768px)");
     const releaseDate = releaseDateProp ?? targetReleaseDate;
@@ -827,7 +841,7 @@ export function LaunchStagesChart({
         );
     }
 
-    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date);
+    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date, stageIdBridge);
 
     const gateMarkers: GateMarker[] = (() => {
         const stageNames = new Set(sortedStages.map(s => s.name.toLowerCase().trim()));

@@ -958,6 +958,22 @@ export default function EpicDetailPage() {
                 const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing, item.criterion?.category);
                 const finalDueDate = calculatedDueDate || item.condition_due_date || null;
 
+                // Resolve "due by" stage name (same resolution as due date: rating_timing + bridge + category fallback)
+                let resolvedStageId: number | null = null;
+                const ratingTimingId = item.criterion?.rating_timing;
+                const catStageId = item.criterion?.category ? categoryStageMap.get(item.criterion.category.toLowerCase().trim()) : undefined;
+                if (ratingTimingId) {
+                    if (computedStageEndDates.has(ratingTimingId)) resolvedStageId = ratingTimingId;
+                    else {
+                        const bridged = ratingTimingBridge.get(ratingTimingId);
+                        if (bridged && computedStageEndDates.has(bridged)) resolvedStageId = bridged;
+                    }
+                }
+                if (!resolvedStageId && catStageId) resolvedStageId = catStageId;
+                const dueByStageName = resolvedStageId != null
+                    ? (fetchedLaunchStages.find((s: any) => s.id === resolvedStageId) as { name?: string } | undefined)?.name ?? null
+                    : null;
+
                 // Get comments and attachments data for this item
                 const commentsInfo = commentsData[item.id] || { count: 0 };
                 const attachmentCount = attachmentsData[item.id] || 0;
@@ -968,6 +984,7 @@ export default function EpicDetailPage() {
                     approverInfo,
                     notRequired: item.notRequired === true,
                     condition_due_date: finalDueDate,
+                    due_by_stage_name: dueByStageName,
                     commentCount: commentsInfo.count,
                     lastComment: commentsInfo.lastComment,
                     attachmentCount,
@@ -1859,6 +1876,7 @@ export default function EpicDetailPage() {
                                         noContainer={false}
                                         uiLevel={isUiFrameworkEpic && uiLevel != null ? uiLevel : undefined}
                                         criteriaItems={matrix}
+                                        stageIdBridge={stageIdBridge}
                                     />
                                 </div>
                             )}
