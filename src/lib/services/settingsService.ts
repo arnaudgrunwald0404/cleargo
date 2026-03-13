@@ -340,15 +340,26 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
   return res.json().catch(() => ({}));
 }
 
-export async function getLaunchStages() {
-  const res = await fetchWithRateLimit("/api/launch-stages", {
+export type LaunchStagesScope = 'release_schedule' | 'ui_rollout';
+
+export async function getLaunchStages(scope?: LaunchStagesScope) {
+  const url = scope ? `/api/launch-stages?scope=${encodeURIComponent(scope)}` : "/api/launch-stages";
+  const res = await fetchWithRateLimit(url, {
     maxRetries: 1,
   });
   if (!res.ok) throw new Error("Failed to fetch launch stages");
   return res.json();
 }
 
-export async function addLaunchStage(payload: { name: string; sort_order: number; duration_days: number | null; details: string | null }) {
+export async function addLaunchStage(payload: {
+  name: string;
+  sort_order: number;
+  duration_days: number | null;
+  details: string | null;
+  scope?: LaunchStagesScope;
+  level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+  is_gate?: boolean;
+}) {
   const res = await fetch("/api/launch-stages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -358,7 +369,16 @@ export async function addLaunchStage(payload: { name: string; sort_order: number
   return res.json();
 }
 
-export async function updateLaunchStage(payload: { id: number; name?: string; sort_order?: number; duration_days?: number | null; details?: string | null }) {
+export async function updateLaunchStage(payload: {
+  id: number;
+  name?: string;
+  sort_order?: number;
+  duration_days?: number | null;
+  details?: string | null;
+  scope?: LaunchStagesScope;
+  level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+  is_gate?: boolean;
+}) {
   const res = await fetch("/api/launch-stages", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

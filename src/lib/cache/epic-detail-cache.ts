@@ -72,6 +72,22 @@ class EpicDetailCache {
         this.set('launch_stages', stages);
     }
 
+    getLaunchStagesReleaseSchedule(): any[] | null {
+        return this.get('launch_stages_release_schedule', this.TTL_LAUNCH_STAGES);
+    }
+
+    setLaunchStagesReleaseSchedule(stages: any[]): void {
+        this.set('launch_stages_release_schedule', stages);
+    }
+
+    getLaunchStagesUiRollout(): any[] | null {
+        return this.get('launch_stages_ui_rollout', this.TTL_LAUNCH_STAGES);
+    }
+
+    setLaunchStagesUiRollout(stages: any[]): void {
+        this.set('launch_stages_ui_rollout', stages);
+    }
+
     getReleaseSchedule(): any[] | null {
         return this.get('release_schedule', this.TTL_RELEASE_SCHEDULE);
     }

@@ -349,63 +349,84 @@ async function resolveDecisionOwnersForCriteria(
     return ownerMap;
 }
 
+/** Resolve effective duration for a launch stage (level_durations when uiLevel set, else duration_days). Uses target (min_days) so timeline and criterion due dates stay aligned. */
+function getEffectiveStageDuration(
+    stage: { duration_days?: number | null; level_durations?: Record<string, { min_days: number; max_days: number }> | null },
+    uiLevel: number | null | undefined
+): number | null {
+    if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
+        const d = stage.level_durations[String(uiLevel)];
+        if (d && typeof d.min_days === 'number') {
+            return d.min_days;
+        }
+    }
+    return stage.duration_days ?? null;
+}
+
 /**
- * Calculate due date based on target launch date and rating timing (launch stage)
+ * Calculate due date based on target launch date and rating timing (launch stage).
+ * When uiLevel is provided (1, 2, or 3), stages with level_durations use that level's target (min_days) for duration.
  */
 export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
     ratingTimingId: number | null,
-    client: SupabaseClient
+    client: SupabaseClient,
+    options?: { uiLevel?: number }
 ): Promise<string | null> {
     if (!targetLaunchDate || !ratingTimingId) {
         return null;
     }
 
-    // Fetch all launch stages
-    const { data: launchStages, error: stagesError } = await client
+    const uiLevel = options?.uiLevel ?? null;
+
+    const { data: allStages, error: stagesError } = await client
         .from('launch_stages')
-        .select('id, sort_order, duration_days')
+        .select('id, name, sort_order, duration_days, level_durations, scope')
         .order('sort_order', { ascending: true });
 
-    if (stagesError || !launchStages || launchStages.length === 0) {
+    if (stagesError || !allStages || allStages.length === 0) {
         console.warn('Failed to fetch launch stages for due date calculation:', stagesError);
         return null;
     }
 
-    // Find the target stage
-    const targetStage = launchStages.find((s) => s.id === ratingTimingId);
+    const targetStage = allStages.find((s) => s.id === ratingTimingId) as typeof allStages[0] & { scope?: string };
     if (!targetStage) {
         return null;
     }
 
-    // Find the last pre-launch stage (Internal Readiness, sort_order 3)
-    // This is the stage before launch, so we sum durations up to this stage
-    const lastPreLaunchStage = launchStages.find((s) => s.sort_order === 3);
-    if (!lastPreLaunchStage) {
-        return null;
-    }
+    const scope = (targetStage as { scope?: string }).scope ?? 'release_schedule';
+    const launchStages = allStages.filter((s) => (s as { scope?: string }).scope === scope);
 
-    // Sum durations of all stages before the target stage
-    // Only include pre-launch stages (up to Internal Readiness)
-    const stagesBeforeTarget = launchStages.filter(
-        (s) =>
-            s.sort_order < targetStage.sort_order &&
-            s.sort_order <= lastPreLaunchStage.sort_order &&
-            s.duration_days !== null
+    const cohort1Stage = launchStages.find((s) =>
+        String((s as { name?: string }).name || '').toLowerCase().includes('cohort 1')
     );
+    const lastPreLaunchSortOrder = cohort1Stage
+        ? (cohort1Stage.sort_order as number) - 1
+        : 3;
 
-    const totalDaysBefore = stagesBeforeTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
+    const stagesBeforeTarget = launchStages.filter((s) => {
+        const dur = getEffectiveStageDuration(s, uiLevel);
+        return (
+            s.sort_order < targetStage.sort_order &&
+            s.sort_order <= lastPreLaunchSortOrder &&
+            dur !== null
+        );
+    });
+
+    const totalDaysBefore = stagesBeforeTarget.reduce(
+        (sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0),
+        0
+    );
 
     if (totalDaysBefore === 0) {
         return null;
     }
 
-    // Calculate due date: subtract days before launch from target date
     const targetDate = new Date(targetLaunchDate);
     const dueDate = new Date(targetDate);
     dueDate.setDate(dueDate.getDate() - totalDaysBefore);
 
-    return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
+    return dueDate.toISOString().split('T')[0];
 }
 
 export async function instantiateCriteriaForEpic(
@@ -424,10 +445,10 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Epic tier is required (epicId: ${epicId})`);
     }
 
-    // Get epic info (for target_launch_date, pod, and cleargo_candidate for UI Framework criteria)
+    // Get epic info (for target_launch_date, pod, owner, and cleargo_candidate for UI Framework criteria)
     const { data: epic, error: epicError } = await sb
         .from('epic')
-        .select('id, target_launch_date, pod, aha_fields')
+        .select('id, target_launch_date, pod, owner_email, aha_fields')
         .eq('id', epicId)
         .single();
 
@@ -501,12 +522,33 @@ export async function instantiateCriteriaForEpic(
         sb
     );
 
-    // Calculate due dates for new criteria
+    // Default accountable: epic owner (or Aha assigned user) when criterion has no decision_owner_email
+    const epicAha = epic?.aha_fields as { standard_fields?: { assigned_to_user?: { email?: string } } } | undefined;
+    const epicOwnerEmail = epic?.owner_email || epicAha?.standard_fields?.assigned_to_user?.email || null;
+    let defaultOwnerId: string | null = null;
+    if (epicOwnerEmail && epicOwnerEmail.includes('@')) {
+        const { data: defaultUser } = await sb
+            .from('app_user')
+            .select('id')
+            .eq('email', epicOwnerEmail)
+            .single();
+        if (defaultUser?.id) defaultOwnerId = defaultUser.id;
+    }
+
+    const ahaFields = epic?.aha_fields as { custom_fields?: { uiux_impact?: { name?: string } | string } } | undefined;
+    const uiuxImpact = ahaFields?.custom_fields?.uiux_impact;
+    const uiuxImpactStr = typeof uiuxImpact === 'object' && uiuxImpact && 'name' in uiuxImpact
+        ? String((uiuxImpact as { name?: string }).name)
+        : (uiuxImpact != null ? String(uiuxImpact) : '');
+    const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
+    const uiLevel = levelMatch ? parseInt(levelMatch[1], 10) : undefined;
+
     const dueDatePromises = newCriteria.map(async (c) => {
         const dueDate = await calculateDueDateForCriterion(
             epic.target_launch_date,
             c.rating_timing,
-            sb
+            sb,
+            isUiFrameworkEpic ? { uiLevel } : undefined
         );
         return { criterionId: c.id, dueDate };
     });
@@ -559,8 +601,8 @@ export async function instantiateCriteriaForEpic(
             record.ai_prune_reason = aiSuggestionMap.get(c.id);
         }
 
-        // Set decision_owner_id if resolved
-        const decisionOwnerId = decisionOwnerMap.get(c.id);
+        // Set decision_owner_id: resolved from template/pod, or default to epic owner
+        const decisionOwnerId = decisionOwnerMap.get(c.id) ?? defaultOwnerId;
         if (decisionOwnerId) {
             record.decision_owner_id = decisionOwnerId;
         }
@@ -615,10 +657,9 @@ export async function recalculateDueDatesForEpic(
 ): Promise<void> {
     const sb = client ?? supabase;
 
-    // Get epic info (for target_launch_date)
     const { data: epic, error: epicError } = await sb
         .from('epic')
-        .select('id, target_launch_date')
+        .select('id, target_launch_date, aha_fields')
         .eq('id', epicId)
         .single();
 
@@ -630,6 +671,17 @@ export async function recalculateDueDatesForEpic(
     if (!epic) {
         throw new Error(`Epic ${epicId} not found`);
     }
+
+    const cleargoCandidateRaw = getClearGOCandidateRawValue({ aha_fields: epic?.aha_fields });
+    const cleargoCandidateValue = typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : (cleargoCandidateRaw === true ? 'Yes' : undefined);
+    const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
+    const ahaFields = epic?.aha_fields as { custom_fields?: { uiux_impact?: { name?: string } | string } } | undefined;
+    const uiuxImpact = ahaFields?.custom_fields?.uiux_impact;
+    const uiuxImpactStr = typeof uiuxImpact === 'object' && uiuxImpact && 'name' in uiuxImpact
+        ? String((uiuxImpact as { name?: string }).name)
+        : (uiuxImpact != null ? String(uiuxImpact) : '');
+    const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
+    const uiLevel = levelMatch ? parseInt(levelMatch[1], 10) : undefined;
 
     // Get all criteria statuses for this epic with their criterion info (rating_timing)
     const { data: criteriaStatuses, error: criteriaError } = await sb
@@ -663,9 +715,10 @@ export async function recalculateDueDatesForEpic(
         const dueDate = await calculateDueDateForCriterion(
             epic.target_launch_date,
             ratingTimingId,
-            sb
+            sb,
+            isUiFrameworkEpic ? { uiLevel } : undefined
         );
-        
+
         updates.push({
             id: status.id,
             condition_due_date: dueDate,

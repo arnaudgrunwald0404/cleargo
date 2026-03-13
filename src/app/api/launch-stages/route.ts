@@ -6,6 +6,8 @@ import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
+const VALID_SCOPES = ['release_schedule', 'ui_rollout'] as const;
+
 async function getHandler(req: NextRequest) {
     try {
         const supabase = createClient();
@@ -15,10 +17,22 @@ async function getHandler(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { data, error } = await supabase
+        const { searchParams } = new URL(req.url);
+        const scopeParam = searchParams.get('scope');
+        const scope = scopeParam && VALID_SCOPES.includes(scopeParam as typeof VALID_SCOPES[number])
+            ? scopeParam
+            : null;
+
+        let query = supabase
             .from('launch_stages')
             .select('*')
             .order('sort_order', { ascending: true });
+
+        if (scope) {
+            query = query.eq('scope', scope);
+        }
+
+        const { data, error } = await query;
 
         if (error) {
             console.error('Error fetching launch stages:', error);
@@ -84,7 +98,7 @@ async function postHandler(req: NextRequest) {
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const body = await req.json();
-        const { name, sort_order, duration_days, details } = body;
+        const { name, sort_order, duration_days, details, scope: scopeBody, level_durations, is_gate } = body;
 
         if (!name || sort_order === undefined) {
             return NextResponse.json(
@@ -93,13 +107,18 @@ async function postHandler(req: NextRequest) {
             );
         }
 
+        const scope = scopeBody && VALID_SCOPES.includes(scopeBody) ? scopeBody : 'release_schedule';
+
         const { data, error } = await supabase
             .from('launch_stages')
             .insert({
                 name,
                 sort_order,
-                duration_days: duration_days || null,
-                details: details || null,
+                duration_days: duration_days ?? null,
+                details: details ?? null,
+                scope,
+                level_durations: level_durations ?? null,
+                is_gate: is_gate === true,
                 updated_at: new Date().toISOString(),
             })
             .select()
@@ -153,7 +172,7 @@ async function patchHandler(req: NextRequest) {
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         body = await req.json();
-        const { id, name, sort_order, duration_days, details } = body;
+        const { id, name, sort_order, duration_days, details, scope: scopeBody, level_durations, is_gate } = body;
 
         if (!id) {
             return NextResponse.json(
@@ -168,8 +187,11 @@ async function patchHandler(req: NextRequest) {
 
         if (name !== undefined) updates.name = name;
         if (sort_order !== undefined) updates.sort_order = sort_order;
-        if (duration_days !== undefined) updates.duration_days = duration_days || null;
-        if (details !== undefined) updates.details = details || null;
+        if (duration_days !== undefined) updates.duration_days = duration_days ?? null;
+        if (details !== undefined) updates.details = details ?? null;
+        if (scopeBody !== undefined && VALID_SCOPES.includes(scopeBody)) updates.scope = scopeBody;
+        if (level_durations !== undefined) updates.level_durations = level_durations;
+        if (is_gate !== undefined) updates.is_gate = is_gate === true;
 
         const { data, error } = await supabase
             .from('launch_stages')
@@ -248,8 +270,11 @@ async function putHandler(req: NextRequest) {
             id: stage.id,
             name: stage.name,
             sort_order: stage.sort_order,
-            duration_days: stage.duration_days,
-            details: stage.details,
+            duration_days: stage.duration_days ?? null,
+            details: stage.details ?? null,
+            scope: stage.scope && VALID_SCOPES.includes(stage.scope) ? stage.scope : 'release_schedule',
+            level_durations: stage.level_durations ?? null,
+            is_gate: stage.is_gate === true,
             updated_at: new Date().toISOString(),
         }));
 

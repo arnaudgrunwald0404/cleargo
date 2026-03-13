@@ -119,23 +119,29 @@ export async function POST(req: NextRequest) {
             rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
         }
 
-        // Fetch launch stages to map names to IDs
-        const { data: launchStages, error: stagesError } = await supabase
-            .from('launch_stages')
-            .select('id, name');
-        
-        if (stagesError) {
-            console.error('[Import] Error fetching launch stages:', stagesError);
-            return NextResponse.json({ error: "Failed to fetch launch stages", details: stagesError.message }, { status: 500 });
+        // Fetch launch stages for both scopes so "Ready By" resolves correctly per criterion type
+        const [
+            { data: launchStagesRelease, error: stagesErrorRelease },
+            { data: launchStagesUiRollout, error: stagesErrorUiRollout }
+        ] = await Promise.all([
+            supabase.from('launch_stages').select('id, name').eq('scope', 'release_schedule'),
+            supabase.from('launch_stages').select('id, name').eq('scope', 'ui_rollout')
+        ]);
+
+        if (stagesErrorRelease || stagesErrorUiRollout) {
+            console.error('[Import] Error fetching launch stages:', stagesErrorRelease || stagesErrorUiRollout);
+            return NextResponse.json({ error: "Failed to fetch launch stages", details: (stagesErrorRelease || stagesErrorUiRollout)?.message }, { status: 500 });
         }
 
-        // Create a map from launch stage name to ID
-        const launchStageMap = new Map<string, number>();
-        (launchStages || []).forEach((stage: { id: number; name: string }) => {
-            launchStageMap.set(stage.name.toLowerCase().trim(), stage.id);
+        const launchStageMapRelease = new Map<string, number>();
+        (launchStagesRelease || []).forEach((stage: { id: number; name: string }) => {
+            launchStageMapRelease.set(stage.name.toLowerCase().trim(), stage.id);
         });
-        
-        console.log(`[Import] Loaded ${launchStageMap.size} launch stages for mapping`);
+        const launchStageMapUiRollout = new Map<string, number>();
+        (launchStagesUiRollout || []).forEach((stage: { id: number; name: string }) => {
+            launchStageMapUiRollout.set(stage.name.toLowerCase().trim(), stage.id);
+        });
+        console.log(`[Import] Loaded ${launchStageMapRelease.size} release_schedule stages and ${launchStageMapUiRollout.size} ui_rollout stages for mapping`);
 
         const criteria: CreateCriterionInput[] = [];
         const errors: Array<{ row: number; label: string; error: string }> = [];
@@ -248,16 +254,16 @@ export async function POST(req: NextRequest) {
             // If no category has been set yet, use "OTHER" as fallback
             const category = (currentCategory || "OTHER") as CriterionCategory;
 
-            // Column D (index 3): Ready By - Rating timing (look up launch stage ID by name)
+            // Column D (index 3): Ready By - Rating timing (look up launch stage ID by name in correct scope)
             let ratingTimingId: number | null = null;
             if (colD) {
                 const stageNameLower = colD.toLowerCase().trim();
-                const stageId = launchStageMap.get(stageNameLower);
+                const stageMap = uiFrameworkOnly ? launchStageMapUiRollout : launchStageMapRelease;
+                const stageId = stageMap.get(stageNameLower);
                 if (stageId) {
                     ratingTimingId = stageId;
                 } else {
-                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in launch_stages table`);
-                    // Still continue, but rating_timing will be null
+                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in ${uiFrameworkOnly ? 'ui_rollout' : 'release_schedule'} stages`);
                 }
             }
             

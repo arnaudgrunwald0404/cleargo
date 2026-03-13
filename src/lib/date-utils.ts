@@ -29,14 +29,36 @@ export function formatDateOnlyForDisplay(
 }
 
 /**
+ * Format a Date as YYYY-MM-DD in local time (no UTC shift).
+ * Use when computing stage end dates so they match the timeline and display.
+ */
+export function dateToLocalDateString(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
  * Normalize an ISO or date string to YYYY-MM-DD (calendar date, no UTC shift).
  * Use when saving to DB so we never store a value that displays as the wrong day.
  */
 export function toDateOnlyString(isoDate: string | null | undefined): string | null {
   const date = parseDateOnlyLocal(isoDate);
   if (!date) return null;
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
+  return dateToLocalDateString(date);
+}
+
+/**
+ * Return the same calendar day in the next month (e.g. Apr 16 -> May 16).
+ * Used as fallback for Cohort 2 when release_schedule has no next release.
+ */
+export function addCalendarMonth(isoDate: string | null | undefined): string | null {
+  const date = parseDateOnlyLocal(isoDate);
+  if (!date) return null;
+  const next = new Date(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  const y = next.getFullYear();
+  const m = String(next.getMonth() + 1).padStart(2, '0');
+  const d = String(next.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }

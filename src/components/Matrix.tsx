@@ -587,16 +587,16 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             );
             
             if (hasSignoff) {
-                // Show signoff items, hide others
+                // Show signoff items and all Gates
                 categoryItems.forEach(item => {
-                    if (item.criterion.label?.toLowerCase().includes('signoff')) {
+                    if (item.criterion.label?.toLowerCase().includes('signoff') || item.criterion.gate) {
                         shown.add(item.id);
                     }
                 });
             } else {
-                // Show required items, hide non-required
+                // Show required items and all Gate criteria
                 categoryItems.forEach(item => {
-                    if (!item.notRequired) {
+                    if (!item.notRequired || item.criterion.gate) {
                         shown.add(item.id);
                     }
                 });
@@ -625,11 +625,11 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             );
             if (hasSignoff) {
                 categoryItems.forEach(item => {
-                    if (item.criterion.label?.toLowerCase().includes('signoff')) nextShown.add(item.id);
+                    if (item.criterion.label?.toLowerCase().includes('signoff') || item.criterion.gate) nextShown.add(item.id);
                 });
             } else {
                 categoryItems.forEach(item => {
-                    if (!item.notRequired) nextShown.add(item.id);
+                    if (!item.notRequired || item.criterion.gate) nextShown.add(item.id);
                 });
             }
         });
@@ -1400,17 +1400,17 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                 let secondaryItems: MatrixItem[] = [];
                 
                 if (hasSignoff) {
-                    // Show signoff items, hide others
-                    primaryItems = allItems.filter(item => 
-                        item.criterion.label?.toLowerCase().includes('signoff')
+                    // Show signoff items, hide others (but Gates stay primary)
+                    primaryItems = allItems.filter(item =>
+                        item.criterion.label?.toLowerCase().includes('signoff') || !!item.criterion.gate
                     );
-                    secondaryItems = allItems.filter(item => 
-                        !item.criterion.label?.toLowerCase().includes('signoff')
+                    secondaryItems = allItems.filter(item =>
+                        !item.criterion.label?.toLowerCase().includes('signoff') && !item.criterion.gate
                     );
                 } else {
-                    // Show required items, hide non-required
-                    primaryItems = allItems.filter(item => !item.notRequired);
-                    secondaryItems = allItems.filter(item => item.notRequired);
+                    // Show required items and all Gate criteria; hide non-required non-Gate
+                    primaryItems = allItems.filter(item => !item.notRequired || !!item.criterion.gate);
+                    secondaryItems = allItems.filter(item => item.notRequired && !item.criterion.gate);
                 }
                 
                 // Filter items based on visibility
@@ -1431,7 +1431,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     <IconChevronDown size={20} />
                                 )}
                             </span>
-                            <h3 className="text-sm font-semibold text-gray-900">{cat}</h3>
+                            <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={3}>{cat}</span>
                         </div>
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">

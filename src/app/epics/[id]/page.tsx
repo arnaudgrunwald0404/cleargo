@@ -21,7 +21,7 @@ import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
-import { formatDateOnlyForDisplay } from "@/lib/date-utils";
+import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString } from "@/lib/date-utils";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 // Lazy load tab components for code splitting
@@ -47,11 +47,14 @@ export default function EpicDetailPage() {
     const [updatingStatus, setUpdatingStatus] = useState(false);
     const [pmOwner, setPmOwner] = useState<{ name?: string; email?: string; avatar_url?: string } | null>(null);
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
+    const [cohort2Date, setCohort2Date] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
-    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
-    const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
-    const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
+    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [uiLevel, setUiLevel] = useState<number | null>(null);
+    const [isUiFrameworkEpic, setIsUiFrameworkEpic] = useState(false);
+    const [stageEndDates, setStageEndDates] = useState<Map<number, string>>(new Map());
+    const [stageIdBridge, setStageIdBridge] = useState<Map<number, number>>(new Map());
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
     const [filterMyTasks, setFilterMyTasks] = useState(false);
@@ -179,7 +182,7 @@ export default function EpicDetailPage() {
             }
 
             // Priority 2: Database queries (not rate limited) - can run in parallel with API calls
-            const [matrixQuery, launchStagesQuery] = await Promise.all([
+            const [matrixQuery, launchStagesReleaseQuery, launchStagesUiRolloutQuery] = await Promise.all([
                 supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -202,7 +205,13 @@ export default function EpicDetailPage() {
                     .eq('epic_id', id),
                 supabase
                     .from('launch_stages')
-                    .select('id, name, sort_order, duration_days')
+                    .select('id, name, sort_order, duration_days, scope, level_durations, is_gate, stage_type')
+                    .eq('scope', 'release_schedule')
+                    .order('sort_order', { ascending: true }),
+                supabase
+                    .from('launch_stages')
+                    .select('id, name, sort_order, duration_days, scope, level_durations, is_gate, stage_type')
+                    .eq('scope', 'ui_rollout')
                     .order('sort_order', { ascending: true })
             ]);
 
@@ -310,69 +319,50 @@ export default function EpicDetailPage() {
                 epicDetailCache.setCriteria(allActiveCriteria);
             }
 
-            // Process launch stages - check cache first
-            let cachedStages = epicDetailCache.getLaunchStages();
-            let stagesData: any[] | null = null;
-            let stagesError: any = null;
-
-            if (cachedStages) {
-                stagesData = cachedStages;
-            } else {
-                const queryResult = launchStagesQuery;
-                stagesData = queryResult.data;
-                stagesError = queryResult.error;
-                if (!stagesError && stagesData) {
-                    epicDetailCache.setLaunchStages(stagesData);
-                }
+            // Process launch stages - prefer fresh query over cache so DB changes (e.g. is_gate after migrations) apply immediately
+            const releaseStagesCached = epicDetailCache.getLaunchStagesReleaseSchedule();
+            const uiRolloutStagesCached = epicDetailCache.getLaunchStagesUiRollout();
+            let releaseStagesData: any[] = launchStagesReleaseQuery.data ?? releaseStagesCached ?? [];
+            let uiRolloutStagesData: any[] = launchStagesUiRolloutQuery.data ?? uiRolloutStagesCached ?? [];
+            if (launchStagesReleaseQuery.data) {
+                epicDetailCache.setLaunchStagesReleaseSchedule(launchStagesReleaseQuery.data);
+            }
+            if (launchStagesUiRolloutQuery.data) {
+                epicDetailCache.setLaunchStagesUiRollout(launchStagesUiRolloutQuery.data);
             }
 
-            let fetchedLaunchStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null }> = [];
-            // Pre-calculate days-before-launch for each stage (optimization: calculate once, reuse many times)
-            const calculatedDaysBeforeLaunch = new Map<number, number>();
-            const calculatedDaysAfterLaunch = new Map<number, number>();
+            const cleargoCandidateRaw = (data as any)?.aha_fields?.custom_fields?.cleargo_candidate;
+            const cleargoCandidateValue = typeof cleargoCandidateRaw === 'object' && cleargoCandidateRaw?.name
+                ? cleargoCandidateRaw.name
+                : (typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : undefined);
+            const epicIsUiFramework = cleargoCandidateValue === 'Yes - UI Framework';
+            setIsUiFrameworkEpic(epicIsUiFramework);
 
-            if (!stagesError && stagesData) {
-                fetchedLaunchStages = stagesData;
-                setLaunchStages(stagesData);
+            const uiuxImpact = (data as any)?.aha_fields?.custom_fields?.uiux_impact;
+            const uiuxImpactStr = typeof uiuxImpact === 'object' && uiuxImpact?.name != null
+                ? String(uiuxImpact.name)
+                : (uiuxImpact != null ? String(uiuxImpact) : '');
+            const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
+            const parsedUiLevel = levelMatch ? parseInt(levelMatch[1], 10) : null;
+            setUiLevel(parsedUiLevel);
 
-                // Find the last pre-launch stage (Internal Readiness, sort_order 3)
-                const lastPreLaunchStage = fetchedLaunchStages
-                    .filter(stage => stage.duration_days !== null && stage.sort_order <= 3)
-                    .sort((a, b) => b.sort_order - a.sort_order)[0];
+            const fetchedLaunchStages = epicIsUiFramework ? uiRolloutStagesData : releaseStagesData;
+            setLaunchStages(fetchedLaunchStages);
 
-                const lastPreLaunchSortOrder = lastPreLaunchStage?.sort_order ?? 3;
-
-                // Pre-calculate days-before-launch for each pre-launch stage
-                fetchedLaunchStages.forEach(stage => {
-                    if (stage.sort_order <= lastPreLaunchSortOrder && stage.duration_days !== null) {
-                        const targetStageDuration = stage.duration_days || 0;
-                        const stagesAfterTarget = fetchedLaunchStages.filter(s =>
-                            s.sort_order > stage.sort_order &&
-                            s.sort_order <= lastPreLaunchSortOrder &&
-                            s.duration_days !== null
-                        );
-                        const totalDaysBefore = targetStageDuration + stagesAfterTarget.reduce((sum, s) =>
-                            sum + (s.duration_days || 0), 0
-                        );
-                        calculatedDaysBeforeLaunch.set(stage.id, totalDaysBefore);
-                    } else if (stage.sort_order > lastPreLaunchSortOrder && stage.duration_days !== null) {
-                        // Pre-calculate days-after-launch for post-launch stages
-                        const stagesFromPreLaunchToTarget = fetchedLaunchStages.filter(s =>
-                            s.sort_order > lastPreLaunchSortOrder &&
-                            s.sort_order <= stage.sort_order &&
-                            s.duration_days !== null
-                        );
-                        const totalDaysAfter = stagesFromPreLaunchToTarget.reduce((sum, s) =>
-                            sum + (s.duration_days || 0), 0
-                        );
-                        calculatedDaysAfterLaunch.set(stage.id, totalDaysAfter);
-                    }
+            // Build a cross-scope name bridge: criteria rating_timing may reference
+            // release schedule stage IDs, but UI rollout epics use different stage IDs.
+            // Map from "other scope" stage ID → "active scope" stage ID by matching names.
+            const ratingTimingBridge = new Map<number, number>();
+            if (epicIsUiFramework && releaseStagesData.length > 0 && uiRolloutStagesData.length > 0) {
+                const normalize = (n: string) => n.toLowerCase().replace(/\blive\b/g, '').replace(/\bga\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+                const uiByName = new Map(uiRolloutStagesData.map((s: any) => [normalize(s.name), s.id]));
+                releaseStagesData.forEach((rs: any) => {
+                    const match = uiByName.get(normalize(rs.name));
+                    if (match != null && match !== rs.id) ratingTimingBridge.set(rs.id, match);
                 });
-
-                // Store pre-calculated maps in state for reuse
-                setStageDaysBeforeLaunch(calculatedDaysBeforeLaunch);
-                setStageDaysAfterLaunch(calculatedDaysAfterLaunch);
             }
+
+            setStageIdBridge(ratingTimingBridge);
 
             // Fetch release schedule if needed (after we have epic data)
             const ahaFields = (data as any).aha_fields || {};
@@ -402,6 +392,7 @@ export default function EpicDetailPage() {
             const extractedReleaseName = getReleaseName();
             setReleaseName(extractedReleaseName);
             let fetchedReleaseDate: string | null = null;
+            let cohort2DateFetched: string | null = null;
             if (extractedReleaseName) {
                 const { data: releaseSchedule, error: releaseError } = await supabase
                     .from('release_schedule')
@@ -467,6 +458,19 @@ export default function EpicDetailPage() {
                 }
             } else {
                 setReleaseDate(null);
+                setCohort2Date(null);
+            }
+
+            // Cohort 2 / GA = next release after epic's release (for UI Framework timeline)
+            if (fetchedReleaseDate && epicIsUiFramework) {
+                const dateOnly = toDateOnlyString(fetchedReleaseDate) ?? fetchedReleaseDate.split('T')[0] ?? fetchedReleaseDate;
+                const { data: nextDate } = await supabase.rpc('get_next_release_date', {
+                    after_date: dateOnly,
+                });
+                cohort2DateFetched = nextDate ?? addCalendarMonth(fetchedReleaseDate);
+                setCohort2Date(cohort2DateFetched);
+            } else {
+                setCohort2Date(null);
             }
 
             // NON-BLOCKING: Instantiate criteria in parallel (don't wait for it)
@@ -525,20 +529,14 @@ export default function EpicDetailPage() {
                 (app === 'TIER_3_ONLY' && tier === 'TIER_3');
 
             // UI Framework only: criteria with ui_framework_only apply only when epic has ClearGO Candidate = "Yes - UI Framework"
-            const cleargoCandidateRaw = (data as any)?.aha_fields?.custom_fields?.cleargo_candidate;
-            const cleargoCandidateValue = typeof cleargoCandidateRaw === 'object' && cleargoCandidateRaw?.name
-                ? cleargoCandidateRaw.name
-                : (typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : undefined);
-            const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
-
             const criteriaApplicableToEpic = (allActiveCriteria || []).filter((c: any) =>
-                !c.ui_framework_only || isUiFrameworkEpic
+                !c.ui_framework_only || epicIsUiFramework
             );
 
             // Merge: existing statuses (excluding UI Framework-only rows when epic is not UI Framework) + synthetic rows
             const deduplicatedApplicable = deduplicated.filter((row: any) => {
                 const c = row.criterion;
-                return !c?.ui_framework_only || isUiFrameworkEpic;
+                return !c?.ui_framework_only || epicIsUiFramework;
             });
             const merged: any[] = [...deduplicatedApplicable];
             criteriaApplicableToEpic.forEach((c: any) => {
@@ -575,6 +573,7 @@ export default function EpicDetailPage() {
             // Resolve approver emails using pod mapping if needed
             const podRaw = (data as any).pod || ahaFields.custom_fields?.dev_backlog_pod || null;
             const pod = podRaw ? String(podRaw).trim() : null;
+            const epicOwnerEmail = (data as any).owner_email || ahaFields?.standard_fields?.assigned_to_user?.email || null;
 
             // Debug logging
             if (pod) {
@@ -629,6 +628,11 @@ export default function EpicDetailPage() {
                     } else if (criterionEmail) {
                         // Not a placeholder, use criterion email directly
                         approverEmail = criterionEmail;
+                    }
+
+                    // Default: epic owner (or Aha assigned user) so Accountable auto-populates
+                    if (!approverEmail && epicOwnerEmail) {
+                        approverEmail = epicOwnerEmail;
                     }
                 }
 
@@ -699,45 +703,113 @@ export default function EpicDetailPage() {
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
 
-            // Memoization cache for calculateDueDate to avoid redundant calculations
-            const dueDateCache = new Map<number, string | null>();
+            // Compute stage end dates using same algorithm as the timeline chart
+            const computedStageEndDates = new Map<number, string>();
+            if (fetchedLaunchStages.length > 0 && targetDate) {
+                const getEffectiveDuration = (s: any) => {
+                    if (epicIsUiFramework && parsedUiLevel != null && s.level_durations && typeof s.level_durations === 'object') {
+                        const d = s.level_durations[String(parsedUiLevel)];
+                        if (d && typeof d.min_days === 'number') return d.min_days;
+                    }
+                    return s.duration_days;
+                };
+                const subtractBiz = (end: Date, days: number): Date => {
+                    const d = new Date(end);
+                    let rem = days;
+                    while (rem > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) rem--; }
+                    return d;
+                };
+                const addBiz = (start: Date, days: number): Date => {
+                    const d = new Date(start);
+                    let rem = days;
+                    while (rem > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) rem--; }
+                    return d;
+                };
 
-            const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
-                if (!targetDate || !ratingTimingId || fetchedLaunchStages.length === 0) {
-                    return null;
+                const sorted = [...fetchedLaunchStages]
+                    .sort((a: any, b: any) => a.sort_order - b.sort_order);
+                const totalPreLaunchBizDays = sorted
+                    .filter((s: any) => s.sort_order < (sorted[sorted.length - 1]?.sort_order ?? 0))
+                    .reduce((sum: number, s: any) => sum + (getEffectiveDuration(s) ?? 0), 0);
+
+                const anchorDate = parseDateOnlyLocal(targetDate) ?? new Date(targetDate);
+                const startDate = subtractBiz(anchorDate, totalPreLaunchBizDays);
+                let cursor = new Date(startDate);
+                const stageStarts: { id: number; date: Date }[] = [];
+                for (const stage of sorted) {
+                    const dur = getEffectiveDuration(stage) ?? 0;
+                    stageStarts.push({ id: stage.id, date: new Date(cursor) });
+                    cursor = dur > 0 ? addBiz(cursor, dur) : new Date(cursor);
+                }
+                for (let i = 0; i < stageStarts.length; i++) {
+                    const endDate = i < stageStarts.length - 1
+                        ? stageStarts[i + 1].date
+                        : (epicIsUiFramework && cohort2DateFetched
+                            ? (parseDateOnlyLocal(cohort2DateFetched) ?? new Date(cohort2DateFetched))
+                            : anchorDate);
+                    computedStageEndDates.set(stageStarts[i].id, dateToLocalDateString(endDate));
+                }
+            }
+            setStageEndDates(computedStageEndDates);
+
+            // Map category → stage ID for fallback when rating_timing is null
+            const categoryStageMap = new Map<string, number>();
+            if (fetchedLaunchStages.length > 0) {
+                const stageByName = new Map(fetchedLaunchStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
+                const uxStage = epicIsUiFramework ? 'ux preview' : 'gtm access and prep';
+                const mappings: [string, string][] = [
+                    ['strategy', 'product definition complete'],
+                    ['legal & security', 'product definition complete'],
+                    ['legal_security', 'product definition complete'],
+                    ['ux & research', uxStage],
+                    ['product_tech', uxStage],
+                    ['technical readiness', uxStage],
+                    ['product documentation', 'gtm access and prep'],
+                    ['product_documentation', 'gtm access and prep'],
+                    ['gtm', 'gtm access and prep'],
+                    ['enablement & training readiness', 'gtm access and prep'],
+                    ['sales enablement', 'gtm access and prep'],
+                    ['product marketing', 'gtm access and prep'],
+                    ['support', 'internal readiness'],
+                    ['customer support readiness', 'internal readiness'],
+                    ['ops', 'internal readiness'],
+                    ['revenue ops', 'internal readiness'],
+                    ['product', 'internal readiness'],
+                    ['customer success', 'internal readiness'],
+                    ['data & analytics', 'internal readiness'],
+                    ['data_analytics', 'internal readiness'],
+                    ['analytics & metrics', 'internal readiness'],
+                    ['analytics_and_metrics', 'internal readiness'],
+                    ['implementation scale & customer adoption', 'cohort 1'],
+                    ['customer success & ongoing adoption', 'cohort 1'],
+                    ['other', 'internal readiness'],
+                ];
+                for (const [cat, stageName] of mappings) {
+                    const id = stageByName.get(stageName);
+                    if (id != null) categoryStageMap.set(cat, id);
+                }
+            }
+
+            const calculateDueDate = (ratingTimingId: number | null | undefined, category?: string): string | null => {
+                const catStageId = category ? categoryStageMap.get(category.toLowerCase().trim()) : undefined;
+
+                let resolvedId: number | null = null;
+                if (ratingTimingId) {
+                    if (computedStageEndDates.has(ratingTimingId)) {
+                        resolvedId = ratingTimingId;
+                    } else {
+                        const bridged = ratingTimingBridge.get(ratingTimingId);
+                        if (bridged && computedStageEndDates.has(bridged)) {
+                            resolvedId = bridged;
+                        }
+                    }
+                }
+                if (!resolvedId && catStageId) {
+                    resolvedId = catStageId;
                 }
 
-                // Check cache first
-                if (dueDateCache.has(ratingTimingId)) {
-                    return dueDateCache.get(ratingTimingId)!;
-                }
-
-                // Use pre-calculated values from local variables (state updates are async)
-                const daysBefore = calculatedDaysBeforeLaunch.get(ratingTimingId);
-                const daysAfter = calculatedDaysAfterLaunch.get(ratingTimingId);
-
-                if (daysBefore === undefined && daysAfter === undefined) {
-                    // Stage not found in pre-calculated maps
-                    dueDateCache.set(ratingTimingId, null);
-                    return null;
-                }
-
-                const dueDate = new Date(targetDate);
-
-                if (daysBefore !== undefined) {
-                    // Pre-launch stage: due date = start date of stage (first day of stage, not last)
-                    const stage = fetchedLaunchStages.find(s => s.id === ratingTimingId);
-                    const stageDuration = stage?.duration_days ?? 0;
-                    dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
-                } else if (daysAfter !== undefined) {
-                    // Post-launch stage: add days after launch
-                    dueDate.setDate(dueDate.getDate() + daysAfter);
-                }
-
-                const result = dueDate.toISOString().split('T')[0];
-                // Cache the result
-                dueDateCache.set(ratingTimingId, result);
-                return result; // Return as YYYY-MM-DD
+                if (!resolvedId) return null;
+                return computedStageEndDates.get(resolvedId) ?? null;
             };
 
             // LAZY LOAD: Initialize with empty data, fetch after initial render (non-blocking)
@@ -869,6 +941,11 @@ export default function EpicDetailPage() {
                         approverEmail = criterionEmail;
                     }
 
+                    // Default: epic owner (or Aha assigned user) so Accountable auto-populates
+                    if (!approverEmail && epicOwnerEmail) {
+                        approverEmail = epicOwnerEmail;
+                    }
+
                     // Get approver info from userInfoMap
                     if (approverEmail && approverEmail !== "[name of pod's product manager]" && approverEmail.includes("@")) {
                         approverInfo = userInfoMap[approverEmail.toLowerCase()] || null;
@@ -878,7 +955,7 @@ export default function EpicDetailPage() {
                 // Calculate due date based on rating_timing
                 // If rating_timing is set, always calculate (override stored date)
                 // Otherwise, use stored date if available
-                const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing);
+                const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing, item.criterion?.category);
                 const finalDueDate = calculatedDueDate || item.condition_due_date || null;
 
                 // Get comments and attachments data for this item
@@ -1118,75 +1195,76 @@ export default function EpicDetailPage() {
         updateThreshold(currentTier);
     }, [epic?.tier]);
 
-    // Memoize goNoGoDate calculation
-    const goNoGoDate = useMemo(() => {
-        const targetDate = releaseDate || epic?.target_launch_date;
-        if (!targetDate) return null;
-
-        let daysBetweenGoNoGoAndRelease = 0;
-
-        if (launchStages.length > 0) {
-            const sorted = [...launchStages].sort((a, b) => a.sort_order - b.sort_order);
-            const gtmAccess = sorted.find(s => s.name.toLowerCase().includes('gtm access'));
-            const cohort1 = sorted.find(s => s.name.toLowerCase().includes('cohort 1'));
-            // Per launch stage settings: "Go/No Go typically happens here about 1 week in GTM Access".
-            // So days from Go/No-Go to Release = (Internal Readiness) + (GTM Access duration - 7).
-            if (gtmAccess != null && cohort1 != null && gtmAccess.duration_days != null) {
-                const internalReadinessDays = sorted
-                    .filter(stage =>
-                        stage.duration_days != null &&
-                        stage.sort_order > gtmAccess.sort_order &&
-                        stage.sort_order < cohort1.sort_order
-                    )
-                    .reduce((sum, stage) => sum + (stage.duration_days || 0), 0);
-                const gtmDaysIntoPhase = 7; // about 1 week in
-                daysBetweenGoNoGoAndRelease = internalReadinessDays + (gtmAccess.duration_days - gtmDaysIntoPhase);
-            }
-        }
-
-        if (daysBetweenGoNoGoAndRelease <= 0) {
-            daysBetweenGoNoGoAndRelease = 28; // Default: 21 (IR) + (14 - 7) (GTM)
-        }
-
-        const calculatedDate = new Date(targetDate);
-        calculatedDate.setDate(calculatedDate.getDate() - daysBetweenGoNoGoAndRelease);
-        return calculatedDate;
-    }, [releaseDate, epic?.target_launch_date, launchStages]);
+    // Go/No-Go dates are derived from launch_stages.is_gate in the Release Timeline chart (each gate stage's end date).
 
     // Memoize calculateDueDateForFilter function
+    // Category → stage ID fallback for filter recalculation
+    const filterCategoryStageMap = useMemo(() => {
+        const map = new Map<string, number>();
+        if (launchStages.length === 0) return map;
+        const byName = new Map(launchStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
+        const uxStage = isUiFrameworkEpic ? 'ux preview' : 'gtm access and prep';
+        const mappings: [string, string][] = [
+            ['strategy', 'product definition complete'],
+            ['legal & security', 'product definition complete'],
+            ['legal_security', 'product definition complete'],
+            ['ux & research', uxStage],
+            ['product_tech', uxStage],
+            ['technical readiness', uxStage],
+            ['product documentation', 'gtm access and prep'],
+            ['product_documentation', 'gtm access and prep'],
+            ['gtm', 'gtm access and prep'],
+            ['enablement & training readiness', 'gtm access and prep'],
+            ['sales enablement', 'gtm access and prep'],
+            ['product marketing', 'gtm access and prep'],
+            ['support', 'internal readiness'],
+            ['customer support readiness', 'internal readiness'],
+            ['ops', 'internal readiness'],
+            ['revenue ops', 'internal readiness'],
+            ['product', 'internal readiness'],
+            ['customer success', 'internal readiness'],
+            ['data & analytics', 'internal readiness'],
+            ['data_analytics', 'internal readiness'],
+            ['analytics & metrics', 'internal readiness'],
+            ['analytics_and_metrics', 'internal readiness'],
+            ['implementation scale & customer adoption', 'cohort 1'],
+            ['customer success & ongoing adoption', 'cohort 1'],
+            ['other', 'internal readiness'],
+        ];
+        for (const [cat, stageName] of mappings) {
+            const id = byName.get(stageName);
+            if (id != null) map.set(cat, id);
+        }
+        return map;
+    }, [launchStages, isUiFrameworkEpic]);
+
     const calculateDueDateForFilter = useCallback((item: any): string | null => {
-        if (!item.criterion?.rating_timing || launchStages.length === 0) {
+        const rawTimingId = item.criterion?.rating_timing;
+        const category = item.criterion?.category;
+        const catKey = category ? category.toLowerCase().trim() : undefined;
+        const catStageId = catKey ? filterCategoryStageMap.get(catKey) : undefined;
+
+        let resolvedId: number | null = null;
+        if (rawTimingId) {
+            if (stageEndDates.has(rawTimingId)) {
+                resolvedId = rawTimingId;
+            } else {
+                const bridged = stageIdBridge.get(rawTimingId);
+                if (bridged && stageEndDates.has(bridged)) {
+                    resolvedId = bridged;
+                }
+            }
+        }
+        if (!resolvedId && catStageId) {
+            resolvedId = catStageId;
+        }
+
+        if (!resolvedId) {
             return item.condition_due_date || null;
         }
 
-        const targetDate = releaseDate || (epic ? epic.target_launch_date : null);
-        if (!targetDate) {
-            return item.condition_due_date || null;
-        }
-
-        const ratingTimingId = item.criterion.rating_timing;
-
-        // Use pre-calculated values instead of recalculating
-        const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
-        const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
-
-        if (daysBefore === undefined && daysAfter === undefined) {
-            return item.condition_due_date || null;
-        }
-
-        const dueDate = new Date(targetDate);
-
-        if (daysBefore !== undefined) {
-            // Due date = start date of stage (first day of stage, e.g. Product Definition Complete)
-            const stage = launchStages.find(s => s.id === ratingTimingId);
-            const stageDuration = stage?.duration_days ?? 0;
-            dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
-        } else if (daysAfter !== undefined) {
-            dueDate.setDate(dueDate.getDate() + daysAfter);
-        }
-
-        return dueDate.toISOString().split('T')[0];
-    }, [releaseDate, epic, launchStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
+        return stageEndDates.get(resolvedId) ?? item.condition_due_date ?? null;
+    }, [stageEndDates, stageIdBridge, filterCategoryStageMap]);
 
     // Memoize filtered matrix calculation
     const filteredMatrix = useMemo(() => {
@@ -1198,6 +1276,8 @@ export default function EpicDetailPage() {
         fourteenDaysFromNow.setDate(fourteenDaysFromNow.getDate() + 14);
 
         return matrix.filter((item: any) => {
+            // UI Rollout only: show only criteria applicable to this epic's level (no Level 1/2 rows for Level 3, etc.)
+            const passesTierForUiRollout = !isUiFrameworkEpic || !item.notRequired;
             const passesMyTasks = !filterMyTasks || (currentUserEmail && item.approverEmail && item.approverEmail.toLowerCase() === currentUserEmail.toLowerCase());
 
             const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
@@ -1217,9 +1297,9 @@ export default function EpicDetailPage() {
                 passesDate = isDueSoon;
             }
 
-            return passesMyTasks && passesDate;
+            return passesTierForUiRollout && passesMyTasks && passesDate;
         });
-    }, [matrix, filterMyTasks, filterOverdue, filterDueSoon, currentUserEmail, calculateDueDateForFilter]);
+    }, [matrix, isUiFrameworkEpic, filterMyTasks, filterOverdue, filterDueSoon, currentUserEmail, calculateDueDateForFilter]);
 
     // Memoize suggestedItems calculation
     const suggestedItems = useMemo(() => {
@@ -1305,7 +1385,7 @@ export default function EpicDetailPage() {
         if (newStatus !== 'Cancelled' && !isAdmin) {
             notifications.show({
                 title: 'Invalid status',
-                message: 'Only "Cancelled" can be set manually. Other statuses are computed from launch dates.',
+                message: 'Only "Cancelled" can be set manually. Other statuses are computed from release dates.',
                 color: 'orange',
             });
             return;
@@ -1425,7 +1505,7 @@ export default function EpicDetailPage() {
                     paddingBottom: "var(--spacing-8)",
                 }}
             >
-                <div className="mb-1">
+                <div className="mb-3">
                     <Link
                         href="/epics"
                         style={{
@@ -1445,16 +1525,16 @@ export default function EpicDetailPage() {
                     >← Back to Epics</Link>
                 </div>
 
-                <div className="epic-detail-title-row flex flex-wrap justify-between items-center gap-4 mb-4">
+                <div className="epic-detail-title-row flex flex-wrap justify-between items-center gap-4 mb-2">
                     <div className="flex-1 min-w-0">
                         <h1 style={{
                             fontFamily: 'var(--font-heading)',
                             fontSize: 'var(--font-size-page-title)',
                             fontWeight: 'var(--font-weight-bold)',
                             color: 'var(--color-gray-900)',
-                            marginBottom: 0
+                            marginBottom: 'var(--spacing-2)'
                         }}>{epic.name}</h1>
-                        <div className="flex gap-2 items-center flex-wrap">
+                        <div className="flex gap-3 items-center flex-wrap">
                             {pmOwner && pmOwner.email && (
                                 <Tooltip label="Product Owner" withArrow>
                                     <span style={{
@@ -1533,12 +1613,12 @@ export default function EpicDetailPage() {
                                         <div style={{ maxWidth: '300px' }}>
                                             <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is status determined?</div>
                                             <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                Status is normally derived from launch date, GA date, and retro completion.
+                                                Status is normally derived from release date, GA date, and retro completion.
                                                 {isAdmin ? ' Admins/CPOs can manually override any status.' : ' Only Cancelled can be set manually.'}
                                                 <br /><br />
-                                                <strong>Pre_Release:</strong> Before target launch date
+                                                <strong>Pre_Release:</strong> Before target release date
                                                 <br />
-                                                <strong>Released_Cohort_1:</strong> After launch, before GA date
+                                                <strong>Released_Cohort_1:</strong> After release, before GA date
                                                 <br />
                                                 <strong>Released_GA:</strong> After GA, before all retros (30/60/90) submitted
                                                 <br />
@@ -1602,311 +1682,69 @@ export default function EpicDetailPage() {
                 </div>
 
                 <div
-                    className={`epic-detail-stats-grid mt-6 grid grid-cols-1 gap-6 ${launchStages.length === 0 ? 'md:grid-cols-4' : ''} ${launchStages.length > 0 ? 'epic-detail-stats-grid-with-chart' : ''}`}
+                    className="epic-detail-summary-row mt-5 flex flex-wrap items-center gap-x-5 gap-y-2"
                     style={{
-                        alignItems: "start",
-                        ...(launchStages.length > 0 ? { gridTemplateColumns: 'minmax(0, 4fr) minmax(140px, 1fr) minmax(120px, 1fr)' } : {}),
+                        fontFamily: 'var(--font-body)',
+                        fontSize: 'var(--font-size-sm)',
+                        color: 'var(--color-gray-600)',
                     }}
                 >
-                    {(() => {
-                        return (
-                            <>
-                                {launchStages.length > 0 ? (
-                                    <>
-                                        <div className="min-w-0" style={{ marginLeft: 0, width: '100%' }}>
-                                            <LaunchStagesChart
-                                                releaseDate={releaseDate || epic?.target_launch_date || null}
-                                                stages={launchStages}
-                                                goNoGoDate={goNoGoDate ?? null}
-                                                showHeading={false}
-                                                noContainer
-                                            />
-                                        </div>
-                                        <div
-                                            className="epic-detail-readiness-score min-w-0"
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: 'var(--spacing-1)',
-                                                textAlign: 'left',
-                                                paddingLeft: 'var(--spacing-2)'
-                                            }}
-                                        >
-                                            <div style={{
-                                                fontSize: 'var(--font-size-xs)',
-                                                fontWeight: 'var(--font-weight-medium)',
-                                                color: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-start',
-                                                gap: 'var(--spacing-1)'
-                                            }}>
-                                                Readiness
-                                                <Tooltip
-                                                    label={
-                                                        <div style={{ maxWidth: '320px' }}>
-                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Score</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5', marginBottom: '10px' }}>
-                                                                How complete your launch preparation is. Criteria are grouped into categories; each criterion: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria count 3×. Categories are averaged (equal weight). Score is capped lower if there are gate blockers or missing criteria.
-                                                            </div>
-                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Status (aka &quot;Are we ready to release?&quot;)</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                Answers &quot;Can we launch now?&quot; Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                    withArrow
-                                                    multiline
-                                                >
-                                                    <IconInfoCircle
-                                                        size={14}
-                                                        style={{
-                                                            color: 'var(--color-gray-400)',
-                                                            cursor: 'help'
-                                                        }}
-                                                    />
-                                                </Tooltip>
-                                            </div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: 'var(--color-gray-900)',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-start',
-                                                gap: 'var(--spacing-1)'
-                                            }}>
-                                                {matrix.length === 0
-                                                    ? 'N/A → Not evaluated'
-                                                    : `${typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A'} → ${epic.readiness_status || 'NO GO'}`}
-                                            </div>
-                                        </div>
-                                        <div
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: 'var(--spacing-1)',
-                                                textAlign: 'left',
-                                                paddingLeft: 'var(--spacing-2)'
-                                            }}
-                                        >
-                                            <div style={{
-                                                fontSize: 'var(--font-size-xs)',
-                                                fontWeight: 'var(--font-weight-medium)',
-                                                color: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-start',
-                                                gap: 'var(--spacing-1)'
-                                            }}>
-                                                Risk Level
-                                                <Tooltip
-                                                    label={
-                                                        <div style={{ maxWidth: '300px' }}>
-                                                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                    withArrow
-                                                    multiline
-                                                >
-                                                    <IconInfoCircle
-                                                        size={14}
-                                                        style={{
-                                                            color: 'var(--color-gray-400)',
-                                                            cursor: 'help'
-                                                        }}
-                                                    />
-                                                </Tooltip>
-                                            </div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                justifyContent: 'flex-start'
-                                            }}>
-                                                {epic.risk_level || 'LOW'}
-                                            </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    <>
-                                        <div style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--spacing-1)',
-                                            textAlign: 'right'
-                                        }}>
-                                            <div style={{
-                                                fontSize: 'var(--font-size-xs)',
-                                                fontWeight: 'var(--font-weight-medium)',
-                                                color: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                fontFamily: 'var(--font-body)'
-                                            }}>Target Release Date</div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: 'var(--color-gray-900)',
-                                                fontFamily: 'var(--font-body)'
-                                            }}>
-                                                {releaseDate ? formatDateOnlyForDisplay(releaseDate) : epic?.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : 'Not set'}
-                                            </div>
-                                        </div>
-                                        <div style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--spacing-1)',
-                                            textAlign: 'right'
-                                        }}>
-                                            <div style={{
-                                                fontSize: 'var(--font-size-xs)',
-                                                fontWeight: 'var(--font-weight-medium)',
-                                                color: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                fontFamily: 'var(--font-body)'
-                                            }}>Approx Go/NoGo Date</div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: 'var(--color-gray-900)',
-                                                fontFamily: 'var(--font-body)'
-                                            }}>
-                                                {goNoGoDate ? goNoGoDate.toLocaleDateString() : 'Not set'}
-                                            </div>
-                                        </div>
-                                        <div
-                                            className="epic-detail-readiness-score"
-                                            style={{
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: 'var(--spacing-1)',
-                                                textAlign: 'right'
-                                            }}
-                                        >
-                                            <div style={{
-                                        fontSize: 'var(--font-size-xs)',
-                                        fontWeight: 'var(--font-weight-medium)',
-                                        color: 'var(--color-gray-500)',
-                                        textTransform: 'uppercase',
-                                        letterSpacing: '0.05em',
-                                        fontFamily: 'var(--font-body)',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'flex-end',
-                                        gap: 'var(--spacing-1)'
-                                            }}>
-                                                Readiness
-                                                <Tooltip
-                                                    label={
-                                                        <div style={{ maxWidth: '320px' }}>
-                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Score</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5', marginBottom: '10px' }}>
-                                                                How complete your launch preparation is. Criteria are grouped into categories; each criterion: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria count 3×. Categories are averaged (equal weight). Score is capped lower if there are gate blockers or missing criteria.
-                                                            </div>
-                                                            <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Status (aka &quot;Are we ready to release?&quot;)</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                Answers &quot;Can we launch now?&quot; Based on criteria completion, thresholds, and gate blockers. GO = ready, NO GO = not ready, Cond. GO = ready with conditions.
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                    withArrow
-                                                    multiline
-                                                >
-                                                    <IconInfoCircle
-                                                        size={14}
-                                                        style={{
-                                                            color: 'var(--color-gray-400)',
-                                                            cursor: 'help'
-                                                        }}
-                                                    />
-                                                </Tooltip>
-                                            </div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: 'var(--color-gray-900)',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-end',
-                                                gap: 'var(--spacing-1)'
-                                            }}>
-                                                {matrix.length === 0
-                                                    ? 'N/A → Not evaluated'
-                                                    : `${typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A'} → ${epic.readiness_status || 'NO GO'}`}
-                                            </div>
-                                        </div>
-                                        <div style={{
-                                            display: 'flex',
-                                            flexDirection: 'column',
-                                            gap: 'var(--spacing-1)',
-                                            textAlign: 'right'
-                                        }}>
-                                            <div style={{
-                                                fontSize: 'var(--font-size-xs)',
-                                                fontWeight: 'var(--font-weight-medium)',
-                                                color: 'var(--color-gray-500)',
-                                                textTransform: 'uppercase',
-                                                letterSpacing: '0.05em',
-                                                fontFamily: 'var(--font-body)',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'flex-end',
-                                                gap: 'var(--spacing-1)'
-                                            }}>
-                                                Risk Level
-                                                <Tooltip
-                                                    label={
-                                                        <div style={{ maxWidth: '300px' }}>
-                                                            <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                            <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                            </div>
-                                                        </div>
-                                                    }
-                                                    withArrow
-                                                    multiline
-                                                >
-                                                    <IconInfoCircle
-                                                        size={14}
-                                                        style={{
-                                                            color: 'var(--color-gray-400)',
-                                                            cursor: 'help'
-                                                        }}
-                                                    />
-                                                </Tooltip>
-                                            </div>
-                                            <div style={{
-                                                fontSize: '17px',
-                                                fontWeight: 'var(--font-weight-bold)',
-                                                color: epic.risk_level === 'HIGH' ? '#dc2626' : epic.risk_level === 'MEDIUM' ? '#f97316' : '#16a34a',
-                                                fontFamily: 'var(--font-body)'
-                                            }}>
-                                                {epic.risk_level || 'LOW'}
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </>
-                        );
-                    })()}
+                    <span>
+                        <span style={{ color: 'var(--color-gray-500)' }}>Release </span>
+                        <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
+                            {releaseDate ? formatDateOnlyForDisplay(releaseDate) : epic?.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : 'Not set'}
+                        </span>
+                    </span>
+                    <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
+                    <Tooltip
+                        label={
+                            <div style={{ maxWidth: '320px' }}>
+                                <div style={{ fontWeight: 600, marginBottom: '6px' }}>Readiness Score &amp; Status</div>
+                                <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                    How complete release preparation is and whether you can release now. Gate criteria count 3×.
+                                </div>
+                            </div>
+                        }
+                        withArrow
+                    >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ color: 'var(--color-gray-500)' }}>Readiness </span>
+                            <span style={{ fontWeight: 600, color: 'var(--color-gray-900)' }}>
+                                {matrix.length === 0
+                                    ? 'N/A → Not evaluated'
+                                    : `${typeof epic.readiness_score === 'number' ? `${Math.round(epic.readiness_score * 100)}%` : 'N/A'} → ${epic.readiness_status || 'NO GO'}`}
+                            </span>
+                            <IconInfoCircle size={12} style={{ color: 'var(--color-gray-400)', cursor: 'help' }} />
+                        </span>
+                    </Tooltip>
+                    <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
+                    <Tooltip
+                        label={
+                            <div style={{ maxWidth: '300px' }}>
+                                <div style={{ fontWeight: 600, marginBottom: '8px' }}>Risk level</div>
+                                <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
+                                    Based on days to release, readiness status, gate blockers, and overdue criteria.
+                                </div>
+                            </div>
+                        }
+                        withArrow
+                    >
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ color: 'var(--color-gray-500)' }}>Risk </span>
+                            <span
+                                style={{
+                                    fontWeight: 600,
+                                    color: epic.risk_level === 'HIGH' ? 'var(--color-error-dark)' : epic.risk_level === 'MEDIUM' ? 'var(--color-warning-dark)' : 'var(--color-success-dark)',
+                                }}
+                            >
+                                {epic.risk_level || 'LOW'}
+                            </span>
+                            <IconInfoCircle size={12} style={{ color: 'var(--color-gray-400)', cursor: 'help' }} />
+                        </span>
+                    </Tooltip>
                 </div>
 
-                <div className="epic-detail-tab-row" style={{ marginTop: "var(--spacing-1)", marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--spacing-2)", borderBottom: "1px solid var(--color-gray-900)" }}>
+                <div className="epic-detail-tab-row" style={{ marginTop: "var(--spacing-4)", marginBottom: 0, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "var(--spacing-2)", borderBottom: "1px solid var(--color-gray-900)" }}>
                     {isMobile ? (
                         <Select
                             data={tabOptions}
@@ -2011,6 +1849,19 @@ export default function EpicDetailPage() {
                             paddingLeft: "var(--spacing-4)",
                             paddingRight: "var(--spacing-4)",
                         }}>
+                            {launchStages.length > 0 && (
+                                <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
+                                    <LaunchStagesChart
+                                        releaseDate={releaseDate || epic?.target_launch_date || null}
+                                        cohort2Date={cohort2Date}
+                                        stages={launchStages}
+                                        showHeading={true}
+                                        noContainer={false}
+                                        uiLevel={isUiFrameworkEpic && uiLevel != null ? uiLevel : undefined}
+                                        criteriaItems={matrix}
+                                    />
+                                </div>
+                            )}
                             {isMobile && matrix.length > 0 && (
                                 <Group gap="sm" align="center" style={{ marginBottom: "var(--spacing-2)" }}>
                                     <span className="font-medium text-gray-700" style={{ fontFamily: "var(--font-body)", fontSize: "var(--font-size-sm)" }}>Filters</span>

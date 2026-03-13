@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useSettings } from "@/contexts/SettingsContext";
 import LaunchStagesSection from "@/components/admin/settings/LaunchStagesSection";
+import UiRolloutStagesSection from "@/components/admin/settings/UiRolloutStagesSection";
 import { addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
 
 export default function LaunchStagesPage() {
@@ -11,6 +12,9 @@ export default function LaunchStagesPage() {
         launchStagesLoading,
         setLaunchStages,
         fetchLaunchStages,
+        uiRolloutStages,
+        uiRolloutStagesLoading,
+        fetchUiRolloutStages,
     } = useSettings();
 
     const [editingStageDrawerOpen, setEditingStageDrawerOpen] = useState(false);
@@ -92,25 +96,34 @@ export default function LaunchStagesPage() {
     };
 
     return (
-        <LaunchStagesSection
-            stages={launchStages}
-            loading={launchStagesLoading}
-            draggedStageId={draggedStageId}
-            setDraggedStageId={setDraggedStageId}
-            onReorder={handleReorderStages}
-            editingOpen={editingStageDrawerOpen}
-            setEditingOpen={setEditingStageDrawerOpen}
-            editingId={editingStageId}
-            setEditingId={setEditingStageId}
-            editingName={editingStageName}
-            setEditingName={setEditingStageName}
-            editingDuration={editingStageDuration}
-            setEditingDuration={setEditingStageDuration}
-            editingDetails={editingStageDetails}
-            setEditingDetails={setEditingStageDetails}
-            onSaveNew={handleAddStage}
-            onUpdateExisting={handleUpdateStage}
-            onDeleteExisting={handleDeleteStage}
-        />
+        <div className="space-y-12">
+            <LaunchStagesSection
+                sectionTitle="Release Schedule Stages"
+                sectionSubtitle="Stages for legacy release schedule (GTM Access, Cohort 1, etc.)"
+                stages={launchStages}
+                loading={launchStagesLoading}
+                draggedStageId={draggedStageId}
+                setDraggedStageId={setDraggedStageId}
+                onReorder={handleReorderStages}
+                editingOpen={editingStageDrawerOpen}
+                setEditingOpen={setEditingStageDrawerOpen}
+                editingId={editingStageId}
+                setEditingId={setEditingStageId}
+                editingName={editingStageName}
+                setEditingName={setEditingStageName}
+                editingDuration={editingStageDuration}
+                setEditingDuration={setEditingStageDuration}
+                editingDetails={editingStageDetails}
+                setEditingDetails={setEditingStageDetails}
+                onSaveNew={handleAddStage}
+                onUpdateExisting={handleUpdateStage}
+                onDeleteExisting={handleDeleteStage}
+            />
+            <UiRolloutStagesSection
+                stages={uiRolloutStages}
+                loading={uiRolloutStagesLoading}
+                fetchStages={fetchUiRolloutStages}
+            />
+        </div>
     );
 }
