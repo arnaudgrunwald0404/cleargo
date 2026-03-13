@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import {
+  ActionIcon,
   Card,
   Text,
   Group,
@@ -12,7 +13,7 @@ import {
   Tooltip,
   Paper,
 } from '@mantine/core';
-import { IconMessageCircle, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconMessageCircle, IconChevronDown, IconChevronUp, IconCheck } from '@tabler/icons-react';
 import { UserDisplay } from './UserDisplay';
 
 export interface CommentForThread {
@@ -44,6 +45,7 @@ interface ThreadGroup {
 
 interface CommentsThreadListProps {
   comments: CommentForThread[];
+  onMarkRead?: (commentIds: string[]) => void | Promise<void>;
   onNavigateToEpic?: (epicId: string) => void;
   onOpenThread?: (epicId: string, taskId: string, taskLabel: string) => void;
   loading?: boolean;
@@ -172,6 +174,7 @@ function buildThreads(comments: CommentForThread[]): ThreadGroup[] {
 
 export function CommentsThreadList({
   comments,
+  onMarkRead,
   onNavigateToEpic,
   onOpenThread,
   loading = false,
@@ -201,6 +204,7 @@ export function CommentsThreadList({
         <ThreadCard
           key={thread.launch_criterion_status_id}
           thread={thread}
+          onMarkRead={onMarkRead}
           onNavigateToEpic={onNavigateToEpic}
           onOpenThread={onOpenThread}
         />
@@ -211,11 +215,12 @@ export function CommentsThreadList({
 
 interface ThreadCardProps {
   thread: ThreadGroup;
+  onMarkRead?: (commentIds: string[]) => void | Promise<void>;
   onNavigateToEpic?: (epicId: string) => void;
   onOpenThread?: (epicId: string, taskId: string, taskLabel: string) => void;
 }
 
-function ThreadCard({ thread, onNavigateToEpic, onOpenThread }: ThreadCardProps) {
+function ThreadCard({ thread, onMarkRead, onNavigateToEpic, onOpenThread }: ThreadCardProps) {
   const [expanded, setExpanded] = useState(false);
   const { epic, criterion, comments, unreadCount } = thread;
   const displayItems = useMemo(
@@ -287,6 +292,23 @@ function ThreadCard({ thread, onNavigateToEpic, onOpenThread }: ThreadCardProps)
             </Text>
           </Group>
           <Group gap="xs" wrap="nowrap" style={{ flexShrink: 0 }}>
+            {unreadCount > 0 && onMarkRead && (
+              <Tooltip label={`Mark ${unreadCount} as read`}>
+                <ActionIcon
+                  variant="subtle"
+                  size="sm"
+                  color="blue"
+                  onClick={() => {
+                    const unreadIds = comments
+                      .filter((c) => !c.is_read)
+                      .map((c) => c.id);
+                    if (unreadIds.length > 0) onMarkRead(unreadIds);
+                  }}
+                >
+                  <IconCheck size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
             {unreadCount > 0 && (
               <Badge size="sm" color="blue" variant="light">
                 {unreadCount} unread
@@ -308,7 +330,7 @@ function ThreadCard({ thread, onNavigateToEpic, onOpenThread }: ThreadCardProps)
         <Stack gap="xs">
           {displayItems.map((item, idx) =>
             item.type === 'comment' ? (
-              <CommentRow key={item.comment.id} comment={item.comment} />
+              <CommentRow key={item.comment.id} comment={item.comment} onMarkRead={onMarkRead} />
             ) : (
               <Box key={`view-more-${idx}`} py={4}>
                 <Button
@@ -339,7 +361,13 @@ function ThreadCard({ thread, onNavigateToEpic, onOpenThread }: ThreadCardProps)
   );
 }
 
-function CommentRow({ comment }: { comment: CommentForThread }) {
+function CommentRow({
+  comment,
+  onMarkRead,
+}: {
+  comment: CommentForThread;
+  onMarkRead?: (commentIds: string[]) => void | Promise<void>;
+}) {
   const isUnread = !comment.is_read;
 
   return (
@@ -373,6 +401,19 @@ function CommentRow({ comment }: { comment: CommentForThread }) {
           style={{ flex: 1, minWidth: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontSize: 'var(--mantine-font-size-sm)' }}
           dangerouslySetInnerHTML={{ __html: comment.comment_text || '' }}
         />
+        {isUnread && onMarkRead && (
+          <Tooltip label="Mark as read">
+            <ActionIcon
+              variant="subtle"
+              size="sm"
+              color="blue"
+              onClick={() => onMarkRead([comment.id])}
+              style={{ flexShrink: 0 }}
+            >
+              <IconCheck size={16} />
+            </ActionIcon>
+          </Tooltip>
+        )}
       </Group>
     </Box>
   );

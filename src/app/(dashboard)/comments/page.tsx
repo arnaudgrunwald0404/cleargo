@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Stack,
   Group,
@@ -174,6 +174,14 @@ export default function CommentsPage() {
   }, [fetchComments]);
 
   const handleMarkRead = async (commentIds: string[]) => {
+    const idSet = new Set(commentIds);
+
+    // Optimistic update: mark comments as read locally for instant UI response
+    setComments((prev) =>
+      prev.map((c) => (idSet.has(c.id) ? { ...c, is_read: true, read_at: new Date().toISOString() } : c))
+    );
+    setUnreadCount((prev) => Math.max(0, prev - commentIds.length));
+
     try {
       const response = await fetchWithRateLimit('/api/comments/mark-read', {
         method: 'POST',
@@ -185,13 +193,14 @@ export default function CommentsPage() {
       });
 
       if (response.ok) {
-        await fetchComments();
         fetchMyEpicsUnreadCount();
       } else {
         console.error('Failed to mark comments as read');
+        await fetchComments();
       }
     } catch (error) {
       console.error('Error marking comments as read:', error);
+      await fetchComments();
     }
   };
 
@@ -212,9 +221,16 @@ export default function CommentsPage() {
     fetchMyEpicsUnreadCount();
   };
 
-  const filteredComments = selectedStatus
-    ? comments.filter((c) => c.status_at_comment === selectedStatus)
-    : comments;
+  const filteredComments = useMemo(() => {
+    let result = comments;
+    if (activeTab === 'unread') {
+      result = result.filter((c) => !c.is_read);
+    }
+    if (selectedStatus) {
+      result = result.filter((c) => c.status_at_comment === selectedStatus);
+    }
+    return result;
+  }, [comments, activeTab, selectedStatus]);
 
   const STATUS_OPTIONS = [
     { value: 'GO', label: 'GO' },
@@ -427,6 +443,7 @@ export default function CommentsPage() {
                 ) : viewMode === 'threads' ? (
                   <CommentsThreadList
                     comments={filteredComments}
+                    onMarkRead={handleMarkRead}
                     onNavigateToEpic={handleNavigateToEpic}
                     onOpenThread={handleOpenCommentsModal}
                     loading={loading}
@@ -563,6 +580,7 @@ export default function CommentsPage() {
                 ) : viewMode === 'threads' ? (
                   <CommentsThreadList
                     comments={filteredComments}
+                    onMarkRead={handleMarkRead}
                     onNavigateToEpic={handleNavigateToEpic}
                     onOpenThread={handleOpenCommentsModal}
                     loading={loading}
@@ -682,6 +700,7 @@ export default function CommentsPage() {
                 ) : viewMode === 'threads' ? (
                   <CommentsThreadList
                     comments={filteredComments}
+                    onMarkRead={handleMarkRead}
                     onNavigateToEpic={handleNavigateToEpic}
                     onOpenThread={handleOpenCommentsModal}
                     loading={loading}
