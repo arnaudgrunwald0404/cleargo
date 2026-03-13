@@ -26,7 +26,13 @@ export function AIPruneReviewBanner({ epicId, suggestedItems, onActionComplete }
     const handleApproveAll = async () => {
         setLoading(true);
         try {
-            // Set status to NA for all suggested items
+            const itemIds = suggestedItems.map(item => item.id);
+
+            const { data: currentRows } = await supabase
+                .from('epic_criterion_status')
+                .select('id, status, criterion_id, epic_id')
+                .in('id', itemIds);
+
             const { error } = await supabase
                 .from('epic_criterion_status')
                 .update({
@@ -34,9 +40,26 @@ export function AIPruneReviewBanner({ epicId, suggestedItems, onActionComplete }
                     ai_prune_suggested: false,
                     notes: 'Automatically marked as N/A per AI suggestion review.'
                 })
-                .in('id', suggestedItems.map(item => item.id));
+                .in('id', itemIds);
 
             if (error) throw error;
+
+            if (currentRows && currentRows.length > 0) {
+                fetch('/api/criterion-status-history', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        entries: currentRows.map((r: any) => ({
+                            epicCriterionStatusId: r.id,
+                            epicId: r.epic_id,
+                            criterionId: r.criterion_id,
+                            oldStatus: r.status,
+                            newStatus: 'NA',
+                        })),
+                    }),
+                }).catch((err) => console.error('Failed to log status history:', err));
+            }
 
             notifications.show({
                 title: 'Suggestions Approved',

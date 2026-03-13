@@ -6,25 +6,14 @@ import { isEnabled, FEATURE_NOT_APPLICABLE } from '@/lib/flags';
 import { getFeatureFlags, getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { trackActivityFromAction } from '@/lib/services/userActivityService';
+import { logStatusChange } from '@/lib/db/criterion-status-history';
 
 export async function PATCH(
     req: NextRequest,
     { params }: { params: Promise<{ id: string; lcsId: string }> }
 ) {
-    // #region agent log
-    const fs = require('fs');
-    const logEntry = {location:'route.ts:5',message:'PATCH request received',data:{paramsResolved:false},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E',runId:'status-update'};
-    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry) + '\n'); } catch(e) {}
-    // #endregion
-    
     try {
         const { id, lcsId } = await params;
-        
-        // #region agent log
-        const logEntry2 = {location:'route.ts:11',message:'Params resolved',data:{id,lcsId},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'A,E',runId:'status-update'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry2) + '\n'); } catch(e) {}
-        // #endregion
-        
         const supabase = createClient();
         const userEmail = await getAuthenticatedUserEmail();
 
@@ -143,10 +132,6 @@ export async function PATCH(
                 code: error.code || null
             }, { status: 500 });
         }
-        // #region agent log
-        const logEntry6 = {location:'route.ts:100',message:'Supabase update succeeded',data:{returnedDataKeys:data ? Object.keys(data) : [],returnedDataSourceValues:data?.data_source_values},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'G',runId:'run1'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry6) + '\n'); } catch(e) {}
-        // #endregion
 
         if (typeof status !== 'undefined' && data?.status != null && data.status !== previousStatus) {
             await supabase.from('audit_log').insert({
@@ -156,8 +141,15 @@ export async function PATCH(
                 json_diff: { status: { old: previousStatus ?? null, new: data.status } },
             });
 
-            // Track activity for usage analytics (if /api/me wasn't called)
-            // This ensures users who make changes are counted even if they didn't visit the web UI
+            logStatusChange({
+                epicCriterionStatusId: lcsId,
+                epicId: id,
+                criterionId: data.criterion_id,
+                oldStatus: previousStatus ?? null,
+                newStatus: data.status,
+                changedBy: appUser.id,
+            });
+
             trackActivityFromAction(appUser.id).catch(err => {
                 console.error('[PATCH /api/epics/[id]/criteria/[lcsId]] Failed to track activity:', err);
             });
