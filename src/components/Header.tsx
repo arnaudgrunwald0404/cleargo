@@ -138,7 +138,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
     const launchTabs: Array<{ link: string; label: string; badge?: number }> = [
         { link: '/', label: 'Home' },
-        { link: '/launches', label: 'Launches' },
+        { link: '/epics', label: 'Launches' },
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 
