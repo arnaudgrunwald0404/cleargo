@@ -1,7 +1,7 @@
 "use client";
 
 import { Avatar, Menu, Text, Group, UnstyledButton, rem } from '@mantine/core';
-import { IconLogout, IconSettings, IconUser } from '@tabler/icons-react';
+import { IconLogout, IconPlug, IconSettings, IconShieldCheck, IconUser, IconUsers } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
@@ -136,6 +136,31 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
                     >
                         Settings
                     </Menu.Item>
+                )}
+
+                {hasSettingsAccess && (
+                    <>
+                        <Menu.Divider />
+                        <Menu.Label>Admin</Menu.Label>
+                        <Menu.Item
+                            leftSection={<IconUsers style={{ width: rem(14), height: rem(14) }} />}
+                            onClick={() => router.push('/admin/settings/users/users')}
+                        >
+                            User Management
+                        </Menu.Item>
+                        <Menu.Item
+                            leftSection={<IconShieldCheck style={{ width: rem(14), height: rem(14) }} />}
+                            onClick={() => router.push('/admin/settings/permissions')}
+                        >
+                            Permissions
+                        </Menu.Item>
+                        <Menu.Item
+                            leftSection={<IconPlug style={{ width: rem(14), height: rem(14) }} />}
+                            onClick={() => router.push('/admin/settings/integrations/aha')}
+                        >
+                            Integrations
+                        </Menu.Item>
+                    </>
                 )}
 
                 <Menu.Divider />

@@ -20,7 +20,7 @@ import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
@@ -49,7 +49,7 @@ export default function EpicDetailPage() {
     const [releaseDate, setReleaseDate] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
-    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
+    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null }>>([]);
     const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
     const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
     const [instantiationFailed, setInstantiationFailed] = useState(false);
@@ -179,7 +179,7 @@ export default function EpicDetailPage() {
             }
 
             // Priority 2: Database queries (not rate limited) - can run in parallel with API calls
-            const [matrixQuery, launchStagesQuery] = await Promise.all([
+            const [matrixQuery, releaseStagesQuery] = await Promise.all([
                 supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -201,7 +201,7 @@ export default function EpicDetailPage() {
                     `)
                     .eq('epic_id', id),
                 supabase
-                    .from('launch_stages')
+                    .from('release_stages')
                     .select('id, name, sort_order, duration_days')
                     .order('sort_order', { ascending: true })
             ]);
@@ -310,43 +310,43 @@ export default function EpicDetailPage() {
                 epicDetailCache.setCriteria(allActiveCriteria);
             }
 
-            // Process launch stages - check cache first
-            let cachedStages = epicDetailCache.getLaunchStages();
+            // Process release stages - check cache first
+            let cachedStages = epicDetailCache.getReleaseStages();
             let stagesData: any[] | null = null;
             let stagesError: any = null;
 
             if (cachedStages) {
                 stagesData = cachedStages;
             } else {
-                const queryResult = launchStagesQuery;
+                const queryResult = releaseStagesQuery;
                 stagesData = queryResult.data;
                 stagesError = queryResult.error;
                 if (!stagesError && stagesData) {
-                    epicDetailCache.setLaunchStages(stagesData);
+                    epicDetailCache.setReleaseStages(stagesData);
                 }
             }
 
-            let fetchedLaunchStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null }> = [];
+            let fetchedReleaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null }> = [];
             // Pre-calculate days-before-launch for each stage (optimization: calculate once, reuse many times)
             const calculatedDaysBeforeLaunch = new Map<number, number>();
             const calculatedDaysAfterLaunch = new Map<number, number>();
 
             if (!stagesError && stagesData) {
-                fetchedLaunchStages = stagesData;
-                setLaunchStages(stagesData);
+                fetchedReleaseStages = stagesData;
+                setReleaseStages(stagesData);
 
                 // Find the last pre-launch stage (Internal Readiness, sort_order 3)
-                const lastPreLaunchStage = fetchedLaunchStages
+                const lastPreLaunchStage = fetchedReleaseStages
                     .filter(stage => stage.duration_days !== null && stage.sort_order <= 3)
                     .sort((a, b) => b.sort_order - a.sort_order)[0];
 
                 const lastPreLaunchSortOrder = lastPreLaunchStage?.sort_order ?? 3;
 
                 // Pre-calculate days-before-launch for each pre-launch stage
-                fetchedLaunchStages.forEach(stage => {
+                fetchedReleaseStages.forEach(stage => {
                     if (stage.sort_order <= lastPreLaunchSortOrder && stage.duration_days !== null) {
                         const targetStageDuration = stage.duration_days || 0;
-                        const stagesAfterTarget = fetchedLaunchStages.filter(s =>
+                        const stagesAfterTarget = fetchedReleaseStages.filter(s =>
                             s.sort_order > stage.sort_order &&
                             s.sort_order <= lastPreLaunchSortOrder &&
                             s.duration_days !== null
@@ -356,8 +356,8 @@ export default function EpicDetailPage() {
                         );
                         calculatedDaysBeforeLaunch.set(stage.id, totalDaysBefore);
                     } else if (stage.sort_order > lastPreLaunchSortOrder && stage.duration_days !== null) {
-                        // Pre-calculate days-after-launch for post-launch stages
-                        const stagesFromPreLaunchToTarget = fetchedLaunchStages.filter(s =>
+                        // Pre-calculate days-after-launch for post-release stages
+                        const stagesFromPreLaunchToTarget = fetchedReleaseStages.filter(s =>
                             s.sort_order > lastPreLaunchSortOrder &&
                             s.sort_order <= stage.sort_order &&
                             s.duration_days !== null
@@ -695,7 +695,7 @@ export default function EpicDetailPage() {
                 }
             }
 
-            // Calculate due dates for criteria based on rating_timing and launch stages
+            // Calculate due dates for criteria based on rating_timing and release stages
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
 
@@ -703,32 +703,37 @@ export default function EpicDetailPage() {
             const dueDateCache = new Map<number, string | null>();
 
             const calculateDueDate = (ratingTimingId: number | null | undefined): string | null => {
-                if (!targetDate || !ratingTimingId || fetchedLaunchStages.length === 0) {
+                if (!targetDate || fetchedReleaseStages.length === 0) {
+                    return null;
+                }
+
+                // Default to first stage if no rating_timing is set
+                const effectiveId = ratingTimingId ?? fetchedReleaseStages.find(s => s.sort_order === 1)?.id;
+                if (!effectiveId) {
                     return null;
                 }
 
                 // Check cache first
-                if (dueDateCache.has(ratingTimingId)) {
-                    return dueDateCache.get(ratingTimingId)!;
+                if (dueDateCache.has(effectiveId)) {
+                    return dueDateCache.get(effectiveId)!;
                 }
 
                 // Use pre-calculated values from local variables (state updates are async)
-                const daysBefore = calculatedDaysBeforeLaunch.get(ratingTimingId);
-                const daysAfter = calculatedDaysAfterLaunch.get(ratingTimingId);
+                const daysBefore = calculatedDaysBeforeLaunch.get(effectiveId);
+                const daysAfter = calculatedDaysAfterLaunch.get(effectiveId);
 
                 if (daysBefore === undefined && daysAfter === undefined) {
                     // Stage not found in pre-calculated maps
-                    dueDateCache.set(ratingTimingId, null);
+                    dueDateCache.set(effectiveId, null);
                     return null;
                 }
 
                 const dueDate = new Date(targetDate);
 
                 if (daysBefore !== undefined) {
-                    // Pre-launch stage: due date = start date of stage (first day of stage, not last)
-                    const stage = fetchedLaunchStages.find(s => s.id === ratingTimingId);
-                    const stageDuration = stage?.duration_days ?? 0;
-                    dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
+                    // Pre-launch stage: due date = first day of stage
+                    // daysBefore already includes the stage's own duration + all later pre-launch stages
+                    dueDate.setDate(dueDate.getDate() - daysBefore);
                 } else if (daysAfter !== undefined) {
                     // Post-launch stage: add days after launch
                     dueDate.setDate(dueDate.getDate() + daysAfter);
@@ -736,7 +741,7 @@ export default function EpicDetailPage() {
 
                 const result = dueDate.toISOString().split('T')[0];
                 // Cache the result
-                dueDateCache.set(ratingTimingId, result);
+                dueDateCache.set(effectiveId, result);
                 return result; // Return as YYYY-MM-DD
             };
 
@@ -1125,8 +1130,8 @@ export default function EpicDetailPage() {
 
         let daysBetweenGoNoGoAndRelease = 0;
 
-        if (launchStages.length > 0) {
-            const sorted = [...launchStages].sort((a, b) => a.sort_order - b.sort_order);
+        if (releaseStages.length > 0) {
+            const sorted = [...releaseStages].sort((a, b) => a.sort_order - b.sort_order);
             const gtmAccess = sorted.find(s => s.name.toLowerCase().includes('gtm access'));
             const cohort1 = sorted.find(s => s.name.toLowerCase().includes('cohort 1'));
             // Per launch stage settings: "Go/No Go typically happens here about 1 week in GTM Access".
@@ -1151,11 +1156,11 @@ export default function EpicDetailPage() {
         const calculatedDate = new Date(targetDate);
         calculatedDate.setDate(calculatedDate.getDate() - daysBetweenGoNoGoAndRelease);
         return calculatedDate;
-    }, [releaseDate, epic?.target_launch_date, launchStages]);
+    }, [releaseDate, epic?.target_launch_date, releaseStages]);
 
     // Memoize calculateDueDateForFilter function
     const calculateDueDateForFilter = useCallback((item: any): string | null => {
-        if (!item.criterion?.rating_timing || launchStages.length === 0) {
+        if (!item.criterion?.rating_timing || releaseStages.length === 0) {
             return item.condition_due_date || null;
         }
 
@@ -1178,7 +1183,7 @@ export default function EpicDetailPage() {
 
         if (daysBefore !== undefined) {
             // Due date = start date of stage (first day of stage, e.g. Product Definition Complete)
-            const stage = launchStages.find(s => s.id === ratingTimingId);
+            const stage = releaseStages.find(s => s.id === ratingTimingId);
             const stageDuration = stage?.duration_days ?? 0;
             dueDate.setDate(dueDate.getDate() - daysBefore - (stageDuration - 1));
         } else if (daysAfter !== undefined) {
@@ -1186,7 +1191,7 @@ export default function EpicDetailPage() {
         }
 
         return dueDate.toISOString().split('T')[0];
-    }, [releaseDate, epic, launchStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
+    }, [releaseDate, epic, releaseStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
 
     // Memoize filtered matrix calculation
     const filteredMatrix = useMemo(() => {
@@ -1602,21 +1607,21 @@ export default function EpicDetailPage() {
                 </div>
 
                 <div
-                    className={`epic-detail-stats-grid mt-6 grid grid-cols-1 gap-6 ${launchStages.length === 0 ? 'md:grid-cols-4' : ''} ${launchStages.length > 0 ? 'epic-detail-stats-grid-with-chart' : ''}`}
+                    className={`epic-detail-stats-grid mt-6 grid grid-cols-1 gap-6 ${releaseStages.length === 0 ? 'md:grid-cols-4' : ''} ${releaseStages.length > 0 ? 'epic-detail-stats-grid-with-chart' : ''}`}
                     style={{
                         alignItems: "start",
-                        ...(launchStages.length > 0 ? { gridTemplateColumns: 'minmax(0, 4fr) minmax(140px, 1fr) minmax(120px, 1fr)' } : {}),
+                        ...(releaseStages.length > 0 ? { gridTemplateColumns: 'minmax(0, 4fr) minmax(140px, 1fr) minmax(120px, 1fr)' } : {}),
                     }}
                 >
                     {(() => {
                         return (
                             <>
-                                {launchStages.length > 0 ? (
+                                {releaseStages.length > 0 ? (
                                     <>
                                         <div className="min-w-0" style={{ marginLeft: 0, width: '100%' }}>
-                                            <LaunchStagesChart
+                                            <ReleaseStagesChart
                                                 releaseDate={releaseDate || epic?.target_launch_date || null}
-                                                stages={launchStages}
+                                                stages={releaseStages}
                                                 goNoGoDate={goNoGoDate ?? null}
                                                 showHeading={false}
                                                 noContainer

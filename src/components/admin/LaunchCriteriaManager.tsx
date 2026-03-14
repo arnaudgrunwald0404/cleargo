@@ -20,9 +20,12 @@ const GATE_OPTIONS = [
 
 // Default phases for a new launch workflow — users can add/rename/reorder
 const DEFAULT_PHASES = [
-    "Pre-Launch",
-    "Launch Day",
-    "Post-Launch",
+    "Phase 1: Strategy & Positioning",
+    "Phase 2: Product Readiness & Validation",
+    "Phase 3: Messaging & Asset Build",
+    "Phase 4: Internal Enablement & Activation",
+    "Phase 5: Launch",
+    "Phase 6: Post-Launch Optimization",
 ];
 
 export default function LaunchCriteriaManager() {

@@ -6,6 +6,7 @@ export async function listCriteria(): Promise<Criterion[]> {
     const { data, error } = await supabase
         .from("criterion")
         .select("*")
+        .eq("context", "release")
         .order("sort_order", { ascending: true })
         .order("label", { ascending: true });
 

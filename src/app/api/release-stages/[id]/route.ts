@@ -18,7 +18,7 @@ export async function DELETE(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Capability: launchStages.manage
+        // Capability: releaseStages.manage
         const { data: me, error: userError } = await supabase
             .from('app_user')
             .select('roles')
@@ -34,7 +34,7 @@ export async function DELETE(
         }
         
         const rules = await getEffectivePermissionRules();
-        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'launchStages.manage', rules);
+        const ok = canRolesPerformWithRules((me?.roles as string[]) || [], 'releaseStages.manage', rules);
         if (!ok) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
         const id = parseInt(idParam);
@@ -46,23 +46,23 @@ export async function DELETE(
         }
 
         const { error } = await supabase
-            .from('launch_stages')
+            .from('release_stages')
             .delete()
             .eq('id', id);
 
         if (error) {
-            console.error('Error deleting launch stage:', error);
+            console.error('Error deleting release stage:', error);
             return NextResponse.json(
-                { error: 'Failed to delete launch stage', details: error.message },
+                { error: 'Failed to delete release stage', details: error.message },
                 { status: 500 }
             );
         }
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
-        console.error('Error in DELETE /api/launch-stages/[id]:', error);
+        console.error('Error in DELETE /api/release-stages/[id]:', error);
         return NextResponse.json(
-            { error: 'Failed to delete launch stage', details: error.message },
+            { error: 'Failed to delete release stage', details: error.message },
             { status: 500 }
         );
     }

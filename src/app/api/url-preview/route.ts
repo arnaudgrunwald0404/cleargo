@@ -27,10 +27,23 @@ export async function GET(req: NextRequest) {
   }
 
   // Generate favicon URL using Google's favicon service (always available)
-  // For subdomains, try base domain first as it often has better favicon
   const baseDomain = parsedUrl.hostname.split('.').slice(-2).join('.');
   const faviconDomain = baseDomain.includes('.') && parsedUrl.hostname !== baseDomain ? baseDomain : parsedUrl.hostname;
   const favicon = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(faviconDomain)}&sz=64`;
+
+  // Avoid fetching localhost URLs when running on localhost (server would fetch itself and can hang)
+  const isLocalhost =
+    parsedUrl.hostname === 'localhost' ||
+    parsedUrl.hostname === '127.0.0.1' ||
+    parsedUrl.hostname.endsWith('.localhost');
+  if (isLocalhost) {
+    return NextResponse.json({
+      url,
+      title: parsedUrl.hostname + (parsedUrl.pathname !== '/' ? parsedUrl.pathname : ''),
+      domain: parsedUrl.hostname,
+      favicon,
+    });
+  }
 
   try {
     // Fetch the URL

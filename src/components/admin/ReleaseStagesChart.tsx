@@ -3,7 +3,7 @@
 import { Box } from "@mantine/core";
 import { useState } from "react";
 
-interface LaunchStage {
+interface ReleaseStage {
     id: number;
     name: string;
     sort_order: number;
@@ -12,7 +12,7 @@ interface LaunchStage {
 }
 
 /** Default stage config when used with only releaseDate (31, 14, 21, 28 days + GA) */
-const DEFAULT_STAGES: LaunchStage[] = [
+const DEFAULT_STAGES: ReleaseStage[] = [
     { id: 0, name: 'Product Definition Complete', sort_order: 1, duration_days: 31, details: null },
     { id: 0, name: 'GTM Access', sort_order: 2, duration_days: 14, details: null },
     { id: 0, name: 'Internal Readiness', sort_order: 3, duration_days: 21, details: null },
@@ -20,14 +20,14 @@ const DEFAULT_STAGES: LaunchStage[] = [
     { id: 0, name: 'GA · Cohort 2', sort_order: 5, duration_days: null, details: null },
 ];
 
-interface LaunchStagesChartProps {
+interface ReleaseStagesChartProps {
     /** Release date (RELEASE · Cohort 1) — the single parameter for reuse; anchors the timeline. */
     releaseDate?: string | Date | null;
     /** Optional: custom stages from settings. When omitted, default stages (31, 14, 21, 28 days) are used. */
-    stages?: LaunchStage[];
+    stages?: ReleaseStage[];
     /** Optional: Go/No-Go date. When omitted, derived as ~1 week into GTM Access (releaseDate - 28 days). */
     goNoGoDate?: string | Date | null;
-    /** When true, hide the "Launch Stages Timeline" heading (e.g. for embedding under Target Release Date). */
+    /** When true, hide the "Release Stages Timeline" heading (e.g. for embedding under Target Release Date). */
     showHeading?: boolean;
     /** When true, render only the timeline SVG without outer box, border, or padding. */
     noContainer?: boolean;
@@ -36,7 +36,7 @@ interface LaunchStagesChartProps {
 }
 
 interface TimelineMilestone {
-    stage: LaunchStage;
+    stage: ReleaseStage;
     position: number; // Position on timeline (0-100%)
     dateOffset: number; // Days from launch date
     isReleaseDate?: boolean; // Is this the release launch date (Cohort 1 Live start)
@@ -69,18 +69,18 @@ function shiftDate(d: Date | string | null | undefined, days: number): Date | nu
 const DAYS_TO_GO_NO_GO_FROM_RELEASE = 28; // ~1 week into GTM Access (7 days into 14-day stage)
 
 /**
- * Reusable launch stages timeline. Use with a single parameter for standalone display:
- *   <LaunchStagesChart releaseDate="2026-03-19" />
+ * Reusable release stages timeline. Use with a single parameter for standalone display:
+ *   <ReleaseStagesChart releaseDate="2026-03-19" />
  * Optional: pass `stages` for custom durations/names, `goNoGoDate` to override derived date.
  */
-export function LaunchStagesChart({
+export function ReleaseStagesChart({
     releaseDate: releaseDateProp,
     stages: stagesProp,
     goNoGoDate: goNoGoDateProp,
     showHeading = true,
     noContainer = false,
     targetReleaseDate,
-}: LaunchStagesChartProps) {
+}: ReleaseStagesChartProps) {
     const releaseDate = releaseDateProp ?? targetReleaseDate;
     const stages = stagesProp ?? DEFAULT_STAGES;
     const sortedForAnchor = [...stages].sort((a, b) => a.sort_order - b.sort_order);
@@ -220,14 +220,14 @@ export function LaunchStagesChart({
     if (sortedStages.length === 0) {
         return (
             <Box className="bg-gray-50 rounded-lg p-8 text-center text-gray-500">
-                No launch stages to display
+                No release stages to display
             </Box>
         );
     }
 
     const chartContent = (
         <>
-            {showHeading && <h3 className="text-lg font-semibold text-gray-900 mb-2">Launch Stages Timeline</h3>}
+            {showHeading && <h3 className="text-lg font-semibold text-gray-900 mb-2">Release Stages Timeline</h3>}
             <Box className={`overflow-x-auto ${noContainer ? '' : '-mx-1'}`} style={noContainer ? { padding: 0, margin: 0 } : undefined}>
                 <svg
                     width={timelineWidth}

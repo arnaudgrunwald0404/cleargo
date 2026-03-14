@@ -357,53 +357,61 @@ export async function calculateDueDateForCriterion(
     ratingTimingId: number | null,
     client: SupabaseClient
 ): Promise<string | null> {
-    if (!targetLaunchDate || !ratingTimingId) {
+    if (!targetLaunchDate) {
         return null;
     }
 
-    // Fetch all launch stages
-    const { data: launchStages, error: stagesError } = await client
-        .from('launch_stages')
+    // Fetch all release stages
+    const { data: releaseStages, error: stagesError } = await client
+        .from('release_stages')
         .select('id, sort_order, duration_days')
         .order('sort_order', { ascending: true });
 
-    if (stagesError || !launchStages || launchStages.length === 0) {
-        console.warn('Failed to fetch launch stages for due date calculation:', stagesError);
+    if (stagesError || !releaseStages || releaseStages.length === 0) {
+        console.warn('Failed to fetch release stages for due date calculation:', stagesError);
         return null;
     }
 
-    // Find the target stage
-    const targetStage = launchStages.find((s) => s.id === ratingTimingId);
+    // Default to first stage (Stage 1) if no rating_timing is set
+    let targetStage = ratingTimingId
+        ? releaseStages.find((s) => s.id === ratingTimingId)
+        : releaseStages.find((s) => s.sort_order === 1);
     if (!targetStage) {
         return null;
     }
 
-    // Find the last pre-launch stage (Internal Readiness, sort_order 3)
-    // This is the stage before launch, so we sum durations up to this stage
-    const lastPreLaunchStage = launchStages.find((s) => s.sort_order === 3);
+    // Find the last pre-launch stage (sort_order 3)
+    const lastPreLaunchStage = releaseStages.find((s) => s.sort_order === 3);
     if (!lastPreLaunchStage) {
         return null;
     }
 
-    // Sum durations of all stages before the target stage
-    // Only include pre-launch stages (up to Internal Readiness)
-    const stagesBeforeTarget = launchStages.filter(
-        (s) =>
-            s.sort_order < targetStage.sort_order &&
-            s.sort_order <= lastPreLaunchStage.sort_order &&
-            s.duration_days !== null
-    );
-
-    const totalDaysBefore = stagesBeforeTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
-
-    if (totalDaysBefore === 0) {
-        return null;
-    }
-
-    // Calculate due date: subtract days before launch from target date
     const targetDate = new Date(targetLaunchDate);
     const dueDate = new Date(targetDate);
-    dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+
+    if (targetStage.sort_order <= lastPreLaunchStage.sort_order) {
+        // Pre-launch stage: due date = first day of stage
+        // = targetDate - (own duration + sum of all later pre-release stages)
+        const stagesAfterTarget = releaseStages.filter(
+            (s) =>
+                s.sort_order > targetStage!.sort_order &&
+                s.sort_order <= lastPreLaunchStage!.sort_order &&
+                s.duration_days !== null
+        );
+        const totalDaysBefore = (targetStage.duration_days || 0) +
+            stagesAfterTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
+        dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+    } else {
+        // Post-launch stage: due date = targetDate + sum of post-launch stage durations up to this stage
+        const postLaunchStages = releaseStages.filter(
+            (s) =>
+                s.sort_order > lastPreLaunchStage!.sort_order &&
+                s.sort_order <= targetStage!.sort_order &&
+                s.duration_days !== null
+        );
+        const totalDaysAfter = postLaunchStages.reduce((sum, s) => sum + (s.duration_days || 0), 0);
+        dueDate.setDate(dueDate.getDate() + totalDaysAfter);
+    }
 
     return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
 }

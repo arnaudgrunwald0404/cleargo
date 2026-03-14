@@ -11,7 +11,7 @@ class EpicDetailCache {
     // TTLs in milliseconds
     private readonly TTL_SETTINGS = 5 * 60 * 1000; // 5 minutes
     private readonly TTL_CRITERIA = 10 * 60 * 1000; // 10 minutes
-    private readonly TTL_LAUNCH_STAGES = 30 * 60 * 1000; // 30 minutes
+    private readonly TTL_RELEASE_STAGES = 30 * 60 * 1000; // 30 minutes
     private readonly TTL_RELEASE_SCHEDULE = 5 * 60 * 1000; // 5 minutes
 
     private isExpired(entry: CacheEntry<any>, ttl: number): boolean {
@@ -64,12 +64,12 @@ class EpicDetailCache {
         this.set('criteria', criteria);
     }
 
-    getLaunchStages(): any[] | null {
-        return this.get('launch_stages', this.TTL_LAUNCH_STAGES);
+    getReleaseStages(): any[] | null {
+        return this.get('release_stages', this.TTL_RELEASE_STAGES);
     }
 
-    setLaunchStages(stages: any[]): void {
-        this.set('launch_stages', stages);
+    setReleaseStages(stages: any[]): void {
+        this.set('release_stages', stages);
     }
 
     getReleaseSchedule(): any[] | null {

@@ -44,7 +44,7 @@ export type Criterion = {
   gate: boolean;
   tier_applicability: TierApplicability;
   decision_owner_email?: string | null; // Email or placeholder "[name of pod's product manager]"
-  rating_timing?: number | null; // Foreign key to launch_stages table - the timing by which the criteria needs to be rated
+  rating_timing?: number | null; // Foreign key to release_stages table - the timing by which the criteria needs to be rated
   status_definition_go?: string;
   status_definition_conditional?: string;
   status_definition_no_go?: string;

@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
+import { Launch } from "@/types/launches";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl, Combobox, useCombobox, InputBase } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
@@ -12,10 +13,122 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
-import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
+import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
+}
+
+function LaunchCell({
+    epicId,
+    currentLaunch,
+    launchOptions,
+    onAssign,
+    onUnassign,
+    onCreate,
+    saving,
+    readOnly,
+}: {
+    epicId: string;
+    currentLaunch: { launchId: string; launchName: string } | undefined;
+    launchOptions: Array<{ value: string; label: string; tier: string | null }>;
+    onAssign: (epicId: string, launchId: string) => Promise<void>;
+    onUnassign: (epicId: string, launchId: string) => Promise<void>;
+    onCreate: (epicId: string, name: string) => Promise<void>;
+    saving: boolean;
+    readOnly: boolean;
+}) {
+    const combobox = useCombobox({ onDropdownClose: () => { combobox.resetSelectedOption(); setSearch(''); } });
+    const [search, setSearch] = useState('');
+
+    if (readOnly) {
+        return (
+            <span className="text-xs font-medium" style={{ color: '#374151' }}>
+                {currentLaunch?.launchName || <span style={{ color: '#9CA3AF' }}>-</span>}
+            </span>
+        );
+    }
+
+    const filtered = launchOptions.filter(o =>
+        o.label.toLowerCase().includes(search.toLowerCase().trim())
+    );
+    const exactMatch = launchOptions.some(o => o.label.toLowerCase() === search.toLowerCase().trim());
+
+    return (
+        <Combobox store={combobox} onOptionSubmit={async (val) => {
+            combobox.closeDropdown();
+            if (val === '__create__') {
+                await onCreate(epicId, search.trim());
+            } else if (val === '__clear__') {
+                if (currentLaunch) await onUnassign(epicId, currentLaunch.launchId);
+            } else {
+                await onAssign(epicId, val);
+            }
+        }}>
+            <Combobox.Target>
+                <InputBase
+                    component="button"
+                    type="button"
+                    pointer
+                    rightSection={saving ? <PurpleLoader size="xs" /> : <Combobox.Chevron />}
+                    onClick={() => combobox.toggleDropdown()}
+                    disabled={saving}
+                    styles={{
+                        input: {
+                            fontSize: '12px',
+                            minHeight: '28px',
+                            height: '28px',
+                            paddingTop: 0,
+                            paddingBottom: 0,
+                            border: '1px solid #E5E7EB',
+                            backgroundColor: 'transparent',
+                            cursor: 'pointer',
+                        },
+                    }}
+                >
+                    {currentLaunch ? (
+                        <span className="text-xs font-medium truncate" style={{ color: '#374151' }}>{currentLaunch.launchName}</span>
+                    ) : (
+                        <span className="text-xs" style={{ color: '#9CA3AF' }}>-</span>
+                    )}
+                </InputBase>
+            </Combobox.Target>
+            <Combobox.Dropdown>
+                <Combobox.Search
+                    value={search}
+                    onChange={(e) => setSearch(e.currentTarget.value)}
+                    placeholder="Search or create..."
+                />
+                <Combobox.Options>
+                    {currentLaunch && (
+                        <Combobox.Option value="__clear__" style={{ color: '#EF4444', fontSize: '12px' }}>
+                            Clear assignment
+                        </Combobox.Option>
+                    )}
+                    {filtered.map(o => (
+                        <Combobox.Option value={o.value} key={o.value}>
+                            <span className="text-xs">{o.label}</span>
+                            {o.tier && (
+                                <span className="ml-1 text-xs" style={{ color: '#9CA3AF' }}>
+                                    {o.tier.replace('_', ' ')}
+                                </span>
+                            )}
+                        </Combobox.Option>
+                    ))}
+                    {!exactMatch && search.trim() && (
+                        <Combobox.Option value="__create__">
+                            <span className="text-xs" style={{ color: '#7C3AED', fontWeight: 500 }}>+ Create &ldquo;{search.trim()}&rdquo;</span>
+                        </Combobox.Option>
+                    )}
+                    {filtered.length === 0 && !search.trim() && !currentLaunch && (
+                        <Combobox.Empty>
+                            <span className="text-xs" style={{ color: '#9CA3AF' }}>Type to create a launch</span>
+                        </Combobox.Empty>
+                    )}
+                </Combobox.Options>
+            </Combobox.Dropdown>
+        </Combobox>
+    );
 }
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
@@ -45,6 +158,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [podOrder, setPodOrder] = useState<string[]>([]);
     const [settingsLoaded, setSettingsLoaded] = useState(false);
     const [ownerInfoMap, setOwnerInfoMap] = useState<Record<string, { first_name?: string; last_name?: string; avatar_url?: string }>>({});
+
+    // Launch grouping state
+    const [launches, setLaunches] = useState<Launch[]>([]);
+    const [epicLaunchMap, setEpicLaunchMap] = useState<Map<string, { launchId: string; launchName: string }>>(new Map());
+    const [savingLaunchForEpic, setSavingLaunchForEpic] = useState<string | null>(null);
 
     // Filter state
     const [filters, setFilters] = useState({
@@ -94,7 +212,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     const supportingUrls = [
                         "/api/settings",
                         "/api/products",
-                        "/api/releases"
+                        "/api/releases",
+                        "/api/launches"
                     ];
 
                     const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
@@ -116,8 +235,21 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         const data = await releasesResult.response.json();
                         setReleaseSchedule(data || []);
                         setReleaseScheduleWithIds(data || []);
-                        // After releases are loaded, check if order needs to be determined
-                        // This will be handled by the useEffect that fetches missing dates
+                    }
+
+                    // Handle launches
+                    const launchesResult = supportingResults.find(r => r.url === '/api/launches');
+                    if (launchesResult?.response?.ok) {
+                        const data = await launchesResult.response.json();
+                        const launchList: Launch[] = data.launches || [];
+                        setLaunches(launchList);
+                        const map = new Map<string, { launchId: string; launchName: string }>();
+                        launchList.forEach(launch => {
+                            (launch.epics || []).forEach(le => {
+                                map.set(le.epic_id, { launchId: launch.id, launchName: launch.name });
+                            });
+                        });
+                        setEpicLaunchMap(map);
                     }
                 } catch (err) {
                     console.error("Failed to load initial data:", err);
@@ -155,12 +287,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             const supportingUrls = [
                 "/api/products",
                 "/api/releases",
-                "/api/settings"
+                "/api/settings",
+                "/api/launches"
             ];
 
             const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
-                batchSize: 2, // Process 2 at a time
-                batchDelay: 150, // 150ms delay between batches
+                batchSize: 2,
+                batchDelay: 150,
                 maxRetries: 1
             });
 
@@ -195,17 +328,114 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 // If settings failed to load, still mark as loaded to avoid infinite skeleton
                 setSettingsLoaded(true);
             }
+
+            // Handle launches
+            const launchesResult = supportingResults.find(r => r.url === '/api/launches');
+            if (launchesResult?.response?.ok) {
+                const launchesData = await launchesResult.response.json();
+                const launchList: Launch[] = launchesData.launches || [];
+                setLaunches(launchList);
+                const map = new Map<string, { launchId: string; launchName: string }>();
+                launchList.forEach(launch => {
+                    (launch.epics || []).forEach(le => {
+                        map.set(le.epic_id, { launchId: launch.id, launchName: launch.name });
+                    });
+                });
+                setEpicLaunchMap(map);
+            }
         } catch (e: any) {
             setError(e.message);
         } finally {
             setLoading(false);
-            // After initial load, check if we need to determine order
-            // This will be handled by the useEffect that fetches missing dates
         }
     }
 
 
     const canArchiveEpic = canRolesPerform(currentUserRoles, 'launch.delete');
+    const canManageLaunches = canRolesPerform(currentUserRoles, 'launches.manage');
+
+    // Launch grouping handlers
+    const launchSelectOptions = useMemo(() => {
+        return launches
+            .filter(l => !l.archived)
+            .map(l => ({ value: l.id, label: l.name, tier: l.tier }));
+    }, [launches]);
+
+    const LAUNCH_CLUSTER_COLORS = ['#7C3AED', '#2563EB', '#059669', '#D97706', '#DC2626', '#0891B2', '#7C2D12', '#4338CA'];
+
+    const launchColorMap = useMemo(() => {
+        const map = new Map<string, string>();
+        launches.filter(l => !l.archived).forEach((l, i) => {
+            map.set(l.id, LAUNCH_CLUSTER_COLORS[i % LAUNCH_CLUSTER_COLORS.length]);
+        });
+        return map;
+    }, [launches]);
+
+    const handleAssignLaunch = async (epicId: string, launchId: string) => {
+        setSavingLaunchForEpic(epicId);
+        try {
+            // If epic is already in another launch, unassign first
+            const current = epicLaunchMap.get(epicId);
+            if (current && current.launchId !== launchId) {
+                await fetch(`/api/launches/${current.launchId}/epics?epic_id=${epicId}`, { method: 'DELETE' });
+            }
+            const res = await fetch(`/api/launches/${launchId}/epics`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ epic_id: epicId }),
+            });
+            if (!res.ok) throw new Error('Failed to assign launch');
+            const launch = launches.find(l => l.id === launchId);
+            if (launch) {
+                setEpicLaunchMap(prev => new Map(prev).set(epicId, { launchId, launchName: launch.name }));
+            }
+        } catch (err: any) {
+            notifications.show({ title: 'Error', message: err.message, color: 'red' });
+        } finally {
+            setSavingLaunchForEpic(null);
+        }
+    };
+
+    const handleUnassignLaunch = async (epicId: string, launchId: string) => {
+        setSavingLaunchForEpic(epicId);
+        try {
+            const res = await fetch(`/api/launches/${launchId}/epics?epic_id=${epicId}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('Failed to unassign launch');
+            setEpicLaunchMap(prev => { const m = new Map(prev); m.delete(epicId); return m; });
+        } catch (err: any) {
+            notifications.show({ title: 'Error', message: err.message, color: 'red' });
+        } finally {
+            setSavingLaunchForEpic(null);
+        }
+    };
+
+    const handleCreateAndAssignLaunch = async (epicId: string, name: string) => {
+        setSavingLaunchForEpic(epicId);
+        try {
+            const createRes = await fetch('/api/launches', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name }),
+            });
+            if (!createRes.ok) throw new Error('Failed to create launch');
+            const newLaunch = await createRes.json();
+            setLaunches(prev => [newLaunch, ...prev]);
+
+            const linkRes = await fetch(`/api/launches/${newLaunch.id}/epics`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ epic_id: epicId }),
+            });
+            if (!linkRes.ok) throw new Error('Failed to link epic to new launch');
+
+            setEpicLaunchMap(prev => new Map(prev).set(epicId, { launchId: newLaunch.id, launchName: newLaunch.name }));
+            notifications.show({ title: 'Launch created', message: `"${name}" created and epic assigned.`, color: 'green' });
+        } catch (err: any) {
+            notifications.show({ title: 'Error', message: err.message, color: 'red' });
+        } finally {
+            setSavingLaunchForEpic(null);
+        }
+    };
 
     const handleArchiveClick = (epicId: string, epicName: string) => {
         setEpicToArchive({ id: epicId, name: epicName });
@@ -400,15 +630,23 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         const groups = Array.from(releaseGroupsMap.entries()).map(([releaseName, epics]) => {
             // Sort epics within each release group by module order
             const sortedEpics = [...epics].sort((a, b) => {
+                // Primary: cluster by launch (epics with a launch group together)
+                const launchA = epicLaunchMap.get(a.id)?.launchName || '';
+                const launchB = epicLaunchMap.get(b.id)?.launchName || '';
+                if (launchA && !launchB) return -1;
+                if (!launchA && launchB) return 1;
+                if (launchA && launchB && launchA !== launchB) {
+                    return launchA.localeCompare(launchB);
+                }
+
+                // Secondary: module order
                 const moduleA = getModuleFromEpic(a);
                 const moduleB = getModuleFromEpic(b);
-                
-                // Epics without module go to the end
+
                 if (!moduleA && !moduleB) return 0;
                 if (!moduleA) return 1;
                 if (!moduleB) return -1;
-                
-                // If module order is set, use it for sorting
+
                 if (podOrder.length > 0) {
                     const normalizedOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
                     const normA = moduleA.toLowerCase();
@@ -419,7 +657,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     if (indexA !== -1) return -1;
                     if (indexB !== -1) return 1;
                 }
-                
+
                 return moduleA.localeCompare(moduleB);
             });
             
@@ -441,6 +679,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         // Add ungrouped epics as a separate group at the end (also sorted by module order)
         if (ungroupedEpics.length > 0) {
             const sortedUngrouped = [...ungroupedEpics].sort((a, b) => {
+                const launchA = epicLaunchMap.get(a.id)?.launchName || '';
+                const launchB = epicLaunchMap.get(b.id)?.launchName || '';
+                if (launchA && !launchB) return -1;
+                if (!launchA && launchB) return 1;
+                if (launchA && launchB && launchA !== launchB) {
+                    return launchA.localeCompare(launchB);
+                }
+
                 const moduleA = getModuleFromEpic(a);
                 const moduleB = getModuleFromEpic(b);
                 if (!moduleA && !moduleB) return 0;
@@ -458,7 +704,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 }
                 return moduleA.localeCompare(moduleB);
             });
-            
+
             groups.push({
                 releaseName: "Ungrouped",
                 releaseDate: null,
@@ -467,7 +713,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
 
         return groups;
-    }, [filteredEpics, releaseDateMap, podOrder]);
+    }, [filteredEpics, releaseDateMap, podOrder, epicLaunchMap]);
 
     // Only show release groups whose release is in the schedule and not archived (GET /api/releases excludes archived)
     const displayedReleaseGroups = useMemo(() => {
@@ -1067,11 +1313,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }}
                     >
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Launch", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Launch", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1098,6 +1344,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
@@ -1673,7 +1922,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                     }}>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                 <colgroup>
                                     <col className="w-100" />
                                     <col className="w-24" />
@@ -1681,14 +1930,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     <col className="w-28" />
                                     <col className="w-32" />
                                     <col className="w-24" />
+                                    <col className="w-32" />
                                     <col className="w-24" />
                                     <col className="w-24" />
                                     <col className="w-24" />
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Launch", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Launch", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1715,6 +1965,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
@@ -1988,7 +2241,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 </div>
                                 {showTimelineForRelease === group.releaseName && group.releaseDate && (
                                     <div className="mt-3">
-                                        <LaunchStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
+                                        <ReleaseStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
                                     </div>
                                 )}
                                 <div className="rounded-lg" style={{ 
@@ -1998,7 +2251,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -2006,157 +2259,63 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
+                                                <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                             </colgroup>
-                                            <thead style={{ 
+                                            <thead style={{
                                                 backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left w-100" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Module</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
-                                                        <div className="flex items-center gap-1">
-                                                            <IconUser size={14} />
-                                                            PM
-                                                        </div>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Date</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Launch</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Risk
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}></th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                                 {Array.from({ length: 5 }).map((_, index) => (
                                                     <tr key={`skeleton-row-${index}`} className="!bg-white" style={{ backgroundColor: '#FFFFFF', borderBottom: "1px solid #E5E7EB" }}>
-                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div>
-                                                        </td>
-                                                        <td className="px-4 py-3 w-24">
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div>
-                                                        </td>
+                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div></td>
+                                                        <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
+                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div></td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -2164,129 +2323,70 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
+                                                <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                             </colgroup>
-                                            <thead style={{ 
+                                            <thead style={{
                                                 backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left w-100" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Module</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
-                                                        <div className="flex items-center gap-1">
-                                                            <IconUser size={14} />
-                                                            PM
-                                                        </div>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Date</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Launch</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Risk
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}></th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                                {group.epics.map(epic => (
-                                                <tr 
-                                                    key={epic.id}
+                                                {group.epics.map((epic, epicIdx) => {
+                                                const epicLaunch = epicLaunchMap.get(epic.id);
+                                                const launchColor = epicLaunch ? launchColorMap.get(epicLaunch.launchId) : undefined;
+                                                const prevEpicLaunch = epicIdx > 0 ? epicLaunchMap.get(group.epics[epicIdx - 1].id) : undefined;
+                                                const isFirstInCluster = epicLaunch && epicLaunch.launchId !== prevEpicLaunch?.launchId;
+                                                const nextEpicLaunch = epicIdx < group.epics.length - 1 ? epicLaunchMap.get(group.epics[epicIdx + 1].id) : undefined;
+                                                const isLastInCluster = epicLaunch && epicLaunch.launchId !== nextEpicLaunch?.launchId;
+
+                                                return (
+                                                <React.Fragment key={epic.id}>
+                                                {isFirstInCluster && (
+                                                    <tr style={{ backgroundColor: '#F9FAFB' }}>
+                                                        <td colSpan={10} style={{ padding: '4px 16px', fontSize: '11px', fontWeight: 600, color: launchColor, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                            <span style={{ borderLeft: `3px solid ${launchColor}`, paddingLeft: '8px' }}>
+                                                                {epicLaunch.launchName}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                <tr
                                                     className="!bg-white"
-                                                    style={{ 
+                                                    style={{
                                                         backgroundColor: "#FFFFFF",
-                                                        borderBottom: "1px solid #E5E7EB",
+                                                        borderBottom: isLastInCluster ? "2px solid #E5E7EB" : "1px solid #E5E7EB",
+                                                        borderLeft: launchColor ? `3px solid ${launchColor}` : '3px solid transparent',
                                                         transition: "background-color 0.15s ease"
                                                     }}
                                                     onMouseEnter={(e) => e.currentTarget.style.backgroundColor = "#F9FAFB"}
@@ -2361,6 +2461,18 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             {epic.status}
                                                         </span>
                                                     </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                        <LaunchCell
+                                                            epicId={epic.id}
+                                                            currentLaunch={epicLaunchMap.get(epic.id)}
+                                                            launchOptions={launchSelectOptions}
+                                                            onAssign={handleAssignLaunch}
+                                                            onUnassign={handleUnassignLaunch}
+                                                            onCreate={handleCreateAndAssignLaunch}
+                                                            saving={savingLaunchForEpic === epic.id}
+                                                            readOnly={!canManageLaunches}
+                                                        />
+                                                    </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex flex-col gap-1 items-center">
                                                             {epic.readiness_status ? (
@@ -2428,7 +2540,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                </React.Fragment>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                     )}

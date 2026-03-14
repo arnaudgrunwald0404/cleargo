@@ -19,7 +19,7 @@ function getCapabilityCategory(capabilityId: string): string {
   if (capabilityId.startsWith("users.")) {
     return "Users";
   }
-  if (capabilityId === "launchStages.manage" || capabilityId === "releases.manage") {
+  if (capabilityId === "releaseStages.manage" || capabilityId === "releases.manage") {
     return "Releases";
   }
   if (capabilityId.startsWith("criteria.")) {

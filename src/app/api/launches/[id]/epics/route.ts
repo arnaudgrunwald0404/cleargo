@@ -4,7 +4,6 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { calculateLaunchReadiness } from '@/lib/launch-readiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -20,34 +19,24 @@ async function getHandler(
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { data: launch, error } = await supabase
-            .from('launch')
-            .select(`
-                *,
-                launch_epic(id, epic_id, epic:epic(id, name, tier, readiness_score, readiness_status, status, target_launch_date)),
-                launch_criterion_status(
-                    id, criterion_id, status, owner_id, owner_email, due_date, notes, links, last_updated_at,
-                    criterion:criterion(id, label, description, phase, category, gate, tier_applicability, sort_order, is_active)
-                )
-            `)
-            .eq('id', id)
-            .single();
+        const { data, error } = await supabase
+            .from('launch_epic')
+            .select('id, epic_id, created_at, epic:epic(id, name, tier, readiness_score, readiness_status, status, target_launch_date)')
+            .eq('launch_id', id)
+            .order('created_at', { ascending: true });
 
         if (error) {
-            if (error.code === 'PGRST116') {
-                return NextResponse.json({ error: 'Launch not found' }, { status: 404 });
-            }
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json(launch);
+        return NextResponse.json({ epics: data || [] });
     } catch (error: any) {
-        console.error('Error in GET /api/launches/[id]:', error);
+        console.error('Error in GET /api/launches/[id]/epics:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
-async function patchHandler(
+async function postHandler(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
@@ -66,45 +55,28 @@ async function patchHandler(
         }
 
         const body = await req.json();
-        const allowedFields = ['name', 'tier', 'target_launch_date', 'status', 'owner_email', 'schedule_id', 'archived'];
-        const updates: Record<string, any> = { updated_at: new Date().toISOString() };
+        const { epic_id } = body;
 
-        for (const key of allowedFields) {
-            if (key in body) {
-                updates[key] = body[key];
-            }
-        }
-
-        // Resolve owner_id if email changed
-        if ('owner_email' in body) {
-            if (body.owner_email) {
-                const { data: ownerUser } = await supabase
-                    .from('app_user')
-                    .select('id')
-                    .eq('email', body.owner_email.toLowerCase())
-                    .single();
-                updates.owner_id = ownerUser?.id || null;
-                updates.owner_email = body.owner_email.toLowerCase();
-            } else {
-                updates.owner_id = null;
-                updates.owner_email = null;
-            }
+        if (!epic_id) {
+            return NextResponse.json({ error: 'epic_id is required' }, { status: 400 });
         }
 
         const { data, error } = await supabase
-            .from('launch')
-            .update(updates)
-            .eq('id', id)
-            .select()
+            .from('launch_epic')
+            .insert({ launch_id: id, epic_id })
+            .select('id, epic_id, created_at, epic:epic(id, name, tier, readiness_score, readiness_status, status)')
             .single();
 
         if (error) {
+            if (error.code === '23505') {
+                return NextResponse.json({ error: 'Epic is already linked to this launch' }, { status: 409 });
+            }
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json(data);
+        return NextResponse.json(data, { status: 201 });
     } catch (error: any) {
-        console.error('Error in PATCH /api/launches/[id]:', error);
+        console.error('Error in POST /api/launches/[id]/epics:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
@@ -127,18 +99,30 @@ async function deleteHandler(
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
-        const { error } = await supabase.from('launch').delete().eq('id', id);
+        const url = new URL(req.url);
+        const epicId = url.searchParams.get('epic_id');
+
+        if (!epicId) {
+            return NextResponse.json({ error: 'epic_id query parameter is required' }, { status: 400 });
+        }
+
+        const { error } = await supabase
+            .from('launch_epic')
+            .delete()
+            .eq('launch_id', id)
+            .eq('epic_id', epicId);
+
         if (error) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
         return NextResponse.json({ success: true });
     } catch (error: any) {
-        console.error('Error in DELETE /api/launches/[id]:', error);
+        console.error('Error in DELETE /api/launches/[id]/epics:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
 
 export const GET = withRateLimit(getHandler, RATE_LIMITS.default);
-export const PATCH = withRateLimit(patchHandler, RATE_LIMITS.default);
+export const POST = withRateLimit(postHandler, RATE_LIMITS.default);
 export const DELETE = withRateLimit(deleteHandler, RATE_LIMITS.default);

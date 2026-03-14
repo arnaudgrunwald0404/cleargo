@@ -7,51 +7,46 @@ import { canRolesPerformWithRules } from "@/lib/permissions";
 import { toDateOnlyString } from "@/lib/date-utils";
 
 async function getHandler(request: NextRequest) {
-    // #region agent log
-    const fs = require('fs');
-    const logEntry1 = {location:'releases/route.ts:4',message:'GET releases called',data:{url:request.url,hasCookies:request.cookies.getAll().length>0,cookieNames:request.cookies.getAll().map(c=>c.name)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'};
-    try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry1) + '\n'); } catch(e) {}
-    // #endregion
     try {
-        // #region agent log
-        const envCheck = {hasSupabaseUrl:!!process.env.NEXT_PUBLIC_SUPABASE_URL,hasPublishableKey:!!process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,hasAnonKey:!!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY};
-        const logEntry2 = {location:'releases/route.ts:7',message:'Before createClient - env check',data:envCheck,timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry2) + '\n'); } catch(e) {}
-        // #endregion
         const supabase = createClient();
-        // #region agent log
-        const logEntry3 = {location:'releases/route.ts:9',message:'After createClient - before getUser',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'};
-        try { fs.appendFileSync('/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log', JSON.stringify(logEntry3) + '\n'); } catch(e) {}
-        // #endregion
-        
+
         // Check authentication (supports both Supabase auth and magic link)
         const userEmail = await getAuthenticatedUserEmail();
         if (!userEmail) {
             return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
         }
-        
+
         // Check if include_archived query parameter is set
         const { searchParams } = new URL(request.url);
         const includeArchived = searchParams.get('include_archived') === 'true';
-        
+
         let query = supabase
             .from("release_schedule")
             .select("*");
-        
+
+        // Filter by context if the column exists (added by launches migration)
+        query = query.eq("context", "release");
+
         // Filter out archived releases by default (unless include_archived=true)
-        // Handle case where archived column doesn't exist yet (migration not applied)
         if (!includeArchived) {
             query = query.eq("archived", false);
         }
-        
+
         let { data, error } = await query.order("launch_date", { ascending: true });
 
-        // If error is about missing archived column, retry without the filter
-        if (error && error.message && error.message.includes("archived") && error.message.includes("does not exist")) {
-            console.warn("archived column does not exist, fetching all releases without archived filter");
-            const retryQuery = supabase
+        // If error is about missing context or archived column, retry without those filters
+        if (error && error.message && error.message.includes("does not exist")) {
+            console.warn("Column missing, retrying without context/archived filters:", error.message);
+            let retryQuery = supabase
                 .from("release_schedule")
                 .select("*");
+            // Only add filters for columns that aren't the ones causing the error
+            if (!error.message.includes("context")) {
+                retryQuery = retryQuery.eq("context", "release");
+            }
+            if (!includeArchived && !error.message.includes("archived")) {
+                retryQuery = retryQuery.eq("archived", false);
+            }
             const retryResult = await retryQuery.order("launch_date", { ascending: true });
             data = retryResult.data;
             error = retryResult.error;
@@ -59,35 +54,7 @@ async function getHandler(request: NextRequest) {
 
         if (error) {
             console.error("Error fetching releases:", error);
-            // If error is about missing aha_epic_count column, still return data (migration not run yet)
-            if (error.message && error.message.includes("aha_epic_count") && error.message.includes("does not exist")) {
-                console.warn("aha_epic_count column does not exist yet - migration may not have been run");
-                // Try to fetch without the problematic column by selecting specific columns
-                const fallbackQuery = supabase
-                    .from("release_schedule")
-                    .select("id, release_name, launch_date, archived, created_at, updated_at");
-                if (!includeArchived) {
-                    fallbackQuery.eq("archived", false);
-                }
-                const fallbackResult = await fallbackQuery.order("launch_date", { ascending: true });
-                if (!fallbackResult.error) {
-                    const rows = (fallbackResult.data || []).map((r: any) => ({
-                        ...r,
-                        launch_date: toDateOnlyString(r.launch_date) ?? r.launch_date,
-                    }));
-                    return NextResponse.json(rows);
-                }
-            }
             return NextResponse.json({ error: error.message }, { status: 500 });
-        }
-
-        // Log first release to debug aha_epic_count field
-        if (data && data.length > 0 && process.env.NODE_ENV === 'development') {
-            console.log("Sample release data:", {
-                release_name: data[0].release_name,
-                has_aha_epic_count: 'aha_epic_count' in data[0],
-                aha_epic_count: data[0].aha_epic_count
-            });
         }
         const rows = (data || []).map((r: any) => ({
             ...r,
@@ -177,21 +144,38 @@ async function postHandler(request: NextRequest) {
 
         const normalizedDate = toDateOnlyString(parsedDate) ?? parsedDate;
         console.log("Attempting to upsert release:", { release_name, launch_date: normalizedDate });
-        
-        const { data, error } = await supabase
+
+        // Try composite unique first (post-launches migration), fall back to release_name only
+        let data, error;
+        const row: Record<string, unknown> = {
+            release_name,
+            launch_date: normalizedDate,
+            updated_at: new Date().toISOString(),
+        };
+
+        // Try with context column (launches migration applied)
+        const attempt1 = await supabase
             .from("release_schedule")
             .upsert(
-                {
-                    release_name,
-                    launch_date: normalizedDate,
-                    updated_at: new Date().toISOString(),
-                },
-                {
-                    onConflict: "release_name",
-                }
+                { ...row, context: 'release' },
+                { onConflict: "release_name,context" }
             )
             .select()
             .single();
+
+        if (attempt1.error && attempt1.error.code === '42P10') {
+            // Composite constraint doesn't exist yet — fall back to release_name only
+            const attempt2 = await supabase
+                .from("release_schedule")
+                .upsert(row, { onConflict: "release_name" })
+                .select()
+                .single();
+            data = attempt2.data;
+            error = attempt2.error;
+        } else {
+            data = attempt1.data;
+            error = attempt1.error;
+        }
 
         if (error) {
             console.error("Error creating/updating release:", error);
