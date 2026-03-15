@@ -129,7 +129,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         { link: '/', label: 'Home' },
         { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
-        { link: '/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
+        { link: '/releases/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: '/feedback', label: 'Feedback' },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
