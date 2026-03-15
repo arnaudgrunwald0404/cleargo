@@ -971,28 +971,50 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     return releasesToShow;
   }, [items, releaseSchedule, epicReleaseMap, showAllItems, isLoadingReleaseNames]);
 
+  const getItemDueDate = (item: MyItem): string | null => {
+    if (item.condition_due_date && item.condition_due_date.trim() !== '') {
+      return item.condition_due_date;
+    }
+    if (releaseStages.length === 0) return null;
+    const targetDate = item.launch.target_launch_date;
+    if (!targetDate) return null;
+    const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
+    if (!ratingTimingId) return null;
+    const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+    const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+    if (daysBefore === undefined && daysAfter === undefined) return null;
+    const dueDate = new Date(targetDate);
+    if (daysBefore !== undefined) {
+      dueDate.setDate(dueDate.getDate() - daysBefore);
+    } else if (daysAfter !== undefined) {
+      dueDate.setDate(dueDate.getDate() + daysAfter);
+    }
+    return dueDate.toISOString().split('T')[0];
+  };
+
   const headingStats = useMemo(() => {
-    const totalCriteria = releaseGroups.reduce((sum, g) => sum + g.items.length, 0);
+    const allItems = releaseGroups.flatMap(g => g.items);
+    const totalCriteria = allItems.length;
 
-    const releasesWithDates = releaseSchedule
-      .filter(r => r.release_name && r.launch_date)
-      .map(r => ({
-        name: r.release_name!,
-        date: r.launch_date!
-      }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 2);
-
-    const nextTwoReleaseNames = new Set(releasesWithDates.map(r => r.name));
-    const criteriaForNextTwoReleases = releaseGroups
-      .filter(g => nextTwoReleaseNames.has(g.releaseName))
-      .reduce((sum, g) => sum + g.items.length, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let overdueCount = 0;
+    for (const item of allItems) {
+      const dueDateStr = getItemDueDate(item);
+      if (dueDateStr) {
+        const dueDate = new Date(dueDateStr);
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate < today) {
+          overdueCount++;
+        }
+      }
+    }
 
     return {
       total: totalCriteria,
-      forNextTwoReleases: criteriaForNextTwoReleases
+      overdue: overdueCount
     };
-  }, [releaseGroups, releaseSchedule]);
+  }, [releaseGroups, releaseStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
 
   useEffect(() => {
     setCriteriaCount(headingStats.total);
@@ -1210,9 +1232,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                 {isFirstTime ? (
                   <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
                 ) : (
-                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total}</span> criteria to inform.
-                 
-                  
+                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.overdue}</span> criteria to inform ASAP{headingStats.total - headingStats.overdue > 0 && <> and <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total - headingStats.overdue}</span> others to start thinking about</>}.
                   </>
                 )}
               </Title>
