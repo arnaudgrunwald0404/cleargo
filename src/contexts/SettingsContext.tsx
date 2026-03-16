@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { AppSettings } from "@/lib/settings-db";
-import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getLaunchStages } from "@/lib/services/settingsService";
+import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getReleaseStages, getLaunchCriteria, getLaunchSchedule } from "@/lib/services/settingsService";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 
 interface SettingsContextType {
@@ -54,11 +54,11 @@ interface SettingsContextType {
     autoSaveAhaFields: (fieldsToLoad: string[]) => Promise<void>;
     handleSynchronizeFields: () => Promise<void>;
     
-    // Launch Stages
-    launchStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>;
-    launchStagesLoading: boolean;
-    setLaunchStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>>;
-    fetchLaunchStages: () => Promise<void>;
+    // Release Stages
+    releaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>;
+    releaseStagesLoading: boolean;
+    setReleaseStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>>;
+    fetchReleaseStages: () => Promise<void>;
     
     // Email Templates
     emailTemplates: {
@@ -82,6 +82,16 @@ interface SettingsContextType {
     }>>;
     fetchEmailTemplates: () => Promise<void>;
     
+    // Launch Criteria
+    launchCriteria: any[];
+    launchCriteriaLoading: boolean;
+    fetchLaunchCriteria: () => Promise<void>;
+
+    // Launch Schedule
+    launchSchedule: any[];
+    launchScheduleLoading: boolean;
+    fetchLaunchSchedule: (includeArchived?: boolean) => Promise<void>;
+
     // Current User
     currentUserRoles: string[];
     isSuperAdmin: boolean;
@@ -120,9 +130,15 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null>(null);
     
-    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>([]);
-    const [launchStagesLoading, setLaunchStagesLoading] = useState(false);
-    
+    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>([]);
+    const [releaseStagesLoading, setReleaseStagesLoading] = useState(false);
+
+    const [launchCriteria, setLaunchCriteria] = useState<any[]>([]);
+    const [launchCriteriaLoading, setLaunchCriteriaLoading] = useState(false);
+
+    const [launchSchedule, setLaunchSchedule] = useState<any[]>([]);
+    const [launchScheduleLoading, setLaunchScheduleLoading] = useState(false);
+
     const [emailTemplates, setEmailTemplates] = useState({
         invite_subject: "",
         invite_html: "",
@@ -323,18 +339,42 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
     };
     
-    const fetchLaunchStages = async () => {
-        setLaunchStagesLoading(true);
+    const fetchReleaseStages = async () => {
+        setReleaseStagesLoading(true);
         try {
-            const data = await getLaunchStages();
-            setLaunchStages(data.stages || []);
+            const data = await getReleaseStages();
+            setReleaseStages(data.stages || []);
         } catch (error: any) {
-            console.error("Failed to fetch launch stages:", error);
+            console.error("Failed to fetch release stages:", error);
         } finally {
-            setLaunchStagesLoading(false);
+            setReleaseStagesLoading(false);
         }
     };
     
+    const fetchLaunchCriteria = async () => {
+        setLaunchCriteriaLoading(true);
+        try {
+            const data = await getLaunchCriteria();
+            setLaunchCriteria(data.criteria || []);
+        } catch (error: any) {
+            console.error("Failed to fetch launch criteria:", error);
+        } finally {
+            setLaunchCriteriaLoading(false);
+        }
+    };
+
+    const fetchLaunchSchedule = async (includeArchived: boolean = false) => {
+        setLaunchScheduleLoading(true);
+        try {
+            const data = await getLaunchSchedule(includeArchived);
+            setLaunchSchedule(data.schedules || []);
+        } catch (error: any) {
+            console.error("Failed to fetch launch schedule:", error);
+        } finally {
+            setLaunchScheduleLoading(false);
+        }
+    };
+
     const fetchEmailTemplates = async () => {
         setEmailTemplatesLoading(true);
         try {
@@ -375,7 +415,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await new Promise(resolve => setTimeout(resolve, 300));
             await fetchLaunchReleaseDates();
             await new Promise(resolve => setTimeout(resolve, 300));
-            await fetchLaunchStages();
+            await fetchReleaseStages();
         }, 1500);
         
         setTimeout(async () => {
@@ -385,6 +425,12 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await new Promise(resolve => setTimeout(resolve, 300));
             await fetchEmailTemplates();
         }, 3000);
+
+        setTimeout(async () => {
+            await fetchLaunchCriteria();
+            await new Promise(resolve => setTimeout(resolve, 300));
+            await fetchLaunchSchedule();
+        }, 4500);
     }, []);
     
     // Auto-save email templates with debouncing
@@ -452,10 +498,16 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 refreshAhaFieldsList,
                 autoSaveAhaFields,
                 handleSynchronizeFields,
-                launchStages,
-                launchStagesLoading,
-                setLaunchStages,
-                fetchLaunchStages,
+                releaseStages,
+                releaseStagesLoading,
+                setReleaseStages,
+                fetchReleaseStages,
+                launchCriteria,
+                launchCriteriaLoading,
+                fetchLaunchCriteria,
+                launchSchedule,
+                launchScheduleLoading,
+                fetchLaunchSchedule,
                 emailTemplates,
                 emailTemplatesLoading,
                 emailTemplatesSaving,

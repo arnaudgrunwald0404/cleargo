@@ -120,8 +120,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Fetch launch stages to map names to IDs
-        const { data: launchStages, error: stagesError } = await supabase
-            .from('launch_stages')
+        const { data: releaseStages, error: stagesError } = await supabase
+            .from('release_stages')
             .select('id, name');
         
         if (stagesError) {
@@ -130,12 +130,12 @@ export async function POST(req: NextRequest) {
         }
 
         // Create a map from launch stage name to ID
-        const launchStageMap = new Map<string, number>();
-        (launchStages || []).forEach((stage: { id: number; name: string }) => {
-            launchStageMap.set(stage.name.toLowerCase().trim(), stage.id);
+        const releaseStageMap = new Map<string, number>();
+        (releaseStages || []).forEach((stage: { id: number; name: string }) => {
+            releaseStageMap.set(stage.name.toLowerCase().trim(), stage.id);
         });
         
-        console.log(`[Import] Loaded ${launchStageMap.size} launch stages for mapping`);
+        console.log(`[Import] Loaded ${releaseStageMap.size} launch stages for mapping`);
 
         const criteria: CreateCriterionInput[] = [];
         const errors: Array<{ row: number; label: string; error: string }> = [];
@@ -252,11 +252,11 @@ export async function POST(req: NextRequest) {
             let ratingTimingId: number | null = null;
             if (colD) {
                 const stageNameLower = colD.toLowerCase().trim();
-                const stageId = launchStageMap.get(stageNameLower);
+                const stageId = releaseStageMap.get(stageNameLower);
                 if (stageId) {
                     ratingTimingId = stageId;
                 } else {
-                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in launch_stages table`);
+                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in release_stages table`);
                     // Still continue, but rating_timing will be null
                 }
             }

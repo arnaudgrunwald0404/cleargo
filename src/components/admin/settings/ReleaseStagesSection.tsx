@@ -4,9 +4,9 @@ import { Drawer, Button, Group, Stack, TextInput, NumberInput } from "@mantine/c
 import { IconGripVertical, IconPencil } from "@tabler/icons-react";
 import { RichText } from "@/components/admin/RichText";
 import { PurpleLoader } from '../../PurpleLoader';
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 
-export type LaunchStage = {
+export type ReleaseStage = {
   id: number;
   name: string;
   sort_order: number;
@@ -15,7 +15,7 @@ export type LaunchStage = {
 };
 
 type Props = {
-  stages: LaunchStage[];
+  stages: ReleaseStage[];
   loading: boolean;
   draggedStageId: number | null;
   setDraggedStageId: (id: number | null) => void;
@@ -36,7 +36,7 @@ type Props = {
   onDeleteExisting: (id: number) => void;
 };
 
-export default function LaunchStagesSection({
+export default function ReleaseStagesSection({
   stages,
   loading,
   draggedStageId,
@@ -67,8 +67,8 @@ export default function LaunchStagesSection({
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Launch Stages</h2>
-              <p className="text-sm text-gray-500">Configure launch stages and their durations</p>
+              <h2 className="text-lg font-semibold text-gray-900">Release Stages</h2>
+              <p className="text-sm text-gray-500">Configure release stages and their durations</p>
             </div>
           </div>
           {!loading && stages.length > 0 && (
@@ -95,7 +95,7 @@ export default function LaunchStagesSection({
           </div>
         ) : stages.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-gray-500 mb-4">No launch stages found.</p>
+            <p className="text-gray-500 mb-4">No release stages found.</p>
             <p className="text-sm text-gray-400">The migration may not have inserted the initial data. Check the database or add stages manually.</p>
           </div>
         ) : (
@@ -197,7 +197,7 @@ export default function LaunchStagesSection({
         )}
       </div>
 
-      <LaunchStagesChart stages={stages} />
+      <ReleaseStagesChart stages={stages} />
 
       <StageDrawer
         opened={editingOpen}
@@ -266,7 +266,7 @@ function StageDrawer({
 }) {
   const isAdding = stageId === null;
   return (
-    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Launch Stage" : "Edit Launch Stage"} position="right" size="xl" padding="lg">
+    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Release Stage" : "Edit Release Stage"} position="right" size="xl" padding="lg">
       <Stack gap="md">
         <TextInput label="Stage Name" value={stageName} onChange={(e) => setStageName(e.target.value)} required placeholder="e.g., GTM Access" />
         <NumberInput

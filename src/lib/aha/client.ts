@@ -15,6 +15,17 @@ interface RetryOptions {
     maxDelay?: number;
 }
 
+/** Error subclass for non-retryable Aha API responses (4xx except 429). */
+class AhaApiError extends Error {
+    status: number;
+    nonRetryable = true;
+    constructor(status: number, body: string) {
+        super(`Aha API error ${status}: ${body}`);
+        this.status = status;
+        this.name = 'AhaApiError';
+    }
+}
+
 async function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -35,10 +46,10 @@ async function fetchWithRetry<T>(
                 return await response.json();
             }
 
-            // Don't retry on client errors (4xx except 429)
+            // Don't retry on client errors (4xx except 429) — these are permanent failures
             if (response.status >= 400 && response.status < 500 && response.status !== 429) {
                 const errorText = await response.text();
-                throw new Error(`Aha API error ${response.status}: ${errorText}`);
+                throw new AhaApiError(response.status, errorText);
             }
 
             // Retry on server errors (5xx) or rate limiting (429)
@@ -53,13 +64,14 @@ async function fetchWithRetry<T>(
             throw new Error(`Aha API error ${response.status}: ${errorText}`);
         } catch (error) {
             lastError = error as Error;
-            if (attempt < maxRetries && (error as any).code !== 'ENOTFOUND') {
-                const delay = Math.min(initialDelay * Math.pow(2, attempt), maxDelay);
-                console.warn(`Aha API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error);
-                await sleep(delay);
-                continue;
+            // Never retry non-retryable API errors (4xx except 429) or DNS failures
+            const isNonRetryable = (error as any).nonRetryable || (error as any).code === 'ENOTFOUND';
+            if (isNonRetryable || attempt >= maxRetries) {
+                throw error;
             }
-            throw error;
+            const delay = Math.min(initialDelay * Math.pow(2, attempt), maxDelay);
+            console.warn(`Aha API request failed (attempt ${attempt + 1}/${maxRetries + 1}), retrying in ${delay}ms...`, error);
+            await sleep(delay);
         }
     }
 
@@ -89,9 +101,10 @@ export async function getEpicIntegrations(epicId: string): Promise<any> {
         return response;
     } catch (error: any) {
         // If endpoint doesn't exist or returns 404, that's okay - integrations might not be available
-        console.log(`⚠️ Could not fetch integrations separately for ${epicId}:`, error.message);
-        if (error.message?.includes('404') || error.message?.includes('Not Found')) {
-            console.log(`   Endpoint /epics/${epicId}/integrations does not exist or epic has no integrations`);
+        if (error?.status === 404 || error.message?.includes('404') || error.message?.includes('Not Found')) {
+            console.log(`Integrations endpoint not found for ${epicId} — skipping`);
+        } else {
+            console.log(`⚠️ Could not fetch integrations separately for ${epicId}:`, error.message);
         }
         return null;
     }

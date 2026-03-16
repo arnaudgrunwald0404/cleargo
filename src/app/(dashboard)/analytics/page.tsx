@@ -24,6 +24,7 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { AnalyticsTrendChart } from '@/components/analytics/AnalyticsTrendChart';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { canRolesPerform } from '@/lib/permissions';
+import { SuccessOverviewTab } from '@/components/analytics/SuccessOverviewTab';
 import type {
   SuccessPlanCompletionRate,
   RetroCompletionRate,
@@ -39,7 +40,7 @@ import type {
   UserActivityTrends,
 } from '@/lib/services/usageAnalyticsService';
 
-type TabValue = 'launch-metrics' | 'timeliness' | 'usage';
+type TabValue = 'launch-metrics' | 'timeliness' | 'usage' | 'success-overview';
 
 export default function AnalyticsDashboardPage() {
   const [checkingAccess, setCheckingAccess] = useState(true);
@@ -69,6 +70,8 @@ export default function AnalyticsDashboardPage() {
   const [usageTrends, setUsageTrends] = useState<UserActivityTrends | null>(null);
   const [usageLoading, setUsageLoading] = useState(false);
 
+  // Success Overview
+  const [successOverviewRefreshKey, setSuccessOverviewRefreshKey] = useState(0);
 
   const [viewMode, setViewMode] = useState<{
     successPlan: 'snapshot' | 'trends';
@@ -281,6 +284,9 @@ export default function AnalyticsDashboardPage() {
         case 'usage':
           fetchUsageAnalytics();
           break;
+        case 'success-overview':
+          // Self-fetching component; just mark loaded
+          break;
       }
       const newSet = new Set(loadedTabs).add(activeTab);
       setLoadedTabs(newSet);
@@ -313,6 +319,9 @@ export default function AnalyticsDashboardPage() {
         break;
       case 'usage':
         fetchUsageAnalytics();
+        break;
+      case 'success-overview':
+        setSuccessOverviewRefreshKey(k => k + 1);
         break;
     }
   };
@@ -522,6 +531,7 @@ export default function AnalyticsDashboardPage() {
           <Tabs.Tab value="launch-metrics">Launch Metrics</Tabs.Tab>
           <Tabs.Tab value="timeliness">Timeliness</Tabs.Tab>
           <Tabs.Tab value="usage">Usage Analytics</Tabs.Tab>
+          <Tabs.Tab value="success-overview">Success Overview</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="launch-metrics" pt="md">
@@ -1071,6 +1081,10 @@ export default function AnalyticsDashboardPage() {
               )}
             </Stack>
           )}
+        </Tabs.Panel>
+
+        <Tabs.Panel value="success-overview" pt="md">
+          <SuccessOverviewTab filters={filters} refreshKey={successOverviewRefreshKey} />
         </Tabs.Panel>
 
           </Tabs>

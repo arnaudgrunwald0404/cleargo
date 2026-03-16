@@ -434,7 +434,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [showAllItems, setShowAllItems] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
-  const [launchStages, setLaunchStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
+  const [releaseStages, setReleaseStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
   const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
   const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
 
@@ -600,16 +600,16 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   }, [items]);
 
   useEffect(() => {
-    fetchLaunchStages();
+    fetchReleaseStages();
   }, []);
 
-  const fetchLaunchStages = async () => {
+  const fetchReleaseStages = async () => {
     try {
-      const res = await fetch('/api/launch-stages', { credentials: 'include' });
+      const res = await fetch('/api/release-stages', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         const stages = data.stages || [];
-        setLaunchStages(stages);
+        setReleaseStages(stages);
         
         // Calculate days before/after launch for each stage
         const daysBeforeMap = new Map<number, number>();
@@ -618,29 +618,27 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         const lastPreLaunchStage = stages.find((s: any) => s.sort_order === 3);
         
         stages.forEach((stage: any) => {
-          if (stage.sort_order <= 3 && lastPreLaunchStage) {
-            // Pre-launch stages: sum durations of stages before this one
-            const stagesBefore = stages.filter(
+          if (stage.sort_order <= 3 && lastPreLaunchStage && stage.duration_days !== null) {
+            // Pre-launch stage: due date = first day of stage
+            // = targetDate - (own duration + sum of all later pre-launch stages)
+            const stagesAfter = stages.filter(
               (s: any) =>
-                s.sort_order < stage.sort_order &&
+                s.sort_order > stage.sort_order &&
                 s.sort_order <= lastPreLaunchStage.sort_order &&
                 s.duration_days !== null
             );
-            const totalDaysBefore = stagesBefore.reduce(
-              (sum: number, s: any) => sum + (s.duration_days || 0),
-              0
-            );
-            if (totalDaysBefore > 0) {
-              daysBeforeMap.set(stage.id, totalDaysBefore);
-            }
-          } else if (stage.sort_order > 3) {
-            // Post-launch stages: sum durations up to this stage
-            const stagesUpTo = stages.filter(
+            const totalDaysBefore = (stage.duration_days || 0) +
+              stagesAfter.reduce((sum: number, s: any) => sum + (s.duration_days || 0), 0);
+            daysBeforeMap.set(stage.id, totalDaysBefore);
+          } else if (stage.sort_order > 3 && stage.duration_days !== null) {
+            // Post-launch stages: sum durations from first post-launch stage up to this one
+            const postLaunchStages = stages.filter(
               (s: any) =>
+                s.sort_order > 3 &&
                 s.sort_order <= stage.sort_order &&
                 s.duration_days !== null
             );
-            const totalDaysAfter = stagesUpTo.reduce(
+            const totalDaysAfter = postLaunchStages.reduce(
               (sum: number, s: any) => sum + (s.duration_days || 0),
               0
             );
@@ -654,7 +652,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         setStageDaysAfterLaunch(daysAfterMap);
       }
     } catch (error) {
-      console.error('Failed to fetch launch stages:', error);
+      console.error('Failed to fetch release stages:', error);
     }
   };
 
@@ -973,28 +971,50 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     return releasesToShow;
   }, [items, releaseSchedule, epicReleaseMap, showAllItems, isLoadingReleaseNames]);
 
+  const getItemDueDate = (item: MyItem): string | null => {
+    if (item.condition_due_date && item.condition_due_date.trim() !== '') {
+      return item.condition_due_date;
+    }
+    if (releaseStages.length === 0) return null;
+    const targetDate = item.launch.target_launch_date;
+    if (!targetDate) return null;
+    const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
+    if (!ratingTimingId) return null;
+    const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
+    const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
+    if (daysBefore === undefined && daysAfter === undefined) return null;
+    const dueDate = new Date(targetDate);
+    if (daysBefore !== undefined) {
+      dueDate.setDate(dueDate.getDate() - daysBefore);
+    } else if (daysAfter !== undefined) {
+      dueDate.setDate(dueDate.getDate() + daysAfter);
+    }
+    return dueDate.toISOString().split('T')[0];
+  };
+
   const headingStats = useMemo(() => {
-    const totalCriteria = releaseGroups.reduce((sum, g) => sum + g.items.length, 0);
+    const allItems = releaseGroups.flatMap(g => g.items);
+    const totalCriteria = allItems.length;
 
-    const releasesWithDates = releaseSchedule
-      .filter(r => r.release_name && r.launch_date)
-      .map(r => ({
-        name: r.release_name!,
-        date: r.launch_date!
-      }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 2);
-
-    const nextTwoReleaseNames = new Set(releasesWithDates.map(r => r.name));
-    const criteriaForNextTwoReleases = releaseGroups
-      .filter(g => nextTwoReleaseNames.has(g.releaseName))
-      .reduce((sum, g) => sum + g.items.length, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let overdueCount = 0;
+    for (const item of allItems) {
+      const dueDateStr = getItemDueDate(item);
+      if (dueDateStr) {
+        const dueDate = new Date(dueDateStr);
+        dueDate.setHours(0, 0, 0, 0);
+        if (dueDate < today) {
+          overdueCount++;
+        }
+      }
+    }
 
     return {
       total: totalCriteria,
-      forNextTwoReleases: criteriaForNextTwoReleases
+      overdue: overdueCount
     };
-  }, [releaseGroups, releaseSchedule]);
+  }, [releaseGroups, releaseStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
 
   useEffect(() => {
     setCriteriaCount(headingStats.total);
@@ -1212,9 +1232,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                 {isFirstTime ? (
                   <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
                 ) : (
-                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total}</span> criteria to inform.
-                 
-                  
+                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.overdue}</span> criteria to inform ASAP{headingStats.total - headingStats.overdue > 0 && <> and <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total - headingStats.overdue}</span> others to start thinking about</>}.
                   </>
                 )}
               </Title>
@@ -1665,24 +1683,28 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
-                              // Calculate due date: use condition_due_date if available, otherwise calculate from launch stages
+                              // Calculate due date: use condition_due_date if available, otherwise calculate from release stages
                               const calculateDueDate = (): string | null => {
                                 // First, try to use stored condition_due_date
                                 if (item.condition_due_date && item.condition_due_date.trim() !== '') {
                                   return item.condition_due_date;
                                 }
                                 
-                                // If no stored date, calculate from launch stages (same logic as Epic detail page)
-                                if (!item.criterion?.rating_timing || launchStages.length === 0) {
+                                // If no stored date, calculate from release stages (same logic as Epic detail page)
+                                if (releaseStages.length === 0) {
                                   return null;
                                 }
-                                
+
                                 const targetDate = item.launch.target_launch_date;
                                 if (!targetDate) {
                                   return null;
                                 }
-                                
-                                const ratingTimingId = item.criterion.rating_timing;
+
+                                // Default to first stage if no rating_timing is set
+                                const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
+                                if (!ratingTimingId) {
+                                  return null;
+                                }
                                 const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
                                 const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
                                 
