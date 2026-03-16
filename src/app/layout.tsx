@@ -5,7 +5,7 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { HeaderWrapper } from "@/components/HeaderWrapper";
+import { SidebarWrapper } from "@/components/SidebarWrapper";
 import { TableScopeWrapper } from "@/components/TableScopeWrapper";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { ProfileCompletionModal } from "@/components/ProfileCompletionModal";
@@ -107,8 +107,8 @@ export default async function RootLayout({
           <FeatureFlagsProvider>
             <AppModeProvider>
               <Notifications />
-              <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-              <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
+              <SidebarWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+              <div className="sidebar-content-area" style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
                 <TableScopeWrapper>{children}</TableScopeWrapper>
               </div>
               <ImpersonationBanner />
