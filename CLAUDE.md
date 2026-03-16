@@ -1,86 +1,196 @@
-# CLAUDE.md
+# CLAUDE.md — ClearGO
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## Project Overview
 
-## Build & Development Commands
+ClearGO is a **Launch Readiness Console** — a full-stack SaaS application for managing product launches. It tracks release readiness criteria, go/no-go decisions, post-launch success metrics (HEART framework), and team coordination via integrations with Aha!, Slack, Jira, Google Calendar, Pendo, and Rovo.
+
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Supabase (PostgreSQL + RLS) · Mantine UI · Tailwind CSS · Deployed on Netlify
+
+## Quick Reference
 
 ```bash
 npm run dev              # Start dev server (Turbopack)
-npm run dev:webpack      # Start dev server (Webpack fallback)
-npm run build            # Production build (custom netlify-build.js)
-npm start                # Production server
+npm run dev:webpack      # Start dev server (Webpack)
+npm run build            # Production build (Netlify)
 npm run lint             # ESLint
-npm test                 # Jest unit tests
-npm test -- --testPathPattern="path/to/test"  # Run a single test file
-npm run test:watch       # Jest watch mode
-npm run test:coverage    # Coverage report
-npm run check-prd        # Check if PRD needs updating after feature changes
+npm run test             # Jest tests
+npm run test:watch       # Jest in watch mode
+npm run test:coverage    # Jest with coverage
+npm run check-prd        # Check if PRD needs updating
 ```
 
-E2E tests use Playwright: `npx playwright test`
+## Directory Structure
 
-## Tech Stack
+```
+src/
+├── app/                    # Next.js App Router (pages + API routes)
+│   ├── api/                # REST API endpoints
+│   │   ├── epics/          # Epic (launch) CRUD
+│   │   ├── criteria/       # Readiness criteria
+│   │   ├── integrations/   # Aha!, Slack, Jira, Google Calendar, Pendo
+│   │   ├── jobs/           # Cron-triggered background jobs
+│   │   ├── auth/           # Authentication endpoints
+│   │   ├── settings/       # App configuration
+│   │   └── dashboard/      # Dashboard metrics
+│   ├── (dashboard)/        # Dashboard pages (authenticated)
+│   ├── (settings)/         # Settings pages
+│   ├── admin/              # Admin panel
+│   ├── epics/              # Epic detail pages
+│   ├── portfolio/          # Portfolio view
+│   └── auth/               # Login, callback, signout
+├── components/             # React components (PascalCase files)
+│   ├── epic/               # Epic-specific components
+│   ├── admin/              # Admin UI
+│   ├── dashboard/          # Dashboard widgets
+│   └── analytics/          # Analytics visualizations
+├── contexts/               # React Contexts (FeatureFlags, Settings)
+├── lib/                    # Utilities and business logic
+│   ├── supabase/           # Supabase client (server.ts, middleware.ts)
+│   ├── auth/               # Auth utilities (getUser, requireRole, roles)
+│   ├── aha/                # Aha! integration (client, webhooks, mapping)
+│   ├── slack/              # Slack integration (client, templates, notifications)
+│   ├── email/              # Email via Resend
+│   ├── jira/               # Jira integration
+│   ├── rovo/               # Rovo MCP client
+│   ├── integrations/       # Pendo, Snowflake clients
+│   ├── heart/              # HEART metrics framework
+│   ├── services/           # Business logic services
+│   ├── middleware/          # Rate limiting middleware
+│   ├── __tests__/          # Unit tests
+│   └── __mocks__/          # Test mocks
+├── types/                  # TypeScript type definitions
+└── proxy.ts                # Request deduplication
 
-- **Framework:** Next.js 16 (App Router) on Netlify
-- **Language:** TypeScript (strict mode), path alias `@/*` → `./src/*`
-- **UI:** Mantine 8 + Tailwind CSS 4 + Tabler Icons
-- **Database:** Supabase (PostgreSQL) with direct query builder (no ORM), heavy RLS
-- **Auth:** Supabase Auth (Google OAuth + email) with custom magic link fallback
-- **AI:** Vercel AI SDK v6 with Google Gemini 1.5 Pro
-- **Email:** Resend
-- **Testing:** Jest (jsdom) + Playwright
+supabase/migrations/        # 155+ PostgreSQL migration files
+.github/workflows/          # GitHub Actions (cron jobs)
+config/                     # Slack app manifest
+docs/                       # PRD, API docs, color palette
+scripts/                    # Build & utility scripts
+e2e/                        # Playwright E2E tests
+```
 
 ## Architecture
 
-### App Structure (`src/app/`)
+### Authentication & Authorization
 
-Next.js App Router with route groups:
-- `(dashboard)/` — Main dashboard layout group
-- `(settings)/` — Settings pages layout group
-- `admin/` — Admin panel
-- `auth/` — Login, logout, OAuth callbacks
-- `epics/` — Epic detail pages (note: "epic" was renamed from "launch" in migration 0018)
-- `api/` — 40+ API route handlers organized by domain
+- Custom auth using JWT stored in `lr_session` cookie
+- Session verification via `jose` library (`src/lib/jwt.ts`)
+- Role-based access control with roles: `SUPERADMIN`, `PRODUCT_OPS`, `CPO`, `PM`, `PMM`, `PRODUCT`, `ENG`, `OTHER`
+- Auth helpers: `getAuthenticatedUserEmail()` for API routes, `requireAuth()` for enforcing auth
+- Admin operations use Supabase service role key to bypass RLS
+- Impersonation support for admin users
 
-### Core Business Logic (`src/lib/`)
+### Database
 
-- `readiness.ts`, `readiness-scoring.ts` — Readiness score calculation (0-100%, GO/CONDITIONAL/NO_GO)
-- `epics.ts` — Epic lifecycle management
-- `permissions.ts` — RBAC: SUPERADMIN, WORKSPACE_ADMIN, POD_LEAD, PRODUCT_MANAGER, PMM, OTHER
-- `aha/` — Aha! bidirectional sync (discover, field mapping, write-back)
-- `slack/` — Slack bot notifications, daily nudges, weekly digests
-- `ai/` — Gemini-powered smart nudges and criterion pruning
-- `success/` — HEART metrics framework (Happiness, Engagement, Adoption, Retention, Task Success)
-- `auth/` — Session management, magic link tokens
-- `supabase/` — Supabase client creation (browser + server variants)
-- `integrations/` — Pendo, Snowflake connectors
+- **Supabase** (PostgreSQL) with Row-Level Security (RLS) enforced
+- Two client types: regular (respects RLS) and admin (service role, bypasses RLS)
+- Query via Supabase query builder — no raw SQL
+- Custom fetch wrapper with 30s timeout on server client
+- Key tables: `epic`, `product`, `criterion`, `epic_criterion_status`, `app_user`, `app_settings`
 
-### Database (`supabase/migrations/`)
+### API Routes
 
-140+ migrations. Key tables: `epic`, `criterion`, `epic_criterion_status`, `app_user`, `product`, `heart_metrics`, `meeting`, `epic_comment`. Row-Level Security is extensively used.
+All API routes follow this pattern:
+- Export `force-dynamic` for dynamic rendering
+- Use `NextRequest`/`NextResponse`
+- Auth check via `getAuthenticatedUserEmail()` or `requireAuth()`
+- Rate limiting via `withRateLimit(handler, config)` wrapper
+- Return JSON with appropriate HTTP status codes
 
-### Contexts (`src/contexts/`)
+### External Integrations
 
-- `FeatureFlagsContext` — Feature flag management
-- `SettingsContext` — Global app settings
+| Integration | Purpose | Key Files |
+|---|---|---|
+| **Aha!** | Epic sync, webhook events, readiness writeback | `src/lib/aha/` |
+| **Slack** | Notifications, retro reminders, scorecard alerts | `src/lib/slack/` |
+| **Jira** | Issue tracking, epic key extraction | `src/lib/jira/` |
+| **Google Calendar** | Meeting sync | `src/app/api/integrations/google-calendar/` |
+| **Pendo** | Product analytics, HEART metrics | `src/lib/integrations/` |
+| **Rovo** | MCP protocol integration | `src/lib/rovo/` |
+| **Resend** | Email notifications | `src/lib/email/` |
 
-### Netlify Background Functions (`netlify/functions/`)
+All external API clients use **exponential backoff retry logic** (typically 3 retries).
 
-Long-running tasks (up to 15min) like HEART metric setup.
+### Background Jobs
 
-## Key Patterns
+Triggered via GitHub Actions cron → HTTP POST to `/api/jobs/*` endpoints, authenticated with `CRON_SECRET`.
 
-- Supabase clients: use `createClient()` from `@/lib/supabase/server` in server components/API routes, `@/lib/supabase/client` in client components
-- API routes return NextResponse JSON; auth is checked via Supabase session or magic link cookie (`lr_session`)
-- Admin impersonation uses a separate cookie; check `IMPERSONATE_COOKIE_NAME`
-- Integration webhooks (Aha!, Slack, Jira) validate signatures before processing
+## Code Conventions
 
-## PRD Update Rule
+### General
 
-When committing changes that affect features, schema, API endpoints, integrations, auth, or user flows, update `docs/PRD-Retroactive.md`. A pre-commit hook checks this. Bug fixes, styling tweaks, and test changes are exempt. Use `npm run check-prd` to verify.
+- **TypeScript strict mode** — all code must be type-safe
+- **Path alias:** `@/*` maps to `./src/*`
+- **Zod** for runtime validation at API boundaries
+- **No raw SQL** — use Supabase query builder
+
+### File Naming
+
+- **Utilities/libs:** camelCase (`readiness.ts`, `rate-limit.ts`)
+- **React components:** PascalCase (`EpicCard.tsx`, `HomeDashboard.tsx`)
+- **Types:** PascalCase for interfaces/types, UPPER_SNAKE_CASE for constants
+- **Database:** snake_case for table/column names
+
+### React Components
+
+- Use `'use client'` directive for interactive components
+- Mantine UI components for consistent design system
+- Tailwind CSS for custom styling
+- Props defined via TypeScript interfaces
+
+### Error Handling
+
+- Try-catch with `console.error` logging
+- API routes return `NextResponse.json({ error: '...' }, { status: CODE })`
+- External API calls wrapped in retry logic with exponential backoff
+
+### Permissions
+
+- Capability-based system defined in `src/lib/permissions.ts`
+- Default rules per role in `src/lib/roles.ts`
+- Check permissions before performing sensitive operations
+
+## Testing
+
+- **Framework:** Jest 30 with ts-jest, jsdom environment
+- **Component tests:** @testing-library/react
+- **E2E tests:** Playwright (`e2e/` directory)
+- **Test location:** `__tests__/` directories alongside source code
+- **Mocks:** `src/lib/__mocks__/` for auth, JWT, Supabase client
+- **Pattern:** Mock Supabase client with chained query builder API
+
+## Environment Variables
+
+### Required
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Supabase anon key (fallback: `NEXT_PUBLIC_SUPABASE_ANON_KEY`) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Admin key for RLS bypass (fallback: `SUPABASE_SECRET_KEY`) |
+| `CRON_SECRET` | Auth for cron job endpoints |
+
+### Integrations (optional per feature)
+
+`AHA_DOMAIN`, `AHA_API_TOKEN`, `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `RESEND_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`, `PENDO_INTEGRATION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `ROVO_API_KEY`
+
+## Deployment
+
+- **Platform:** Netlify with `@netlify/plugin-nextjs`
+- **Build:** `node scripts/netlify-build.js` (clears cache, runs `next build`)
+- **Edge middleware disabled:** `NEXT_DISABLE_NETLIFY_EDGE=true`
+- **Cron jobs:** GitHub Actions workflows (`.github/workflows/`) calling `/api/jobs/*`
+
+## PRD Maintenance
+
+When making changes that affect features, functionality, integrations, or data models, update `docs/PRD-Retroactive.md`. See `.cursorrules` for detailed rules on when to update. A pre-commit hook checks this automatically — bypass with `git commit --no-verify` when appropriate, but follow up with a PRD update commit.
 
 ## Commit Message Convention
 
-Feature commits: `feat: description`
-PRD updates: `docs: update PRD for [feature name]`
-Bug fixes: `fix: description`
+```
+feat: add [feature]
+fix: resolve [issue]
+docs: update PRD for [feature]
+refactor: [description]
+test: add tests for [feature]
+```
