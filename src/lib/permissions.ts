@@ -18,6 +18,7 @@ export type CapabilityId =
   | "criteria.import"
   | "releaseStages.manage"
   | "releases.manage"
+  | "launches.view"
   | "launches.manage"
   | "launchCriteria.create"
   | "launchCriteria.update"
@@ -130,6 +131,11 @@ export const CAPABILITIES: Capability[] = [
     description: "Allow creating/updating/deleting release schedule entries.",
   },
   {
+    id: "launches.view",
+    label: "View Launches Section",
+    description: "Allow seeing the Launches section in the sidebar and accessing launch pages.",
+  },
+  {
     id: "launches.manage",
     label: "Manage Launches",
     description: "Allow creating, updating, and deleting launches and linking epics.",
@@ -239,6 +245,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "criteria.import": ["PRODUCT_OPS", "CPO"],
   "releaseStages.manage": ["PRODUCT_OPS", "CPO"],
   "releases.manage": ["PRODUCT_OPS", "CPO"],
+  "launches.view": ["PMM", "CPO", "PRODUCT_OPS"],
   "launches.manage": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.create": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.update": ["PMM", "CPO", "PRODUCT_OPS"],

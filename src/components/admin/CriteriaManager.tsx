@@ -1058,6 +1058,9 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
       size="xl"
       padding={0}
       styles={{
+        content: {
+          overflowX: 'hidden',
+        },
         body: {
           display: 'flex',
           flexDirection: 'column',

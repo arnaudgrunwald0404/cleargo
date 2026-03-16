@@ -28,6 +28,9 @@ function getCapabilityCategory(capabilityId: string): string {
   if (capabilityId.startsWith("launch.")) {
     return "Epics";
   }
+  if (capabilityId.startsWith("launches.") || capabilityId.startsWith("launchCriteria.") || capabilityId.startsWith("launchSchedule.")) {
+    return "Launches";
+  }
   if (capabilityId.startsWith("settings.emailTemplates")) {
     return "Email Communication";
   }

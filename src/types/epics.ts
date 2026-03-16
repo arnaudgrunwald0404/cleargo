@@ -34,6 +34,7 @@ export interface Epic {
     aha_fields?: Record<string, any> | null;
     archived?: boolean;
     jira_epic_key?: string | null;
+    launch_ref?: string | null;
     aha_record_not_found?: boolean;
     /** Number of criteria with NO_GO (red flag) rating for this epic. */
     criteria_red_flag_count?: number;

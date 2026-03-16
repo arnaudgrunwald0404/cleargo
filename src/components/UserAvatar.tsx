@@ -1,25 +1,25 @@
 "use client";
 
 import { Avatar, Menu, Text, Group, UnstyledButton, rem } from '@mantine/core';
-import { IconLogout, IconPlug, IconSettings, IconShieldCheck, IconUser, IconUsers } from '@tabler/icons-react';
+import { IconLogout, IconUser } from '@tabler/icons-react';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { canRolesPerform } from '@/lib/permissions';
-import type { CapabilityId } from '@/lib/permissions';
 
 interface UserAvatarProps {
     email?: string | null;
     role?: string | null;
     imageUrl?: string | null;
+    displayName?: string | null;
+    collapsed?: boolean;
 }
 
-export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
+export function UserAvatar({ email, role, imageUrl, displayName, collapsed }: UserAvatarProps) {
     const router = useRouter();
     const supabase = createClient();
     const [userEmail, setUserEmail] = useState<string | null>(email || null);
     const [userRole, setUserRole] = useState<string | null>(role || null);
-    const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
+
 
     useEffect(() => {
         const fetchUserData = async () => {
@@ -47,18 +47,6 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
                         setUserRole(data.user.role);
                     }
 
-                    // Check if user has access to any settings-related capability
-                    const settingsCapabilities: CapabilityId[] = [
-                        'settings.read',
-                        'settings.emailTemplates.read',
-                        'settings.ahaFields.read',
-                        'settings.webhookUrl.read',
-                    ];
-
-                    const hasAccess = settingsCapabilities.some(capability => 
-                        canRolesPerform(roles, capability)
-                    );
-                    setHasSettingsAccess(hasAccess);
                 }
             } catch (error) {
                 console.error('Failed to fetch user roles:', error);
@@ -94,19 +82,33 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
     if (!userEmail) return null;
 
     return (
-        <Menu shadow="md" width={260} position="bottom-end">
+        <Menu shadow="md" width={260} position="right-end" zIndex={2000}>
             <Menu.Target>
-                <UnstyledButton>
-                    <Group gap={7}>
+                <UnstyledButton style={{ width: '100%' }}>
+                    <Group gap={12} wrap="nowrap">
                         <Avatar
                             src={imageUrl}
                             alt={userEmail}
                             radius="xl"
                             size={32}
                             color={getColor(userEmail)}
+                            style={{ flexShrink: 0 }}
                         >
                             {getInitials(userEmail)}
                         </Avatar>
+                        {!collapsed && displayName && (
+                            <span style={{
+                                color: 'rgba(255,255,255,0.6)',
+                                fontSize: 13,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                                flex: 1,
+                                fontFamily: 'var(--font-body)',
+                            }}>
+                                {displayName}
+                            </span>
+                        )}
                     </Group>
                 </UnstyledButton>
             </Menu.Target>
@@ -128,40 +130,6 @@ export function UserAvatar({ email, role, imageUrl }: UserAvatarProps) {
                 >
                     Account Details
                 </Menu.Item>
-
-                {hasSettingsAccess && (
-                    <Menu.Item
-                        leftSection={<IconSettings style={{ width: rem(14), height: rem(14) }} />}
-                        onClick={() => router.push('/admin/settings')}
-                    >
-                        Settings
-                    </Menu.Item>
-                )}
-
-                {hasSettingsAccess && (
-                    <>
-                        <Menu.Divider />
-                        <Menu.Label>Admin</Menu.Label>
-                        <Menu.Item
-                            leftSection={<IconUsers style={{ width: rem(14), height: rem(14) }} />}
-                            onClick={() => router.push('/admin/settings/users/users')}
-                        >
-                            User Management
-                        </Menu.Item>
-                        <Menu.Item
-                            leftSection={<IconShieldCheck style={{ width: rem(14), height: rem(14) }} />}
-                            onClick={() => router.push('/admin/settings/permissions')}
-                        >
-                            Permissions
-                        </Menu.Item>
-                        <Menu.Item
-                            leftSection={<IconPlug style={{ width: rem(14), height: rem(14) }} />}
-                            onClick={() => router.push('/admin/settings/integrations/aha')}
-                        >
-                            Integrations
-                        </Menu.Item>
-                    </>
-                )}
 
                 <Menu.Divider />
 

@@ -4,14 +4,21 @@
 
 GRANT INSERT, UPDATE ON public.heart_setup_jobs TO authenticated;
 
-CREATE POLICY "Authenticated can insert heart_setup_jobs"
-  ON public.heart_setup_jobs FOR INSERT TO authenticated
-  WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated can insert heart_setup_jobs' AND tablename = 'heart_setup_jobs') THEN
+    CREATE POLICY "Authenticated can insert heart_setup_jobs"
+      ON public.heart_setup_jobs FOR INSERT TO authenticated
+      WITH CHECK (true);
+  END IF;
+END $$;
 
--- Allow updating only jobs owned by the current user (app_user linked to JWT email)
-CREATE POLICY "Authenticated can update own heart_setup_jobs"
-  ON public.heart_setup_jobs FOR UPDATE TO authenticated
-  USING (
-    app_user_id IN (SELECT id FROM public.app_user WHERE email = (auth.jwt() ->> 'email'))
-  )
-  WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated can update own heart_setup_jobs' AND tablename = 'heart_setup_jobs') THEN
+    CREATE POLICY "Authenticated can update own heart_setup_jobs"
+      ON public.heart_setup_jobs FOR UPDATE TO authenticated
+      USING (
+        app_user_id IN (SELECT id FROM public.app_user WHERE email = (auth.jwt() ->> 'email'))
+      )
+      WITH CHECK (true);
+  END IF;
+END $$;

@@ -1,448 +1,585 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
-import { Drawer, Button, Group, Stack, TextInput, NumberInput, Select, MultiSelect, Accordion, ActionIcon, Badge } from "@mantine/core";
-import { IconPencil, IconTrash, IconGripVertical, IconPlus, IconChevronUp, IconChevronDown } from "@tabler/icons-react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
+import { Drawer, Button, Group, Stack, TextInput, NumberInput, Select, MultiSelect, Checkbox, Avatar, Combobox, useCombobox, InputBase, Text } from "@mantine/core";
+import { IconTrash, IconPlus, IconAlertCircle } from "@tabler/icons-react";
 import { useSettings } from "@/contexts/SettingsContext";
 import { addLaunchCriterion, updateLaunchCriterion, deleteLaunchCriterion } from "@/lib/services/settingsService";
 import { PurpleLoader } from "@/components/PurpleLoader";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+
+const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 
 const TIER_OPTIONS = [
+    { value: "ALL", label: "All" },
     { value: "TIER_1", label: "Tier 1" },
     { value: "TIER_2", label: "Tier 2" },
     { value: "TIER_3", label: "Tier 3" },
-];
-
-const GATE_OPTIONS = [
-    { value: "hard", label: "Hard Gate" },
-    { value: "soft", label: "Soft Gate" },
-];
-
-// Default phases for a new launch workflow — users can add/rename/reorder
-const DEFAULT_PHASES = [
-    "Phase 1: Strategy & Positioning",
-    "Phase 2: Product Readiness & Validation",
-    "Phase 3: Messaging & Asset Build",
-    "Phase 4: Internal Enablement & Activation",
-    "Phase 5: Launch",
-    "Phase 6: Post-Launch Optimization",
+    { value: "TIER_1_AND_2", label: "Tier 1 & 2" },
 ];
 
 export default function LaunchCriteriaManager() {
     const { launchCriteria, launchCriteriaLoading, fetchLaunchCriteria, users } = useSettings();
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [draggedId, setDraggedId] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
-    // Phase management — derive phases from existing criteria + allow adding new ones
-    const existingPhases = useMemo(() => {
-        const set = new Set<string>();
-        for (const c of launchCriteria) {
-            if (c.phase) set.add(c.phase);
-        }
-        return Array.from(set);
+    const sortedCriteria = useMemo(() => {
+        return [...launchCriteria].sort(
+            (a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || (a.label || "").localeCompare(b.label || "")
+        );
     }, [launchCriteria]);
 
-    const [customPhases, setCustomPhases] = useState<string[]>([]);
-    const [newPhaseName, setNewPhaseName] = useState("");
-
-    // Merge existing and custom, maintain order (existing first, then custom additions)
-    const allPhases = useMemo(() => {
-        const ordered = [...existingPhases];
-        for (const p of customPhases) {
-            if (!ordered.includes(p)) ordered.push(p);
-        }
-        return ordered;
-    }, [existingPhases, customPhases]);
-
-    const addPhase = () => {
-        const name = newPhaseName.trim();
-        if (!name || allPhases.includes(name)) return;
-        setCustomPhases((prev) => [...prev, name]);
-        setNewPhaseName("");
-    };
-
-    const [drawerOpen, setDrawerOpen] = useState(false);
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [form, setForm] = useState({
-        label: "",
-        description: "",
-        phase: "",
-        gate: "",
-        tier_applicability: [] as string[],
-        sort_order: 0,
-        default_owner_email: "",
-        default_due_offset_days: "" as string | number,
-    });
-    const [saving, setSaving] = useState(false);
-
-    const criteriaByPhase = useMemo(() => {
-        const grouped: Record<string, any[]> = {};
-        // Initialize all known phases (even empty ones)
-        for (const phase of allPhases) {
-            grouped[phase] = [];
-        }
-        for (const c of launchCriteria) {
-            const phase = c.phase || "Uncategorized";
-            if (!grouped[phase]) grouped[phase] = [];
-            grouped[phase].push(c);
-        }
-        // Sort each group by sort_order
-        for (const key of Object.keys(grouped)) {
-            grouped[key].sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
-        }
-        return grouped;
-    }, [launchCriteria, allPhases]);
-
-    // Ordered phases: allPhases first, then any "Uncategorized" at the end
-    const orderedPhases = useMemo(() => {
-        const result = [...allPhases];
-        if (criteriaByPhase["Uncategorized"]?.length > 0 && !result.includes("Uncategorized")) {
-            result.push("Uncategorized");
-        }
-        return result.filter((p) => criteriaByPhase[p] && criteriaByPhase[p].length > 0 || allPhases.includes(p));
-    }, [allPhases, criteriaByPhase]);
-
-    const phaseOptions = useMemo(() => {
-        return allPhases.map((p) => ({ value: p, label: p }));
-    }, [allPhases]);
-
-    const ownerOptions = useMemo(() => {
-        return users
-            .filter((u: any) => u.email)
-            .map((u: any) => ({ value: u.email, label: u.name || u.email }));
-    }, [users]);
-
-    const resetForm = () => {
-        setForm({
-            label: "",
-            description: "",
-            phase: "",
-            gate: "",
-            tier_applicability: [],
-            sort_order: 0,
-            default_owner_email: "",
-            default_due_offset_days: "",
-        });
-        setEditingId(null);
-    };
-
-    const openAdd = (phase?: string) => {
-        resetForm();
-        if (phase) {
-            setForm((f) => ({ ...f, phase }));
-        }
-        setDrawerOpen(true);
-    };
-
-    const openEdit = (c: any) => {
-        setEditingId(c.id);
-        setForm({
-            label: c.label || "",
-            description: c.description || "",
-            phase: c.phase || "",
-            gate: c.gate || "",
-            tier_applicability: c.tier_applicability || [],
-            sort_order: c.sort_order ?? 0,
-            default_owner_email: c.default_owner_email || "",
-            default_due_offset_days: c.default_due_offset_days ?? "",
-        });
-        setDrawerOpen(true);
-    };
-
-    const handleSave = useCallback(async () => {
-        if (!form.label.trim()) return;
-        setSaving(true);
+    async function submitEdit(id: string, patch: Record<string, any>) {
+        setError(null);
         try {
-            const payload = {
-                label: form.label.trim(),
-                description: form.description.trim() || null,
-                phase: form.phase.trim() || null,
-                gate: form.gate || null,
-                tier_applicability: form.tier_applicability.length > 0 ? form.tier_applicability : null,
-                sort_order: form.sort_order,
-                default_owner_email: form.default_owner_email || null,
-                default_due_offset_days: form.default_due_offset_days !== "" ? Number(form.default_due_offset_days) : null,
-            };
+            await updateLaunchCriterion(id, patch);
+            await fetchLaunchCriteria();
+        } catch (e: any) {
+            setError(e.message || "Failed to update");
+        }
+    }
 
-            if (editingId) {
-                await updateLaunchCriterion(editingId, payload);
-            } else {
-                await addLaunchCriterion(payload as any);
+    async function handleReorder(dragId: string, _targetId: string, targetIndex: number) {
+        const dragIndex = sortedCriteria.findIndex((c: any) => c.id === dragId);
+        if (dragIndex === -1) return;
+
+        const newItems = [...sortedCriteria];
+        const [dragged] = newItems.splice(dragIndex, 1);
+        newItems.splice(targetIndex, 0, dragged);
+
+        const updates = newItems.map((item: any, index: number) => ({
+            id: item.id,
+            sort_order: index,
+        }));
+
+        try {
+            const batchSize = 5;
+            for (let i = 0; i < updates.length; i += batchSize) {
+                const batch = updates.slice(i, i + batchSize);
+                await Promise.all(
+                    batch.map((u) => updateLaunchCriterion(u.id, { sort_order: u.sort_order }))
+                );
+                if (i + batchSize < updates.length) {
+                    await new Promise((resolve) => setTimeout(resolve, 200));
+                }
             }
             await fetchLaunchCriteria();
-            setDrawerOpen(false);
-            resetForm();
-        } catch (error: any) {
-            console.error("Failed to save launch criterion:", error);
-        } finally {
-            setSaving(false);
+        } catch (e) {
+            console.error("Reorder failed:", e);
+            setError("Failed to reorder items");
         }
-    }, [form, editingId, fetchLaunchCriteria]);
+    }
 
-    const handleDelete = useCallback(async () => {
-        if (!editingId) return;
-        setSaving(true);
-        try {
-            await deleteLaunchCriterion(editingId);
-            await fetchLaunchCriteria();
-            setDrawerOpen(false);
-            resetForm();
-        } catch (error: any) {
-            console.error("Failed to delete launch criterion:", error);
-        } finally {
-            setSaving(false);
+    function formatOwner(email: string | null) {
+        if (!email) return "—";
+        if (email === POD_PM_PLACEHOLDER) return "PM of the pod";
+        const user = users.find((u: any) => u.email === email);
+        if (user) {
+            const name = `${user.first_name || ""} ${user.last_name || ""}`.trim();
+            return name || email;
         }
-    }, [editingId, fetchLaunchCriteria]);
+        return email;
+    }
+
+    function formatTierLabel(tier: any): string {
+        if (!tier) return "All";
+        if (Array.isArray(tier)) {
+            if (tier.length === 0) return "All";
+            return tier.map((t: string) => t.replace("TIER_", "T")).join(", ");
+        }
+        if (tier === "ALL") return "All";
+        return tier.replace("TIER_", "T").replace("_AND_", " & ").replace("_ONLY", "");
+    }
+
+    const editingItem = sortedCriteria.find((c: any) => c.id === editingId);
 
     return (
         <div className="space-y-6">
-            {/* Phase Management */}
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg">
+                    {error}
+                </div>
+            )}
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center gap-3 mb-4">
+                <div className="flex items-center gap-3 mb-6">
                     <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
                         <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
                         </svg>
                     </div>
                     <div>
-                        <h2 className="text-lg font-semibold text-gray-900">Launch Phases</h2>
-                        <p className="text-sm text-gray-500">Define the phases that group launch tasks (like release stages)</p>
+                        <h2 className="text-lg font-semibold text-gray-900">Launch Criteria</h2>
+                        <p className="text-sm text-gray-500">Tasks that auto-populate when a GTM launch is created</p>
                     </div>
                 </div>
 
-                <div className="flex flex-wrap gap-2 mb-3">
-                    {allPhases.map((phase) => {
-                        const count = criteriaByPhase[phase]?.length || 0;
-                        return (
-                            <Badge
-                                key={phase}
-                                size="lg"
-                                variant="light"
-                                color="orange"
-                                rightSection={
-                                    <span className="text-xs text-orange-600 ml-1">{count}</span>
-                                }
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+                    <div className="p-5 border-b border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <p className="text-sm text-gray-500">{sortedCriteria.length} criteria configured</p>
+                            <button
+                                onClick={() => setEditingId("__new__")}
+                                className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                             >
-                                {phase}
-                            </Badge>
-                        );
-                    })}
-                </div>
-                <div className="flex gap-2">
-                    <TextInput
-                        placeholder="New phase name..."
-                        value={newPhaseName}
-                        onChange={(e) => setNewPhaseName(e.target.value)}
-                        onKeyDown={(e) => e.key === "Enter" && addPhase()}
-                        size="sm"
-                        className="flex-1"
-                    />
-                    <Button
-                        size="sm"
-                        variant="light"
-                        color="orange"
-                        onClick={addPhase}
-                        disabled={!newPhaseName.trim()}
-                    >
-                        Add Phase
-                    </Button>
-                </div>
-            </div>
-
-            {/* Task Templates by Phase */}
-            <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center">
-                            <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                            </svg>
-                        </div>
-                        <div>
-                            <h2 className="text-lg font-semibold text-gray-900">Launch Criteria Templates</h2>
-                            <p className="text-sm text-gray-500">Define tasks that auto-populate when a new launch is created</p>
+                                + New
+                            </button>
                         </div>
                     </div>
-                    <button
-                        onClick={() => openAdd()}
-                        className="px-4 py-2 text-sm text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 font-medium transition-colors flex items-center gap-1"
-                    >
-                        <IconPlus className="w-4 h-4" />
-                        Add Task
-                    </button>
-                </div>
 
-                {launchCriteriaLoading ? (
-                    <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
-                        <PurpleLoader size="sm" />
-                        <span>Loading...</span>
-                    </div>
-                ) : orderedPhases.length === 0 && launchCriteria.length === 0 ? (
-                    <div className="text-center py-8">
-                        <p className="text-gray-500 mb-2">No launch criteria templates yet.</p>
-                        <p className="text-sm text-gray-400">Add phases above, then add task templates to each phase.</p>
-                    </div>
-                ) : (
-                    <Accordion multiple defaultValue={orderedPhases} variant="separated">
-                        {orderedPhases.map((phase) => (
-                            <Accordion.Item key={phase} value={phase}>
-                                <Accordion.Control>
-                                    <div className="flex items-center gap-2">
-                                        <span className="font-medium">{phase}</span>
-                                        <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
-                                            {criteriaByPhase[phase]?.length || 0} tasks
-                                        </span>
-                                    </div>
-                                </Accordion.Control>
-                                <Accordion.Panel>
-                                    <div className="space-y-1">
-                                        {(criteriaByPhase[phase] || []).map((c: any) => (
-                                            <div
-                                                key={c.id}
-                                                className="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 group"
-                                            >
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="font-medium text-sm text-gray-900 truncate">{c.label}</div>
-                                                    {c.description && (
-                                                        <div className="text-xs text-gray-500 truncate">{c.description}</div>
-                                                    )}
-                                                </div>
-                                                {c.default_owner_email && (
-                                                    <span className="text-xs text-gray-400 shrink-0">{c.default_owner_email}</span>
-                                                )}
-                                                {c.default_due_offset_days != null && (
-                                                    <span className="text-xs text-gray-400 shrink-0 bg-gray-100 px-2 py-0.5 rounded">
-                                                        {c.default_due_offset_days}d before
-                                                    </span>
-                                                )}
-                                                {c.gate && (
-                                                    <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${c.gate === 'hard' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>
-                                                        {c.gate === 'hard' ? 'Hard' : 'Soft'}
-                                                    </span>
-                                                )}
-                                                <button
-                                                    onClick={() => openEdit(c)}
-                                                    className="p-1 rounded hover:bg-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                >
-                                                    <IconPencil className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        ))}
-                                        {/* Add task to this phase */}
-                                        <button
-                                            onClick={() => openAdd(phase)}
-                                            className="flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-50 rounded-lg transition-colors w-full"
+                    {launchCriteriaLoading ? (
+                        <div className="text-center py-8 text-gray-500 flex items-center justify-center gap-2">
+                            <PurpleLoader size="sm" />
+                            <span>Loading...</span>
+                        </div>
+                    ) : sortedCriteria.length === 0 ? (
+                        <div className="text-center py-8">
+                            <p className="text-gray-500 mb-2">No launch criteria yet.</p>
+                            <p className="text-sm text-gray-400">Click &ldquo;+ New&rdquo; to add your first criterion.</p>
+                        </div>
+                    ) : (
+                        <table className="w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-8"></th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Rank</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Label / Category</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-14">Gate</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Tier</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Owner</th>
+                                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Days Prior</th>
+                                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12"></th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                                {sortedCriteria.map((c: any, index: number) => (
+                                    <tr
+                                        key={c.id}
+                                        onDragOver={(e) => {
+                                            e.preventDefault();
+                                            e.dataTransfer.dropEffect = "move";
+                                            if (draggedId !== c.id) {
+                                                e.currentTarget.classList.add("bg-blue-50");
+                                            }
+                                        }}
+                                        onDragLeave={(e) => {
+                                            e.currentTarget.classList.remove("bg-blue-50");
+                                        }}
+                                        onDrop={async (e) => {
+                                            e.preventDefault();
+                                            e.currentTarget.classList.remove("bg-blue-50");
+                                            if (draggedId && draggedId !== c.id) {
+                                                await handleReorder(draggedId, c.id, index);
+                                            }
+                                            setDraggedId(null);
+                                        }}
+                                        className={`hover:bg-gray-50 cursor-pointer ${draggedId === c.id ? "opacity-50" : ""}`}
+                                        onClick={(e) => {
+                                            if (!draggedId && !(e.target as HTMLElement).closest("td:first-child") && !(e.target as HTMLElement).closest("input") && !(e.target as HTMLElement).closest("[data-mantine-stop-propagation]")) {
+                                                setEditingId(c.id);
+                                            }
+                                        }}
+                                    >
+                                        <td
+                                            className="px-4 py-4 whitespace-nowrap text-gray-400 cursor-move"
+                                            onClick={(e) => e.stopPropagation()}
+                                            draggable
+                                            onDragStart={(e) => {
+                                                setDraggedId(c.id);
+                                                e.dataTransfer.effectAllowed = "move";
+                                            }}
                                         >
-                                            <IconPlus className="w-4 h-4" />
-                                            Add task to {phase}
-                                        </button>
-                                    </div>
-                                </Accordion.Panel>
-                            </Accordion.Item>
-                        ))}
-                    </Accordion>
-                )}
+                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
+                                            </svg>
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                                            {index + 1}
+                                        </td>
+                                        <td className="px-4 py-4 text-sm cursor-pointer">
+                                            <div className="font-medium text-gray-900">{c.label}</div>
+                                            <div className="text-gray-500 text-xs mt-0.5">{c.phase || "Uncategorized"}</div>
+                                            {c.description && <div className="text-gray-400 text-xs mt-1">{c.description}</div>}
+                                        </td>
+                                        <td
+                                            className="px-4 py-4 whitespace-nowrap"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <Checkbox
+                                                size="xs"
+                                                checked={c.gate === "hard" || c.gate === true}
+                                                onChange={(e) => {
+                                                    e.stopPropagation();
+                                                    submitEdit(c.id, { gate: e.currentTarget.checked ? "hard" : "soft" });
+                                                }}
+                                                aria-label="Gate"
+                                            />
+                                        </td>
+                                        <td
+                                            className="px-4 py-4 whitespace-nowrap text-sm text-gray-600"
+                                            onClick={(e) => e.stopPropagation()}
+                                            data-mantine-stop-propagation
+                                        >
+                                            <Select
+                                                value={
+                                                    Array.isArray(c.tier_applicability)
+                                                        ? c.tier_applicability.length === 1
+                                                            ? c.tier_applicability[0]
+                                                            : "ALL"
+                                                        : c.tier_applicability || "ALL"
+                                                }
+                                                onChange={(value) => {
+                                                    if (!value) return;
+                                                    submitEdit(c.id, { tier_applicability: value === "ALL" ? null : [value] });
+                                                }}
+                                                data={TIER_OPTIONS}
+                                                size="xs"
+                                                allowDeselect={false}
+                                            />
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600 truncate max-w-[180px]">
+                                            {formatOwner(c.default_owner_email)}
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600 tabular-nums">
+                                            {c.default_due_offset_days != null ? `${c.default_due_offset_days}d` : "—"}
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-center">
+                                            <svg className="w-5 h-5 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                            </svg>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
             </div>
 
-            {/* Edit/Add Drawer */}
-            <Drawer
-                opened={drawerOpen}
-                onClose={() => { setDrawerOpen(false); resetForm(); }}
-                title={editingId ? "Edit Launch Task Template" : "Add Launch Task Template"}
-                position="right"
-                size="xl"
-                padding="lg"
-            >
+            {/* Edit / Create Drawer */}
+            {(editingId === "__new__" || editingItem) && (
+                <EditDrawer
+                    item={editingItem || null}
+                    opened={!!editingId}
+                    onClose={() => setEditingId(null)}
+                    onSave={async (patch) => {
+                        if (editingId === "__new__") {
+                            try {
+                                await addLaunchCriterion(patch as any);
+                                await fetchLaunchCriteria();
+                            } catch (e: any) {
+                                setError(e.message || "Failed to create");
+                            }
+                        } else if (editingId) {
+                            await submitEdit(editingId, patch);
+                        }
+                        setEditingId(null);
+                    }}
+                    onDelete={
+                        editingId !== "__new__" && editingId
+                            ? async () => {
+                                  try {
+                                      await deleteLaunchCriterion(editingId);
+                                      await fetchLaunchCriteria();
+                                      setEditingId(null);
+                                  } catch (e: any) {
+                                      setError(e.message || "Failed to delete");
+                                  }
+                              }
+                            : undefined
+                    }
+                />
+            )}
+        </div>
+    );
+}
+
+function EditDrawer({
+    item,
+    opened,
+    onClose,
+    onSave,
+    onDelete,
+}: {
+    item: any | null;
+    opened: boolean;
+    onClose: () => void;
+    onSave: (patch: Record<string, any>) => void;
+    onDelete?: () => void;
+}) {
+    const { users, launchCriteria } = useSettings();
+    const [patch, setPatch] = useState<Record<string, any>>({});
+
+    const combobox = useCombobox({
+        onDropdownClose: () => combobox.resetSelectedOption(),
+    });
+
+    const existingPhases = useMemo(() => {
+        const set = new Set<string>();
+        for (const c of launchCriteria) {
+            if ((c as any).phase) set.add((c as any).phase);
+        }
+        return Array.from(set).sort();
+    }, [launchCriteria]);
+
+    const phaseOptions = useMemo(() => existingPhases.map((p) => ({ value: p, label: p })), [existingPhases]);
+
+    useEffect(() => {
+        if (opened) {
+            if (item) {
+                const gateValue = item.gate === "hard" || item.gate === true;
+                setPatch({
+                    label: item.label || "",
+                    description: item.description || "",
+                    phase: item.phase || "",
+                    gate: gateValue ? "hard" : "soft",
+                    tier_applicability: Array.isArray(item.tier_applicability)
+                        ? item.tier_applicability.length === 1
+                            ? item.tier_applicability[0]
+                            : "ALL"
+                        : item.tier_applicability || "ALL",
+                    sort_order: item.sort_order ?? 0,
+                    default_owner_email: item.default_owner_email || "",
+                    default_due_offset_days: item.default_due_offset_days ?? "",
+                });
+            } else {
+                setPatch({
+                    label: "",
+                    description: "",
+                    phase: "",
+                    gate: "soft",
+                    tier_applicability: "ALL",
+                    sort_order: launchCriteria.length,
+                    default_owner_email: "",
+                    default_due_offset_days: "",
+                });
+            }
+        }
+    }, [opened, item, launchCriteria.length]);
+
+    const ownerOptions = useMemo(() => {
+        return [
+            { value: "", label: "None", user: null, isPlaceholder: false },
+            { value: POD_PM_PLACEHOLDER, label: "PM of the pod", user: null, isPlaceholder: true },
+            ...users
+                .filter((u: any) => u.email)
+                .map((u: any) => ({
+                    value: u.email,
+                    label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.name || u.email,
+                    user: u,
+                    isPlaceholder: false,
+                })),
+        ];
+    }, [users]);
+
+    const selectedOption = ownerOptions.find((o) => o.value === (patch.default_owner_email || ""));
+
+    const handleSave = () => {
+        if (!patch.label?.trim()) return;
+        const payload: Record<string, any> = {
+            label: patch.label.trim(),
+            description: patch.description?.trim() || null,
+            phase: patch.phase?.trim() || null,
+            gate: patch.gate === "hard" ? "hard" : "soft",
+            tier_applicability: patch.tier_applicability === "ALL" ? null : [patch.tier_applicability],
+            sort_order: patch.sort_order ?? 0,
+            default_owner_email: patch.default_owner_email || null,
+            default_due_offset_days: patch.default_due_offset_days !== "" ? Number(patch.default_due_offset_days) : null,
+        };
+        onSave(payload);
+    };
+
+    const getInitials = (email: string, firstName?: string | null, lastName?: string | null) => {
+        if (firstName && lastName) return `${firstName[0]}${lastName[0]}`.toUpperCase();
+        return email.substring(0, 2).toUpperCase();
+    };
+
+    const getColor = (email: string) => {
+        const colors = ["blue", "cyan", "teal", "green", "lime", "yellow", "orange", "red", "pink", "grape", "violet", "indigo"];
+        let hash = 0;
+        for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
+        return colors[Math.abs(hash) % colors.length];
+    };
+
+    return (
+        <Drawer
+            opened={opened}
+            onClose={onClose}
+            title={item ? "Edit Launch Criterion" : "Add Launch Criterion"}
+            position="right"
+            size="xl"
+            padding={0}
+            styles={{
+                content: {
+                    overflowX: "hidden",
+                },
+                body: {
+                    display: "flex",
+                    flexDirection: "column",
+                    height: "calc(100vh - 80px)",
+                    overflow: "hidden",
+                },
+            }}
+        >
+            <div style={{ flex: 1, overflowY: "auto", padding: "var(--mantine-spacing-lg)", minHeight: 0 }}>
                 <Stack gap="md">
-                    <TextInput
-                        label="Task Name"
-                        value={form.label}
-                        onChange={(e) => setForm((f) => ({ ...f, label: e.target.value }))}
-                        required
-                        placeholder="e.g., Prepare press release"
-                    />
+                    <div style={{ display: "flex", gap: "16px", alignItems: "flex-start" }}>
+                        <div style={{ flex: 1 }}>
+                            <TextInput
+                                label="Label"
+                                value={patch.label || ""}
+                                onChange={(e) => setPatch({ ...patch, label: e.target.value })}
+                                required
+                                placeholder="e.g., Prepare press release"
+                            />
+                        </div>
+                        <div style={{ width: "120px", flexShrink: 0 }}>
+                            <TextInput
+                                label="Rank"
+                                type="number"
+                                value={(patch.sort_order ?? 0) + 1}
+                                onChange={(e) => setPatch({ ...patch, sort_order: Math.max(0, Number(e.target.value) - 1) })}
+                            />
+                        </div>
+                    </div>
+
                     <TextInput
                         label="Description"
-                        value={form.description}
-                        onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                        placeholder="What does this task involve?"
+                        value={patch.description || ""}
+                        onChange={(e) => setPatch({ ...patch, description: e.target.value })}
+                        placeholder="Optional details"
                     />
+
                     <Select
-                        label="Phase"
-                        value={form.phase || null}
-                        onChange={(v) => setForm((f) => ({ ...f, phase: v || "" }))}
+                        label="Category (Phase)"
+                        value={patch.phase || null}
+                        onChange={(v) => setPatch({ ...patch, phase: v || "" })}
                         data={phaseOptions}
                         searchable
                         allowDeselect
                         placeholder="Select or type a phase"
-                        nothingFoundMessage="No matching phase"
                     />
                     <TextInput
                         label="Or create a new phase"
-                        placeholder="Type a new phase name"
+                        placeholder="Type a new phase name and press Enter"
                         onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                const trimmed = e.currentTarget.value.trim();
-                                if (trimmed && !allPhases.includes(trimmed)) {
-                                    setCustomPhases((prev: string[]) => [...prev, trimmed]);
+                            if (e.key === "Enter") {
+                                const val = e.currentTarget.value.trim();
+                                if (val) {
+                                    setPatch({ ...patch, phase: val });
+                                    e.currentTarget.value = "";
                                 }
-                                setForm((f) => ({ ...f, phase: trimmed }));
-                                e.currentTarget.value = '';
                             }
                         }}
                     />
+
+                    <Checkbox
+                        label="Gate (must be completed before launch)"
+                        checked={patch.gate === "hard"}
+                        onChange={(e) => setPatch({ ...patch, gate: e.currentTarget.checked ? "hard" : "soft" })}
+                    />
+
                     <Select
-                        label="Gate Type"
-                        value={form.gate || null}
-                        onChange={(v) => setForm((f) => ({ ...f, gate: v || "" }))}
-                        data={GATE_OPTIONS}
-                        clearable
-                        placeholder="Optional"
+                        label="Tier"
+                        value={patch.tier_applicability || "ALL"}
+                        onChange={(v) => setPatch({ ...patch, tier_applicability: v || "ALL" })}
+                        data={[
+                            { value: "ALL", label: "All tiers" },
+                            { value: "TIER_1", label: "Tier 1" },
+                            { value: "TIER_2", label: "Tier 2" },
+                            { value: "TIER_3", label: "Tier 3" },
+                            { value: "TIER_1_AND_2", label: "Tier 1 & 2" },
+                        ]}
                     />
-                    <MultiSelect
-                        label="Tier Applicability"
-                        value={form.tier_applicability}
-                        onChange={(v) => setForm((f) => ({ ...f, tier_applicability: v }))}
-                        data={TIER_OPTIONS}
-                        placeholder="All tiers if empty"
-                    />
-                    <Select
-                        label="Default Owner"
-                        value={form.default_owner_email || null}
-                        onChange={(v) => setForm((f) => ({ ...f, default_owner_email: v || "" }))}
-                        data={ownerOptions}
-                        searchable
-                        clearable
-                        placeholder="Select default assignee"
-                    />
+
+                    <Combobox
+                        store={combobox}
+                        withinPortal={false}
+                        onOptionSubmit={(value) => {
+                            setPatch({ ...patch, default_owner_email: value === "" ? "" : value });
+                            combobox.closeDropdown();
+                        }}
+                    >
+                        <Combobox.Target>
+                            <InputBase
+                                component="button"
+                                type="button"
+                                pointer
+                                rightSection={<Combobox.Chevron />}
+                                rightSectionPointerEvents="none"
+                                onClick={() => combobox.toggleDropdown()}
+                                label="Owner"
+                            >
+                                {selectedOption?.label || (
+                                    <Text component="span" c="dimmed">
+                                        Select an owner
+                                    </Text>
+                                )}
+                            </InputBase>
+                        </Combobox.Target>
+
+                        <Combobox.Dropdown>
+                            <Combobox.Options>
+                                {ownerOptions.map((opt) => (
+                                    <Combobox.Option value={opt.value} key={opt.value || "__none__"}>
+                                        <Group gap="xs">
+                                            {opt.user && (
+                                                <Avatar
+                                                    src={(opt.user as any).avatar_url || undefined}
+                                                    radius="xl"
+                                                    size="sm"
+                                                    color={getColor(opt.user.email)}
+                                                >
+                                                    {getInitials(opt.user.email, (opt.user as any).first_name, (opt.user as any).last_name)}
+                                                </Avatar>
+                                            )}
+                                            {opt.isPlaceholder && (
+                                                <Avatar radius="xl" size="sm" color="gray">
+                                                    PM
+                                                </Avatar>
+                                            )}
+                                            <span>{opt.label}</span>
+                                        </Group>
+                                    </Combobox.Option>
+                                ))}
+                            </Combobox.Options>
+                        </Combobox.Dropdown>
+                    </Combobox>
+
                     <NumberInput
-                        label="Due Offset (days before launch)"
-                        value={form.default_due_offset_days !== "" ? Number(form.default_due_offset_days) : undefined}
-                        onChange={(v) => setForm((f) => ({ ...f, default_due_offset_days: v ?? "" }))}
+                        label="Days Prior to Launch"
+                        value={patch.default_due_offset_days !== "" ? Number(patch.default_due_offset_days) : undefined}
+                        onChange={(v) => setPatch({ ...patch, default_due_offset_days: v ?? "" })}
                         placeholder="e.g., 14 = due 14 days before launch"
+                        description="How many days before launch date this should be completed"
                         allowDecimal={false}
                         min={0}
                     />
-                    <NumberInput
-                        label="Sort Order"
-                        value={form.sort_order}
-                        onChange={(v) => setForm((f) => ({ ...f, sort_order: Number(v) || 0 }))}
-                        allowDecimal={false}
-                        min={0}
-                    />
-                    <Group justify="flex-end" mt="xl">
-                        {editingId && (
-                            <Button variant="outline" color="red" onClick={handleDelete} loading={saving}>
-                                Delete
-                            </Button>
-                        )}
-                        <Button variant="outline" onClick={() => { setDrawerOpen(false); resetForm(); }}>
+                </Stack>
+            </div>
+            <div
+                style={{
+                    borderTop: "1px solid var(--mantine-color-gray-3)",
+                    padding: "20px var(--mantine-spacing-lg) 0",
+                    backgroundColor: "var(--mantine-color-body)",
+                    flexShrink: 0,
+                }}
+            >
+                <Group justify={onDelete ? "space-between" : "flex-end"}>
+                    {onDelete && (
+                        <Button variant="outline" color="red" leftSection={<IconTrash size={16} />} onClick={onDelete}>
+                            Delete
+                        </Button>
+                    )}
+                    <Group>
+                        <Button variant="outline" onClick={onClose}>
                             Cancel
                         </Button>
-                        <Button onClick={handleSave} loading={saving}>
-                            {editingId ? "Save" : "Add"}
-                        </Button>
+                        <Button onClick={handleSave}>{item ? "Save" : "Add"}</Button>
                     </Group>
-                </Stack>
-            </Drawer>
-        </div>
+                </Group>
+            </div>
+        </Drawer>
     );
 }

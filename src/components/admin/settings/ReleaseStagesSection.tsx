@@ -266,7 +266,7 @@ function StageDrawer({
 }) {
   const isAdding = stageId === null;
   return (
-    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Release Stage" : "Edit Release Stage"} position="right" size="xl" padding="lg">
+    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Release Stage" : "Edit Release Stage"} position="right" size="xl" padding="lg" styles={{ content: { overflowX: 'hidden' } }}>
       <Stack gap="md">
         <TextInput label="Stage Name" value={stageName} onChange={(e) => setStageName(e.target.value)} required placeholder="e.g., GTM Access" />
         <NumberInput

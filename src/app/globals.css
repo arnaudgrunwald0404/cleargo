@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 :root {
+  --sidebar-width: 0px;
+
   /* Base colors – app background is light white gold */
   --background: var(--color-platinum);
   --foreground: #171717;
@@ -170,7 +172,7 @@
   /* Navigation */
   --nav-bg: var(--color-nav-blue);
   --nav-text: var(--color-white);
-  --nav-height: 64px;
+  --nav-height: 0px;
   --nav-padding-x: 24px;
   --nav-padding-y: 16px;
 
@@ -493,9 +495,15 @@ span[data-mention-user-id] {
 }
 
 /* ========== Sidebar layout ========== */
-/* When sidebar is present, remove top padding and use left padding */
+/* When sidebar is present, remove top padding */
 body.has-sidebar {
   padding-top: 0 !important;
+}
+
+/* Content area offset — driven by --sidebar-width CSS variable (not body padding,
+   which would cause react-remove-scroll to shift fixed-position drawers). */
+.sidebar-content-area {
+  padding-left: var(--sidebar-width, 0px);
 }
 
 /* Modal positioning with sidebar */
@@ -503,14 +511,15 @@ body.has-sidebar .mantine-Modal-inner {
   padding-top: 20px !important;
 }
 
-/* Collapsed sidebar body padding */
-body.has-sidebar.sidebar-collapsed {
-  padding-left: 68px !important;
-}
-
-/* Mobile: no left padding with sidebar */
+/* Mobile: no sidebar offset */
 @media (max-width: 768px) {
-  body.has-sidebar {
+  .sidebar-content-area {
     padding-left: 0 !important;
   }
+}
+
+/* Safety: clip horizontal overflow in Drawer content panels */
+.m_b8a05bbd,
+.mantine-Drawer-content {
+  overflow-x: hidden !important;
 }

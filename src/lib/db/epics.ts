@@ -51,6 +51,7 @@ export interface Epic {
     aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     archived: boolean;
     jira_epic_key: string | null;
+    launch_ref: string | null;
     aha_record_not_found?: boolean;
     created_at: string;
     updated_at: string;

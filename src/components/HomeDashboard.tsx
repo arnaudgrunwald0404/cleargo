@@ -1219,10 +1219,10 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         <div className="mb-8">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--spacing-2)' }}>
             <div style={{ flex: 1 }}>
-              <Title 
-                order={1} 
+              <Title
+                order={1}
                 className="text-4xl font-bold mb-2"
-                style={{ 
+                style={{
                   fontFamily: 'var(--font-marcellus), serif',
                   color: 'var(--color-gray-900)',
                   fontSize: 'var(--font-size-4xl)',
@@ -1232,28 +1232,42 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                 {isFirstTime ? (
                   <>Welcome to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>!</>
                 ) : (
-                  <>Welcome back, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>. You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.overdue}</span> criteria to inform ASAP{headingStats.total - headingStats.overdue > 0 && <> and <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.total - headingStats.overdue}</span> others to start thinking about</>}.
-                  </>
+                  <>Welcome back to ClearGO, <span style={{ color: 'var(--table-steel, #697771)' }}>{displayName}</span>.</>
                 )}
               </Title>
-              <Text 
-                size="lg" 
-                style={{ 
+              <Text
+                size="lg"
+                style={{
                   fontFamily: 'var(--font-body)',
                   color: 'var(--color-gray-500)',
-                  fontSize: 'var(--font-size-lg)'
+                  fontSize: 'var(--font-size-lg)',
+                  marginBottom: 'var(--spacing-2)'
                 }}
               >
                 {isFirstTime ? (
-                  <>
-                    Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.
-                  </>
+                  <>Get started by exploring your epics and launch readiness criteria. Track progress, collaborate with your team, and ensure successful go-to-market execution.</>
                 ) : (
-                  <>
-                    Manage your epics, track readiness criteria, and ensure successful go-to-market execution.
-                  </>
+                  <>Here is where we manage our epic releases, track readiness criteria, and ensure successful go-to-market execution.</>
                 )}
               </Text>
+              {!isFirstTime && (
+                <Text
+                  size="xl"
+                  style={{
+                    fontFamily: 'var(--font-marcellus), serif',
+                    color: 'var(--color-gray-900)',
+                    fontSize: 'var(--font-size-4xl)',
+                    paddingTop: 'var(--spacing-4)'
+                  }}
+                >
+                  <span style={{ fontWeight: 700 }}>
+                    You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.overdue}</span> criteria to inform ASAP
+                  </span>
+                  {headingStats.total - headingStats.overdue > 0 && (
+                    <span style={{ fontWeight: 400 }}> (and {headingStats.total - headingStats.overdue} others to start thinking about)</span>
+                  )}.
+                </Text>
+              )}
             </div>
             <Tooltip label="Page Options" position="left" withArrow>
               <Menu shadow="md" width={280} position="bottom-end">

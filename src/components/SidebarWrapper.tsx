@@ -81,19 +81,18 @@ export function SidebarWrapper({ serverEmail, serverRole, serverImageUrl }: Side
     checkAuth();
   }, [serverEmail, serverRole, serverImageUrl, isPublicPage]);
 
-  // Set body padding for sidebar offset
+  // Set sidebar class and CSS variable (padding is on .sidebar-content-area via CSS, not body)
   useEffect(() => {
     const show = !isPublicPage && (shouldShow || isLoading);
     if (show) {
       document.body.style.paddingTop = '0';
-      document.body.style.paddingLeft = '240px';
       document.body.classList.add('has-sidebar');
+      document.documentElement.style.setProperty('--sidebar-width', '240px');
     } else {
-      document.body.style.paddingLeft = '';
       document.body.classList.remove('has-sidebar');
+      document.documentElement.style.setProperty('--sidebar-width', '0px');
     }
     return () => {
-      document.body.style.paddingLeft = '';
       document.body.classList.remove('has-sidebar');
     };
   }, [shouldShow, isLoading, isPublicPage]);

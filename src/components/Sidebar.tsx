@@ -65,10 +65,10 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   useEffect(() => {
     if (collapsed) {
       document.body.classList.add('sidebar-collapsed');
-      document.body.style.paddingLeft = '68px';
+      document.documentElement.style.setProperty('--sidebar-width', '68px');
     } else {
       document.body.classList.remove('sidebar-collapsed');
-      document.body.style.paddingLeft = '240px';
+      document.documentElement.style.setProperty('--sidebar-width', '240px');
     }
   }, [collapsed]);
 
@@ -152,15 +152,14 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   // Releases section (visible to all)
   const releaseTabs: NavItem[] = [
     { link: '/portfolio', label: 'Portfolio', icon: IconLayoutGrid },
-    { link: '/epics', label: 'Epics', icon: IconClipboardList },
+    { link: '/epics', label: 'Releases', icon: IconClipboardList },
     { link: '/releases/comments', label: 'Comments', icon: IconMessageCircle, badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
   ];
 
-  // Launches section (visible to admins and PMMs only)
-  const canSeeLaunches = userRoles.some(r => ['CPO', 'SUPERADMIN', 'WORKSPACE_ADMIN', 'PMM'].includes(r));
+  const canSeeLaunches = canRolesPerform(userRoles, 'launches.view');
   const launchTabs: NavItem[] = [
-    { link: '/launches', label: 'Planning', icon: IconListCheck },
-    { link: '/launches/comments', label: 'Comments', icon: IconMessageCircle },
+    { link: '/gtm-launches', label: 'Planning', icon: IconListCheck },
+    { link: '/gtm-launches/comments', label: 'Comments', icon: IconMessageCircle },
   ];
 
   // Common items shown below both sections
@@ -311,11 +310,11 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
     </>
   );
 
-  function renderSectionLabel(label: string, isCollapsed: boolean, Icon?: React.ComponentType<{ size?: number | string; stroke?: number | string }>) {
+  function renderSectionLabel(label: string, isCollapsed: boolean, Icon?: React.ComponentType<{ size?: number | string; stroke?: number | string }>, settingsHref?: string) {
     if (isCollapsed) {
       // Show a small decorative icon (not clickable) with a divider line
       return (
-        <Tooltip label={label} position="right" withArrow>
+        <Tooltip label={label} position="right" withArrow withinPortal>
           <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -350,6 +349,25 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
       }}>
         {Icon && <Icon size={14} stroke={1.5} />}
         {label}
+        {settingsHref && (
+          <Tooltip label={`${label} settings`} position="right" withArrow withinPortal>
+            <Link
+              href={settingsHref}
+              prefetch={false}
+              style={{
+                marginLeft: 'auto',
+                display: 'flex',
+                alignItems: 'center',
+                color: 'rgba(255,255,255,0.25)',
+                textDecoration: 'none',
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.7)'; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = 'rgba(255,255,255,0.25)'; }}
+            >
+              <IconSettings size={13} stroke={1.5} />
+            </Link>
+          </Tooltip>
+        )}
       </div>
     );
   }
@@ -559,20 +577,27 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
           {renderNavItem(homeItem, isCollapsed)}
 
           {/* Releases section */}
+          <div style={{ height: '10px' }} />
           {renderSectionLabel('Releases', isCollapsed, IconTag)}
           {releaseTabs.map((tab) => renderNavItem(tab, isCollapsed))}
 
           {/* Launches section (admins & PMMs only) */}
           {canSeeLaunches && (
             <>
-              {renderSectionLabel('Launches', isCollapsed, IconRocket)}
+              <div style={{ height: '10px' }} />
+              {renderSectionLabel('GTM Launches', isCollapsed, IconRocket)}
               {launchTabs.map((tab) => renderNavItem(tab, isCollapsed))}
             </>
           )}
 
+          {/* Tools section */}
+          <div style={{ height: '10px' }} />
+          {renderSectionLabel('Tools', isCollapsed, IconTool)}
+          {[...commonTabs, ...(settingsItem ? [settingsItem] : [])].map((tab) => renderNavItem(tab, isCollapsed))}
+
         </nav>
 
-        {/* Bottom section: Tools icons + User */}
+        {/* Bottom section: User */}
         <div style={{
           borderTop: '1px solid rgba(255,255,255,0.08)',
           padding: isCollapsed ? '12px 8px' : '12px',
@@ -580,134 +605,20 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
           flexDirection: 'column',
           gap: 4,
         }}>
-          {/* Tools — horizontal icon row (expanded) or single icon (collapsed) */}
-          {(() => {
-            const toolItems = [
-              ...commonTabs,
-              ...(settingsItem ? [settingsItem] : []),
-            ];
-            if (toolItems.length === 0) return null;
-
-            if (isCollapsed) {
-              // Collapsed: show single tool icon, clicking expands sidebar
-              return (
-                <Tooltip label="Tools" position="right" withArrow>
-                  <button
-                    onClick={() => setCollapsed(false)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '10px 0',
-                      width: '100%',
-                      border: 'none',
-                      background: 'transparent',
-                      color: 'rgba(255,255,255,0.55)',
-                      cursor: 'pointer',
-                      borderRadius: 'var(--radius-md)',
-                      transition: 'all 0.15s ease',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.backgroundColor = 'transparent';
-                      e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-                    }}
-                  >
-                    <IconTool size={20} stroke={1.5} />
-                  </button>
-                </Tooltip>
-              );
-            }
-
-            // Expanded: label + horizontal icon row
-            return (
-              <div>
-                <div style={{
-                  padding: '4px 12px',
-                  fontSize: 11,
-                  fontWeight: 600,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.05em',
-                  color: 'rgba(255,255,255,0.35)',
-                  fontFamily: 'var(--font-body)',
-                  marginBottom: 4,
-                }}>
-                  Tools
-                </div>
-                <div style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 4,
-                  padding: '0 8px',
-                }}>
-                  {toolItems.map((item) => {
-                    const active = isActive(item.link);
-                    const Icon = item.icon;
-                    return (
-                      <Tooltip key={item.link} label={item.label} position="top" withArrow>
-                        <Link
-                          href={item.link}
-                          prefetch={false}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 36,
-                            height: 36,
-                            borderRadius: 'var(--radius-md)',
-                            backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-                            color: active ? 'white' : 'rgba(255,255,255,0.55)',
-                            textDecoration: 'none',
-                            transition: 'all 0.15s ease',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!active) {
-                              e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
-                              e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!active) {
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                              e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-                            }
-                          }}
-                        >
-                          <Icon size={20} stroke={1.5} />
-                        </Link>
-                      </Tooltip>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
 
           {/* User avatar row */}
           <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 12,
             padding: isCollapsed ? '10px 0' : '10px 12px',
+            display: 'flex',
             justifyContent: isCollapsed ? 'center' : 'flex-start',
           }}>
-            <UserAvatar email={email} role={role} imageUrl={imageUrl} />
-            {!isCollapsed && (
-              <span style={{
-                color: 'rgba(255,255,255,0.6)',
-                fontSize: 13,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                flex: 1,
-                fontFamily: 'var(--font-body)',
-              }}>
-                {displayName || email?.split('@')[0] || ''}
-              </span>
-            )}
+            <UserAvatar
+              email={email}
+              role={role}
+              imageUrl={imageUrl}
+              displayName={displayName || email?.split('@')[0] || ''}
+              collapsed={isCollapsed}
+            />
           </div>
 
         </div>

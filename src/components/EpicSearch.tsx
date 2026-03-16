@@ -284,35 +284,15 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
                     >
                       {epic.name}
                     </Text>
-                    <Group gap="md" style={{ flexWrap: 'wrap' }}>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>Ref:</span> {getReferenceNumber(epic)}
-                      </Text>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>Release:</span> {formatReleaseDate(epic.target_launch_date)}
-                      </Text>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>PM:</span> {getPMOwner(epic)}
-                      </Text>
-                    </Group>
+                    <Text
+                      size="xs"
+                      style={{
+                        fontFamily: 'var(--font-body)',
+                        color: 'var(--color-gray-600)'
+                      }}
+                    >
+                      <span style={{ fontWeight: 500 }}>Release:</span> {formatReleaseDate(epic.target_launch_date)}
+                    </Text>
                   </Stack>
                 </Box>
               </Link>

@@ -477,6 +477,7 @@ export default function SuccessMetricsPage() {
         title={editingTemplate ? 'Edit Custom Template' : 'Create Custom Template'}
         position="right"
         size="lg"
+        styles={{ content: { overflowX: 'hidden' } }}
       >
         <TemplateForm
           initialData={editingTemplate}
