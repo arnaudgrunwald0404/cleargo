@@ -2010,7 +2010,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
-                                                <col className="w-24" />
                                             </colgroup>
                                             <thead style={{
                                                 backgroundColor: "#FFFFFF",
@@ -2025,7 +2024,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
@@ -2055,7 +2054,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
                                                         <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div></td>
                                                     </tr>
                                                 ))}
@@ -2073,7 +2071,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
-                                                <col className="w-24" />
                                             </colgroup>
                                             <thead style={{
                                                 backgroundColor: "#FFFFFF",
@@ -2088,7 +2085,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>

@@ -3,20 +3,35 @@
 -- and recreate RLS policies under the new table name.
 
 -- =============================================================================
--- 1. Rename the table
+-- 1. Rename the table (skip if already renamed)
 -- =============================================================================
-ALTER TABLE public.launch_stages RENAME TO release_stages;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'launch_stages') THEN
+    ALTER TABLE public.launch_stages RENAME TO release_stages;
+  END IF;
+END $$;
 
 -- =============================================================================
--- 2. Add new columns
+-- 2. Add new columns (skip if already present)
 -- =============================================================================
-ALTER TABLE public.release_stages
-  ADD COLUMN applies_to TEXT NOT NULL DEFAULT 'BOTH'
-    CHECK (applies_to IN ('RELEASE_ONLY', 'LAUNCH_ONLY', 'BOTH'));
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'release_stages' AND column_name = 'applies_to') THEN
+    ALTER TABLE public.release_stages
+      ADD COLUMN applies_to TEXT NOT NULL DEFAULT 'BOTH'
+        CHECK (applies_to IN ('RELEASE_ONLY', 'LAUNCH_ONLY', 'BOTH'));
+  END IF;
+END $$;
 
-ALTER TABLE public.release_stages
-  ADD COLUMN synced_release_stage_id BIGINT
-    REFERENCES public.release_stages(id) ON DELETE SET NULL;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'release_stages' AND column_name = 'synced_release_stage_id') THEN
+    ALTER TABLE public.release_stages
+      ADD COLUMN synced_release_stage_id BIGINT
+        REFERENCES public.release_stages(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 -- =============================================================================
 -- 3. Drop old RLS policies (use IF EXISTS for idempotency)

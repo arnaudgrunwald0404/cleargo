@@ -33,7 +33,7 @@ jest.mock('@/lib/db/epics', () => ({
     upsertEpicFromAha: jest.fn().mockResolvedValue({ id: 'epic-123', aha_id: 'E-123', tier: 'TIER_1' }),
     getUserByEmail: jest.fn().mockResolvedValue({ id: 'user-123' }),
     getFallbackProductOpsUser: jest.fn().mockResolvedValue('fallback-user-id'),
-    instantiateCriteriaForEpic: jest.fn().mockResolvedValue(undefined),
+    instantiateReleaseCriteriaForEpic: jest.fn().mockResolvedValue(undefined),
     getEpicByAhaId: jest.fn().mockResolvedValue(null), // Simulate new epic
     fetchAndUpsertReleaseFromAha: (...args: any[]) => mockFetchAndUpsertReleaseFromAha(...args),
 }));

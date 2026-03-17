@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { instantiateCriteriaForEpic } from "@/lib/db/epics";
+import { instantiateReleaseCriteriaForEpic } from "@/lib/db/epics";
 
 export async function POST(
     request: NextRequest,
@@ -55,7 +55,7 @@ export async function POST(
         }
 
         // Instantiate criteria for this epic using the same SSR client (guarantees same project)
-        await instantiateCriteriaForEpic(epic.id, epic.tier, supabase as any);
+        await instantiateReleaseCriteriaForEpic(epic.id, epic.tier, supabase as any);
 
         return NextResponse.json({ success: true });
     } catch (error: any) {

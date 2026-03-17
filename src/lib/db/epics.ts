@@ -417,7 +417,7 @@ export async function calculateDueDateForCriterion(
     return dueDate.toISOString().split('T')[0]; // Return as YYYY-MM-DD
 }
 
-export async function instantiateCriteriaForEpic(
+export async function instantiateReleaseCriteriaForEpic(
     epicId: string,
     tier: string,
     client?: SupabaseClient
@@ -445,11 +445,12 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Failed to fetch epic: ${epicError.message}`);
     }
 
-    // Get all active criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
+    // Get all active release criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
         .select('id, label, description, tier_applicability, decision_owner_email, rating_timing, ui_framework_only')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('context', 'release');
 
     if (criteriaError) {
         console.error('Error fetching criteria:', criteriaError);

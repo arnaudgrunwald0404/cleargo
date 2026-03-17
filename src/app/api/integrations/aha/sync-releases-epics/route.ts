@@ -4,7 +4,7 @@ import { getAhaClient } from '@/lib/aha/client';
 import { getReleaseEpics, updateEpicCustomFields } from '@/lib/aha/client';
 import { resolveRole } from '@/lib/roles';
 import { mapEpicToEpic, shouldProcessEpic } from '@/lib/aha/mapping';
-import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser, instantiateCriteriaForEpic, clearAhaRecordNotFound } from '@/lib/db/epics';
+import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser, instantiateReleaseCriteriaForEpic, clearAhaRecordNotFound } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
                         await clearAhaRecordNotFound(savedEpic.id);
                         
                         // Instantiate criteria if needed
-                        await instantiateCriteriaForEpic(savedEpic.id, epicData.tier ?? 'TIER_3');
+                        await instantiateReleaseCriteriaForEpic(savedEpic.id, epicData.tier ?? 'TIER_3');
 
                         syncedEpics++;
                         console.log(`     ✅ Synced epic ${epic.reference_num || epic.id} from "${releaseName}"`);

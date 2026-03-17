@@ -3,6 +3,14 @@
 -- These are generic templates (not product-specific) that get instantiated per launch.
 -- Admins can customize, add, or remove criteria via the Launch Criteria settings page.
 
+DO $$
+BEGIN
+  -- Skip if launch criteria have already been seeded
+  IF EXISTS (SELECT 1 FROM public.criterion WHERE context = 'launch' LIMIT 1) THEN
+    RAISE NOTICE 'Launch criteria already seeded, skipping';
+    RETURN;
+  END IF;
+
 -- =============================================================================
 -- Phase 1: Strategy & Positioning (Weeks -8 to -6)
 -- =============================================================================
@@ -288,3 +296,5 @@ VALUES
    'Final optimization round: assess long-term performance and decide on next investment.',
    'Post-Launch', false, 'ALL',
    'launch', 'Phase 6: Post-Launch Optimization', 52, -60);
+
+END $$;
