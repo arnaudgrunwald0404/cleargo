@@ -59,6 +59,7 @@ export default function EpicDetailPage() {
     const [filterDueSoon, setFilterDueSoon] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [activeTab, setActiveTab] = useState<string>('readiness');
+    const [hasTalkTrackVideo, setHasTalkTrackVideo] = useState(false);
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
     const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
     const [successConfig, setSuccessConfig] = useState<EpicSuccessConfigWithDetails | null>(null);
@@ -488,6 +489,17 @@ export default function EpicDetailPage() {
                     console.warn('Failed to instantiate criteria:', e);
                     setInstantiationFailed(true);
                 });
+
+            // NON-BLOCKING: Check talk track video availability for tab icon
+            const epicRef = epicData?.aha_fields?.standard_fields?.reference_num ?? epicData?.jira_epic_key;
+            if (epicRef) {
+                fetch(`/api/talk-track?epic_id=${encodeURIComponent(epicRef)}`)
+                    .then(res => res.json())
+                    .then(json => {
+                        setHasTalkTrackVideo(json.videoStatus === 'ready' && !!json.videoUrl);
+                    })
+                    .catch(() => {});
+            }
 
             // Deduplicate by criterion_id (keep the most recently updated one)
             const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
@@ -1411,7 +1423,7 @@ export default function EpicDetailPage() {
 
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
-        { value: "talktrack", label: "Talk Track" },
+        { value: "talktrack", label: hasTalkTrackVideo ? "Talk Track \u25B6" : "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
@@ -1925,6 +1937,7 @@ export default function EpicDetailPage() {
                         <EpicDetailTabs
                             activeTab={activeTab}
                             onTabChange={(value) => setActiveTab(value)}
+                            hasTalkTrackVideo={hasTalkTrackVideo}
                         />
                     )}
                     {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
@@ -2086,6 +2099,7 @@ export default function EpicDetailPage() {
                                         return ref ? (ref.startsWith("[") ? ref : `[${ref}]`) : undefined;
                                     })()}
                                     epicRefForApi={((epic as any)?.aha_fields?.standard_fields?.reference_num ?? epic.jira_epic_key ?? "") as string}
+                                    onVideoAvailable={setHasTalkTrackVideo}
                                 />
                             )}
                         </div>

@@ -41,6 +41,8 @@ export interface TalkTrackTabProps {
   featureRef?: string;
   /** Aha epic reference for API and ClearMAP link, e.g. "APP-E-260" */
   epicRefForApi?: string;
+  /** Called when video availability is determined */
+  onVideoAvailable?: (hasVideo: boolean) => void;
 }
 
 export function TalkTrackTab({
@@ -48,6 +50,7 @@ export function TalkTrackTab({
   epicName,
   featureRef = "",
   epicRefForApi = "",
+  onVideoAvailable,
 }: TalkTrackTabProps) {
   const [loading, setLoading] = useState(!!epicRefForApi);
   const [error, setError] = useState<string | null>(null);
@@ -100,6 +103,7 @@ export function TalkTrackTab({
           return;
         }
         setData(json);
+        onVideoAvailable?.(json.videoStatus === "ready" && !!json.videoUrl);
         const sections = json.baselineSections || {};
         setBeforeState(sections.before_state ?? "");
         setWhatsChanging(sections.whats_changing ?? "");
@@ -203,6 +207,43 @@ export function TalkTrackTab({
           }}
         >
           <div className="flex-1 overflow-y-auto pr-1" style={{ minHeight: 0 }}>
+          <Text size="sm" fw={600} mb="xs" style={{ fontFamily: "var(--font-heading)" }}>
+            AI Presenter Video
+          </Text>
+          {videoReady && data?.videoUrl ? (
+            <div
+              className="rounded-lg border overflow-hidden bg-black mb-4"
+              style={{ borderColor: "var(--color-gray-200)", minHeight: 180 }}
+            >
+              <video
+                src={data.videoUrl}
+                controls
+                className="w-full"
+                style={{ maxHeight: 320 }}
+                preload="metadata"
+              >
+                Your browser does not support the video tag.
+              </video>
+            </div>
+          ) : (
+            <div
+              className="rounded-lg border flex items-center justify-center mb-4"
+              style={{
+                borderColor: "var(--color-gray-200)",
+                backgroundColor: "rgba(34, 197, 94, 0.06)",
+                minHeight: 180,
+              }}
+            >
+              <div className="text-center text-sm text-gray-500" style={{ fontFamily: "var(--font-body)" }}>
+                No video yet. Create one in{" "}
+                <Anchor href={clearMapLink} target="_blank" rel="noopener noreferrer" size="sm">
+                  ClearMAP
+                </Anchor>
+                .
+              </div>
+            </div>
+          )}
+
           <Text size="sm" fw={600} mb="xs" style={{ fontFamily: "var(--font-heading)" }}>
             Key talking points
           </Text>
@@ -337,42 +378,6 @@ export function TalkTrackTab({
             className="mb-4"
           />
 
-          <Text size="sm" fw={600} mb="xs" style={{ fontFamily: "var(--font-heading)" }}>
-            AI Presenter Video
-          </Text>
-          {videoReady && data?.videoUrl ? (
-            <div
-              className="rounded-lg border overflow-hidden bg-black"
-              style={{ borderColor: "var(--color-gray-200)", minHeight: 180 }}
-            >
-              <video
-                src={data.videoUrl}
-                controls
-                className="w-full"
-                style={{ maxHeight: 320 }}
-                preload="metadata"
-              >
-                Your browser does not support the video tag.
-              </video>
-            </div>
-          ) : (
-            <div
-              className="rounded-lg border flex items-center justify-center"
-              style={{
-                borderColor: "var(--color-gray-200)",
-                backgroundColor: "rgba(34, 197, 94, 0.06)",
-                minHeight: 180,
-              }}
-            >
-              <div className="text-center text-sm text-gray-500" style={{ fontFamily: "var(--font-body)" }}>
-                No video yet. Create one in{" "}
-                <Anchor href={clearMapLink} target="_blank" rel="noopener noreferrer" size="sm">
-                  ClearMAP
-                </Anchor>
-                .
-              </div>
-            </div>
-          )}
         </div>
       </Card>
       </div>
