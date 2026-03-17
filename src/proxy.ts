@@ -30,7 +30,7 @@ export async function proxy(request: NextRequest) {
 
             rateLimitResult = rateLimit(identifier, {
                 windowMs: 60000, // 1 minute
-                maxRequests: 100, // 100 requests per minute
+                maxRequests: 300, // 300 requests per minute (dashboard loads trigger 30+ parallel calls)
             });
 
             if (!rateLimitResult.allowed) {
@@ -39,7 +39,7 @@ export async function proxy(request: NextRequest) {
                     {
                         status: 429,
                         headers: {
-                            'X-RateLimit-Limit': '100',
+                            'X-RateLimit-Limit': '300',
                             'X-RateLimit-Remaining': '0',
                             'X-RateLimit-Reset': new Date(rateLimitResult.resetTime).toISOString(),
                         }
@@ -53,7 +53,7 @@ export async function proxy(request: NextRequest) {
         
         // Only set rate limit headers if rate limiting was applied
         if (rateLimitResult) {
-            response.headers.set('X-RateLimit-Limit', '100');
+            response.headers.set('X-RateLimit-Limit', '300');
             response.headers.set('X-RateLimit-Remaining', rateLimitResult.remaining.toString());
             response.headers.set('X-RateLimit-Reset', new Date(rateLimitResult.resetTime).toISOString());
         }

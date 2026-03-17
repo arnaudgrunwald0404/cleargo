@@ -491,7 +491,7 @@ export default function EpicDetailPage() {
                 });
 
             // NON-BLOCKING: Check talk track video availability for tab icon
-            const epicRef = epicData?.aha_fields?.standard_fields?.reference_num ?? epicData?.jira_epic_key;
+            const epicRef = data?.aha_fields?.standard_fields?.reference_num ?? data?.jira_epic_key;
             if (epicRef) {
                 fetch(`/api/talk-track?epic_id=${encodeURIComponent(epicRef)}`)
                     .then(res => res.json())
