@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { recalculateDueDatesForEpic } from '@/lib/db/epics';
 import { getSession } from '@/lib/auth';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,12 +31,10 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
         }
 
-        const normalizedRoles = appUser.roles.map((r: string) => String(r).toUpperCase());
-        const hasAdminRole = normalizedRoles.includes('SUPERADMIN') ||
-                            normalizedRoles.includes('PRODUCT_OPS') ||
-                            normalizedRoles.includes('CPO');
-
-        if (!hasAdminRole) {
+        // Capability check: settings.update
+        const rules = await getEffectivePermissionRules();
+        const canUpdate = canRolesPerformWithRules((appUser.roles as string[]) || [], 'settings.update', rules);
+        if (!canUpdate) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
         }
 

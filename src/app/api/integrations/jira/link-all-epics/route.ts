@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { resolveRole } from '@/lib/roles';
 import { resolveAndCacheJiraEpicKey } from '@/lib/jira/resolve-and-cache-epic-key';
 import { getJiraIssueCount } from '@/lib/jira/client';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -10,8 +11,21 @@ export const maxDuration = 300;
 async function requireAdmin(supabase: ReturnType<typeof createClient>) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return { error: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) };
-  const role = await resolveRole(user.email);
-  if (role !== 'SUPERADMIN' && role !== 'PRODUCT_OPS' && role !== 'CPO') {
+
+  const { data: me, error: userError } = await supabase
+    .from('app_user')
+    .select('roles')
+    .eq('email', user.email)
+    .single();
+
+  if (userError && userError.code === 'PGRST116') {
+    return { error: NextResponse.json({ error: 'User profile not found' }, { status: 404 }) };
+  }
+  if (userError) return { error: NextResponse.json({ error: 'Failed to fetch user profile' }, { status: 500 }) };
+
+  const rules = await getEffectivePermissionRules();
+  const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.update', rules);
+  if (!canUpdate) {
     return { error: NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 }) };
   }
   return { user };

@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveRole } from "@/lib/roles";
 import { randomUUID } from "crypto";
 import { createToken } from "@/lib/jwt";
 import { canSendEmail, markTokenSent } from "@/lib/tokenStore";
@@ -26,8 +25,6 @@ export async function POST(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-    const role = await resolveRole(user.email);
-    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
     // Capability check: users.invite.send
     const { data: me, error: userError } = await supabase

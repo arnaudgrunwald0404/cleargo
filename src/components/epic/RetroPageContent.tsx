@@ -9,6 +9,7 @@ import { PurpleLoader } from '../PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { EpicRetroWithSubmitter } from '@/lib/services/successMeasurementService';
 import type { DayMarker } from '@/lib/success/types';
+import { canRolesPerform } from '@/lib/permissions';
 
 interface RetroPageContentProps {
   epicId: string;
@@ -44,11 +45,7 @@ export function RetroPageContent({ epicId }: RetroPageContentProps) {
       if (res.ok) {
         const data = await res.json();
         const roles = (data.user?.roles || []) as string[];
-        setIsAdmin(
-          roles.includes('SUPERADMIN') ||
-          roles.includes('PRODUCT_OPS') ||
-          roles.includes('CPO')
-        );
+        setIsAdmin(canRolesPerform(roles, 'settings.successMeasurement.update'));
         setIsPM(roles.includes('PM'));
       }
     } catch (error) {

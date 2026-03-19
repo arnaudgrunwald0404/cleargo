@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { storeRovoTokens } from '@/lib/rovo/client';
-import { resolveRole } from '@/lib/roles';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { RovoOAuthProvider } from '@/lib/rovo/mcp-client';
-import { getSettings } from '@/lib/settings-db';
+import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 const ATLASSIAN_AUTH_URL = 'https://auth.atlassian.com';
 const ATLASSIAN_TOKEN_URL = 'https://auth.atlassian.com/oauth/token';
@@ -18,9 +18,21 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Check if user has admin permissions
-        const role = await resolveRole(user.email);
-        if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
+        // Capability check: settings.update
+        const { data: me, error: userError } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) throw userError;
+
+        const permRules = await getEffectivePermissionRules();
+        const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.update', permRules);
+        if (!canUpdate) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

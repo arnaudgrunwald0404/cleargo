@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveRole } from "@/lib/roles";
 import { getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
 
@@ -24,8 +23,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.update
   const { data: me, error: userError } = await supabase
@@ -93,8 +90,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability check: users.delete
   const { data: me, error: userError } = await supabase

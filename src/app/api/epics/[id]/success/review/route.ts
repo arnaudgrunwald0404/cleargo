@@ -6,7 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { markEpicAsReviewed } from '@/lib/services/successReviewService';
-import { resolveRole } from '@/lib/roles';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,25 +25,25 @@ export async function POST(
     }
     
     // Check permissions - PM or Admin only
-    const role = await resolveRole(user.email);
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('id, roles')
       .eq('email', user.email)
       .single();
-    
+
     if (userError && userError.code === 'PGRST116') {
       return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
     }
     if (userError) {
       throw userError;
     }
-    
+
     const userRoles = (me?.roles as string[]) || [];
-    const isAdmin = role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
+    const rules = await getEffectivePermissionRules();
+    const canConfigure = canRolesPerformWithRules(userRoles, 'settings.successMeasurement.update', rules);
     const isPM = userRoles.includes('PM');
-    
-    if (!isAdmin && !isPM) {
+
+    if (!canConfigure && !isPM) {
       return NextResponse.json({ error: 'Forbidden: Only PMs and Admins can mark scorecards as reviewed' }, { status: 403 });
     }
     

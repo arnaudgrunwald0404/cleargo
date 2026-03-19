@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@/lib/supabase/server';
 import { cookies } from 'next/headers';
-import { resolveRole } from "@/lib/roles";
 import { upsertCriteriaBatch, CreateCriterionInput } from "@/lib/db/criteria";
 import { getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
@@ -23,8 +22,6 @@ export async function POST(req: NextRequest) {
                 error: "Unauthorized (No User)"
             }, { status: 401, headers: debugHeaders });
         }
-        const role = await resolveRole(user.email);
-        if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
         // Capability: criteria.import
         const { data: me, error: userError } = await supabase
           .from('app_user')
@@ -73,8 +70,6 @@ export async function POST(req: NextRequest) {
 
         const { data: { user } } = await supabase.auth.getUser();
         if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-        const role = await resolveRole(user.email);
-        if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return new NextResponse("Forbidden", { status: 403 });
         const { data: me2, error: userError2 } = await supabase
           .from('app_user')
           .select('roles')

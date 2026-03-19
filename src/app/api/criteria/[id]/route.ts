@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { deleteCriteria, updateCriteria } from "@/lib/db/criteria";
-import { resolveRole } from "@/lib/roles";
 import { getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
 
@@ -41,30 +40,25 @@ export async function DELETE(
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.delete
-  // AUTH DISABLED: Superadmin bypasses capability checks
-  if (role !== "SUPERADMIN") {
-    const { data: me, error: userError } = await supabase
-      .from("app_user")
-      .select("roles")
-      .eq("email", user.email)
-      .single();
-    
-    // Handle case where user doesn't exist in app_user table
-    if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-    }
-    if (userError) {
-      throw userError;
-    }
-    
-    const rules = await getEffectivePermissionRules();
-    const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.delete", rules);
-    if (!canDelete) return forbid();
+  const { data: me, error: userError } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
+  if (userError) {
+    throw userError;
+  }
+
+  const rules = await getEffectivePermissionRules();
+  const canDelete = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.delete", rules);
+  if (!canDelete) return forbid();
 
   try {
     const deleted = await deleteCriteria(id);
@@ -86,30 +80,25 @@ export async function PUT(
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  // AUTH DISABLED: Superadmin bypasses capability checks
-  if (role !== "SUPERADMIN") {
-    const { data: me, error: userError } = await supabase
-      .from("app_user")
-      .select("roles")
-      .eq("email", user.email)
-      .single();
-    
-    // Handle case where user doesn't exist in app_user table
-    if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-    }
-    if (userError) {
-      throw userError;
-    }
-    
-    const rules = await getEffectivePermissionRules();
-    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
-    if (!canUpdate) return forbid();
+  const { data: me, error: userError } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
+  if (userError) {
+    throw userError;
+  }
+
+  const rules = await getEffectivePermissionRules();
+  const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
+  if (!canUpdate) return forbid();
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);
@@ -134,30 +123,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-  const role = await resolveRole(user.email);
-  if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
 
   // Capability: criteria.update
-  // AUTH DISABLED: Superadmin bypasses capability checks
-  if (role !== "SUPERADMIN") {
-    const { data: me, error: userError } = await supabase
-      .from("app_user")
-      .select("roles")
-      .eq("email", user.email)
-      .single();
-    
-    // Handle case where user doesn't exist in app_user table
-    if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-    }
-    if (userError) {
-      throw userError;
-    }
-    
-    const rules = await getEffectivePermissionRules();
-    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
-    if (!canUpdate) return forbid();
+  const { data: me, error: userError } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
+  if (userError) {
+    throw userError;
+  }
+
+  const rules = await getEffectivePermissionRules();
+  const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], "criteria.update", rules);
+  if (!canUpdate) return forbid();
 
   const body = await req.json();
   const parsed = updateSchema.safeParse(body);

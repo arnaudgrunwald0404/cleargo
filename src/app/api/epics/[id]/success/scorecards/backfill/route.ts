@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getEpic } from '@/lib/epics';
 import { generateScorecardsForRange } from '@/lib/services/scorecardGenerationService';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 function isYMD(s: string | undefined): s is string {
   return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s);
@@ -29,8 +31,6 @@ export async function POST(
     }
 
     // Permissions: admin or (PM and epic owner)
-    const { resolveRole } = await import('@/lib/roles');
-    const role = await resolveRole(user.email);
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles, id')
@@ -42,11 +42,12 @@ export async function POST(
     if (userError) throw userError;
 
     const userRoles = (me?.roles as string[]) || [];
-    const isAdmin = role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO';
+    const rules = await getEffectivePermissionRules();
+    const canConfigure = canRolesPerformWithRules(userRoles, 'settings.successMeasurement.update', rules);
     const isPM = userRoles.includes('PM');
     const isEpicOwner = epic.owner_id === me?.id;
 
-    if (!isAdmin && !(isPM && isEpicOwner)) {
+    if (!canConfigure && !(isPM && isEpicOwner)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
