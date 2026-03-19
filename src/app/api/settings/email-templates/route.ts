@@ -1,6 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextRequest, NextResponse } from "next/server";
-import { resolveRole } from "@/lib/roles";
 import { updateSettings, getSettings, getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
 import { z } from "zod";
@@ -24,14 +23,12 @@ export async function GET(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-    const role = await resolveRole(user.email);
-    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
       .eq('email', user.email)
       .single();
-    
+
     // Handle case where user doesn't exist in app_user table
     if (userError && userError.code === 'PGRST116') {
       return NextResponse.json(
@@ -42,7 +39,7 @@ export async function GET(req: NextRequest) {
     if (userError) {
       throw userError;
     }
-    
+
     const rules = await getEffectivePermissionRules();
     const canRead = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.emailTemplates.read', rules);
     if (!canRead) return forbid();
@@ -72,14 +69,12 @@ export async function PATCH(req: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     debugLog({ location: 'email-templates/route.ts:PATCH', message: 'PATCH API START', data: { hasUser: !!user, userEmail: user?.email }, hypothesisId: 'B,E' });
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-    const role = await resolveRole(user.email);
-    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) return forbid();
     const { data: me, error: userError } = await supabase
       .from('app_user')
       .select('roles')
       .eq('email', user.email)
       .single();
-    
+
     // Handle case where user doesn't exist in app_user table
     if (userError && userError.code === 'PGRST116') {
       return NextResponse.json(
@@ -90,7 +85,7 @@ export async function PATCH(req: NextRequest) {
     if (userError) {
       throw userError;
     }
-    
+
     const rules = await getEffectivePermissionRules();
     const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.emailTemplates.update', rules);
     debugLog({ location: 'email-templates/route.ts:PATCH', message: 'Permission check', data: { canUpdate, userRoles: me?.roles }, hypothesisId: 'E' });

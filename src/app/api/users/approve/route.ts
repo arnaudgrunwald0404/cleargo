@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { resolveRole, isAdminRole } from "@/lib/roles";
 import { syncUserSlackHandle } from "@/lib/slack/notifications";
 import { getApprovalEmail } from "@/lib/email/templates";
 import { Resend } from "resend";
@@ -26,31 +25,24 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
   
-  const role = await resolveRole(user.email);
-  // AUTH DISABLED: Superadmin bypasses role checks
-  if (!isAdminRole(role)) return forbid();
-
   // Capability check: users.create
-  // AUTH DISABLED: Superadmin bypasses capability checks
-  if (role !== "SUPERADMIN") {
-    const { data: me, error: userError } = await supabase
-      .from("app_user")
-      .select("roles")
-      .eq("email", user.email)
-      .single();
-    
-    // Handle case where user doesn't exist in app_user table
-    if (userError && userError.code === 'PGRST116') {
-      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-    }
-    if (userError) {
-      throw userError;
-    }
-    
-    const rules = await getEffectivePermissionRules();
-    const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], "users.create", rules);
-    if (!canCreate) return forbid();
+  const { data: me, error: userError } = await supabase
+    .from("app_user")
+    .select("roles")
+    .eq("email", user.email)
+    .single();
+
+  // Handle case where user doesn't exist in app_user table
+  if (userError && userError.code === 'PGRST116') {
+    return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
   }
+  if (userError) {
+    throw userError;
+  }
+
+  const rules = await getEffectivePermissionRules();
+  const canCreate = canRolesPerformWithRules((me?.roles as string[]) || [], "users.create", rules);
+  if (!canCreate) return forbid();
 
   const body = await req.json();
   console.log("Approve user request body:", JSON.stringify(body, null, 2));

@@ -1264,7 +1264,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                     You have <span style={{ color: 'var(--table-steel, #697771)' }}>{headingStats.overdue}</span> criteria to inform ASAP
                   </span>
                   {headingStats.total - headingStats.overdue > 0 && (
-                    <span style={{ fontWeight: 400 }}> (and {headingStats.total - headingStats.overdue} others to start thinking about)</span>
+                    <span style={{ fontWeight: 400 }}> (plus, {headingStats.total - headingStats.overdue} to start thinking about)</span>
                   )}.
                 </Text>
               )}

@@ -9,6 +9,7 @@ import { ScorecardTimeSeries } from './ScorecardTimeSeries';
 import { PurpleLoader } from '../PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { EpicScorecard } from '@/lib/success/types';
+import { canRolesPerform } from '@/lib/permissions';
 
 interface ScorecardPageContentProps {
   epicId: string;
@@ -60,11 +61,7 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
       if (res.ok) {
         const data = await res.json();
         const roles = (data.user?.roles || []) as string[];
-        setIsAdmin(
-          roles.includes('SUPERADMIN') ||
-          roles.includes('PRODUCT_OPS') ||
-          roles.includes('CPO')
-        );
+        setIsAdmin(canRolesPerform(roles, 'settings.successMeasurement.update'));
         setIsPM(roles.includes('PM'));
       }
     } catch (error) {

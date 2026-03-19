@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { resolveRole } from '@/lib/roles';
 import { getPendoIntegration } from '@/lib/integrations/pendo/service';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 /**
  * GET /api/test/pendo
@@ -18,9 +19,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Check admin role
-    const role = await resolveRole(user.email);
-    if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
+    // Capability check: settings.update
+    const { data: me, error: userError } = await supabase
+      .from('app_user')
+      .select('roles')
+      .eq('email', user.email)
+      .single();
+
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    }
+    if (userError) throw userError;
+
+    const rules = await getEffectivePermissionRules();
+    const canUpdate = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.update', rules);
+    if (!canUpdate) {
       return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
     }
 

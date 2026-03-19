@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
-import { resolveRole } from "@/lib/roles";
 import { randomUUID } from "crypto";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
+import { canRolesPerformWithRules } from "@/lib/permissions";
 import { createToken } from "@/lib/jwt";
 import { markTokenSent } from "@/lib/tokenStore";
 import { resend, EMAIL_SENDER } from "@/lib/email/client";
@@ -33,11 +34,22 @@ export async function POST(req: NextRequest) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.email) return new NextResponse("Unauthorized", { status: 401 });
-    
-    const role = await resolveRole(user.email);
-    if (!(role === "SUPERADMIN" || role === "PRODUCT_OPS" || role === "CPO")) {
-      return forbid();
+
+    // Capability check: users.invite.send
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", user.email)
+      .single();
+
+    if (userError && userError.code === 'PGRST116') {
+      return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
     }
+    if (userError) throw userError;
+
+    const rules = await getEffectivePermissionRules();
+    const canInvite = canRolesPerformWithRules((me?.roles as string[]) || [], "users.invite.send", rules);
+    if (!canInvite) return forbid();
 
     const body = await req.json().catch(() => ({}));
     const parsed = extendTokensSchema.safeParse(body);

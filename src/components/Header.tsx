@@ -70,8 +70,8 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
 
                     setHasAnalyticsAccess(canRolesPerform(roles, 'analytics.read'));
 
-                    // Only CPO and SUPERADMIN can toggle between release/launch modes
-                    const canToggle = roles.includes('CPO') || roles.includes('SUPERADMIN');
+                    // Only users with analytics.read capability can toggle between release/launch modes
+                    const canToggle = canRolesPerform(roles, 'analytics.read');
                     setCanToggleMode(canToggle);
                     if (!canToggle && appMode === 'launch') {
                         setAppMode('release');

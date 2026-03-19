@@ -227,7 +227,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             setRolesList(data.roles || []);
             setCapabilities(data.capabilities || []);
             setDefaultRules(data.rules || {});
-            setRules(data.overrides && Object.keys(data.overrides).length > 0 ? data.overrides : (data.rules || {}));
+            setRules({ ...(data.rules || {}), ...(data.overrides || {}) });
         } catch (e) {
             console.error("Failed to fetch permissions", e);
         } finally {

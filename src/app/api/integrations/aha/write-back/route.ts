@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { writeBackEpicReadiness } from '@/lib/aha/write-back';
 import { createClient } from '@/lib/supabase/server';
-import { resolveRole } from '@/lib/roles';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 
 export async function POST(req: NextRequest) {
     try {
@@ -12,8 +13,21 @@ export async function POST(req: NextRequest) {
             return new NextResponse('Unauthorized', { status: 401 });
         }
 
-        const role = await resolveRole(user.email);
-        if (!(role === 'SUPERADMIN' || role === 'PRODUCT_OPS' || role === 'CPO')) {
+        // Capability check: settings.ahaFields.sync
+        const { data: me, error: userError } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) throw userError;
+
+        const rules = await getEffectivePermissionRules();
+        const canSync = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.sync', rules);
+        if (!canSync) {
             return new NextResponse('Forbidden', { status: 403 });
         }
 

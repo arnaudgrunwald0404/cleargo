@@ -144,12 +144,10 @@ export default function EpicDetailPage() {
                 const meData = await meRes.json();
                 const rawRoles = meData?.user?.roles;
                 const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
-                const adminStatus = userRoles.includes('SUPERADMIN') ||
-                    userRoles.includes('PRODUCT_OPS') ||
-                    userRoles.includes('CPO');
+                const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                 console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
                 setIsAdmin(adminStatus);
-                setCanConfigureSuccessMetrics(canRolesPerform(userRoles, 'settings.successMeasurement.update'));
+                setCanConfigureSuccessMetrics(adminStatus);
             }
 
             // Priority 1: Critical data (epic, settings, criteria) - fetch first
@@ -1047,8 +1045,8 @@ export default function EpicDetailPage() {
                     const meData = await meRes.json();
                     const rawRoles = meData?.user?.roles;
                     const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
-                    setCanConfigureSuccessMetrics(canRolesPerform(userRoles, 'settings.successMeasurement.update'));
-                    const adminStatus = userRoles.includes('SUPERADMIN') || userRoles.includes('PRODUCT_OPS') || userRoles.includes('CPO');
+                    const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
+                    setCanConfigureSuccessMetrics(adminStatus);
                     console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
                     setIsAdmin(adminStatus);
                 }

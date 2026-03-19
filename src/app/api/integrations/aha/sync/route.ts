@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { resolveRole } from '@/lib/roles';
 import { getAhaClient } from '@/lib/aha/client';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { mapEpicToEpic, shouldProcessEpic } from '@/lib/aha/mapping';
 import {
     upsertEpicFromAha,
@@ -14,7 +14,7 @@ import {
     clearAhaRecordNotFound,
     recalculateDueDatesForEpic,
 } from '@/lib/db/epics';
-import { getSettings } from '@/lib/settings-db';
+import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
@@ -55,9 +55,22 @@ export async function POST(req: NextRequest) {
         if (!user?.email) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
-        
-        const role = await resolveRole(user.email);
-        if (role !== 'SUPERADMIN' && role !== 'PRODUCT_OPS' && role !== 'CPO') {
+
+        // Capability check: settings.ahaFields.sync
+        const { data: me, error: userError } = await supabase
+            .from('app_user')
+            .select('roles')
+            .eq('email', user.email)
+            .single();
+
+        if (userError && userError.code === 'PGRST116') {
+            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+        }
+        if (userError) throw userError;
+
+        const permRules = await getEffectivePermissionRules();
+        const canSync = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.sync', permRules);
+        if (!canSync) {
             return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
         }
 
