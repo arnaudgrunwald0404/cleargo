@@ -8,7 +8,7 @@ import {
     upsertEpicFromAha,
     getUserByEmail,
     getFallbackProductOpsUser,
-    instantiateCriteriaForEpic,
+    instantiateReleaseCriteriaForEpic,
     getEpicByAhaId,
     fetchAndUpsertReleaseFromAha,
     clearAhaRecordNotFound,
@@ -182,7 +182,7 @@ export async function POST(req: NextRequest) {
 
         // For new epics, instantiate criteria
         if (isNewEpic) {
-            await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+            await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
             console.log('✅ Criteria instantiated for new epic');
         }
 

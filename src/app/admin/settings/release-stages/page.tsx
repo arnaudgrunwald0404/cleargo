@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { useSettings } from "@/contexts/SettingsContext";
-import LaunchStagesSection from "@/components/admin/settings/LaunchStagesSection";
+import ReleaseStagesSection from "@/components/admin/settings/ReleaseStagesSection";
 import UiRolloutStagesSection from "@/components/admin/settings/UiRolloutStagesSection";
-import { addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
+import { addReleaseStage, updateReleaseStage, deleteReleaseStage, reorderReleaseStages } from "@/lib/services/settingsService";
 
-export default function LaunchStagesPage() {
+export default function ReleaseStagesPage() {
     const {
-        launchStages,
-        launchStagesLoading,
-        setLaunchStages,
-        fetchLaunchStages,
+        releaseStages,
+        releaseStagesLoading,
+        setReleaseStages,
+        fetchReleaseStages,
         uiRolloutStages,
         uiRolloutStagesLoading,
         fetchUiRolloutStages,
@@ -30,10 +30,10 @@ export default function LaunchStagesPage() {
             return;
         }
         try {
-            const sortOrder = launchStages.length > 0
-                ? Math.max(...launchStages.map(s => s.sort_order)) + 1
+            const sortOrder = releaseStages.length > 0
+                ? Math.max(...releaseStages.map(s => s.sort_order)) + 1
                 : 1;
-            await addLaunchStage({
+            await addReleaseStage({
                 name: editingStageName,
                 sort_order: sortOrder,
                 duration_days: editingStageDuration ? parseInt(editingStageDuration) : null,
@@ -44,27 +44,27 @@ export default function LaunchStagesPage() {
             setEditingStageName("");
             setEditingStageDuration("");
             setEditingStageDetails("");
-            fetchLaunchStages();
+            fetchReleaseStages();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
         }
     };
 
     const handleDeleteStage = async (id: number) => {
-        if (!confirm("Delete this launch stage?")) return;
+        if (!confirm("Delete this release stage?")) return;
         try {
-            await deleteLaunchStage(id);
-            fetchLaunchStages();
+            await deleteReleaseStage(id);
+            fetchReleaseStages();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
         }
     };
 
     const handleReorderStages = async (draggedId: number, targetId: number, targetIndex: number) => {
-        const draggedIndex = launchStages.findIndex(s => s.id === draggedId);
+        const draggedIndex = releaseStages.findIndex(s => s.id === draggedId);
         if (draggedIndex === -1 || draggedIndex === targetIndex) return;
 
-        const newStages = [...launchStages];
+        const newStages = [...releaseStages];
         const [draggedStage] = newStages.splice(draggedIndex, 1);
         newStages.splice(targetIndex, 0, draggedStage);
 
@@ -73,23 +73,23 @@ export default function LaunchStagesPage() {
             sort_order: index + 1
         }));
 
-        setLaunchStages(reorderedStages);
+        setReleaseStages(reorderedStages);
 
         try {
-            await reorderLaunchStages(reorderedStages);
-            fetchLaunchStages();
+            await reorderReleaseStages(reorderedStages);
+            fetchReleaseStages();
         } catch (error: any) {
             console.error("Failed to reorder stages:", error);
             alert("Failed to reorder stages: " + (error.message || error));
-            fetchLaunchStages();
+            fetchReleaseStages();
         }
     };
 
     const handleUpdateStage = async (id: number, name: string, durationDays: number | null, details: string | null) => {
         try {
-            await updateLaunchStage({ id, name, duration_days: durationDays, details });
+            await updateReleaseStage({ id, name, duration_days: durationDays, details });
             setEditingStageId(null);
-            fetchLaunchStages();
+            fetchReleaseStages();
         } catch (error: any) {
             alert(`Error: ${error.message}`);
         }
@@ -97,11 +97,11 @@ export default function LaunchStagesPage() {
 
     return (
         <div className="space-y-12">
-            <LaunchStagesSection
+            <ReleaseStagesSection
                 sectionTitle="Release Schedule Stages"
                 sectionSubtitle="Stages for legacy release schedule (GTM Access, Cohort 1, etc.)"
-                stages={launchStages}
-                loading={launchStagesLoading}
+                stages={releaseStages}
+                loading={releaseStagesLoading}
                 draggedStageId={draggedStageId}
                 setDraggedStageId={setDraggedStageId}
                 onReorder={handleReorderStages}

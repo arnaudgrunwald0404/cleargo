@@ -34,6 +34,12 @@ interface HeartManualConfigFormProps {
   onCancel: () => void | Promise<void>;
 }
 
+/** Shown in measurement dropdowns — values entered outside Pendo (same as admin Success Metrics settings). */
+const NON_PENDO_MEASUREMENT_OPTIONS: Array<{ value: HeartMeasurementType; label: string }> = [
+  { value: 'manual_numeric', label: 'Custom — manual numeric (not from Pendo)' },
+  { value: 'manual_percentage', label: 'Custom — manual % (not from Pendo)' },
+];
+
 // HEART category definitions
 const HEART_CATEGORIES: Array<{
   id: HeartCategoryId;
@@ -53,6 +59,7 @@ const HEART_CATEGORIES: Array<{
       { value: 'happiness_composite_score', label: 'Composite Score (frustration health + optional survey)' },
       { value: 'survey_score', label: 'Survey Score (1-5 rating)' },
       { value: 'nps_score', label: 'Net Promoter Score (NPS)' },
+      ...NON_PENDO_MEASUREMENT_OPTIONS,
     ],
     manualPlaceholder: 'e.g., NPS Score, CSAT Rating, Frustration Score',
   },
@@ -64,6 +71,7 @@ const HEART_CATEGORIES: Array<{
     pendoMeasurementTypes: [
       { value: 'events_per_user', label: 'Events per User (total)' },
       { value: 'events_per_user_per_week', label: 'Events per User per Week' },
+      ...NON_PENDO_MEASUREMENT_OPTIONS,
     ],
     manualPlaceholder: 'e.g., Sessions per User, Weekly Active Users, Feature Interactions',
   },
@@ -76,6 +84,7 @@ const HEART_CATEGORIES: Array<{
       { value: 'unique_users_percentage', label: 'Unique Users (% of eligible)' },
       { value: 'unique_users_count', label: 'Unique Users (count)' },
       { value: 'unique_companies_count', label: 'Unique Companies (count)' },
+      ...NON_PENDO_MEASUREMENT_OPTIONS,
     ],
     manualPlaceholder: 'e.g., Unique Companies Count, Adoption Rate %, Users Activated',
   },
@@ -88,6 +97,7 @@ const HEART_CATEGORIES: Array<{
       { value: 'return_rate_7_days', label: 'Return Rate (7 days)' },
       { value: 'return_rate_14_days', label: 'Return Rate (14 days)' },
       { value: 'return_rate_30_days', label: 'Return Rate (30 days)' },
+      ...NON_PENDO_MEASUREMENT_OPTIONS,
     ],
     manualPlaceholder: 'e.g., 30-Day Return Rate, Monthly Retention %, Churn Rate',
   },
@@ -99,6 +109,7 @@ const HEART_CATEGORIES: Array<{
     pendoMeasurementTypes: [
       { value: 'completion_rate', label: 'Completion Rate (completions / starts)' },
       { value: 'success_rate', label: 'Success Rate (successes / attempts)' },
+      ...NON_PENDO_MEASUREMENT_OPTIONS,
     ],
     manualPlaceholder: 'e.g., Completion Rate, Success Rate %, Error Rate',
   },
@@ -928,8 +939,10 @@ export function HeartManualConfigForm({
                             const catDef = HEART_CATEGORIES.find(c => c.id === cat.id)!;
                             // Reset measurement type when switching data source
                             const newMeasurementType = newSource === 'pendo'
-                              ? catDef.pendoMeasurementTypes[0]?.value || ''
-                              : ''; // Manual: start empty, user types their own
+                              ? catDef.pendoMeasurementTypes.filter(
+                                  (m) => m.value !== 'manual_numeric' && m.value !== 'manual_percentage'
+                                )[0]?.value || ''
+                              : 'manual_numeric'; // Custom / non-Pendo default
                             updateFormData(cat.id, { 
                               dataSource: newSource,
                               measurementType: newMeasurementType,
@@ -1062,12 +1075,23 @@ export function HeartManualConfigForm({
 
                           <Select
                             label="Measurement Type"
-                            description="How should this metric be calculated?"
+                            description="Pendo types use analytics below. Custom (manual) types switch to manual entry — no Pendo events required."
                             data={cat.pendoMeasurementTypes}
                             value={data.measurementType || null}
-                            onChange={(value) => updateFormData(cat.id, { 
-                              measurementType: value || ''
-                            })}
+                            onChange={(value) => {
+                              const v = value || '';
+                              const isCustomManual = v === 'manual_numeric' || v === 'manual_percentage';
+                              if (isCustomManual) {
+                                updateFormData(cat.id, {
+                                  measurementType: v,
+                                  dataSource: 'manual',
+                                  pendoEventIds: [],
+                                  pendoSegmentId: null,
+                                });
+                              } else {
+                                updateFormData(cat.id, { measurementType: v });
+                              }
+                            }}
                           />
 
                           {/* Segment filter - available for Pendo metrics */}
@@ -1087,22 +1111,40 @@ export function HeartManualConfigForm({
                         <>
                           <Paper withBorder p="sm" style={{ backgroundColor: 'var(--mantine-color-blue-0)', borderColor: 'var(--mantine-color-blue-2)' }}>
                             <Text size="sm" fw={500} mb="xs">Manual Entry Metric</Text>
-                            <Text size="xs" c="dimmed">
+                            <Text size="xs" c="gray.7">
                               You'll record values for this metric manually over time. Use this for data from 
                               external systems, spreadsheets, surveys, or any source outside Pendo.
                             </Text>
                           </Paper>
 
-                          <TextInput
-                            label="What are you measuring?"
-                            description="Describe the metric type (e.g., Unique Companies Count, Adoption Rate %, NPS Score)"
-                            placeholder={cat.manualPlaceholder}
-                            value={data.measurementType}
-                            onChange={(e) => updateFormData(cat.id, { 
-                              measurementType: e.currentTarget.value 
-                            })}
+                          <Select
+                            label="Measurement type"
+                            description="Choose a custom type when the data is not in Pendo. Numeric = counts, amounts, etc. Percentage = rates or % targets."
+                            placeholder="Select measurement type"
+                            data={NON_PENDO_MEASUREMENT_OPTIONS}
+                            value={
+                              data.measurementType === 'manual_numeric' || data.measurementType === 'manual_percentage'
+                                ? data.measurementType
+                                : null
+                            }
+                            onChange={(value) =>
+                              updateFormData(cat.id, { measurementType: value || '' })
+                            }
                             required
                           />
+                          {data.measurementType &&
+                            data.measurementType !== 'manual_numeric' &&
+                            data.measurementType !== 'manual_percentage' && (
+                              <TextInput
+                                label="Custom measurement label (legacy)"
+                                description="This metric used a free-text type. Replace by choosing an option above, or keep and edit."
+                                placeholder={cat.manualPlaceholder}
+                                value={data.measurementType}
+                                onChange={(e) =>
+                                  updateFormData(cat.id, { measurementType: e.currentTarget.value })
+                                }
+                              />
+                            )}
 
                           <Autocomplete
                             label="Target Unit"

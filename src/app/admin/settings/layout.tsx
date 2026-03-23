@@ -4,22 +4,25 @@ import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { useMediaQuery } from "@mantine/hooks";
-import { Drawer, Burger, Button } from "@mantine/core";
+import { Drawer, Button } from "@mantine/core";
+import { IconMenu2 } from "@tabler/icons-react";
 import { SettingsProvider, useSettings } from "@/contexts/SettingsContext";
+import { useAppMode } from "@/contexts/AppModeContext";
 
 const MOBILE_BREAKPOINT = "(max-width: 768px)";
 
 function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
     const pathname = usePathname();
+    const { appMode } = useAppMode();
     const isActive = (path: string) => {
         if (path === "/admin/settings" && pathname === "/admin/settings") return true;
         if (path !== "/admin/settings" && pathname?.startsWith(path)) return true;
         return false;
     };
-    const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
-    const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
     const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement");
     const isNotificationsExpanded = pathname?.startsWith("/admin/settings/notifications") || pathname?.startsWith("/admin/settings/email-templates");
+    const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
+    const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
 
     const linkProps = (path: string, active: boolean) => ({
         href: path,
@@ -32,34 +35,65 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
         className: `block w-full text-left px-4 py-2 rounded-lg transition-colors text-sm ${active ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-600 hover:bg-gray-50"}`,
     });
 
+    const sectionLabelStyle = "block px-4 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-gray-400";
+    const chevron = (expanded: boolean) => (
+        <svg className={`w-4 h-4 transition-transform ${expanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+    );
+
     return (
         <nav>
             <ul className="space-y-1">
+                {/* ── Generic Settings ── */}
+                <li><span className={sectionLabelStyle}>Generic Settings</span></li>
                 <li>
-                    <Link
-                        href="/admin/settings/users/users"
-                        onClick={onNavigate}
-                        className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isUsersExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}
-                    >
+                    <Link href="/admin/settings/users/users" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isUsersExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
                         <span>User Management</span>
-                        <svg className={`w-4 h-4 transition-transform ${isUsersExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        {chevron(!!isUsersExpanded)}
                     </Link>
                     {isUsersExpanded && (
                         <ul className="ml-4 mt-1 space-y-1">
                             <li><Link {...linkPropsSm("/admin/settings/users/users", isActive("/admin/settings/users/users"))}>Users</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/users/pm-mapping", isActive("/admin/settings/users/pm-mapping"))}>PM Mapping</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/users/domains", isActive("/admin/settings/users/domains"))}>Domains</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/users/pm-mapping", isActive("/admin/settings/users/pm-mapping"))}>PM Mapping</Link></li>
                         </ul>
                     )}
                 </li>
                 <li><Link {...linkProps("/admin/settings/permissions", isActive("/admin/settings/permissions"))}>Permissions</Link></li>
+                <li>
+                    <Link href="/admin/settings/integrations/aha" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isIntegrationsExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                        <span>Integrations</span>
+                        {chevron(!!isIntegrationsExpanded)}
+                    </Link>
+                    {isIntegrationsExpanded && (
+                        <ul className="ml-4 mt-1 space-y-1">
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/aha", isActive("/admin/settings/integrations/aha"))}>Aha!</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/jira", isActive("/admin/settings/integrations/jira"))}>Jira</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/slack", isActive("/admin/settings/integrations/slack"))}>Slack</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/calendar", isActive("/admin/settings/integrations/calendar"))}>Calendar</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/rovo", isActive("/admin/settings/integrations/rovo"))}>Rovo</Link></li>
+                        </ul>
+                    )}
+                </li>
+
+                {/* ── Release Management ── */}
+                <li><span className={sectionLabelStyle}>Release Management</span></li>
                 <li><Link {...linkProps("/admin/settings/releases", isActive("/admin/settings/releases"))}>Release Schedule</Link></li>
-                <li><Link {...linkProps("/admin/settings/launch-stages", isActive("/admin/settings/launch-stages"))}>Launch Stages</Link></li>
-                <li><Link {...linkProps("/admin/settings/criteria", isActive("/admin/settings/criteria"))}>ClearGO Criteria</Link></li>
+                <li><Link {...linkProps("/admin/settings/criteria", isActive("/admin/settings/criteria"))}>Release Criteria</Link></li>
+                <li><Link {...linkProps("/admin/settings/release-stages", isActive("/admin/settings/release-stages"))}>Release Stages</Link></li>
+
+                {/* ── Launches Management ── */}
+                <li><span className={sectionLabelStyle}>Launches Management</span></li>
+                <li><Link {...linkProps("/admin/settings/launch-schedule", isActive("/admin/settings/launch-schedule"))}>Launch Schedule</Link></li>
+                <li><Link {...linkProps("/admin/settings/launch-criteria", isActive("/admin/settings/launch-criteria"))}>Launch Criteria</Link></li>
+
+                {/* ── Misc ── */}
+                <li><span className={sectionLabelStyle}>Misc</span></li>
                 <li>
                     <Link href="/admin/settings/notifications" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isNotificationsExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
                         <span>Notifications</span>
-                        <svg className={`w-4 h-4 transition-transform ${isNotificationsExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                        {chevron(!!isNotificationsExpanded)}
                     </Link>
                     {isNotificationsExpanded && (
                         <ul className="ml-4 mt-1 space-y-1">
@@ -69,37 +103,22 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                         </ul>
                     )}
                 </li>
-                <li>
-                    <Link href="/admin/settings/success-measurement/metrics" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isSuccessMeasurementExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
-                        <span>Success measurement</span>
-                        <svg className={`w-4 h-4 transition-transform ${isSuccessMeasurementExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                    </Link>
-                    {isSuccessMeasurementExpanded && (
-                        <ul className="ml-4 mt-1 space-y-1">
-                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/metrics", isActive("/admin/settings/success-measurement/metrics"))}>Metrics</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/dashboards", isActive("/admin/settings/success-measurement/dashboards"))}>Dashboards</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/success-measurement/scorecards", isActive("/admin/settings/success-measurement/scorecards"))}>Scorecards</Link></li>
-                        </ul>
-                    )}
-                </li>
+                {appMode === 'release' && (
+                    <li>
+                        <Link href="/admin/settings/success-measurement/metrics" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isSuccessMeasurementExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
+                            <span>Success Measurement</span>
+                            {chevron(!!isSuccessMeasurementExpanded)}
+                        </Link>
+                        {isSuccessMeasurementExpanded && (
+                            <ul className="ml-4 mt-1 space-y-1">
+                                <li><Link {...linkPropsSm("/admin/settings/success-measurement/metrics", isActive("/admin/settings/success-measurement/metrics"))}>Metrics</Link></li>
+                                <li><Link {...linkPropsSm("/admin/settings/success-measurement/dashboards", isActive("/admin/settings/success-measurement/dashboards"))}>Dashboards</Link></li>
+                                <li><Link {...linkPropsSm("/admin/settings/success-measurement/scorecards", isActive("/admin/settings/success-measurement/scorecards"))}>Scorecards</Link></li>
+                            </ul>
+                        )}
+                    </li>
+                )}
                 <li><Link {...linkProps("/admin/settings/performance", isActive("/admin/settings/performance"))}>Performance</Link></li>
-                <li>
-                    <Link href="/admin/settings/integrations/aha" onClick={onNavigate} className={`w-full block text-left px-4 py-2 rounded-lg transition-colors flex items-center justify-between ${isIntegrationsExpanded ? "bg-indigo-50 text-indigo-700 font-medium" : "text-gray-700 hover:bg-gray-50"}`}>
-                        <span>Integrations</span>
-                        <svg className={`w-4 h-4 transition-transform ${isIntegrationsExpanded ? "rotate-90" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                    </Link>
-                    {isIntegrationsExpanded && (
-                        <ul className="ml-4 mt-1 space-y-1">
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/aha", isActive("/admin/settings/integrations/aha"))}>Aha</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/slack", isActive("/admin/settings/integrations/slack"))}>Slack</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/calendar", isActive("/admin/settings/integrations/calendar"))}>Calendar</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/jira", isActive("/admin/settings/integrations/jira"))}>Jira</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/rovo", isActive("/admin/settings/integrations/rovo"))}>ROVO</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
-                        </ul>
-                    )}
-                </li>
                 <li><Link {...linkProps("/admin/settings/general", isActive("/admin/settings/general"))}>Other Settings</Link></li>
             </ul>
         </nav>
@@ -115,16 +134,6 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     useEffect(() => {
         setDrawerOpen(false);
     }, [pathname]);
-    
-    const isActive = (path: string) => {
-        if (path === "/admin/settings" && pathname === "/admin/settings") return true;
-        if (path !== "/admin/settings" && pathname?.startsWith(path)) return true;
-        return false;
-    };
-    
-    const isUsersExpanded = pathname?.startsWith("/admin/settings/users");
-    const isIntegrationsExpanded = pathname?.startsWith("/admin/settings/integrations");
-    const isSuccessMeasurementExpanded = pathname?.startsWith("/admin/settings/success-measurement");
     
     return (
         <main className="min-h-screen" style={{ background: 'var(--color-platinum)' }}>
@@ -143,14 +152,14 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                             {error}
                         </div>
                     )}
-                    <div className={`flex gap-6 ${isMobile ? "flex-col" : ""}`}>
+                    <div className={`flex gap-3 ${isMobile ? "flex-col" : ""}`}>
                         {/* Mobile: menu button row + drawer */}
                         {isMobile && (
                             <>
                                 <div className="flex-shrink-0">
                                     <Button
                                         variant="light"
-                                        leftSection={<Burger opened={drawerOpen} size="sm" />}
+                                        leftSection={<IconMenu2 size={18} />}
                                         onClick={() => setDrawerOpen(true)}
                                         aria-label="Open settings menu"
                                     >

@@ -1,0 +1,37 @@
+name: Daily AI Retro Generation
+
+on:
+  schedule:
+    # Daily at 10:00 AM America/New_York (14:00 UTC)
+    - cron: '0 14 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  generate-retros:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger AI retro generation
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          BASE_URL="${BASE_URL:-https://cleargo.netlify.app}"
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          echo "Triggering AI retro generation..."
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BASE_URL/api/jobs/generate-ai-retros") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then
+              echo "AI retros generated successfully"
+              exit 0
+            fi
+            echo "Retry $i..."; sleep 15
+          done
+          echo "Failed after retries" >&2
+          exit 1

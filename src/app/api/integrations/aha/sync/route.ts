@@ -7,7 +7,7 @@ import {
     upsertEpicFromAha,
     getUserByEmail,
     getFallbackProductOpsUser,
-    instantiateCriteriaForEpic,
+    instantiateReleaseCriteriaForEpic,
     getEpicByAhaId,
     fetchAndUpsertReleaseFromAha,
     setAhaRecordNotFoundByAhaId,
@@ -279,7 +279,7 @@ export async function POST(req: NextRequest) {
                     await clearAhaRecordNotFound(savedEpic.id);
 
                     if (isNewEpic) {
-                        await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+                        await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
                         // Recalculate due dates for existing epics
@@ -396,7 +396,7 @@ export async function POST(req: NextRequest) {
                     await clearAhaRecordNotFound(savedEpic.id);
 
                     if (isNewEpic) {
-                        await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+                        await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
                         // Recalculate due dates for existing epics
@@ -615,7 +615,7 @@ export async function POST(req: NextRequest) {
 
                 // Instantiate criteria for new epics
                 if (isNewEpic) {
-                    await instantiateCriteriaForEpic(savedEpic.id, savedEpic.tier);
+                    await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                     results.created++;
                     console.log(`🆕 Created epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 } else {

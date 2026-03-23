@@ -16,8 +16,15 @@ export type CapabilityId =
   | "criteria.update"
   | "criteria.delete"
   | "criteria.import"
-  | "launchStages.manage"
+  | "releaseStages.manage"
   | "releases.manage"
+  | "launches.view"
+  | "launches.manage"
+  | "launchCriteria.create"
+  | "launchCriteria.update"
+  | "launchCriteria.delete"
+  | "launchCriteria.status.update"
+  | "launchSchedule.manage"
   | "settings.read"
   | "settings.update"
   | "settings.emailTemplates.read"
@@ -114,14 +121,49 @@ export const CAPABILITIES: Capability[] = [
     description: "Allow importing criteria in bulk.",
   },
   {
-    id: "launchStages.manage",
-    label: "Manage Launch Stages",
-    description: "Allow creating, updating, and deleting launch stages.",
+    id: "releaseStages.manage",
+    label: "Manage Release Stages",
+    description: "Allow creating, updating, and deleting release stages.",
   },
   {
     id: "releases.manage",
     label: "Manage Release Schedule",
     description: "Allow creating/updating/deleting release schedule entries.",
+  },
+  {
+    id: "launches.view",
+    label: "View Launches Section",
+    description: "Allow seeing the Launches section in the sidebar and accessing launch pages.",
+  },
+  {
+    id: "launches.manage",
+    label: "Manage Launches",
+    description: "Allow creating, updating, and deleting launches and linking epics.",
+  },
+  {
+    id: "launchCriteria.create",
+    label: "Create Launch Criteria",
+    description: "Allow creating launch criteria template definitions.",
+  },
+  {
+    id: "launchCriteria.update",
+    label: "Update Launch Criteria",
+    description: "Allow updating launch criteria template definitions.",
+  },
+  {
+    id: "launchCriteria.delete",
+    label: "Delete Launch Criteria",
+    description: "Allow deleting launch criteria template definitions.",
+  },
+  {
+    id: "launchCriteria.status.update",
+    label: "Update Launch Task Status",
+    description: "Allow updating task status, owner, notes, and links on launch criteria.",
+  },
+  {
+    id: "launchSchedule.manage",
+    label: "Manage Launch Schedule",
+    description: "Allow creating/updating/deleting launch schedule entries.",
   },
   {
     id: "settings.read",
@@ -201,8 +243,15 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "criteria.update": ["PRODUCT_OPS", "CPO"],
   "criteria.delete": ["PRODUCT_OPS", "CPO"],
   "criteria.import": ["PRODUCT_OPS", "CPO"],
-  "launchStages.manage": ["PRODUCT_OPS", "CPO"],
+  "releaseStages.manage": ["PRODUCT_OPS", "CPO"],
   "releases.manage": ["PRODUCT_OPS", "CPO"],
+  "launches.view": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launches.manage": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launchCriteria.create": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launchCriteria.update": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launchCriteria.delete": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launchCriteria.status.update": ["PM", "PMM", "ENG", "CPO", "PRODUCT_OPS", "PRODUCT"],
+  "launchSchedule.manage": ["PMM", "CPO", "PRODUCT_OPS"],
   "settings.read": ["PRODUCT_OPS", "CPO"],
   "settings.update": ["PRODUCT_OPS", "CPO"],
   "settings.emailTemplates.read": ["PRODUCT_OPS", "CPO"],

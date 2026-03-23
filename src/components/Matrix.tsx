@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, memo } from "react";
-import { Select, Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
+import { Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft, IconLink, IconDatabase, IconFileText } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
@@ -58,7 +58,7 @@ type MatrixItem = {
     };
 };
 
-/** Timeline order for "Group by Phase & Strategy" (stage names). Phases not in this list sort after. */
+/** Timeline order when grouping by phase (e.g. with My Tasks). Phases not in this list sort after. */
 const PHASE_ORDER = [
     'Product Definition Complete',
     'UX Preview',
@@ -251,9 +251,11 @@ type Props = {
     onUpdate: () => void;
     epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
     showNotApplicable?: boolean;
+    /** When true (e.g. epic page "My Tasks" is on), group criteria by release phase in chronological order, then by strategy category. */
+    groupByPhase?: boolean;
 };
 
-function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false }: Props) {
+function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false, groupByPhase = false }: Props) {
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
         if (source.type === 'success_metrics_defined') {
@@ -584,11 +586,6 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         }
     );
 
-    /** "Group by Strategy" (default) vs "Group by Phase & Strategy" */
-    const [groupByView, setGroupByView] = useState<'strategy' | 'phase_and_strategy'>('strategy');
-    /** Filter by accountable user (null = All) */
-    const [filterByUserEmail, setFilterByUserEmail] = useState<string | null>(null);
-    
     // Track which items are shown within each category
     const [shownItems, setShownItems] = useState<Set<string>>(() => {
         const shown = new Set<string>();
@@ -871,31 +868,8 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         };
     });
 
-    // Apply user filter: when set, only show items where this user is accountable
-    const itemsToShow = filterByUserEmail
-        ? itemsWithOptimistic.filter((i) => i.approverEmail?.toLowerCase() === filterByUserEmail.toLowerCase())
-        : itemsWithOptimistic;
-
-    // Unique accountable users for filter dropdown (from full list, not filtered)
-    const filterUserOptions = (() => {
-        const byEmail = new Map<string, { email: string; label: string }>();
-        itemsWithOptimistic.forEach((i) => {
-            const email = i.approverEmail?.trim();
-            if (email && email.includes('@') && email !== "[name of pod's product manager]") {
-                const key = email.toLowerCase();
-                if (!byEmail.has(key)) {
-                    byEmail.set(key, {
-                        email,
-                        label: getDisplayName(i.approverInfo?.first_name, i.approverInfo?.last_name, email),
-                    });
-                }
-            }
-        });
-        return [{ value: '', label: 'All' }, ...Array.from(byEmail.values()).sort((a, b) => a.label.localeCompare(b.label)).map((u) => ({ value: u.email, label: u.label }))];
-    })();
-
     // First, sort all items by sort_order (as defined in settings)
-    const sortedItems = [...itemsToShow].sort((a, b) => {
+    const sortedItems = [...itemsWithOptimistic].sort((a, b) => {
         const sortA = a.criterion.sort_order ?? 0;
         const sortB = b.criterion.sort_order ?? 0;
         if (sortA !== sortB) {
@@ -945,7 +919,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         return orderA - orderB;
     });
 
-    // Phase & Strategy view: phase -> category -> items (phase order from timeline)
+    // Phase grouping (My Tasks): phase -> category -> items (phase order from timeline)
     const phaseOrderMap = new Map(PHASE_ORDER.map((name, i) => [name, i]));
     const phaseToCategoriesData = (() => {
         const phaseToCat: Map<string, Record<string, MatrixItem[]>> = new Map();
@@ -1446,42 +1420,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
 
     return (
         <>
-            <div className="flex flex-wrap items-center justify-between gap-3 px-3 md:px-6 pb-2">
-                <div className="flex items-center gap-3">
-                    <span className="text-sm font-medium text-gray-600">Group by:</span>
-                    <div className="flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
-                        <button
-                            type="button"
-                            onClick={() => setGroupByView('strategy')}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${groupByView === 'strategy' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-                        >
-                            Strategy
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setGroupByView('phase_and_strategy')}
-                            className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${groupByView === 'phase_and_strategy' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
-                        >
-                            Phase & Strategy
-                        </button>
-                    </div>
-                </div>
-                <div className="flex items-center gap-2 ml-auto">
-                    <span className="text-sm font-medium text-gray-600">Filter by user:</span>
-                    <Select
-                        placeholder="All"
-                        data={filterUserOptions}
-                        value={filterByUserEmail ?? ''}
-                        onChange={(v) => setFilterByUserEmail(v && v.trim() ? v : null)}
-                        clearable
-                        size="xs"
-                        className="w-48"
-                        styles={{ input: { fontSize: '0.875rem' } }}
-                        searchable
-                    />
-                </div>
-            </div>
-            {groupByView === 'phase_and_strategy' ? (
+            {groupByPhase ? (
                 phaseToCategoriesData.phases.map((phase) => {
                     const phaseKey = phaseCollapseKey(phase);
                     const phaseCollapsed = isCollapsed(phaseKey);
@@ -1691,7 +1630,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                     );
                 })
             ) : null}
-            {groupByView === 'strategy' ? categories.map((cat, index) => {
+            {!groupByPhase ? categories.map((cat, index) => {
                 const overallItem = categoryOverallItems[cat];
                 const regularItems = categoryRegularItems[cat];
                 const allItems = overallItem 
@@ -2572,6 +2511,7 @@ export default memo(Matrix, (prevProps, nextProps) => {
         prevProps.epicName !== nextProps.epicName ||
         prevProps.epicStatus !== nextProps.epicStatus ||
         prevProps.showNotApplicable !== nextProps.showNotApplicable ||
+        prevProps.groupByPhase !== nextProps.groupByPhase ||
         prevProps.onUpdate !== nextProps.onUpdate) {
         return false; // Props changed, need to re-render
     }

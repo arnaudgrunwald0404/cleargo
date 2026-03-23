@@ -5,7 +5,7 @@ import { Box, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
 import { parseDateOnlyLocal } from "@/lib/date-utils";
 
-interface LaunchStage {
+interface ReleaseStage {
     id: number;
     name: string;
     sort_order: number;
@@ -17,7 +17,7 @@ interface LaunchStage {
     stage_type?: 'phase' | 'milestone';
 }
 
-const DEFAULT_STAGES: LaunchStage[] = [
+const DEFAULT_STAGES: ReleaseStage[] = [
     { id: 0, name: 'Product Definition Complete', sort_order: 0, duration_days: 31, details: null, stage_type: 'milestone' },
     { id: 0, name: 'GTM Access and Prep', sort_order: 1, duration_days: 14, details: null, stage_type: 'phase' },
     { id: 0, name: 'Internal Readiness', sort_order: 2, duration_days: 21, details: null, stage_type: 'phase' },
@@ -46,10 +46,10 @@ interface StageCriteriaSummary {
 }
 
 /** Maps "other scope" stage id (e.g. release_schedule) to chart scope stage id (e.g. ui_rollout) so criteria with legacy ids are counted on the correct node. */
-interface LaunchStagesChartProps {
+interface ReleaseStagesChartProps {
     releaseDate?: string | Date | null;
     cohort2Date?: string | Date | null;
-    stages?: LaunchStage[];
+    stages?: ReleaseStage[];
     goNoGoDate?: string | Date | null;
     showHeading?: boolean;
     noContainer?: boolean;
@@ -112,7 +112,7 @@ function subtractBusinessDays(end: Date, days: number): Date {
     return d;
 }
 
-function getEffectiveDuration(stage: LaunchStage, uiLevel: number | null | undefined): number | null {
+function getEffectiveDuration(stage: ReleaseStage, uiLevel: number | null | undefined): number | null {
     if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
         const d = stage.level_durations[String(uiLevel)];
         if (d && typeof d.min_days === 'number') {
@@ -122,7 +122,7 @@ function getEffectiveDuration(stage: LaunchStage, uiLevel: number | null | undef
     return stage.duration_days;
 }
 
-function getBufferDays(stage: LaunchStage, uiLevel: number | null | undefined): number {
+function getBufferDays(stage: ReleaseStage, uiLevel: number | null | undefined): number {
     if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
         const d = stage.level_durations[String(uiLevel)];
         if (d && typeof d.min_days === 'number' && typeof d.max_days === 'number') {
@@ -132,7 +132,7 @@ function getBufferDays(stage: LaunchStage, uiLevel: number | null | undefined): 
     return 0;
 }
 
-function isPhaseStage(s: LaunchStage): boolean {
+function isPhaseStage(s: ReleaseStage): boolean {
     if (s.stage_type === 'phase') return true;
     if (s.stage_type === 'milestone') return false;
     const n = s.name.toLowerCase();
@@ -154,7 +154,7 @@ function milestoneSpanLabel(name: string): string {
 type NodeStatus = 'done' | 'active' | 'at_risk' | 'upcoming';
 
 interface ComputedNode {
-    stage: LaunchStage;
+    stage: ReleaseStage;
     date: Date;
     durationDays: number;
     bufferDays: number;
@@ -165,7 +165,7 @@ interface ComputedNode {
 }
 
 function buildCriteriaSummaries(
-    stages: LaunchStage[],
+    stages: ReleaseStage[],
     criteriaItems?: CriterionItem[],
     stageIdBridge?: Map<number, number> | null
 ): Map<number, StageCriteriaSummary> {
@@ -217,7 +217,7 @@ function subtractCalendarDays(d: Date, days: number): Date {
 
 function useTimelineData(
     releaseDate: string | Date | null | undefined,
-    stages: LaunchStage[],
+    stages: ReleaseStage[],
     uiLevel: number | undefined,
     criteriaItems?: CriterionItem[],
     cohort2Date?: string | Date | null,
@@ -230,7 +230,7 @@ function useTimelineData(
 
     const isTraditionalRelease = uiLevel === undefined;
 
-    let rawNodes: { stage: LaunchStage; date: Date; durationDays: number; bufferDays: number; cumulativeDays: number }[];
+    let rawNodes: { stage: ReleaseStage; date: Date; durationDays: number; bufferDays: number; cumulativeDays: number }[];
 
     if (isTraditionalRelease) {
         // Original logic: calendar days, preLaunchDays = only stages before Cohort 1 (e.g. 31+14+21 = 66).
@@ -912,7 +912,7 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
     );
 }
 
-export function LaunchStagesChart({
+export function ReleaseStagesChart({
     releaseDate: releaseDateProp,
     cohort2Date,
     stages: stagesProp,
@@ -923,7 +923,7 @@ export function LaunchStagesChart({
     uiLevel,
     criteriaItems,
     stageIdBridge,
-}: LaunchStagesChartProps) {
+}: ReleaseStagesChartProps) {
     const isMobile = useMediaQuery("(max-width: 768px)");
     const releaseDate = releaseDateProp ?? targetReleaseDate;
     const stages = stagesProp ?? DEFAULT_STAGES;

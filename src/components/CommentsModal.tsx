@@ -2055,6 +2055,7 @@ export function CommentsModal({
           height: 'calc(100dvh - var(--nav-height, 64px))',
           display: 'flex',
           flexDirection: 'column',
+          overflowX: 'hidden',
         },
         header: {
           padding: 0,

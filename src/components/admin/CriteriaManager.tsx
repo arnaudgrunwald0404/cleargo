@@ -25,7 +25,7 @@ type Item = {
   tier_applicability: string;
   ui_framework_only?: boolean;
   decision_owner_email?: string | null;
-  rating_timing?: number | null; // Foreign key to launch_stages.id
+  rating_timing?: number | null; // Foreign key to release_stages.id
   status_definition_go?: string;
   status_definition_conditional?: string;
   status_definition_no_go?: string;
@@ -36,7 +36,7 @@ type Item = {
   updated_at: string;
 };
 
-interface LaunchStage {
+interface ReleaseStage {
   id: number;
   name: string;
   sort_order: number;
@@ -85,7 +85,7 @@ export function CriteriaManager() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importPreview, setImportPreview] = useState<{ preview: any[], count: number } | null>(null);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
-  const [launchStages, setLaunchStages] = useState<LaunchStage[]>([]);
+  const [releaseStages, setReleaseStages] = useState<ReleaseStage[]>([]);
   const [userInfoMap, setUserInfoMap] = useState<Record<string, {
     first_name?: string | null;
     last_name?: string | null;
@@ -130,9 +130,9 @@ export function CriteriaManager() {
   }, [importPreview]);
 
   // Helper function to get launch stage name by ID
-  const getLaunchStageName = (stageId: number | null | undefined): string => {
+  const getReleaseStageName = (stageId: number | null | undefined): string => {
     if (!stageId) return "—";
-    const stage = launchStages.find(s => s.id === stageId);
+    const stage = releaseStages.find(s => s.id === stageId);
     return stage?.name || `Unknown (${stageId})`;
   };
 
@@ -199,7 +199,7 @@ export function CriteriaManager() {
       try {
         const [criteriaRes, stagesRes] = await Promise.all([
           fetchWithRateLimit("/api/criteria", { maxRetries: 1 }),
-          fetchWithRateLimit("/api/launch-stages", { maxRetries: 1 })
+          fetchWithRateLimit("/api/release-stages", { maxRetries: 1 })
         ]);
 
         const criteriaData = await criteriaRes.json();
@@ -208,7 +208,7 @@ export function CriteriaManager() {
 
         if (stagesRes.ok) {
           const stagesData = await stagesRes.json();
-          setLaunchStages(stagesData.stages || []);
+          setReleaseStages(stagesData.stages || []);
         }
 
         // Fetch user info for all decision_owner_email values
@@ -415,7 +415,7 @@ export function CriteriaManager() {
         </div>
       )}
 
-      {/* Main ClearGO Criteria Card */}
+      {/* Main Release Criteria Card */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         {/* Header */}
         <div className="flex items-center gap-3 mb-6">
@@ -425,7 +425,7 @@ export function CriteriaManager() {
             </svg>
           </div>
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">ClearGO Criteria</h2>
+            <h2 className="text-lg font-semibold text-gray-900">Release Criteria</h2>
             <p className="text-sm text-gray-500">Manage launch readiness criteria</p>
           </div>
         </div>
@@ -441,7 +441,7 @@ export function CriteriaManager() {
               </div>
               <div>
                 <h3 className="text-md font-semibold text-gray-900">Import from Excel</h3>
-                <p className="text-sm text-gray-500">Upload a .xlsx or .csv to bulk create or update criteria (match by Label). Columns: Category, Label, Decision Owner Email, Ready By (launch stage name), GO, CONDITIONAL GO, NO GO, UI Framework Only (true/yes/1), Gate (true/yes/1), Tier (ALL, TIER_1_ONLY, TIER_1_AND_2, TIER_2_ONLY, TIER_3_ONLY). Ready By maps to launch stages by name. Missing columns use defaults (e.g. Gate=false, Tier=ALL, UI Framework Only=false).</p>
+                <p className="text-sm text-gray-500">Upload a .xlsx or .csv to bulk create or update criteria (match by Label). Columns: Category, Label, Decision Owner Email, Ready By (launch stage name), GO, CONDITIONAL GO, NO GO, UI Framework Only (true/yes/1), Gate (true/yes/1), Tier (ALL, TIER_1_ONLY, TIER_1_AND_2, TIER_2_ONLY, TIER_3_ONLY). Ready By maps to release stages by name. Missing columns use defaults (e.g. Gate=false, Tier=ALL, UI Framework Only=false).</p>
                 <a
                   href="/api/criteria/import/template"
                   download="criteria-import-template.csv"
@@ -520,7 +520,7 @@ export function CriteriaManager() {
                                   </td>
                                   <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.category}</td>
                                   <td className="px-3 py-2 text-sm font-medium text-gray-900">{item.label}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(item.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{getReleaseStageName(item.rating_timing)}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{item.gate ? "Yes" : "No"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{item.tier_applicability ?? "ALL"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{item.ui_framework_only ? "Yes" : "No"}</td>
@@ -552,7 +552,7 @@ export function CriteriaManager() {
                                     <td className="px-3 py-2"></td>
                                     <td className="px-3 py-2 text-sm text-gray-500 pl-8">{detailItem.category}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.label}</td>
-                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                    <td className="px-3 py-2 text-sm text-gray-600 pl-8">{getReleaseStageName(detailItem.rating_timing)}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.gate ? "Yes" : "No"}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.tier_applicability ?? "ALL"}</td>
                                     <td className="px-3 py-2 text-sm text-gray-600 pl-8">{detailItem.ui_framework_only ? "Yes" : "No"}</td>
@@ -576,7 +576,7 @@ export function CriteriaManager() {
                                   <td className="px-3 py-2"></td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.category}</td>
                                   <td className="px-3 py-2 text-sm text-gray-900">{detailItem.label}</td>
-                                  <td className="px-3 py-2 text-sm text-gray-600">{getLaunchStageName(detailItem.rating_timing)}</td>
+                                  <td className="px-3 py-2 text-sm text-gray-600">{getReleaseStageName(detailItem.rating_timing)}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.gate ? "Yes" : "No"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.tier_applicability ?? "ALL"}</td>
                                   <td className="px-3 py-2 text-sm text-gray-600">{detailItem.ui_framework_only ? "Yes" : "No"}</td>
@@ -836,13 +836,13 @@ export function CriteriaManager() {
                       onClick={(e) => e.stopPropagation()}
                     >
                       <Select
-                        value={c.rating_timing?.toString() || launchStages[0]?.id.toString() || ""}
+                        value={c.rating_timing?.toString() || releaseStages[0]?.id.toString() || ""}
                         onChange={(value) => {
                           if (value) {
                             submitEdit(c.id, { rating_timing: Number(value) });
                           }
                         }}
-                        data={launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
+                        data={releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
                         size="xs"
                         allowDeselect={false}
                         comboboxProps={{ width: 250, position: 'bottom-start' }}
@@ -877,7 +877,7 @@ export function CriteriaManager() {
               setCriteriaToDelete(editingItem);
               setDeleteModalOpen(true);
             }}
-            launchStages={launchStages}
+            releaseStages={releaseStages}
           />
         ) : null;
       })()}
@@ -933,7 +933,7 @@ export function CriteriaManager() {
   );
 }
 
-function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: { item: Item; opened: boolean; onClose: () => void; onSave: (patch: Partial<Item>) => void; onDelete: () => void; launchStages: LaunchStage[] }) {
+function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: { item: Item; opened: boolean; onClose: () => void; onSave: (patch: Partial<Item>) => void; onDelete: () => void; releaseStages: ReleaseStage[] }) {
   const [patch, setPatch] = useState<Partial<Item>>({ ...item });
   const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null; avatar_url?: string | null }>>([]);
   const [usersLoading, setUsersLoading] = useState(false);
@@ -1058,6 +1058,9 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
       size="xl"
       padding={0}
       styles={{
+        content: {
+          overflowX: 'hidden',
+        },
         body: {
           display: 'flex',
           flexDirection: 'column',
@@ -1129,7 +1132,7 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, launchStages }: {
                 onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
                 data={[
                   { value: "", label: "None" },
-                  ...launchStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
+                  ...releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
                 ]}
                 placeholder="Select launch stage"
                 description="Launch stage by which the criteria needs to be rated"

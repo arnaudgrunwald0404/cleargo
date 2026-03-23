@@ -1,8 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
+import { Stack } from '@mantine/core';
 import { RetroList } from './RetroList';
 import { RetroForm } from './RetroForm';
+import { AIRetroCard } from './AIRetroCard';
 import { PurpleLoader } from '../PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { EpicRetroWithSubmitter } from '@/lib/services/successMeasurementService';
@@ -149,7 +151,9 @@ export function RetroPageContent({ epicId }: RetroPageContentProps) {
   }
 
   return (
-    <>
+    <Stack gap="lg">
+      <AIRetroCard epicId={epicId} />
+
       <RetroList
         epicId={epicId}
         retros={retros}
@@ -169,7 +173,7 @@ export function RetroPageContent({ epicId }: RetroPageContentProps) {
           isSubmitting={submitting}
         />
       )}
-    </>
+    </Stack>
   );
 }
 

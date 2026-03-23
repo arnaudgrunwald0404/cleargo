@@ -5,11 +5,11 @@ import { Drawer, Button, Group, Stack, TextInput, NumberInput, Checkbox } from "
 import { IconGripVertical, IconPencil } from "@tabler/icons-react";
 import { RichText } from "@/components/admin/RichText";
 import { PurpleLoader } from "../../PurpleLoader";
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
-import type { LaunchStage, LaunchStageLevelDurations } from "./LaunchStagesSection";
-import { addLaunchStage, updateLaunchStage, deleteLaunchStage, reorderLaunchStages } from "@/lib/services/settingsService";
+import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
+import type { ReleaseStage, ReleaseStageLevelDurations } from "./ReleaseStagesSection";
+import { addReleaseStage, updateReleaseStage, deleteReleaseStage, reorderReleaseStages } from "@/lib/services/settingsService";
 
-function getLevelDurationsDisplay(level_durations: LaunchStageLevelDurations | null | undefined): string {
+function getLevelDurationsDisplay(level_durations: ReleaseStageLevelDurations | null | undefined): string {
   if (!level_durations || typeof level_durations !== "object") return "—";
   const parts: string[] = [];
   for (const level of ["1", "2", "3"]) {
@@ -22,7 +22,7 @@ function getLevelDurationsDisplay(level_durations: LaunchStageLevelDurations | n
 }
 
 type Props = {
-  stages: LaunchStage[];
+  stages: ReleaseStage[];
   loading: boolean;
   fetchStages: () => Promise<void>;
 };
@@ -35,7 +35,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
   const [editingDuration, setEditingDuration] = useState("");
   const [editingDetails, setEditingDetails] = useState("");
   const [editingIsGate, setEditingIsGate] = useState(false);
-  const [editingLevelDurations, setEditingLevelDurations] = useState<LaunchStageLevelDurations>({});
+  const [editingLevelDurations, setEditingLevelDurations] = useState<ReleaseStageLevelDurations>({});
 
   const handleAdd = async () => {
     if (!editingName) {
@@ -45,7 +45,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
     try {
       const sortOrder =
         stages.length > 0 ? Math.max(...stages.map((s) => s.sort_order)) + 1 : 1;
-      await addLaunchStage({
+      await addReleaseStage({
         name: editingName,
         sort_order: sortOrder,
         duration_days: editingDuration ? parseInt(editingDuration) : null,
@@ -65,7 +65,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
   const handleUpdate = async () => {
     if (editingId === null) return;
     try {
-      await updateLaunchStage({
+      await updateReleaseStage({
         id: editingId,
         name: editingName,
         duration_days: editingDuration ? parseInt(editingDuration) : null,
@@ -84,7 +84,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this UI Rollout stage?")) return;
     try {
-      await deleteLaunchStage(id);
+      await deleteReleaseStage(id);
       setEditingOpen(false);
       resetEditing();
       await fetchStages();
@@ -104,7 +104,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
       sort_order: index + 1,
     }));
     try {
-      await reorderLaunchStages(reordered);
+      await reorderReleaseStages(reordered);
       await fetchStages();
     } catch (error: any) {
       console.error("Failed to reorder stages:", error);
@@ -122,7 +122,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
     setEditingLevelDurations({});
   }
 
-  function openEdit(stage: LaunchStage) {
+  function openEdit(stage: ReleaseStage) {
     setEditingId(stage.id);
     setEditingName(stage.name);
     setEditingDuration(stage.duration_days?.toString() || "");
@@ -131,7 +131,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
     setEditingLevelDurations(
       (stage.level_durations && typeof stage.level_durations === "object"
         ? { ...stage.level_durations }
-        : {}) as LaunchStageLevelDurations
+        : {}) as ReleaseStageLevelDurations
     );
     setEditingOpen(true);
   }
@@ -299,7 +299,7 @@ export default function UiRolloutStagesSection({ stages, loading, fetchStages }:
         )}
       </div>
 
-      <LaunchStagesChart stages={stages} />
+      <ReleaseStagesChart stages={stages} />
 
       <Drawer
         opened={editingOpen}

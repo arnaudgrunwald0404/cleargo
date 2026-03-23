@@ -4,23 +4,23 @@ import { Drawer, Button, Group, Stack, TextInput, NumberInput } from "@mantine/c
 import { IconGripVertical, IconPencil } from "@tabler/icons-react";
 import { RichText } from "@/components/admin/RichText";
 import { PurpleLoader } from '../../PurpleLoader';
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 
-export type LaunchStageLevelDurations = Record<string, { min_days: number; max_days: number }>;
+export type ReleaseStageLevelDurations = Record<string, { min_days: number; max_days: number }>;
 
-export type LaunchStage = {
+export type ReleaseStage = {
   id: number;
   name: string;
   sort_order: number;
   duration_days: number | null;
   details: string | null;
   scope?: 'release_schedule' | 'ui_rollout';
-  level_durations?: LaunchStageLevelDurations | null;
+  level_durations?: ReleaseStageLevelDurations | null;
   is_gate?: boolean;
 };
 
 type Props = {
-  stages: LaunchStage[];
+  stages: ReleaseStage[];
   loading: boolean;
   draggedStageId: number | null;
   setDraggedStageId: (id: number | null) => void;
@@ -45,7 +45,7 @@ type Props = {
   onDeleteExisting: (id: number) => void;
 };
 
-export default function LaunchStagesSection({
+export default function ReleaseStagesSection({
   stages,
   loading,
   draggedStageId,
@@ -106,7 +106,7 @@ export default function LaunchStagesSection({
           </div>
         ) : stages.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-gray-500 mb-4">No launch stages found.</p>
+            <p className="text-gray-500 mb-4">No release stages found.</p>
             <p className="text-sm text-gray-400">The migration may not have inserted the initial data. Check the database or add stages manually.</p>
           </div>
         ) : (
@@ -208,7 +208,7 @@ export default function LaunchStagesSection({
         )}
       </div>
 
-      <LaunchStagesChart stages={stages} />
+      <ReleaseStagesChart stages={stages} />
 
       <StageDrawer
         opened={editingOpen}
@@ -277,7 +277,7 @@ function StageDrawer({
 }) {
   const isAdding = stageId === null;
   return (
-    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Launch Stage" : "Edit Launch Stage"} position="right" size="xl" padding="lg">
+    <Drawer opened={opened} onClose={onClose} title={isAdding ? "Add Release Stage" : "Edit Release Stage"} position="right" size="xl" padding="lg" styles={{ content: { overflowX: 'hidden' } }}>
       <Stack gap="md">
         <TextInput label="Stage Name" value={stageName} onChange={(e) => setStageName(e.target.value)} required placeholder="e.g., GTM Access" />
         <NumberInput

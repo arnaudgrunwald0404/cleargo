@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -12,7 +12,7 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
-import { LaunchStagesChart } from '@/components/admin/LaunchStagesChart';
+import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -116,8 +116,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         const data = await releasesResult.response.json();
                         setReleaseSchedule(data || []);
                         setReleaseScheduleWithIds(data || []);
-                        // After releases are loaded, check if order needs to be determined
-                        // This will be handled by the useEffect that fetches missing dates
                     }
                 } catch (err) {
                     console.error("Failed to load initial data:", err);
@@ -159,8 +157,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             ];
 
             const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
-                batchSize: 2, // Process 2 at a time
-                batchDelay: 150, // 150ms delay between batches
+                batchSize: 2,
+                batchDelay: 150,
                 maxRetries: 1
             });
 
@@ -184,7 +182,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 setReleaseSchedule(releasesData || []);
                 setReleaseScheduleWithIds(releasesData || []);
             }
-            
+
             // Load pod order from settings
             const settingsResult = supportingResults.find(r => r.url === '/api/settings');
             if (settingsResult?.response?.ok) {
@@ -199,8 +197,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             setError(e.message);
         } finally {
             setLoading(false);
-            // After initial load, check if we need to determine order
-            // This will be handled by the useEffect that fetches missing dates
         }
     }
 
@@ -400,15 +396,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         const groups = Array.from(releaseGroupsMap.entries()).map(([releaseName, epics]) => {
             // Sort epics within each release group by module order
             const sortedEpics = [...epics].sort((a, b) => {
+                // Sort by module order
                 const moduleA = getModuleFromEpic(a);
                 const moduleB = getModuleFromEpic(b);
-                
-                // Epics without module go to the end
+
                 if (!moduleA && !moduleB) return 0;
                 if (!moduleA) return 1;
                 if (!moduleB) return -1;
-                
-                // If module order is set, use it for sorting
+
                 if (podOrder.length > 0) {
                     const normalizedOrder = podOrder.map(p => p?.trim().toLowerCase() || '');
                     const normA = moduleA.toLowerCase();
@@ -419,7 +414,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     if (indexA !== -1) return -1;
                     if (indexB !== -1) return 1;
                 }
-                
+
                 return moduleA.localeCompare(moduleB);
             });
             
@@ -458,7 +453,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                 }
                 return moduleA.localeCompare(moduleB);
             });
-            
+
             groups.push({
                 releaseName: "Ungrouped",
                 releaseDate: null,
@@ -1067,11 +1062,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }}
                     >
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
                                         {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1098,6 +1093,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
@@ -1673,7 +1671,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                     }}>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                 <colgroup>
                                     <col className="w-100" />
                                     <col className="w-24" />
@@ -1688,7 +1686,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
                                         {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1715,6 +1713,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
@@ -1988,7 +1989,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 </div>
                                 {showTimelineForRelease === group.releaseName && group.releaseDate && (
                                     <div className="mt-3">
-                                        <LaunchStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
+                                        <ReleaseStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
                                     </div>
                                 )}
                                 <div className="rounded-lg" style={{ 
@@ -1998,7 +1999,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -2006,157 +2007,60 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
-                                                <col className="w-24" />
+                                                <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                             </colgroup>
-                                            <thead style={{ 
+                                            <thead style={{
                                                 backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left w-100" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Module</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
-                                                        <div className="flex items-center gap-1">
-                                                            <IconUser size={14} />
-                                                            PM
-                                                        </div>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Date</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Risk
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}></th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
                                                 {Array.from({ length: 5 }).map((_, index) => (
                                                     <tr key={`skeleton-row-${index}`} className="!bg-white" style={{ backgroundColor: '#FFFFFF', borderBottom: "1px solid #E5E7EB" }}>
-                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div>
-                                                        </td>
-                                                        <td className="px-4 py-3 w-24">
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div>
-                                                        </td>
-                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
-                                                            <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div>
-                                                        </td>
+                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div></td>
+                                                        <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
+                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div></td>
                                                     </tr>
                                                 ))}
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "800px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
@@ -2164,127 +2068,50 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 <col className="w-28" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
-                                                <col className="w-24" />
+                                                <col className="w-32" />
                                                 <col className="w-24" />
                                                 <col className="w-24" />
                                             </colgroup>
-                                            <thead style={{ 
+                                            <thead style={{
                                                 backgroundColor: "#FFFFFF",
                                                 borderBottom: "2px solid #E5E7EB"
                                             }}>
                                                 <tr>
-                                                    <th className="px-4 py-3 text-left w-100" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Module</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
-                                                        <div className="flex items-center gap-1">
-                                                            <IconUser size={14} />
-                                                            PM
-                                                        </div>
+                                                    <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
+                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Date</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>Status</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Readiness
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that's GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
                                                             Risk
-                                                            <Tooltip
-                                                                label={
-                                                                    <div style={{ maxWidth: '300px' }}>
-                                                                        <div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div>
-                                                                        <div style={{ fontSize: '12px', lineHeight: '1.5' }}>
-                                                                            Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.
-                                                                        </div>
-                                                                    </div>
-                                                                }
-                                                                withArrow
-                                                                multiline
-                                                            >
+                                                            <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
                                                                 <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ 
-                                                        fontSize: "12px",
-                                                        fontWeight: 600,
-                                                        textTransform: "uppercase",
-                                                        letterSpacing: "0.05em",
-                                                        color: "#6B7280"
-                                                    }}></th>
+                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                                {group.epics.map(epic => (
-                                                <tr 
+                                                {group.epics.map((epic, epicIdx) => {
+
+                                                return (
+                                                <tr
                                                     key={epic.id}
                                                     className="!bg-white"
-                                                    style={{ 
+                                                    style={{
                                                         backgroundColor: "#FFFFFF",
                                                         borderBottom: "1px solid #E5E7EB",
                                                         transition: "background-color 0.15s ease"
@@ -2301,11 +2128,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                                     </span>
                                                                 </Tooltip>
                                                             )}
-                                                            <Link 
-                                                                href={`/epics/${epic.id}`} 
-                                                                prefetch={false} 
+                                                            <Link
+                                                                href={`/epics/${epic.id}`}
+                                                                prefetch={false}
                                                                 className="font-medium"
-                                                                style={{ 
+                                                                style={{
                                                                     color: "#228BE6",
                                                                     textDecoration: "none",
                                                                     fontWeight: 500
@@ -2428,7 +2255,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         </div>
                                                     </td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                     )}

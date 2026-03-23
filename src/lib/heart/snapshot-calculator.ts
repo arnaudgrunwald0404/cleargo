@@ -159,7 +159,9 @@ async function calculateMetricValue(
     (!eventIds || eventIds.length === 0) &&
     measurementType !== 'happiness_composite_score' &&
     measurementType !== 'survey_score' &&
-    measurementType !== 'nps_score'
+    measurementType !== 'nps_score' &&
+    measurementType !== 'manual_numeric' &&
+    measurementType !== 'manual_percentage'
   ) {
     return { value: null, rawData: {}, error: 'No event IDs configured' };
   }
@@ -190,6 +192,10 @@ async function calculateMetricValue(
     let value: number | null = null;
     
     switch (measurementType) {
+      case 'manual_numeric':
+      case 'manual_percentage':
+        return { value: null, rawData: { source: 'manual', measurementType } };
+
       case 'events_per_user':
       case 'events_per_user_per_week': {
         // Get event count and divide by unique users

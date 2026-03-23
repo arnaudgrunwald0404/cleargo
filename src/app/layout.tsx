@@ -5,7 +5,7 @@ import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import { MantineProvider, ColorSchemeScript } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { HeaderWrapper } from "@/components/HeaderWrapper";
+import { SidebarWrapper } from "@/components/SidebarWrapper";
 import { TableScopeWrapper } from "@/components/TableScopeWrapper";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { ProfileCompletionModal } from "@/components/ProfileCompletionModal";
@@ -14,6 +14,7 @@ import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
+import { AppModeProvider } from "@/contexts/AppModeContext";
 import { cookies } from "next/headers";
 import { getSession } from "@/lib/auth";
 import { getEffectiveUserEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
@@ -104,13 +105,15 @@ export default async function RootLayout({
       >
         <MantineProvider theme={theme}>
           <FeatureFlagsProvider>
-            <Notifications />
-            <HeaderWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-            <div style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
-              <TableScopeWrapper>{children}</TableScopeWrapper>
-            </div>
-            <ImpersonationBanner />
-            <ProfileCompletionModal />
+            <AppModeProvider>
+              <Notifications />
+              <SidebarWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+              <div className="sidebar-content-area" style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
+                <TableScopeWrapper>{children}</TableScopeWrapper>
+              </div>
+              <ImpersonationBanner />
+              <ProfileCompletionModal />
+            </AppModeProvider>
           </FeatureFlagsProvider>
         </MantineProvider>
       </body>

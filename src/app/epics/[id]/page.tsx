@@ -20,7 +20,7 @@ import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
-import { LaunchStagesChart } from "@/components/admin/LaunchStagesChart";
+import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString } from "@/lib/date-utils";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
@@ -50,7 +50,7 @@ export default function EpicDetailPage() {
     const [cohort2Date, setCohort2Date] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
-    const [launchStages, setLaunchStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
     const [uiLevel, setUiLevel] = useState<number | null>(null);
     const [isUiFrameworkEpic, setIsUiFrameworkEpic] = useState(false);
     const [stageEndDates, setStageEndDates] = useState<Map<number, string>>(new Map());
@@ -62,6 +62,7 @@ export default function EpicDetailPage() {
     const [filterDueSoon, setFilterDueSoon] = useState(false);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [activeTab, setActiveTab] = useState<string>('readiness');
+    const [hasTalkTrackVideo, setHasTalkTrackVideo] = useState(false);
     const [readinessThreshold, setReadinessThreshold] = useState<number | null>(null);
     const [showFieldsSidebar, setShowFieldsSidebar] = useState(false); // Hidden by default for faster load
     const [successConfig, setSuccessConfig] = useState<EpicSuccessConfigWithDetails | null>(null);
@@ -182,7 +183,7 @@ export default function EpicDetailPage() {
             }
 
             // Priority 2: Database queries (not rate limited) - can run in parallel with API calls
-            const [matrixQuery, launchStagesReleaseQuery, launchStagesUiRolloutQuery] = await Promise.all([
+            const [matrixQuery, releaseStagesReleaseQuery, releaseStagesUiRolloutQuery] = await Promise.all([
                 supabase
                     .from('epic_criterion_status')
                     .select(`
@@ -204,12 +205,12 @@ export default function EpicDetailPage() {
                     `)
                     .eq('epic_id', id),
                 supabase
-                    .from('launch_stages')
+                    .from('release_stages')
                     .select('id, name, sort_order, duration_days, scope, level_durations, is_gate, stage_type')
                     .eq('scope', 'release_schedule')
                     .order('sort_order', { ascending: true }),
                 supabase
-                    .from('launch_stages')
+                    .from('release_stages')
                     .select('id, name, sort_order, duration_days, scope, level_durations, is_gate, stage_type')
                     .eq('scope', 'ui_rollout')
                     .order('sort_order', { ascending: true })
@@ -319,16 +320,16 @@ export default function EpicDetailPage() {
                 epicDetailCache.setCriteria(allActiveCriteria);
             }
 
-            // Process launch stages - prefer fresh query over cache so DB changes (e.g. is_gate after migrations) apply immediately
+            // Process release stages - prefer fresh query over cache so DB changes (e.g. is_gate after migrations) apply immediately
             const releaseStagesCached = epicDetailCache.getLaunchStagesReleaseSchedule();
             const uiRolloutStagesCached = epicDetailCache.getLaunchStagesUiRollout();
-            let releaseStagesData: any[] = launchStagesReleaseQuery.data ?? releaseStagesCached ?? [];
-            let uiRolloutStagesData: any[] = launchStagesUiRolloutQuery.data ?? uiRolloutStagesCached ?? [];
-            if (launchStagesReleaseQuery.data) {
-                epicDetailCache.setLaunchStagesReleaseSchedule(launchStagesReleaseQuery.data);
+            let releaseStagesData: any[] = releaseStagesReleaseQuery.data ?? releaseStagesCached ?? [];
+            let uiRolloutStagesData: any[] = releaseStagesUiRolloutQuery.data ?? uiRolloutStagesCached ?? [];
+            if (releaseStagesReleaseQuery.data) {
+                epicDetailCache.setLaunchStagesReleaseSchedule(releaseStagesReleaseQuery.data);
             }
-            if (launchStagesUiRolloutQuery.data) {
-                epicDetailCache.setLaunchStagesUiRollout(launchStagesUiRolloutQuery.data);
+            if (releaseStagesUiRolloutQuery.data) {
+                epicDetailCache.setLaunchStagesUiRollout(releaseStagesUiRolloutQuery.data);
             }
 
             const cleargoCandidateRaw = (data as any)?.aha_fields?.custom_fields?.cleargo_candidate;
@@ -346,12 +347,9 @@ export default function EpicDetailPage() {
             const parsedUiLevel = levelMatch ? parseInt(levelMatch[1], 10) : null;
             setUiLevel(parsedUiLevel);
 
-            const fetchedLaunchStages = epicIsUiFramework ? uiRolloutStagesData : releaseStagesData;
-            setLaunchStages(fetchedLaunchStages);
+            const fetchedReleaseStages = epicIsUiFramework ? uiRolloutStagesData : releaseStagesData;
+            setReleaseStages(fetchedReleaseStages);
 
-            // Build a cross-scope name bridge: criteria rating_timing may reference
-            // release schedule stage IDs, but UI rollout epics use different stage IDs.
-            // Map from "other scope" stage ID → "active scope" stage ID by matching names.
             const ratingTimingBridge = new Map<number, number>();
             if (epicIsUiFramework && releaseStagesData.length > 0 && uiRolloutStagesData.length > 0) {
                 const normalize = (n: string) => n.toLowerCase().replace(/\blive\b/g, '').replace(/\bga\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
@@ -492,6 +490,17 @@ export default function EpicDetailPage() {
                     console.warn('Failed to instantiate criteria:', e);
                     setInstantiationFailed(true);
                 });
+
+            // NON-BLOCKING: Check talk track video availability for tab icon
+            const epicRef = (data as any)?.aha_fields?.standard_fields?.reference_num ?? (data as any)?.jira_epic_key;
+            if (epicRef) {
+                fetch(`/api/talk-track?epic_id=${encodeURIComponent(epicRef)}`)
+                    .then(res => res.json())
+                    .then(json => {
+                        setHasTalkTrackVideo(json.videoStatus === 'ready' && !!json.videoUrl);
+                    })
+                    .catch(() => {});
+            }
 
             // Deduplicate by criterion_id (keep the most recently updated one)
             const deduplicated = (matrixData || []).reduce((acc: any[], item: any) => {
@@ -699,13 +708,13 @@ export default function EpicDetailPage() {
                 }
             }
 
-            // Calculate due dates for criteria based on rating_timing and launch stages
+            // Calculate due dates for criteria based on rating_timing and release stages
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
 
             // Compute stage end dates using same algorithm as the timeline chart
             const computedStageEndDates = new Map<number, string>();
-            if (fetchedLaunchStages.length > 0 && targetDate) {
+            if (fetchedReleaseStages.length > 0 && targetDate) {
                 const getEffectiveDuration = (s: any) => {
                     if (epicIsUiFramework && parsedUiLevel != null && s.level_durations && typeof s.level_durations === 'object') {
                         const d = s.level_durations[String(parsedUiLevel)];
@@ -726,7 +735,7 @@ export default function EpicDetailPage() {
                     return d;
                 };
 
-                const sorted = [...fetchedLaunchStages]
+                const sorted = [...fetchedReleaseStages]
                     .sort((a: any, b: any) => a.sort_order - b.sort_order);
                 const totalPreLaunchBizDays = sorted
                     .filter((s: any) => s.sort_order < (sorted[sorted.length - 1]?.sort_order ?? 0))
@@ -752,10 +761,9 @@ export default function EpicDetailPage() {
             }
             setStageEndDates(computedStageEndDates);
 
-            // Map category → stage ID for fallback when rating_timing is null
             const categoryStageMap = new Map<string, number>();
-            if (fetchedLaunchStages.length > 0) {
-                const stageByName = new Map(fetchedLaunchStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
+            if (fetchedReleaseStages.length > 0) {
+                const stageByName = new Map(fetchedReleaseStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
                 const uxStage = epicIsUiFramework ? 'ux preview' : 'gtm access and prep';
                 const mappings: [string, string][] = [
                     ['strategy', 'product definition complete'],
@@ -971,7 +979,7 @@ export default function EpicDetailPage() {
                 }
                 if (!resolvedStageId && catStageId) resolvedStageId = catStageId;
                 const dueByStageName = resolvedStageId != null
-                    ? (fetchedLaunchStages.find((s: any) => s.id === resolvedStageId) as { name?: string } | undefined)?.name ?? null
+                    ? (fetchedReleaseStages.find((s: any) => s.id === resolvedStageId) as { name?: string } | undefined)?.name ?? null
                     : null;
 
                 // Get comments and attachments data for this item
@@ -1212,14 +1220,14 @@ export default function EpicDetailPage() {
         updateThreshold(currentTier);
     }, [epic?.tier]);
 
-    // Go/No-Go dates are derived from launch_stages.is_gate in the Release Timeline chart (each gate stage's end date).
+    // Go/No-Go dates are derived from release_stages.is_gate in the Release Timeline chart (each gate stage's end date).
 
     // Memoize calculateDueDateForFilter function
     // Category → stage ID fallback for filter recalculation
     const filterCategoryStageMap = useMemo(() => {
         const map = new Map<string, number>();
-        if (launchStages.length === 0) return map;
-        const byName = new Map(launchStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
+        if (releaseStages.length === 0) return map;
+        const byName = new Map(releaseStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
         const uxStage = isUiFrameworkEpic ? 'ux preview' : 'gtm access and prep';
         const mappings: [string, string][] = [
             ['strategy', 'product definition complete'],
@@ -1253,7 +1261,7 @@ export default function EpicDetailPage() {
             if (id != null) map.set(cat, id);
         }
         return map;
-    }, [launchStages, isUiFrameworkEpic]);
+    }, [releaseStages, isUiFrameworkEpic]);
 
     const calculateDueDateForFilter = useCallback((item: any): string | null => {
         const rawTimingId = item.criterion?.rating_timing;
@@ -1503,7 +1511,7 @@ export default function EpicDetailPage() {
 
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
-        { value: "talktrack", label: "Talk Track" },
+        { value: "talktrack", label: hasTalkTrackVideo ? "Talk Track \u25B6" : "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
@@ -1775,6 +1783,7 @@ export default function EpicDetailPage() {
                         <EpicDetailTabs
                             activeTab={activeTab}
                             onTabChange={(value) => setActiveTab(value)}
+                            hasTalkTrackVideo={hasTalkTrackVideo}
                         />
                     )}
                     {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
@@ -1866,12 +1875,12 @@ export default function EpicDetailPage() {
                             paddingLeft: "var(--spacing-4)",
                             paddingRight: "var(--spacing-4)",
                         }}>
-                            {launchStages.length > 0 && (
+                            {releaseStages.length > 0 && (
                                 <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
-                                    <LaunchStagesChart
+                                    <ReleaseStagesChart
                                         releaseDate={releaseDate || epic?.target_launch_date || null}
                                         cohort2Date={cohort2Date}
-                                        stages={launchStages}
+                                        stages={releaseStages}
                                         showHeading={true}
                                         noContainer={false}
                                         uiLevel={isUiFrameworkEpic && uiLevel != null ? uiLevel : undefined}
@@ -1930,7 +1939,7 @@ export default function EpicDetailPage() {
                                                     suggestedItems={suggestedItems}
                                                     onActionComplete={loadData}
                                                 />
-                                                <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} showNotApplicable={isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)} />
+                                                <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} showNotApplicable={isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)} groupByPhase={filterMyTasks} />
                                             </>
                                         );
                                     })()}
@@ -1950,6 +1959,7 @@ export default function EpicDetailPage() {
                                         return ref ? (ref.startsWith("[") ? ref : `[${ref}]`) : undefined;
                                     })()}
                                     epicRefForApi={((epic as any)?.aha_fields?.standard_fields?.reference_num ?? epic.jira_epic_key ?? "") as string}
+                                    onVideoAvailable={setHasTalkTrackVideo}
                                 />
                             )}
                         </div>

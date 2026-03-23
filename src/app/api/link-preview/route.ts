@@ -42,10 +42,30 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });
   }
 
+  let parsedUrl: URL;
   try {
-    new URL(url);
+    parsedUrl = new URL(url);
   } catch {
     return NextResponse.json({ error: 'Invalid URL' }, { status: 400 });
+  }
+
+  // Avoid fetching localhost URLs when running on localhost (server would fetch itself and can hang)
+  const isLocalhost =
+    parsedUrl.hostname === 'localhost' ||
+    parsedUrl.hostname === '127.0.0.1' ||
+    parsedUrl.hostname.endsWith('.localhost');
+  if (isLocalhost) {
+    const origin = parsedUrl.origin;
+    const favicon = `${origin}/favicon.ico`;
+    const data: LinkPreviewData = {
+      url,
+      title: parsedUrl.hostname + (parsedUrl.pathname !== '/' ? parsedUrl.pathname : ''),
+      siteName: parsedUrl.hostname,
+      favicon,
+    };
+    return NextResponse.json(data, {
+      headers: { 'Cache-Control': 'public, max-age=3600' },
+    });
   }
 
   try {

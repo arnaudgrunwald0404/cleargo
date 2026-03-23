@@ -340,27 +340,27 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
   return res.json().catch(() => ({}));
 }
 
-export type LaunchStagesScope = 'release_schedule' | 'ui_rollout';
+export type ReleaseStagesScope = 'release_schedule' | 'ui_rollout';
 
-export async function getLaunchStages(scope?: LaunchStagesScope) {
-  const url = scope ? `/api/launch-stages?scope=${encodeURIComponent(scope)}` : "/api/launch-stages";
+export async function getReleaseStages(scope?: ReleaseStagesScope) {
+  const url = scope ? `/api/release-stages?scope=${encodeURIComponent(scope)}` : "/api/release-stages";
   const res = await fetchWithRateLimit(url, {
     maxRetries: 1,
   });
-  if (!res.ok) throw new Error("Failed to fetch launch stages");
+  if (!res.ok) return { stages: [] };
   return res.json();
 }
 
-export async function addLaunchStage(payload: {
+export async function addReleaseStage(payload: {
   name: string;
   sort_order: number;
   duration_days: number | null;
   details: string | null;
-  scope?: LaunchStagesScope;
+  scope?: ReleaseStagesScope;
   level_durations?: Record<string, { min_days: number; max_days: number }> | null;
   is_gate?: boolean;
 }) {
-  const res = await fetch("/api/launch-stages", {
+  const res = await fetch("/api/release-stages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -369,17 +369,17 @@ export async function addLaunchStage(payload: {
   return res.json();
 }
 
-export async function updateLaunchStage(payload: {
+export async function updateReleaseStage(payload: {
   id: number;
   name?: string;
   sort_order?: number;
   duration_days?: number | null;
   details?: string | null;
-  scope?: LaunchStagesScope;
+  scope?: ReleaseStagesScope;
   level_durations?: Record<string, { min_days: number; max_days: number }> | null;
   is_gate?: boolean;
 }) {
-  const res = await fetch("/api/launch-stages", {
+  const res = await fetch("/api/release-stages", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -389,18 +389,96 @@ export async function updateLaunchStage(payload: {
 }
 
 
-export async function deleteLaunchStage(id: number) {
-  const res = await fetch(`/api/launch-stages/${id}`, { method: "DELETE" });
+export async function deleteReleaseStage(id: number) {
+  const res = await fetch(`/api/release-stages/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error("Failed to delete stage");
   return res.json().catch(() => ({}));
 }
 
-export async function reorderLaunchStages(stages: any[]) {
-  const res = await fetch("/api/launch-stages", {
+export async function reorderReleaseStages(stages: any[]) {
+  const res = await fetch("/api/release-stages", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ stages }),
   });
   if (!res.ok) throw new Error("Failed to reorder stages");
   return res.json();
+}
+
+// ── Launch Criteria ──────────────────────────────────────────────────────────
+
+export async function getLaunchCriteria() {
+  const res = await fetchWithRateLimit("/api/launch-criteria", { maxRetries: 1 });
+  if (!res.ok) return { criteria: [] };
+  return res.json();
+}
+
+export async function addLaunchCriterion(payload: {
+  label: string;
+  description?: string;
+  phase?: string;
+  gate?: string;
+  tier_applicability?: string[];
+  sort_order?: number;
+  default_owner_email?: string;
+  default_due_offset_days?: number;
+}) {
+  const res = await fetch("/api/launch-criteria", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to add launch criterion");
+  return res.json();
+}
+
+export async function updateLaunchCriterion(id: string, payload: Record<string, any>) {
+  const res = await fetch(`/api/launch-criteria/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to update launch criterion");
+  return res.json();
+}
+
+export async function deleteLaunchCriterion(id: string) {
+  const res = await fetch(`/api/launch-criteria/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete launch criterion");
+  return res.json().catch(() => ({}));
+}
+
+// ── Launch Schedule ──────────────────────────────────────────────────────────
+
+export async function getLaunchSchedule(includeArchived: boolean = false) {
+  const url = includeArchived ? "/api/launch-schedule?include_archived=true" : "/api/launch-schedule";
+  const res = await fetchWithRateLimit(url, { maxRetries: 1 });
+  if (!res.ok) return { schedules: [] };
+  return res.json();
+}
+
+export async function addLaunchScheduleEntry(payload: { release_name: string; launch_date?: string }) {
+  const res = await fetch("/api/launch-schedule", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to add launch schedule entry");
+  return res.json();
+}
+
+export async function updateLaunchScheduleEntry(id: number, payload: Record<string, any>) {
+  const res = await fetch(`/api/launch-schedule/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to update launch schedule entry");
+  return res.json();
+}
+
+export async function deleteLaunchScheduleEntry(id: number) {
+  const res = await fetch(`/api/launch-schedule/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete launch schedule entry");
+  return res.json().catch(() => ({}));
 }

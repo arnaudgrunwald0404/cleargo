@@ -51,6 +51,7 @@ const HEART_CATEGORIES = [
   { id: 'task_success', name: 'Task Success', icon: '✅', description: 'Users completing key workflows successfully' },
 ];
 
+/** category: HEART category id, or 'all' for types that apply to any category (e.g. non-Pendo / manual) */
 const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string; category: string }[] = [
   { value: 'events_per_user', label: 'Events per User', category: 'engagement' },
   { value: 'events_per_user_per_week', label: 'Events per User per Week', category: 'engagement' },
@@ -64,6 +65,9 @@ const MEASUREMENT_TYPES: { value: HeartMeasurementType; label: string; category:
   { value: 'success_rate', label: 'Success Rate', category: 'task_success' },
   { value: 'survey_score', label: 'Survey Score', category: 'happiness' },
   { value: 'nps_score', label: 'NPS Score', category: 'happiness' },
+  // Non-Pendo: manual / external tracking (also available in HEART manual setup)
+  { value: 'manual_numeric', label: 'Custom — manual numeric (not from Pendo)', category: 'all' },
+  { value: 'manual_percentage', label: 'Custom — manual percentage (not from Pendo)', category: 'all' },
 ];
 
 export default function SuccessMetricsPage() {
@@ -238,7 +242,7 @@ export default function SuccessMetricsPage() {
                   }}>
                     Success Metrics
                   </h1>
-                  <Text size="sm" c="dimmed" mt="xs">
+                  <Text size="sm" c="gray.7" mt="xs">
                     Configure HEART framework defaults and create custom metric templates
                   </Text>
                 </div>
@@ -256,7 +260,7 @@ export default function SuccessMetricsPage() {
 
                 {/* HEART Defaults Tab */}
                 <Tabs.Panel value="defaults">
-                  <Text size="sm" c="dimmed" mb="md">
+                  <Text size="sm" c="gray.7" mb="md">
                     Set default targets for each HEART category. These defaults are used when setting up metrics for new epics.
                   </Text>
 
@@ -270,7 +274,7 @@ export default function SuccessMetricsPage() {
                               <Text size="xl">{category.icon}</Text>
                               <div>
                                 <Text fw={500}>{category.name}</Text>
-                                <Text size="xs" c="dimmed">{category.description}</Text>
+                                <Text size="xs" c="gray.7">{category.description}</Text>
                               </div>
                             </Group>
                             <ActionIcon
@@ -316,16 +320,16 @@ export default function SuccessMetricsPage() {
                                   )}
                                 </Group>
                               ) : (
-                                <Text size="xs" c="dimmed" fs="italic">No milestones configured</Text>
+                                <Text size="xs" c="gray.7" fs="italic">No milestones configured</Text>
                               )}
                               {categoryDefault.default_measurement_type && (
-                                <Text size="xs" c="dimmed">
+                                <Text size="xs" c="gray.7">
                                   Measurement: {MEASUREMENT_TYPES.find(m => m.value === categoryDefault.default_measurement_type)?.label}
                                 </Text>
                               )}
                             </Stack>
                           ) : (
-                            <Text size="xs" c="dimmed" fs="italic">No default configured</Text>
+                            <Text size="xs" c="gray.7" fs="italic">No default configured</Text>
                           )}
                         </Card>
                       );
@@ -336,7 +340,7 @@ export default function SuccessMetricsPage() {
                 {/* Custom Templates Tab */}
                 <Tabs.Panel value="templates">
                   <Group justify="space-between" mb="md">
-                    <Text size="sm" c="dimmed">
+                    <Text size="sm" c="gray.7">
                       Create reusable metric templates for metrics beyond the standard HEART categories.
                     </Text>
                     <Button
@@ -352,7 +356,7 @@ export default function SuccessMetricsPage() {
 
                   {templates.length === 0 ? (
                     <Paper withBorder p="xl" ta="center">
-                      <Text c="dimmed">No custom templates yet. Create one to add metrics beyond HEART.</Text>
+                      <Text c="gray.7">No custom templates yet. Create one to add metrics beyond HEART.</Text>
                     </Paper>
                   ) : (
                     <Table striped highlightOnHover>
@@ -376,7 +380,7 @@ export default function SuccessMetricsPage() {
                                 <div>
                                   <Text size="sm" fw={500}>{template.name}</Text>
                                   {template.description && (
-                                    <Text size="xs" c="dimmed" lineClamp={1}>{template.description}</Text>
+                                    <Text size="xs" c="gray.7" lineClamp={1}>{template.description}</Text>
                                   )}
                                 </div>
                               </Group>
@@ -396,7 +400,7 @@ export default function SuccessMetricsPage() {
                                   {template.default_target_timeframe_days && ` / ${template.default_target_timeframe_days}d`}
                                 </Text>
                               ) : (
-                                <Text size="sm" c="dimmed">—</Text>
+                                <Text size="sm" c="gray.7">—</Text>
                               )}
                             </Table.Td>
                             <Table.Td>
@@ -477,6 +481,7 @@ export default function SuccessMetricsPage() {
         title={editingTemplate ? 'Edit Custom Template' : 'Create Custom Template'}
         position="right"
         size="lg"
+        styles={{ content: { overflowX: 'hidden' } }}
       >
         <TemplateForm
           initialData={editingTemplate}
@@ -611,7 +616,7 @@ function EditDefaultForm({
 
   return (
     <Stack gap="md">
-      <Text size="sm" c="dimmed">
+      <Text size="sm" c="gray.7">
         Set default milestone targets used when new epics are created.
       </Text>
 
@@ -639,7 +644,7 @@ function EditDefaultForm({
                     max={365}
                     style={{ width: 70 }}
                   />
-                  <Text size="xs" c="dimmed">days →</Text>
+                  <Text size="xs" c="gray.7">days →</Text>
                   <NumberInput
                     size="xs"
                     placeholder="Target"
@@ -653,7 +658,7 @@ function EditDefaultForm({
                     max={100}
                     style={{ width: 70 }}
                   />
-                  <Text size="xs" c="dimmed">%</Text>
+                  <Text size="xs" c="gray.7">%</Text>
                   <Badge size="xs" variant="light" color="blue">
                     {autoLabel}
                   </Badge>
@@ -677,7 +682,7 @@ function EditDefaultForm({
           })}
         </Stack>
       ) : (
-        <Text size="xs" c="dimmed" ta="center" py="xs">
+        <Text size="xs" c="gray.7" ta="center" py="xs">
           No milestones set. Add milestones or use defaults.
         </Text>
       )}
@@ -709,16 +714,21 @@ function EditDefaultForm({
             Use Defaults (30/90/180 days)
           </Button>
         )}
-        <Text size="xs" c="dimmed">
+        <Text size="xs" c="gray.7">
           {milestones.length}/3 milestones {milestones.length === 0 && '(at least 1 required)'}
         </Text>
       </Group>
 
       <Select
         label="Default Measurement Type"
-        description="How this metric should be measured"
+        description="Pendo-based types use product analytics. Custom (manual) types are for values you enter or import when not tracking in Pendo."
         placeholder="Select measurement type"
-        data={MEASUREMENT_TYPES.filter(m => m.category === editingDefault.heart_category || editingDefault.heart_category === 'happiness').map(m => ({
+        data={MEASUREMENT_TYPES.filter(
+          (m) =>
+            m.category === 'all' ||
+            m.category === editingDefault.heart_category ||
+            editingDefault.heart_category === 'happiness'
+        ).map((m) => ({
           value: m.value,
           label: m.label,
         }))}
@@ -844,9 +854,9 @@ function TemplateForm({
 
       <Select
         label="Measurement Type"
-        description="How this metric will be calculated"
+        description="Pendo types pull from analytics. Custom (manual) types are for external or hand-entered data — no Pendo event required."
         placeholder="Select measurement type"
-        data={MEASUREMENT_TYPES.map(m => ({
+        data={MEASUREMENT_TYPES.map((m) => ({
           value: m.value,
           label: m.label,
         }))}
@@ -857,7 +867,7 @@ function TemplateForm({
 
       <TextInput
         label="Pendo Event Pattern"
-        description="Regex pattern to help find matching events (optional)"
+        description="Optional regex to match Pendo events. Skip for custom (manual) measurement types."
         placeholder="e.g., Revenue\\..*"
         value={pendoEventPattern}
         onChange={(e) => setPendoEventPattern(e.target.value)}

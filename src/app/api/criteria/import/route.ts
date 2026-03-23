@@ -119,29 +119,29 @@ export async function POST(req: NextRequest) {
             rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
         }
 
-        // Fetch launch stages for both scopes so "Ready By" resolves correctly per criterion type
+        // Fetch release stages for both scopes so "Ready By" resolves correctly per criterion type
         const [
-            { data: launchStagesRelease, error: stagesErrorRelease },
-            { data: launchStagesUiRollout, error: stagesErrorUiRollout }
+            { data: releaseStagesForSchedule, error: stagesErrorRelease },
+            { data: releaseStagesForUiRollout, error: stagesErrorUiRollout }
         ] = await Promise.all([
-            supabase.from('launch_stages').select('id, name').eq('scope', 'release_schedule'),
-            supabase.from('launch_stages').select('id, name').eq('scope', 'ui_rollout')
+            supabase.from('release_stages').select('id, name').eq('scope', 'release_schedule'),
+            supabase.from('release_stages').select('id, name').eq('scope', 'ui_rollout')
         ]);
 
         if (stagesErrorRelease || stagesErrorUiRollout) {
-            console.error('[Import] Error fetching launch stages:', stagesErrorRelease || stagesErrorUiRollout);
-            return NextResponse.json({ error: "Failed to fetch launch stages", details: (stagesErrorRelease || stagesErrorUiRollout)?.message }, { status: 500 });
+            console.error('[Import] Error fetching release stages:', stagesErrorRelease || stagesErrorUiRollout);
+            return NextResponse.json({ error: "Failed to fetch release stages", details: (stagesErrorRelease || stagesErrorUiRollout)?.message }, { status: 500 });
         }
 
-        const launchStageMapRelease = new Map<string, number>();
-        (launchStagesRelease || []).forEach((stage: { id: number; name: string }) => {
-            launchStageMapRelease.set(stage.name.toLowerCase().trim(), stage.id);
+        const releaseStageMapRelease = new Map<string, number>();
+        (releaseStagesForSchedule || []).forEach((stage: { id: number; name: string }) => {
+            releaseStageMapRelease.set(stage.name.toLowerCase().trim(), stage.id);
         });
-        const launchStageMapUiRollout = new Map<string, number>();
-        (launchStagesUiRollout || []).forEach((stage: { id: number; name: string }) => {
-            launchStageMapUiRollout.set(stage.name.toLowerCase().trim(), stage.id);
+        const releaseStageMapUiRollout = new Map<string, number>();
+        (releaseStagesForUiRollout || []).forEach((stage: { id: number; name: string }) => {
+            releaseStageMapUiRollout.set(stage.name.toLowerCase().trim(), stage.id);
         });
-        console.log(`[Import] Loaded ${launchStageMapRelease.size} release_schedule stages and ${launchStageMapUiRollout.size} ui_rollout stages for mapping`);
+        console.log(`[Import] Loaded ${releaseStageMapRelease.size} release_schedule stages and ${releaseStageMapUiRollout.size} ui_rollout stages for mapping`);
 
         const criteria: CreateCriterionInput[] = [];
         const errors: Array<{ row: number; label: string; error: string }> = [];
@@ -258,12 +258,12 @@ export async function POST(req: NextRequest) {
             let ratingTimingId: number | null = null;
             if (colD) {
                 const stageNameLower = colD.toLowerCase().trim();
-                const stageMap = uiFrameworkOnly ? launchStageMapUiRollout : launchStageMapRelease;
+                const stageMap = uiFrameworkOnly ? releaseStageMapUiRollout : releaseStageMapRelease;
                 const stageId = stageMap.get(stageNameLower);
                 if (stageId) {
                     ratingTimingId = stageId;
                 } else {
-                    console.warn(`[Import] Row ${rowNumber}: Launch stage "${colD}" not found in ${uiFrameworkOnly ? 'ui_rollout' : 'release_schedule'} stages`);
+                    console.warn(`[Import] Row ${rowNumber}: Release stage "${colD}" not found in ${uiFrameworkOnly ? 'ui_rollout' : 'release_schedule'} stages`);
                 }
             }
             

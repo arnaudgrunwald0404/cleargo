@@ -238,12 +238,14 @@ export async function fetchLiveMetricValue(
   const measurementType = metric.measurement_type as HeartMeasurementType;
   const eventIds = metric.pendo_event_ids;
 
-  // Most non-survey metrics require event IDs
+  // Most non-survey metrics require event IDs (manual types use entered / external data, not Pendo)
   if (
     (!eventIds || eventIds.length === 0) &&
     measurementType !== 'happiness_composite_score' &&
     measurementType !== 'survey_score' &&
-    measurementType !== 'nps_score'
+    measurementType !== 'nps_score' &&
+    measurementType !== 'manual_numeric' &&
+    measurementType !== 'manual_percentage'
   ) {
     return { value: null, status: 'PENDING', error: 'No events configured' };
   }
@@ -316,6 +318,23 @@ export async function fetchLiveMetricValue(
     }
 
     switch (measurementType) {
+      case 'manual_numeric':
+      case 'manual_percentage': {
+        return {
+          value: null,
+          status: 'PENDING',
+          measurementPeriod: 'Manual / external',
+          metricContext: {
+            description:
+              measurementType === 'manual_percentage'
+                ? 'Percentage is entered manually or synced from outside Pendo (e.g. spreadsheet, data warehouse).'
+                : 'Value is entered manually or synced from outside Pendo (e.g. spreadsheet, data warehouse).',
+            trackingEvents: [],
+            measurementTypeLabel: getMeasurementTypeLabel(measurementType),
+          },
+        };
+      }
+
       case 'events_per_user':
       case 'events_per_user_per_week': {
         // When multiple event IDs are configured (e.g. engagement = 3 tabs), aggregate across all so the metric

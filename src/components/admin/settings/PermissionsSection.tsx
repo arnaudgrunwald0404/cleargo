@@ -19,7 +19,7 @@ function getCapabilityCategory(capabilityId: string): string {
   if (capabilityId.startsWith("users.")) {
     return "Users";
   }
-  if (capabilityId === "launchStages.manage" || capabilityId === "releases.manage") {
+  if (capabilityId === "releaseStages.manage" || capabilityId === "releases.manage") {
     return "Releases";
   }
   if (capabilityId.startsWith("criteria.")) {
@@ -27,6 +27,9 @@ function getCapabilityCategory(capabilityId: string): string {
   }
   if (capabilityId.startsWith("launch.")) {
     return "Epics";
+  }
+  if (capabilityId.startsWith("launches.") || capabilityId.startsWith("launchCriteria.") || capabilityId.startsWith("launchSchedule.")) {
+    return "Launches";
   }
   if (capabilityId.startsWith("settings.emailTemplates")) {
     return "Email Communication";

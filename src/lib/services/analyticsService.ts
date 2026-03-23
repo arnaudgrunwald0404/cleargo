@@ -236,7 +236,7 @@ export async function getSuccessPlanCompletionRate(
   };
 }
 
-type LaunchStageRow = { id: number; sort_order: number; duration_days: number | null };
+type ReleaseStageRow = { id: number; sort_order: number; duration_days: number | null };
 
 /**
  * Compute criterion due date from launch stages (sync, no DB).
@@ -245,16 +245,16 @@ type LaunchStageRow = { id: number; sort_order: number; duration_days: number | 
 function computeDueDateFromStages(
   epicTargetLaunchDate: string | null,
   ratingTimingId: number | null | undefined,
-  launchStages: LaunchStageRow[]
+  releaseStages: ReleaseStageRow[]
 ): Date | null {
-  if (!epicTargetLaunchDate || ratingTimingId == null || !launchStages.length) {
+  if (!epicTargetLaunchDate || ratingTimingId == null || !releaseStages.length) {
     return null;
   }
-  const targetStage = launchStages.find((s) => s.id === ratingTimingId);
+  const targetStage = releaseStages.find((s) => s.id === ratingTimingId);
   if (!targetStage) return null;
-  const lastPreLaunchStage = launchStages.find((s) => s.sort_order === 3);
+  const lastPreLaunchStage = releaseStages.find((s) => s.sort_order === 3);
   if (!lastPreLaunchStage) return null;
-  const stagesBeforeTarget = launchStages.filter(
+  const stagesBeforeTarget = releaseStages.filter(
     (s) =>
       s.sort_order < targetStage.sort_order &&
       s.sort_order <= lastPreLaunchStage.sort_order &&
@@ -269,16 +269,16 @@ function computeDueDateFromStages(
 }
 
 /**
- * Fetch launch_stages once (small table). Reuse across many criterion due-date calculations.
+ * Fetch release_stages once (small table). Reuse across many criterion due-date calculations.
  */
-async function fetchLaunchStages(): Promise<LaunchStageRow[]> {
+async function fetchReleaseStages(): Promise<ReleaseStageRow[]> {
   const supabase = getClient();
   const { data, error } = await supabase
-    .from('launch_stages')
+    .from('release_stages')
     .select('id, sort_order, duration_days')
     .order('sort_order', { ascending: true });
   if (error || !data) return [];
-  return data as LaunchStageRow[];
+  return data as ReleaseStageRow[];
 }
 
 /**
@@ -291,12 +291,12 @@ async function calculateCriterionDueDate(
   epicTargetLaunchDate: string | null,
   conditionDueDate: string | null | undefined,
   ratingTimingId: number | null | undefined,
-  launchStages?: LaunchStageRow[] | null
+  releaseStages?: ReleaseStageRow[] | null
 ): Promise<Date | null> {
   if (conditionDueDate) {
     return new Date(conditionDueDate);
   }
-  const stages = launchStages ?? (await fetchLaunchStages());
+  const stages = releaseStages ?? (await fetchReleaseStages());
   return computeDueDateFromStages(epicTargetLaunchDate, ratingTimingId, stages);
 }
 
@@ -353,7 +353,7 @@ export async function getCriteriaOnTimeRate(
   const epicIds = epics.map(e => e.id);
   const epicMap = new Map(epics.map(e => [e.id, e]));
 
-  const [statusesResult, launchStages] = await Promise.all([
+  const [statusesResult, releaseStages] = await Promise.all([
     supabase
       .from('epic_criterion_status')
       .select(`
@@ -365,7 +365,7 @@ export async function getCriteriaOnTimeRate(
         )
       `)
       .in('epic_id', epicIds),
-    fetchLaunchStages(),
+    fetchReleaseStages(),
   ]);
 
   const { data: statuses, error: statusesError } = statusesResult;
@@ -403,7 +403,7 @@ export async function getCriteriaOnTimeRate(
       : computeDueDateFromStages(
           epic.target_launch_date,
           criterion.rating_timing as number | null | undefined,
-          launchStages
+          releaseStages
         );
 
     // Calculate days late if completed and due date exists
@@ -1024,10 +1024,10 @@ export interface PMTimelinessStats {
   total: number;
 }
 
-async function getPMOwnedItems(epicId: string, launchStages?: LaunchStageRow[] | null): Promise<PMOwnedItem[]> {
+async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[] | null): Promise<PMOwnedItem[]> {
   const supabase = getClient();
   const items: PMOwnedItem[] = [];
-  const stages = launchStages ?? await fetchLaunchStages();
+  const stages = releaseStages ?? await fetchReleaseStages();
 
   const { data: epic } = await supabase
     .from('epic')
@@ -1261,10 +1261,10 @@ export async function calculatePMTimelinessIndex(
     return 0;
   }
 
-  const launchStages = await fetchLaunchStages();
+  const releaseStages = await fetchReleaseStages();
   const allItems: PMOwnedItem[] = [];
   for (const epic of epics) {
-    const items = await getPMOwnedItems(epic.id, launchStages);
+    const items = await getPMOwnedItems(epic.id, releaseStages);
     allItems.push(...items);
   }
 
@@ -1338,7 +1338,7 @@ export async function getPMTimelinessByPM(
   }
 
   const epicMap = new Map(epics.map(e => [e.id, e]));
-  const launchStages = await fetchLaunchStages();
+  const releaseStages = await fetchReleaseStages();
   const results: PMTimelinessStats[] = [];
 
   for (const pmUser of pmUsers) {
@@ -1353,7 +1353,7 @@ export async function getPMTimelinessByPM(
       const epicPMUserId = await resolveProductManagerUserId(epic.id);
       
       if (epicPMUserId === pmUser.id) {
-        const items = await getPMOwnedItems(epic.id, launchStages);
+        const items = await getPMOwnedItems(epic.id, releaseStages);
         allItems.push(...items);
         const pod = epicMap.get(epic.id)?.pod || 'Unknown';
         podSet.add(pod);

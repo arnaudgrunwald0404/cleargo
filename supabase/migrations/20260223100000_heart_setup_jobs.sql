@@ -22,16 +22,22 @@ COMMENT ON COLUMN public.heart_setup_jobs.result IS 'On completed: { config, met
 -- RLS: service_role can do everything; authenticated can read jobs (API restricts by epic and job_id).
 ALTER TABLE public.heart_setup_jobs ENABLE ROW LEVEL SECURITY;
 
--- Allow authenticated users to read jobs (actual scope by epic_id is enforced in API)
-CREATE POLICY "Authenticated can read heart_setup_jobs"
-  ON public.heart_setup_jobs FOR SELECT TO authenticated
-  USING (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Authenticated can read heart_setup_jobs' AND tablename = 'heart_setup_jobs') THEN
+    CREATE POLICY "Authenticated can read heart_setup_jobs"
+      ON public.heart_setup_jobs FOR SELECT TO authenticated
+      USING (true);
+  END IF;
+END $$;
 
--- Only service_role can insert/update/delete (Next API and background function use service role for writes)
-CREATE POLICY "Service role full access heart_setup_jobs"
-  ON public.heart_setup_jobs FOR ALL TO service_role
-  USING (true)
-  WITH CHECK (true);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Service role full access heart_setup_jobs' AND tablename = 'heart_setup_jobs') THEN
+    CREATE POLICY "Service role full access heart_setup_jobs"
+      ON public.heart_setup_jobs FOR ALL TO service_role
+      USING (true)
+      WITH CHECK (true);
+  END IF;
+END $$;
 
 GRANT SELECT ON public.heart_setup_jobs TO authenticated;
 GRANT ALL ON public.heart_setup_jobs TO service_role;

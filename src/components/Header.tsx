@@ -4,13 +4,16 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMediaQuery } from '@mantine/hooks';
-import { Menu, Burger, Box, Badge } from '@mantine/core';
+import { useRouter } from 'next/navigation';
+import { Menu, Burger, Box, Badge, SegmentedControl } from '@mantine/core';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
+import { useAppMode } from '@/contexts/AppModeContext';
+import type { AppMode } from '@/contexts/AppModeContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
@@ -23,13 +26,16 @@ interface HeaderProps {
 
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
+    const router = useRouter();
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
     const { flags: featureFlags } = useFeatureFlags();
+    const { appMode, setAppMode } = useAppMode();
     const [userRoles, setUserRoles] = useState<string[]>([]);
     const [menuOpen, setMenuOpen] = useState(false);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
     const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
     const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
+    const [canToggleMode, setCanToggleMode] = useState(false);
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
     const unreadIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -63,6 +69,13 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                     setHasMeetingsAccess(hasMeetings);
 
                     setHasAnalyticsAccess(canRolesPerform(roles, 'analytics.read'));
+
+                    // Only CPO and SUPERADMIN can toggle between release/launch modes
+                    const canToggle = roles.includes('CPO') || roles.includes('SUPERADMIN');
+                    setCanToggleMode(canToggle);
+                    if (!canToggle && appMode === 'launch') {
+                        setAppMode('release');
+                    }
                 }
             } catch (error) {
                 console.error('Failed to fetch user roles:', error);
@@ -111,17 +124,34 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         return null;
     }
 
-    // Primary navigation tabs
-    const primaryTabs: Array<{ link: string; label: string; badge?: number }> = [
+    // Primary navigation tabs — change based on app mode
+    const releaseTabs: Array<{ link: string; label: string; badge?: number }> = [
         { link: '/', label: 'Home' },
         { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
-        { link: '/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
+        { link: '/releases/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: '/feedback', label: 'Feedback' },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
+
+    const launchTabs: Array<{ link: string; label: string; badge?: number }> = [
+        { link: '/', label: 'Home' },
+        { link: '/epics', label: 'Launches' },
+        ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
+    ];
+
+    const primaryTabs = appMode === 'launch' ? launchTabs : releaseTabs;
+
+    const handleModeChange = (value: string) => {
+        const newMode = value as AppMode;
+        setAppMode(newMode);
+        // Navigate to home when switching modes to avoid landing on a page that doesn't exist in the other mode
+        if (pathname !== '/') {
+            router.push('/');
+        }
+    };
 
     const isActive = (path: string) => {
         if (path === '/' && pathname === '/') return true;
@@ -293,8 +323,37 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                         )}
                     </div>
 
-                    {/* Right side: Search (desktop only) and User Avatar */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    {/* Right side: Mode toggle, Search (desktop only), and User Avatar */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        {!isMobile && canToggleMode && (
+                            <SegmentedControl
+                                value={appMode}
+                                onChange={handleModeChange}
+                                data={[
+                                    { label: 'Releases', value: 'release' },
+                                    { label: 'Launches', value: 'launch' },
+                                ]}
+                                size="xs"
+                                styles={{
+                                    root: {
+                                        backgroundColor: 'rgba(255,255,255,0.1)',
+                                        border: '1px solid rgba(255,255,255,0.15)',
+                                    },
+                                    label: {
+                                        color: 'rgba(255,255,255,0.7)',
+                                        fontWeight: 500,
+                                        fontSize: '12px',
+                                        padding: '4px 12px',
+                                    },
+                                    indicator: {
+                                        backgroundColor: 'var(--color-copper, #C77B3C)',
+                                    },
+                                    innerLabel: {
+                                        color: 'var(--color-white, #FFFFFF)',
+                                    },
+                                }}
+                            />
+                        )}
                         {!isMobile && (
                             <div style={{ position: 'relative', width: '280px' }}>
                                 <EpicSearch fetchEpics={true} className="header-search" />

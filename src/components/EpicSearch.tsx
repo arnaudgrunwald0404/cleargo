@@ -11,6 +11,8 @@ interface EpicSearchProps {
   epics?: Epic[];
   className?: string;
   fetchEpics?: boolean;
+  autoFocus?: boolean;
+  onBlur?: () => void;
 }
 
 // Extract reference number from epic
@@ -52,7 +54,7 @@ function formatReleaseDate(date: string | null | undefined): string {
   return formatDateOnlyForDisplay(date, { year: 'numeric', month: 'short', day: 'numeric' }) || '-';
 }
 
-export function EpicSearch({ epics: providedEpics, className, fetchEpics = false }: EpicSearchProps) {
+export function EpicSearch({ epics: providedEpics, className, fetchEpics = false, autoFocus, onBlur }: EpicSearchProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [epics, setEpics] = useState<Epic[]>(providedEpics || []);
@@ -153,10 +155,22 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
           type="text"
           placeholder="Search for epic"
           value={searchQuery}
+          autoFocus={autoFocus}
           onChange={(e) => handleInputChange(e.currentTarget.value)}
           onFocus={() => {
             if (filteredEpics.length > 0 && searchQuery.length >= 3) {
               setIsOpen(true);
+            }
+          }}
+          onBlur={(e) => {
+            // Only fire onBlur if focus moves outside the search container
+            if (onBlur && searchRef.current && !searchRef.current.contains(e.relatedTarget as Node)) {
+              // Small delay to allow click on results
+              setTimeout(() => {
+                if (searchRef.current && !searchRef.current.contains(document.activeElement)) {
+                  onBlur();
+                }
+              }, 200);
             }
           }}
           style={{
@@ -270,35 +284,15 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
                     >
                       {epic.name}
                     </Text>
-                    <Group gap="md" style={{ flexWrap: 'wrap' }}>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>Ref:</span> {getReferenceNumber(epic)}
-                      </Text>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>Release:</span> {formatReleaseDate(epic.target_launch_date)}
-                      </Text>
-                      <Text
-                        size="xs"
-                        style={{
-                          fontFamily: 'var(--font-body)',
-                          color: 'var(--color-gray-600)'
-                        }}
-                      >
-                        <span style={{ fontWeight: 500 }}>PM:</span> {getPMOwner(epic)}
-                      </Text>
-                    </Group>
+                    <Text
+                      size="xs"
+                      style={{
+                        fontFamily: 'var(--font-body)',
+                        color: 'var(--color-gray-600)'
+                      }}
+                    >
+                      <span style={{ fontWeight: 500 }}>Release:</span> {formatReleaseDate(epic.target_launch_date)}
+                    </Text>
                   </Stack>
                 </Box>
               </Link>

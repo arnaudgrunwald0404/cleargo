@@ -1,8 +1,11 @@
 "use client";
 
+import { IconVideo } from "@tabler/icons-react";
+
 interface EpicDetailTabsProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
+    hasTalkTrackVideo?: boolean;
 }
 
 const tabs = [
@@ -13,7 +16,7 @@ const tabs = [
     { value: 'retro', label: 'Retro' },
 ];
 
-export function EpicDetailTabs({ activeTab, onTabChange }: EpicDetailTabsProps) {
+export function EpicDetailTabs({ activeTab, onTabChange, hasTalkTrackVideo }: EpicDetailTabsProps) {
     return (
         <nav 
             style={{
@@ -65,7 +68,25 @@ export function EpicDetailTabs({ activeTab, onTabChange }: EpicDetailTabsProps) 
                         aria-selected={isActive}
                         role="tab"
                     >
-                        {tab.label}
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                            {tab.label}
+                            {tab.value === 'talktrack' && hasTalkTrackVideo && (
+                                <span
+                                    style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        width: 22,
+                                        height: 22,
+                                        borderRadius: '50%',
+                                        backgroundColor: 'var(--color-copper)',
+                                        flexShrink: 0,
+                                    }}
+                                >
+                                    <IconVideo size={13} stroke={2.2} style={{ color: '#fff' }} />
+                                </span>
+                            )}
+                        </span>
                         {isActive && (
                             <span
                                 aria-hidden

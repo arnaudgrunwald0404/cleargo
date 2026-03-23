@@ -38,7 +38,12 @@ export async function GET(
                 await upsertEpicFromAha(epicData, ownerId);
                 epic = await getEpic(id) ?? epic;
             } catch (syncError: any) {
-                console.warn(`Aha sync for epic ${id} (aha_id: ${epic.aha_id}):`, syncError?.message ?? syncError);
+                // 404 means the epic no longer exists in Aha — just serve local data
+                if (syncError?.status === 404 || syncError?.message?.includes('error 404')) {
+                    console.info(`Aha sync skipped for epic ${id}: aha_id ${epic.aha_id} no longer exists in Aha`);
+                } else {
+                    console.warn(`Aha sync for epic ${id} (aha_id: ${epic.aha_id}):`, syncError?.message ?? syncError);
+                }
             }
         }
 

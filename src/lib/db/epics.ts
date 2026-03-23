@@ -51,6 +51,7 @@ export interface Epic {
     aha_fields?: Record<string, any> | null; // Dynamic AHA fields (standard and custom)
     archived: boolean;
     jira_epic_key: string | null;
+    launch_ref: string | null;
     aha_record_not_found?: boolean;
     created_at: string;
     updated_at: string;
@@ -373,19 +374,19 @@ export async function calculateDueDateForCriterion(
     client: SupabaseClient,
     options?: { uiLevel?: number }
 ): Promise<string | null> {
-    if (!targetLaunchDate || !ratingTimingId) {
+    if (!targetLaunchDate) {
         return null;
     }
 
     const uiLevel = options?.uiLevel ?? null;
 
     const { data: allStages, error: stagesError } = await client
-        .from('launch_stages')
+        .from('release_stages')
         .select('id, name, sort_order, duration_days, level_durations, scope')
         .order('sort_order', { ascending: true });
 
     if (stagesError || !allStages || allStages.length === 0) {
-        console.warn('Failed to fetch launch stages for due date calculation:', stagesError);
+        console.warn('Failed to fetch release stages for due date calculation:', stagesError);
         return null;
     }
 
@@ -395,41 +396,50 @@ export async function calculateDueDateForCriterion(
     }
 
     const scope = (targetStage as { scope?: string }).scope ?? 'release_schedule';
-    const launchStages = allStages.filter((s) => (s as { scope?: string }).scope === scope);
+    const releaseStages = allStages.filter((s) => (s as { scope?: string }).scope === scope);
 
-    const cohort1Stage = launchStages.find((s) =>
+    const cohort1Stage = releaseStages.find((s) =>
         String((s as { name?: string }).name || '').toLowerCase().includes('cohort 1')
     );
     const lastPreLaunchSortOrder = cohort1Stage
         ? (cohort1Stage.sort_order as number) - 1
         : 3;
 
-    const stagesBeforeTarget = launchStages.filter((s) => {
-        const dur = getEffectiveStageDuration(s, uiLevel);
-        return (
-            s.sort_order < targetStage.sort_order &&
-            s.sort_order <= lastPreLaunchSortOrder &&
-            dur !== null
-        );
-    });
-
-    const totalDaysBefore = stagesBeforeTarget.reduce(
-        (sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0),
-        0
-    );
-
-    if (totalDaysBefore === 0) {
-        return null;
-    }
-
     const targetDate = new Date(targetLaunchDate);
     const dueDate = new Date(targetDate);
-    dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+
+    if (targetStage.sort_order <= lastPreLaunchSortOrder) {
+        // Pre-launch stage: due date = first day of stage
+        // = targetDate - (own duration + sum of all later pre-launch stages)
+        const stagesAfterTarget = releaseStages.filter((s) => {
+            const dur = getEffectiveStageDuration(s, uiLevel);
+            return (
+                s.sort_order > targetStage!.sort_order &&
+                s.sort_order <= lastPreLaunchSortOrder &&
+                dur !== null
+            );
+        });
+        const totalDaysBefore = (getEffectiveStageDuration(targetStage, uiLevel) || 0) +
+            stagesAfterTarget.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
+        dueDate.setDate(dueDate.getDate() - totalDaysBefore);
+    } else {
+        // Post-launch stage: due date = targetDate + sum of post-launch stage durations up to this stage
+        const postLaunchStages = releaseStages.filter((s) => {
+            const dur = getEffectiveStageDuration(s, uiLevel);
+            return (
+                s.sort_order > lastPreLaunchSortOrder &&
+                s.sort_order <= targetStage!.sort_order &&
+                dur !== null
+            );
+        });
+        const totalDaysAfter = postLaunchStages.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
+        dueDate.setDate(dueDate.getDate() + totalDaysAfter);
+    }
 
     return dueDate.toISOString().split('T')[0];
 }
 
-export async function instantiateCriteriaForEpic(
+export async function instantiateReleaseCriteriaForEpic(
     epicId: string,
     tier: string,
     client?: SupabaseClient
@@ -457,11 +467,12 @@ export async function instantiateCriteriaForEpic(
         throw new Error(`Failed to fetch epic: ${epicError.message}`);
     }
 
-    // Get all active criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
+    // Get all active release criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
         .select('id, label, description, tier_applicability, decision_owner_email, rating_timing, ui_framework_only')
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .eq('context', 'release');
 
     if (criteriaError) {
         console.error('Error fetching criteria:', criteriaError);

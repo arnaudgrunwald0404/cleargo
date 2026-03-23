@@ -693,6 +693,7 @@ export default function UserManagementSection(props: Props) {
         position="right"
         size="md"
         padding="lg"
+        styles={{ content: { overflowX: 'hidden' } }}
       >
         <Stack gap="lg">
           {bulkImportMode === null && (
@@ -1012,7 +1013,7 @@ function ImpersonateForm({ email }: { email: string }) {
 function EditUserDrawer({ user, opened, onClose, onSave, onDelete, isSuperAdmin = false }: { user: User; opened: boolean; onClose: () => void; onSave: (patch: any) => Promise<void>; onDelete: () => Promise<void>; isSuperAdmin?: boolean }) {
   const [patch, setPatch] = useState({ email: user.email || "", first_name: user.first_name || "", last_name: user.last_name || "", roles: user.roles || [user.role || "OTHER"], is_active: user.is_active !== false });
   return (
-    <Drawer opened={opened} onClose={onClose} title="Edit User" position="right" size="xl" padding="lg">
+    <Drawer opened={opened} onClose={onClose} title="Edit User" position="right" size="xl" padding="lg" styles={{ content: { overflowX: 'hidden' } }}>
       <Stack gap="md">
         <Group grow>
           <TextInput label="Email" value={patch.email} onChange={(e) => setPatch({ ...patch, email: e.target.value })} required />
