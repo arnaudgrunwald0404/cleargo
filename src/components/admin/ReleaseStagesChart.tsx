@@ -664,9 +664,9 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                             <div style={{
                                 position: 'absolute', left: `${leftPct}%`, top: DATE_ROW_TOP,
                                 transform: `translateX(${translateX})`, textAlign: align, zIndex: 5,
-                                display: 'flex', flexDirection: 'column', alignItems: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center', gap: 1,
+                                display: 'flex', flexDirection: 'column', alignItems: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center', gap: 3,
                             }}>
-                                <span style={{ fontSize: 10, color: dateColor, fontWeight: 500, lineHeight: 1, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 10, color: dateColor, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
                                     {formatShortDate(node.date)}
                                 </span>
                                 {(() => {

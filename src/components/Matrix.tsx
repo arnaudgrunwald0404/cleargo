@@ -1498,7 +1498,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                                                 <tr>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
-                                                                    <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                                                    <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
@@ -1524,12 +1524,14 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                 </div>
                                                                                 {item.criterion.description && <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>}
                                                                             </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap" style={{ width: showNotApplicable ? '148px' : '120px' }}>
-                                                                                {item.notRequired ? <div className="text-xs font-medium text-gray-500">Not required</div> : (
-                                                                                    <TrafficLight currentStatus={item.status} onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)} disabled={savingItems.has(item.id)} definitions={{ go: item.criterion.status_definition_go, conditional: item.criterion.status_definition_conditional, no_go: item.criterion.status_definition_no_go }} showNotApplicable={showNotApplicable && !item.criterion.gate} />
+                                                                            <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px' }}>
+                                                                                {item.notRequired ? <div className="text-xs font-medium text-gray-500 text-center">Not required</div> : (
+                                                                                    <div className="flex justify-center">
+                                                                                        <TrafficLight currentStatus={item.status} onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)} disabled={savingItems.has(item.id)} definitions={{ go: item.criterion.status_definition_go, conditional: item.criterion.status_definition_conditional, no_go: item.criterion.status_definition_no_go }} showNotApplicable={showNotApplicable && !item.criterion.gate} />
+                                                                                    </div>
                                                                                 )}
                                                                             </td>
-                                                                            <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '150px' }}>
+                                                                            <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>
                                                                                 {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                                                     <div className="flex items-center gap-2 min-w-0">
                                                                                         <div style={{ position: 'relative', display: 'inline-flex' }} onMouseEnter={() => setHoveredAvatarId(item.id)} onMouseLeave={() => setHoveredAvatarId(null)}>
@@ -1545,7 +1547,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                                 );
                                                                                             })()}
                                                                                         </div>
-                                                                                        <span className="text-sm truncate min-w-0 flex-1">{getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}</span>
+                                                                                        <span className="text-sm truncate min-w-0 flex-1 flex items-center min-h-[24px]">{getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}</span>
                                                                                     </div>
                                                                                 ) : (
                                                                                     <div className="flex items-center gap-2">
@@ -1701,7 +1703,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                 <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                     <tr>
                                         <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
-                                        <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
@@ -1759,24 +1761,26 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
+                                        <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
                                             {item.notRequired ? (
-                                                <div className="text-xs font-medium text-gray-500">Not required</div>
+                                                <div className="text-xs font-medium text-gray-500 text-center">Not required</div>
                                             ) : (
-                                                <TrafficLight
-                                                    currentStatus={item.status}
-                                                    onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
-                                                    disabled={savingItems.has(item.id)}
-                                                    definitions={{
-                                                        go: item.criterion.status_definition_go,
-                                                        conditional: item.criterion.status_definition_conditional,
-                                                        no_go: item.criterion.status_definition_no_go,
-                                                    }}
-                                                    showNotApplicable={showNotApplicable && !item.criterion.gate}
-                                                />
+                                                <div className="flex justify-center">
+                                                    <TrafficLight
+                                                        currentStatus={item.status}
+                                                        onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
+                                                        disabled={savingItems.has(item.id)}
+                                                        definitions={{
+                                                            go: item.criterion.status_definition_go,
+                                                            conditional: item.criterion.status_definition_conditional,
+                                                            no_go: item.criterion.status_definition_no_go,
+                                                        }}
+                                                        showNotApplicable={showNotApplicable && !item.criterion.gate}
+                                                    />
+                                                </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '150px' }}>
+                                        <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>
                                             {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                 <div 
                                                     className="flex items-center gap-2 min-w-0"
@@ -1843,7 +1847,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             );
                                                         })()}
                                                     </div>
-                                                    <span className="text-sm truncate min-w-0 flex-1">
+                                                    <span className="text-sm truncate min-w-0 flex-1 flex items-center min-h-[24px]">
                                                         {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
                                                     </span>
                                                 </div>
