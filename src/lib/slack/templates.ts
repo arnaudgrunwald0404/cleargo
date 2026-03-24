@@ -1298,3 +1298,54 @@ export function buildCriterionCommentOrAttachmentMessage(
         blocks,
     };
 }
+
+/**
+ * Gate Sign-off Ready Notification
+ * Sent to the gate criterion owner when all non-gate sub-criteria in the same
+ * category have been rated, signalling that their sign-off is now appropriate.
+ */
+export function buildGateSignoffReadyMessage(
+    data: {
+        epic_name: string;
+        epic_id: string;
+        category_label: string;
+        gate_criterion_label: string;
+        gate_criterion_status_id: string;
+        completed_count: number;
+    },
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
+    const epicUrl = `${APP_URL}/epics/${data.epic_id}`;
+    return {
+        text: `Your team has completed all sub-criteria for ${data.category_label} in ${data.epic_name}. Time to sign off on "${data.gate_criterion_label}".`,
+        blocks: [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: `Team sign-off ready: ${data.category_label}`,
+                    emoji: true,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${data.epic_name}*\n\nAll ${data.completed_count} sub-criteria for *${data.category_label}* have been rated. Your gate criterion *${data.gate_criterion_label}* is ready for your sign-off.`,
+                },
+            },
+            {
+                type: 'actions',
+                elements: [
+                    {
+                        type: 'button',
+                        text: { type: 'plain_text', text: 'Review & Sign Off', emoji: true },
+                        style: 'primary',
+                        url: epicUrl,
+                    },
+                ],
+            },
+            { type: 'divider' },
+        ],
+    };
+}

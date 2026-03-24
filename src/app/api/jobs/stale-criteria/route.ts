@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { generateSmartNudge } from '@/lib/ai/client';
+import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -44,7 +45,8 @@ export async function GET(request: NextRequest) {
                 criterion:criterion_id (
                     id,
                     label,
-                    gate
+                    gate,
+                    category
                 ),
                 epic:epic_id (
                     id,
@@ -84,11 +86,39 @@ export async function GET(request: NextRequest) {
             return c.epic && c.decision_owner;
         });
 
+        // Suppress stale nudges for gate criteria whose sub-criteria are not all rated
+        const stalledGatePairs = activeCriteria
+            .filter((c: any) => {
+                const crit = Array.isArray(c.criterion) ? c.criterion[0] : c.criterion;
+                return crit?.gate === true;
+            })
+            .map((c: any) => {
+                const crit = Array.isArray(c.criterion) ? c.criterion[0] : c.criterion;
+                const epic = Array.isArray(c.epic) ? c.epic[0] : c.epic;
+                return { epicId: epic?.id ?? c.epic_id, category: crit.category };
+            })
+            .filter((p: any) => p.epicId && p.category);
+        const activeCriteriaFiltered = stalledGatePairs.length > 0
+            ? await (async () => {
+                const blockedPairs = await getEpicCategoryPairsWithUnratedSubcriteria(stalledGatePairs, supabase);
+                if (blockedPairs.size === 0) return activeCriteria;
+                const filtered = activeCriteria.filter((c: any) => {
+                    const crit = Array.isArray(c.criterion) ? c.criterion[0] : c.criterion;
+                    if (!crit?.gate) return true;
+                    const epic = Array.isArray(c.epic) ? c.epic[0] : c.epic;
+                    const epicId = epic?.id ?? c.epic_id;
+                    return !blockedPairs.has(`${epicId}::${crit.category}`);
+                });
+                console.log(`[stale-criteria] Gate filter suppressed ${activeCriteria.length - filtered.length} gate criteria with unrated sub-criteria`);
+                return filtered;
+            })()
+            : activeCriteria;
+
         // Send notifications
         const notifications = [];
         const errors = [];
 
-        for (const criterion of activeCriteria) {
+        for (const criterion of activeCriteriaFiltered) {
             const daysSinceUpdate = Math.floor(
                 (Date.now() - new Date(criterion.last_updated_at).getTime()) / (1000 * 60 * 60 * 24)
             );
