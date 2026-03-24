@@ -62,3 +62,17 @@ export function addCalendarMonth(isoDate: string | null | undefined): string | n
   const d = String(next.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/** Add calendar days (not business days). Used by release timeline + matrix due dates for traditional releases. */
+export function addCalendarDays(d: Date, days: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + days);
+  return out;
+}
+
+/** Subtract calendar days. */
+export function subtractCalendarDays(d: Date, days: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() - days);
+  return out;
+}

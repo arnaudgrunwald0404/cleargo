@@ -21,13 +21,21 @@ import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
-import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString } from "@/lib/date-utils";
+import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 // Lazy load tab components for code splitting
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
 const RetroPageContent = lazy(() => import("@/components/epic/RetroPageContent").then(m => ({ default: m.RetroPageContent })));
+
+/** Coerce criterion rating_timing to number — Supabase/JSON may return string; Map keys for stage ids are numbers. */
+function normalizeRatingTimingId(raw: unknown): number | null {
+    if (raw == null || raw === '') return null;
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw;
+    const n = parseInt(String(raw), 10);
+    return Number.isFinite(n) ? n : null;
+}
 
 export default function EpicDetailPage() {
     const params = useParams();
@@ -712,7 +720,7 @@ export default function EpicDetailPage() {
             // Use fetched values directly instead of state (state updates are async)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
 
-            // Compute stage end dates using same algorithm as the timeline chart
+            // Compute stage end dates using same algorithm as ReleaseStagesChart useTimelineData
             const computedStageEndDates = new Map<number, string>();
             if (fetchedReleaseStages.length > 0 && targetDate) {
                 const getEffectiveDuration = (s: any) => {
@@ -737,19 +745,52 @@ export default function EpicDetailPage() {
 
                 const sorted = [...fetchedReleaseStages]
                     .sort((a: any, b: any) => a.sort_order - b.sort_order);
-                const totalPreLaunchBizDays = sorted
-                    .filter((s: any) => s.sort_order < (sorted[sorted.length - 1]?.sort_order ?? 0))
-                    .reduce((sum: number, s: any) => sum + (getEffectiveDuration(s) ?? 0), 0);
-
                 const anchorDate = parseDateOnlyLocal(targetDate) ?? new Date(targetDate);
-                const startDate = subtractBiz(anchorDate, totalPreLaunchBizDays);
-                let cursor = new Date(startDate);
                 const stageStarts: { id: number; date: Date }[] = [];
-                for (const stage of sorted) {
-                    const dur = getEffectiveDuration(stage) ?? 0;
-                    stageStarts.push({ id: stage.id, date: new Date(cursor) });
-                    cursor = dur > 0 ? addBiz(cursor, dur) : new Date(cursor);
+
+                if (epicIsUiFramework) {
+                    const totalPreLaunchBizDays = sorted
+                        .filter((s: any) => s.sort_order < (sorted[sorted.length - 1]?.sort_order ?? 0))
+                        .reduce((sum: number, s: any) => sum + (getEffectiveDuration(s) ?? 0), 0);
+
+                    const startDate = subtractBiz(anchorDate, totalPreLaunchBizDays);
+                    let cursor = new Date(startDate);
+                    for (const stage of sorted) {
+                        const dur = getEffectiveDuration(stage) ?? 0;
+                        stageStarts.push({ id: stage.id, date: new Date(cursor) });
+                        cursor = dur > 0 ? addBiz(cursor, dur) : new Date(cursor);
+                    }
+                } else {
+                    // Traditional: calendar days; pre-launch = stages before Cohort 1 only (matches timeline chart)
+                    const cohort1Stage = sorted.find(
+                        (s: any) => typeof s.name === 'string' && s.name.toLowerCase().includes('cohort 1')
+                    );
+                    const preLaunchDays = cohort1Stage
+                        ? sorted
+                            .filter((s: any) => s.sort_order < cohort1Stage.sort_order && s.duration_days != null)
+                            .reduce((sum: number, s: any) => sum + (s.duration_days ?? 0), 0)
+                        : 0;
+                    const startDate =
+                        anchorDate && preLaunchDays > 0
+                            ? subtractCalendarDays(anchorDate, preLaunchDays)
+                            : anchorDate;
+
+                    let cursor = new Date(startDate);
+                    for (const stage of sorted) {
+                        const dur = stage.duration_days ?? 0;
+                        stageStarts.push({ id: stage.id, date: new Date(cursor) });
+                        cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
+                    }
+
+                    if (cohort2DateFetched && stageStarts.length > 0) {
+                        const gaParsed = parseDateOnlyLocal(cohort2DateFetched) ?? new Date(cohort2DateFetched);
+                        stageStarts[stageStarts.length - 1].date = new Date(gaParsed);
+                    }
+                    if (anchorDate && stageStarts.length >= 2) {
+                        stageStarts[stageStarts.length - 2].date = new Date(anchorDate);
+                    }
                 }
+
                 for (let i = 0; i < stageStarts.length; i++) {
                     const endDate = i < stageStarts.length - 1
                         ? stageStarts[i + 1].date
@@ -798,11 +839,12 @@ export default function EpicDetailPage() {
                 }
             }
 
-            const calculateDueDate = (ratingTimingId: number | null | undefined, category?: string): string | null => {
+            const calculateDueDate = (ratingTimingRaw: unknown, category?: string): string | null => {
+                const ratingTimingId = normalizeRatingTimingId(ratingTimingRaw);
                 const catStageId = category ? categoryStageMap.get(category.toLowerCase().trim()) : undefined;
 
                 let resolvedId: number | null = null;
-                if (ratingTimingId) {
+                if (ratingTimingId != null) {
                     if (computedStageEndDates.has(ratingTimingId)) {
                         resolvedId = ratingTimingId;
                     } else {
@@ -968,9 +1010,9 @@ export default function EpicDetailPage() {
 
                 // Resolve "due by" stage name (same resolution as due date: rating_timing + bridge + category fallback)
                 let resolvedStageId: number | null = null;
-                const ratingTimingId = item.criterion?.rating_timing;
+                const ratingTimingId = normalizeRatingTimingId(item.criterion?.rating_timing);
                 const catStageId = item.criterion?.category ? categoryStageMap.get(item.criterion.category.toLowerCase().trim()) : undefined;
-                if (ratingTimingId) {
+                if (ratingTimingId != null) {
                     if (computedStageEndDates.has(ratingTimingId)) resolvedStageId = ratingTimingId;
                     else {
                         const bridged = ratingTimingBridge.get(ratingTimingId);
@@ -1264,13 +1306,13 @@ export default function EpicDetailPage() {
     }, [releaseStages, isUiFrameworkEpic]);
 
     const calculateDueDateForFilter = useCallback((item: any): string | null => {
-        const rawTimingId = item.criterion?.rating_timing;
+        const rawTimingId = normalizeRatingTimingId(item.criterion?.rating_timing);
         const category = item.criterion?.category;
         const catKey = category ? category.toLowerCase().trim() : undefined;
         const catStageId = catKey ? filterCategoryStageMap.get(catKey) : undefined;
 
         let resolvedId: number | null = null;
-        if (rawTimingId) {
+        if (rawTimingId != null) {
             if (stageEndDates.has(rawTimingId)) {
                 resolvedId = rawTimingId;
             } else {

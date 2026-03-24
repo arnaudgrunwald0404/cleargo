@@ -3,7 +3,7 @@
 import React from "react";
 import { Box, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { parseDateOnlyLocal } from "@/lib/date-utils";
+import { parseDateOnlyLocal, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
 
 interface ReleaseStage {
     id: number;
@@ -201,20 +201,6 @@ function buildCriteriaSummaries(
     return map;
 }
 
-/** Add calendar days (not business days). */
-function addCalendarDays(d: Date, days: number): Date {
-    const out = new Date(d);
-    out.setDate(out.getDate() + days);
-    return out;
-}
-
-/** Subtract calendar days. */
-function subtractCalendarDays(d: Date, days: number): Date {
-    const out = new Date(d);
-    out.setDate(out.getDate() - days);
-    return out;
-}
-
 function useTimelineData(
     releaseDate: string | Date | null | undefined,
     stages: ReleaseStage[],
@@ -389,10 +375,12 @@ function CriteriaBadge({ summary }: { summary: StageCriteriaSummary }) {
 export type GateMarker = { date: Date; stageName: string };
 
 /* ─── Desktop: horizontal timeline ─── */
-function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1 }: {
+function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1, uiLevel }: {
     nodes: ComputedNode[]; today: Date; todayPct: number; todayIsVisible: boolean; todayIsBefore: boolean; allDone: boolean;
     showHeading: boolean; gateMarkers: GateMarker[]; timelineStart: Date; totalSpan: number;
     computedEndOfPhaseBeforeCohort1?: Date | null;
+    /** When set (UI framework rollout), hide per-phase "3–7d" buffer labels; range still drives layout math elsewhere. */
+    uiLevel?: number | null;
 }) {
     const n = nodes.length;
     const INSET = 4;
@@ -400,18 +388,21 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
     const dateToPct = (d: Date) => INSET + (Math.max(0, Math.min(1, diffDays(timelineStart, d) / totalSpan))) * (100 - 2 * INSET);
 
     const hasCriteria = nodes.some(nd => nd.criteriaSummary != null);
-    const hasBuffer = nodes.some(nd => nd.bufferDays > 0);
+    /** Buffer duration labels ("3–7d") only for non–UI-framework timelines; UI rollouts use level ranges but we hide the extra row for clarity. */
+    const hasBufferRow = nodes.some(nd => nd.bufferDays > 0) && uiLevel == null;
     const LABEL_AREA = 34;
     const GAP = 8;
     const TRACK_CENTER = LABEL_AREA + GAP + 5;
     const DATE_ROW_TOP = TRACK_CENTER + 12;
     const BUFFER_ROW_TOP = DATE_ROW_TOP + 14;
-    const BADGE_ROW_TOP = hasBuffer ? BUFFER_ROW_TOP + 14 : DATE_ROW_TOP + 14;
+    const BADGE_ROW_TOP = hasBufferRow ? BUFFER_ROW_TOP + 14 : DATE_ROW_TOP + 14;
     const TRACK_H = 2;
     const PHASE_H = 6;
     const DOT_R = 4;
     const DOT_R_ACTIVE = 5;
-    const totalHeight = hasCriteria ? BADGE_ROW_TOP + 20 : (hasBuffer ? BUFFER_ROW_TOP + 28 : TRACK_CENTER + 32);
+    /** Extra bottom space so date + "in x days" / "x days ago" lines are not clipped by overflow:hidden (traditional releases). */
+    const baseTrackBottomPad = 48;
+    const totalHeight = hasCriteria ? BADGE_ROW_TOP + 20 : (hasBufferRow ? BUFFER_ROW_TOP + 28 : TRACK_CENTER + baseTrackBottomPad);
 
     let phaseColorIdx = 0;
 
@@ -673,14 +664,14 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                     const days = daysFromToday(today, node.date);
                                     if (days > 0) {
                                         return (
-                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
                                                 in {days} day{days !== 1 ? 's' : ''}
                                             </span>
                                         );
                                     }
                                     if (days < 0) {
                                         return (
-                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-gray-500)', lineHeight: 1, whiteSpace: 'nowrap' }}>
+                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-gray-500)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
                                                 {-days} day{-days !== 1 ? 's' : ''} ago
                                             </span>
                                         );
@@ -689,8 +680,8 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                 })()}
                             </div>
 
-                            {/* Duration range below date (target–max when buffer, else just target) */}
-                            {node.bufferDays > 0 && !isLast && (
+                            {/* Duration range below date (UI framework rollouts omit this row — level-based buffers stay in tooltips / data only) */}
+                            {hasBufferRow && node.bufferDays > 0 && !isLast && (
                                 <Tooltip label={`This phase: ${node.durationDays}–${node.durationDays + node.bufferDays} business days. Timeline uses the ${node.durationDays}d target.`} withArrow position="bottom">
                                     <div style={{
                                         position: 'absolute', left: `${leftPct}%`, top: BUFFER_ROW_TOP,
@@ -970,7 +961,7 @@ export function ReleaseStagesChart({
 
     const timeline = isMobile
         ? <VerticalTimeline nodes={nodes} today={today} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} showHeading={showHeading} gateMarkers={gateMarkers} />
-        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} computedEndOfPhaseBeforeCohort1={computedEndOfPhaseBeforeCohort1} />;
+        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} computedEndOfPhaseBeforeCohort1={computedEndOfPhaseBeforeCohort1} uiLevel={uiLevel} />;
 
     if (noContainer) {
         return <Box className="min-w-0">{timeline}</Box>;
