@@ -7,6 +7,7 @@ import { getFeatureFlags, getEffectivePermissionRules } from '@/lib/settings-db'
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { trackActivityFromAction } from '@/lib/services/userActivityService';
 import { logStatusChange } from '@/lib/db/criterion-status-history';
+import { maybeNotifyGateOwnerForCategory } from '@/lib/services/gateSignoffService';
 
 export async function PATCH(
     req: NextRequest,
@@ -152,6 +153,14 @@ export async function PATCH(
 
             trackActivityFromAction(appUser.id).catch(err => {
                 console.error('[PATCH /api/epics/[id]/criteria/[lcsId]] Failed to track activity:', err);
+            });
+        }
+
+        // Check whether all non-gate sub-criteria in the same category are now
+        // rated, and if so notify the gate criterion owner to sign off.
+        if (typeof status !== 'undefined') {
+            maybeNotifyGateOwnerForCategory(id, lcsId, supabase).catch(err => {
+                console.error(`[PATCH /api/epics/${id}/criteria/${lcsId}] Gate signoff check failed:`, err?.message ?? err);
             });
         }
 

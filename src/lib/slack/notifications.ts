@@ -14,6 +14,7 @@ import {
     buildLaunchStatusChangeMessage,
     buildDelegationMessage,
     buildCriterionCommentOrAttachmentMessage,
+    buildGateSignoffReadyMessage,
 } from './templates';
 import { getSlackTheme } from './theme';
 
@@ -394,6 +395,11 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             case 'criterion_comment_or_attachment':
                 if (!payload.metadata) throw new Error('Missing metadata for criterion_comment_or_attachment');
                 message = buildCriterionCommentOrAttachmentMessage(payload.metadata as any, theme);
+                break;
+
+            case 'gate_signoff_ready':
+                if (!payload.metadata) throw new Error('Missing metadata for gate_signoff_ready');
+                message = buildGateSignoffReadyMessage(payload.metadata as any, theme);
                 break;
 
             default:

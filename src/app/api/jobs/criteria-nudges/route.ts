@@ -12,6 +12,7 @@ import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
 import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
+import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
@@ -236,7 +237,8 @@ export async function GET(request: NextRequest) {
                     last_nudge_sent_at,
                     criterion:criterion_id (
                         label,
-                        category
+                        category,
+                        gate
                     ),
                     epic:epic_id (
                         name,
@@ -284,7 +286,8 @@ export async function GET(request: NextRequest) {
                     last_nudge_sent_at,
                     criterion:criterion_id (
                         label,
-                        category
+                        category,
+                        gate
                     ),
                     epic:epic_id (
                         name,
@@ -333,7 +336,8 @@ export async function GET(request: NextRequest) {
                     last_nudge_sent_at,
                     criterion:criterion_id (
                         label,
-                        category
+                        category,
+                        gate
                     ),
                     epic:epic_id (
                         name,
@@ -504,11 +508,27 @@ export async function GET(request: NextRequest) {
             }
         }
         
+        // Suppress gate criteria nudges when sub-criteria are not yet all rated
+        const gatePairs = allCriteria
+            .filter((c: any) => c.criterion?.gate === true)
+            .map((c: any) => ({ epicId: c.epic_id, category: c.criterion.category }));
+        let criteriaAfterGateFilter = allCriteria;
+        if (gatePairs.length > 0) {
+            const blockedPairs = await getEpicCategoryPairsWithUnratedSubcriteria(gatePairs, supabase);
+            if (blockedPairs.size > 0) {
+                criteriaAfterGateFilter = allCriteria.filter((c: any) => {
+                    if (!c.criterion?.gate) return true;
+                    return !blockedPairs.has(`${c.epic_id}::${c.criterion.category}`);
+                });
+                console.log(`[criteria-nudges] Gate filter suppressed ${allCriteria.length - criteriaAfterGateFilter.length} gate criteria with unrated sub-criteria`);
+            }
+        }
+
         // Filter out criteria for epics where cleargo_candidate is not "Yes" (i.e., 'no' or null)
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:429',message:'Starting cleargo_candidate filter',data:{totalCriteria:allCriteria.length,sampleEpics:allCriteria.slice(0,3).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,cleargoCandidate:c.epic?.aha_fields?.custom_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'G'})}).catch(()=>{});
         // #endregion
-        const filteredByClearGOCandidate = allCriteria.filter((c: any) => {
+        const filteredByClearGOCandidate = criteriaAfterGateFilter.filter((c: any) => {
             const epic = c.epic;
             if (!epic) {
                 console.warn(`⚠️ Criterion ${c.id} has no epic data, excluding from reminders`);
