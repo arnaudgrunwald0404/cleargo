@@ -338,7 +338,14 @@ function useTimelineData(
     return { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, timelineEnd, totalSpan, computedEndOfPhaseBeforeCohort1 };
 }
 
-function CriteriaBadge({ summary }: { summary: StageCriteriaSummary }) {
+function CriteriaBadge({
+    summary,
+    /** Horizontal timeline: side placement avoids tooltips flipping up over the date / “in X days” row. */
+    tooltipPosition = 'bottom',
+}: {
+    summary: StageCriteriaSummary;
+    tooltipPosition?: 'left' | 'right' | 'bottom';
+}) {
     const allGo = summary.go === summary.total;
     const hasGateBlocker = summary.gateBlocked > 0;
 
@@ -353,8 +360,20 @@ function CriteriaBadge({ summary }: { summary: StageCriteriaSummary }) {
     if (summary.notSet > 0) tooltipLines.push(`${summary.notSet} Not Set`);
     if (summary.gateBlocked > 0) tooltipLines.push(`⚠ ${summary.gateBlocked} gate blocker${summary.gateBlocked > 1 ? 's' : ''}`);
 
+    const offset =
+        tooltipPosition === 'bottom'
+            ? 10
+            : { mainAxis: 10, crossAxis: 0 };
+
     return (
-        <Tooltip label={tooltipLines.join(' · ')} withArrow position="bottom">
+        <Tooltip
+            label={tooltipLines.join(' · ')}
+            withArrow
+            position={tooltipPosition}
+            offset={offset}
+            multiline
+            maw={280}
+        >
             <span style={{
                 display: 'inline-flex', alignItems: 'center', gap: 3,
                 fontSize: 9, fontWeight: 600, lineHeight: 1,
@@ -704,7 +723,10 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                     transform: `translateX(${translateX})`, zIndex: 5,
                                     display: 'flex', justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
                                 }}>
-                                    <CriteriaBadge summary={node.criteriaSummary} />
+                                    <CriteriaBadge
+                                        summary={node.criteriaSummary}
+                                        tooltipPosition={n <= 1 ? 'bottom' : i < (n - 1) / 2 ? 'right' : 'left'}
+                                    />
                                 </div>
                             )}
                         </React.Fragment>
