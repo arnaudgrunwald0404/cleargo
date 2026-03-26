@@ -375,15 +375,15 @@ function CriteriaBadge({
             maw={280}
         >
             <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: 3,
-                fontSize: 9, fontWeight: 600, lineHeight: 1,
-                padding: '2px 5px', borderRadius: 8,
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+                fontSize: 11, fontWeight: 600, lineHeight: 1,
+                padding: '3px 7px', borderRadius: 8,
                 backgroundColor: bg, color, border,
                 whiteSpace: 'nowrap', cursor: 'default',
             }}>
                 {summary.go}/{summary.total}
                 {hasGateBlocker && (
-                    <span style={{ fontSize: 8 }} title="Gate blocker">⚠</span>
+                    <span style={{ fontSize: 10 }} title="Gate blocker">⚠</span>
                 )}
             </span>
         </Tooltip>
@@ -413,17 +413,17 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
     const GAP = 8;
     const TRACK_CENTER = LABEL_AREA + GAP + 5;
     const DATE_ROW_TOP = TRACK_CENTER + 12;
-    /** Space for date line + gap + "in X days" / "X days ago" (two lines). Badges must start below this, not under DATE_ROW_TOP+14. */
-    const DATE_COLUMN_HEIGHT = 30;
-    const BUFFER_ROW_TOP = DATE_ROW_TOP + DATE_COLUMN_HEIGHT;
-    const BADGE_ROW_TOP = hasBufferRow ? BUFFER_ROW_TOP + 14 : DATE_ROW_TOP + DATE_COLUMN_HEIGHT;
+    /** Gap between stacked lines below the track (date, countdown, buffer label, criteria pill) — single flex column so nothing overlaps. */
+    const LOWER_COL_GAP = 6;
     const TRACK_H = 2;
     const PHASE_H = 6;
     const DOT_R = 4;
     const DOT_R_ACTIVE = 5;
     /** Extra bottom space so date + "in x days" / "x days ago" lines are not clipped by overflow:hidden (traditional releases). */
     const baseTrackBottomPad = 48;
-    const totalHeight = hasCriteria ? BADGE_ROW_TOP + 20 : (hasBufferRow ? BUFFER_ROW_TOP + 28 : TRACK_CENTER + baseTrackBottomPad);
+    /** Room for: date + countdown + optional buffer row + optional badge pill; flex layout avoids fixed pixel math that breaks on zoom/Fonts. */
+    const lowerBlockMinHeight = hasCriteria || hasBufferRow ? 124 : 58;
+    const totalHeight = DATE_ROW_TOP + lowerBlockMinHeight;
 
     let phaseColorIdx = 0;
 
@@ -439,7 +439,7 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                             Release Timeline
                         </div>
                     </Tooltip>
-                    <span style={{ fontSize: 11, color: 'var(--color-gray-500)', fontWeight: 500 }}>
+                    <span style={{ fontSize: 12, color: 'var(--color-gray-500)', fontWeight: 500 }}>
                         Today: {formatShortDate(today)}
                     </span>
                 </div>
@@ -452,16 +452,16 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                     border: '1px solid var(--color-gray-200)',
                     display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
                 }}>
-                    <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-cast-iron)', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: 'var(--color-cast-iron)', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
                         {nextDays}
                     </span>
-                    <span style={{ fontSize: 15, color: 'var(--color-gray-600)', fontWeight: 500, lineHeight: 1.3 }}>
+                    <span style={{ fontSize: 16, color: 'var(--color-gray-600)', fontWeight: 500, lineHeight: 1.3 }}>
                         day{nextDays !== 1 ? 's' : ''} until <strong style={{ color: 'var(--color-gray-900)', fontWeight: 600 }}>{nextNode.stage.name}</strong>
                     </span>
                 </div>
             )}
 
-            <div style={{ position: 'relative', height: totalHeight, overflow: 'hidden' }}>
+            <div style={{ position: 'relative', minHeight: totalHeight, height: totalHeight, overflow: 'visible' }}>
                 {/* Baseline track */}
                 <div style={{
                     position: 'absolute', top: TRACK_CENTER - TRACK_H / 2,
@@ -497,7 +497,7 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                     zIndex: 5, paddingBottom: 2,
                                 }}>
                                     <span style={{
-                                        fontSize: 11, fontWeight: node.status === 'active' ? 600 : 500,
+                                        fontSize: 12, fontWeight: node.status === 'active' ? 600 : 500,
                                         color: node.status === 'done' ? 'var(--color-gray-700)' : (node.status === 'active' || node.status === 'at_risk') ? 'var(--color-gray-900)' : 'var(--color-gray-600)',
                                         lineHeight: 1.2, textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
                                     }} title={node.stage.name}>
@@ -544,7 +544,7 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                 display: 'flex', flexDirection: 'column', alignItems: 'center',
                             }}>
                                 <span style={{
-                                    fontSize: 7, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                                    fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
                                     color: '#dc2626', lineHeight: 1, marginBottom: 1, whiteSpace: 'nowrap',
                                 }}>Go/No-Go</span>
                                 <div style={{
@@ -565,7 +565,7 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                         display: 'flex', flexDirection: 'column', alignItems: 'center', pointerEvents: 'none',
                     }}>
                         <span style={{
-                            fontSize: 8, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+                            fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
                             color: 'var(--color-copper)', lineHeight: 1, marginBottom: 2,
                         }}>today</span>
                         <div style={{ width: 1.5, height: TRACK_CENTER + 10, backgroundColor: 'var(--color-copper)', borderRadius: 1 }} />
@@ -582,11 +582,11 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                             display: 'flex', flexDirection: 'column', alignItems: 'center',
                         }}>
                             <span style={{
-                                fontSize: 7, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                                fontSize: 9, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
                                 color: 'var(--color-copper)', lineHeight: 1, whiteSpace: 'nowrap',
                             }}>today</span>
                             <span style={{
-                                fontSize: 7, color: 'var(--color-copper)', fontWeight: 600, lineHeight: 1, marginTop: 1,
+                                fontSize: 9, color: 'var(--color-copper)', fontWeight: 600, lineHeight: 1, marginTop: 1,
                             }}>{formatShortDate(today)}</span>
                         </div>
                         <div style={{
@@ -620,7 +620,7 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                             }}>
                                 {node.isMilestone && (
                                     <span style={{
-                                        fontSize: 11, fontWeight: node.status === 'active' ? 600 : 500, color: labelColor,
+                                        fontSize: 12, fontWeight: node.status === 'active' ? 600 : 500, color: labelColor,
                                         lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
                                         overflow: 'hidden', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: align,
                                     }} title={node.stage.name}>
@@ -672,65 +672,55 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
                                 }} />
                             )}
 
-                            {/* Date below track + countdown when future */}
+                            {/* Date, relative countdown, optional buffer label, criteria pill — one column so rows never overlap */}
                             <div style={{
                                 position: 'absolute', left: `${leftPct}%`, top: DATE_ROW_TOP,
-                                transform: `translateX(${translateX})`, textAlign: align, zIndex: 5,
-                                display: 'flex', flexDirection: 'column', alignItems: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center', gap: 3,
+                                transform: `translateX(${translateX})`, zIndex: 6,
+                                display: 'flex', flexDirection: 'column',
+                                alignItems: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
+                                gap: LOWER_COL_GAP,
+                                textAlign: align,
+                                maxWidth: `${Math.min(42, 100 / n + 8)}%`,
+                                pointerEvents: 'auto',
                             }}>
-                                <span style={{ fontSize: 10, color: dateColor, fontWeight: 500, lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: 12, color: dateColor, fontWeight: 500, lineHeight: 1.25, whiteSpace: 'nowrap' }}>
                                     {formatShortDate(node.date)}
                                 </span>
                                 {(() => {
                                     const days = daysFromToday(today, node.date);
                                     if (days > 0) {
                                         return (
-                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-copper)', lineHeight: 1.25, whiteSpace: 'nowrap' }}>
                                                 in {days} day{days !== 1 ? 's' : ''}
                                             </span>
                                         );
                                     }
                                     if (days < 0) {
                                         return (
-                                            <span style={{ fontSize: 9, fontWeight: 600, color: 'var(--color-gray-500)', lineHeight: 1.2, whiteSpace: 'nowrap' }}>
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--color-gray-500)', lineHeight: 1.25, whiteSpace: 'nowrap' }}>
                                                 {-days} day{-days !== 1 ? 's' : ''} ago
                                             </span>
                                         );
                                     }
                                     return null;
                                 })()}
-                            </div>
-
-                            {/* Duration range below date (UI framework rollouts omit this row — level-based buffers stay in tooltips / data only) */}
-                            {hasBufferRow && node.bufferDays > 0 && !isLast && (
-                                <Tooltip label={`This phase: ${node.durationDays}–${node.durationDays + node.bufferDays} business days. Timeline uses the ${node.durationDays}d target.`} withArrow position="bottom">
-                                    <div style={{
-                                        position: 'absolute', left: `${leftPct}%`, top: BUFFER_ROW_TOP,
-                                        transform: `translateX(${translateX})`, textAlign: align, zIndex: 5,
-                                    }}>
+                                {hasBufferRow && node.bufferDays > 0 && !isLast && (
+                                    <Tooltip label={`This phase: ${node.durationDays}–${node.durationDays + node.bufferDays} business days. Timeline uses the ${node.durationDays}d target.`} withArrow position="bottom">
                                         <span style={{
-                                            fontSize: 8, fontWeight: 600, lineHeight: 1, whiteSpace: 'nowrap', cursor: 'default',
+                                            fontSize: 10, fontWeight: 600, lineHeight: 1.2, whiteSpace: 'nowrap', cursor: 'default',
                                             color: node.status === 'at_risk' ? '#d97706' : 'var(--color-gray-600)',
                                         }}>
                                             {node.durationDays}–{node.durationDays + node.bufferDays}d{node.status === 'at_risk' ? ' ⚠' : ''}
                                         </span>
-                                    </div>
-                                </Tooltip>
-                            )}
-
-                            {/* Criteria summary badge */}
-                            {node.criteriaSummary && (
-                                <div style={{
-                                    position: 'absolute', left: `${leftPct}%`, top: BADGE_ROW_TOP,
-                                    transform: `translateX(${translateX})`, zIndex: 5,
-                                    display: 'flex', justifyContent: align === 'left' ? 'flex-start' : align === 'right' ? 'flex-end' : 'center',
-                                }}>
+                                    </Tooltip>
+                                )}
+                                {node.criteriaSummary && (
                                     <CriteriaBadge
                                         summary={node.criteriaSummary}
                                         tooltipPosition={n <= 1 ? 'bottom' : i < (n - 1) / 2 ? 'right' : 'left'}
                                     />
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </React.Fragment>
                     );
                 })}
@@ -760,13 +750,13 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                         Release Timeline
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <span style={{ fontSize: 11, color: 'var(--color-gray-500)', fontWeight: 500 }}>
+                        <span style={{ fontSize: 12, color: 'var(--color-gray-500)', fontWeight: 500 }}>
                             Today: {formatShortDate(today)}
                         </span>
                         {gateMarkers.length > 0 && (
                             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
                                 {gateMarkers.map((gate, idx) => (
-                                    <span key={idx} style={{ fontSize: 10, color: '#dc2626', fontWeight: 600 }}>
+                                    <span key={idx} style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
                                         Go/No-Go (end of {gate.stageName}): {formatShortDate(gate.date)}
                                     </span>
                                 ))}
@@ -783,10 +773,10 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                     border: '1px solid var(--color-gray-200)',
                     display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
                 }}>
-                    <span style={{ fontSize: 28, fontWeight: 700, color: 'var(--color-cast-iron)', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
+                    <span style={{ fontSize: 30, fontWeight: 700, color: 'var(--color-cast-iron)', lineHeight: 1.1, letterSpacing: '-0.02em' }}>
                         {nextDays}
                     </span>
-                    <span style={{ fontSize: 15, color: 'var(--color-gray-600)', fontWeight: 500, lineHeight: 1.3 }}>
+                    <span style={{ fontSize: 16, color: 'var(--color-gray-600)', fontWeight: 500, lineHeight: 1.3 }}>
                         day{nextDays !== 1 ? 's' : ''} until <strong style={{ color: 'var(--color-gray-900)', fontWeight: 600 }}>{nextNode.stage.name}</strong>
                     </span>
                 </div>
@@ -798,7 +788,7 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                         <div style={{ display: 'flex', justifyContent: 'center', width: 16, flexShrink: 0 }}>
                             <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-copper)' }} />
                         </div>
-                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-copper)' }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-copper)' }}>
                             Today — {formatShortDate(today)}
                         </span>
                     </div>
@@ -837,24 +827,24 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
 
                                 <div style={{ flex: 1, paddingBottom: isLast ? 0 : 4, minWidth: 0 }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                                        <span style={{ fontSize: 13, fontWeight: node.status === 'active' ? 600 : 500, color: labelColor, lineHeight: 1.4 }}>
+                                        <span style={{ fontSize: 15, fontWeight: node.status === 'active' ? 600 : 500, color: labelColor, lineHeight: 1.4 }}>
                                             {node.stage.name}
                                         </span>
-                                        <span style={{ fontSize: 11, color: dateColor, fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                        <span style={{ fontSize: 13, color: dateColor, fontWeight: 500, whiteSpace: 'nowrap' }}>
                                             {formatShortDate(node.date)}
                                         </span>
                                         {(() => {
                                             const days = daysFromToday(today, node.date);
                                             if (days > 0) {
                                                 return (
-                                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-copper)', whiteSpace: 'nowrap' }}>
+                                                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-copper)', whiteSpace: 'nowrap' }}>
                                                         in {days} day{days !== 1 ? 's' : ''}
                                                     </span>
                                                 );
                                             }
                                             if (days < 0) {
                                                 return (
-                                                    <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--color-gray-500)', whiteSpace: 'nowrap' }}>
+                                                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--color-gray-500)', whiteSpace: 'nowrap' }}>
                                                         {-days} day{-days !== 1 ? 's' : ''} ago
                                                     </span>
                                                 );
@@ -892,8 +882,12 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                                                 </Tooltip>
                                             );
                                         })()}
-                                        {node.criteriaSummary && <CriteriaBadge summary={node.criteriaSummary} />}
                                     </div>
+                                    {node.criteriaSummary && (
+                                        <div style={{ marginTop: 6 }}>
+                                            <CriteriaBadge summary={node.criteriaSummary} />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
@@ -914,7 +908,7 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
                                     <div style={{ display: 'flex', justifyContent: 'center', width: 16, flexShrink: 0 }}>
                                         <div style={{ width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--color-copper)' }} />
                                     </div>
-                                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-copper)' }}>
+                                    <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--color-copper)' }}>
                                         Today — {formatShortDate(today)}
                                     </span>
                                 </div>
