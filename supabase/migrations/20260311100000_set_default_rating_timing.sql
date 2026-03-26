@@ -5,10 +5,17 @@
 
 DO $$
 DECLARE
+  st text;
   mapping RECORD;
 BEGIN
-  -- Category → stage name mapping (stage names shared across scopes).
-  -- If a stage doesn't exist in a scope, the criterion is left alone.
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'launch_stages') THEN
+    st := 'launch_stages';
+  ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'release_stages') THEN
+    st := 'release_stages';
+  ELSE
+    RAISE EXCEPTION '20260311100000_set_default_rating_timing: expected launch_stages or release_stages';
+  END IF;
+
   FOR mapping IN
     SELECT *
     FROM (VALUES
@@ -38,41 +45,41 @@ BEGIN
       ('LEGAL_SECURITY',                          'Product Definition Complete'),
       ('STRATEGY',                                'Product Definition Complete'),
       ('SUPPORT',                                 'Internal Readiness'),
-      ('OPS',                                     'Internal Readiness'),
       ('OTHER',                                   'Internal Readiness')
     ) AS t(category_name, stage_name)
   LOOP
-    -- UI-framework-only criteria → ui_rollout stage
-    UPDATE public.criterion c
-    SET rating_timing = ls.id
-    FROM public.launch_stages ls
-    WHERE c.rating_timing IS NULL
-      AND c.ui_framework_only = TRUE
-      AND lower(trim(c.category)) = lower(trim(mapping.category_name))
-      AND ls.scope = 'ui_rollout'
-      AND lower(trim(ls.name)) = lower(trim(mapping.stage_name));
+    EXECUTE format($q$
+      UPDATE public.criterion c SET rating_timing = ls.id
+      FROM public.%I ls
+      WHERE c.rating_timing IS NULL
+        AND c.ui_framework_only = TRUE
+        AND lower(trim(c.category)) = lower(trim($1))
+        AND ls.scope = 'ui_rollout'
+        AND lower(trim(ls.name)) = lower(trim($2))
+    $q$, st)
+      USING mapping.category_name, mapping.stage_name;
 
-    -- Non-UI-framework criteria → release_schedule stage
-    UPDATE public.criterion c
-    SET rating_timing = ls.id
-    FROM public.launch_stages ls
-    WHERE c.rating_timing IS NULL
-      AND (c.ui_framework_only IS NULL OR c.ui_framework_only = FALSE)
-      AND lower(trim(c.category)) = lower(trim(mapping.category_name))
-      AND ls.scope = 'release_schedule'
-      AND lower(trim(ls.name)) = lower(trim(mapping.stage_name));
+    EXECUTE format($q$
+      UPDATE public.criterion c SET rating_timing = ls.id
+      FROM public.%I ls
+      WHERE c.rating_timing IS NULL
+        AND (c.ui_framework_only IS NULL OR c.ui_framework_only = FALSE)
+        AND lower(trim(c.category)) = lower(trim($1))
+        AND ls.scope = 'release_schedule'
+        AND lower(trim(ls.name)) = lower(trim($2))
+    $q$, st)
+      USING mapping.category_name, mapping.stage_name;
   END LOOP;
 
-  -- Fallback: "UX & Research" non-UI-framework criteria → "GTM Access and Prep" in release_schedule
-  -- (since "UX Preview" doesn't exist in release_schedule scope)
-  UPDATE public.criterion c
-  SET rating_timing = ls.id
-  FROM public.launch_stages ls
-  WHERE c.rating_timing IS NULL
-    AND (c.ui_framework_only IS NULL OR c.ui_framework_only = FALSE)
-    AND lower(trim(c.category)) IN ('ux & research', 'product_tech', 'technical readiness')
-    AND ls.scope = 'release_schedule'
-    AND lower(trim(ls.name)) = 'gtm access and prep';
+  EXECUTE format($q$
+    UPDATE public.criterion c SET rating_timing = ls.id
+    FROM public.%I ls
+    WHERE c.rating_timing IS NULL
+      AND (c.ui_framework_only IS NULL OR c.ui_framework_only = FALSE)
+      AND lower(trim(c.category)) IN ('ux & research', 'product_tech', 'technical readiness')
+      AND ls.scope = 'release_schedule'
+      AND lower(trim(ls.name)) = 'gtm access and prep'
+  $q$, st);
 
   RAISE NOTICE 'rating_timing defaults applied. Remaining NULL: %',
     (SELECT count(*) FROM public.criterion WHERE rating_timing IS NULL AND is_active = TRUE);
