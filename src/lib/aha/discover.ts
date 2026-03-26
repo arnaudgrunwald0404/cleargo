@@ -31,7 +31,7 @@ export async function discoverCustomFields(): Promise<void> {
     let updatedCount = 0;
     for (const [alias, fieldConfig] of Object.entries(config.fields)) {
         const label = fieldConfig.label;
-        let ahaField = fieldsByLabel.get(label)
+        const ahaField = fieldsByLabel.get(label)
             ?? fieldsByLabelNormalized.get(normalize(label))
             ?? (!fieldConfig.key ? fieldsByKey.get(alias) : null);
         if (ahaField) {

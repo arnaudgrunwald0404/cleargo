@@ -39,6 +39,18 @@ export function dateToLocalDateString(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+/** Add N calendar days in local time (stage timeline math). */
+export function addCalendarDays(d: Date, days: number): Date {
+  const out = new Date(d);
+  out.setDate(out.getDate() + days);
+  return out;
+}
+
+/** Subtract N calendar days in local time. */
+export function subtractCalendarDays(d: Date, days: number): Date {
+  return addCalendarDays(d, -days);
+}
+
 /**
  * Normalize an ISO or date string to YYYY-MM-DD (calendar date, no UTC shift).
  * Use when saving to DB so we never store a value that displays as the wrong day.
@@ -50,22 +62,9 @@ export function toDateOnlyString(isoDate: string | null | undefined): string | n
 }
 
 /**
- * Return the same calendar day in the next month (e.g. Apr 16 -> May 16).
- * Used as fallback for Cohort 2 when release_schedule has no next release.
- */
-export function addCalendarMonth(isoDate: string | null | undefined): string | null {
-  const date = parseDateOnlyLocal(isoDate);
-  if (!date) return null;
-  const next = new Date(date.getFullYear(), date.getMonth() + 1, date.getDate());
-  const y = next.getFullYear();
-  const m = String(next.getMonth() + 1).padStart(2, '0');
-  const d = String(next.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
-/**
  * Same calendar day one month later, as YYYY-MM-DD (local calendar, no UTC shift).
  * If that day does not exist in the target month (e.g. Jan 31 → Feb), uses the last day of that month.
+ * Used as fallback for Cohort 2 when release_schedule has no next release.
  */
 export function addCalendarMonth(isoDate: string | null | undefined): string | null {
   const date = parseDateOnlyLocal(isoDate);

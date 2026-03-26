@@ -60,7 +60,7 @@ export async function GET() {
 
         // Fetch launches that match these refs for readiness_pct
         const refNames = [...groups.keys()];
-        let launchReadiness = new Map<string, number>();
+        const launchReadiness = new Map<string, number>();
         if (refNames.length > 0) {
             const { data: launches } = await supabase
                 .from("launch")

@@ -120,7 +120,7 @@ async function getHandler(
             const normalizedReleaseName = releaseName.trim().toLowerCase();
             
             // Try to find matching release with multiple strategies
-            let matchingRelease = releases.find((r: any) => {
+            const matchingRelease = releases.find((r: any) => {
                 if (!r.name) return false;
                 // Exact match
                 if (r.name === releaseName) return true;

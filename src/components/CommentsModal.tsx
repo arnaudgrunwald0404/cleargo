@@ -1308,7 +1308,7 @@ export function CommentsModal({
             if (checkboxMatch) {
               const checkbox = checkboxMatch[1];
               // Get text after checkbox, removing the checkbox character itself
-              let text = textContent.replace(/[☑☐]/g, '').trim();
+              const text = textContent.replace(/[☑☐]/g, '').trim();
               
               // Create a div with inline format: checkbox + space + text
               const div = doc.createElement('div');
@@ -1564,7 +1564,7 @@ export function CommentsModal({
     for (const { pattern, label, fullPattern } of dataSourceHeaders) {
       // First, find all occurrences of this data source
       const matches: Array<{ start: number; end: number }> = [];
-      let searchStart = 0;
+      const searchStart = 0;
       let match;
       
       // Use fullPattern to find complete blocks
@@ -1961,7 +1961,7 @@ export function CommentsModal({
     return () => {
       timers.forEach(t => clearTimeout(t));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [dataSourceValues, criterion?.data_sources]);
 
   // Memoize string representations for stable dependency comparisons

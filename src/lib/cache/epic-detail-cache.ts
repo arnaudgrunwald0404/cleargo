@@ -73,7 +73,7 @@ class EpicDetailCache {
     }
 
     getLaunchStagesReleaseSchedule(): any[] | null {
-        return this.get('launch_stages_release_schedule', this.TTL_LAUNCH_STAGES);
+        return this.get('launch_stages_release_schedule', this.TTL_RELEASE_STAGES);
     }
 
     setLaunchStagesReleaseSchedule(stages: any[]): void {
@@ -81,7 +81,7 @@ class EpicDetailCache {
     }
 
     getLaunchStagesUiRollout(): any[] | null {
-        return this.get('launch_stages_ui_rollout', this.TTL_LAUNCH_STAGES);
+        return this.get('launch_stages_ui_rollout', this.TTL_RELEASE_STAGES);
     }
 
     setLaunchStagesUiRollout(stages: any[]): void {

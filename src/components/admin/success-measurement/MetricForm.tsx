@@ -101,7 +101,7 @@ export function MetricForm({
 
     try {
       // Normalize thresholds: if all values are empty, set to null
-      let normalizedData = { ...formData };
+      const normalizedData = { ...formData };
       if (normalizedData.thresholds) {
         const t = normalizedData.thresholds as MetricThresholds;
         const hasAnyThreshold =

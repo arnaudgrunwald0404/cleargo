@@ -1305,7 +1305,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         
         // Get user info from cache for optimistic update (synchronous)
         const cachedUsers = getCachedUsers();
-        let newApprover = cachedUsers?.find(u => u.email.toLowerCase() === newApproverEmail.toLowerCase());
+        const newApprover = cachedUsers?.find(u => u.email.toLowerCase() === newApproverEmail.toLowerCase());
         
         // If not in cache, try to fetch quickly (but don't wait - show email immediately)
         if (!newApprover) {

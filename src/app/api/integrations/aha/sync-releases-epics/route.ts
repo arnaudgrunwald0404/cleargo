@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
         let totalEpics = 0;
         let syncedEpics = 0;
         let updatedClearGOCandidate = 0;
-        let errors: string[] = [];
+        const errors: string[] = [];
 
         // Get release names for logging (fetch from Aha to get names for the IDs)
         const { getReleases } = await import('@/lib/aha/client');

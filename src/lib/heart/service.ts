@@ -1640,8 +1640,8 @@ export async function getEpicHeartDashboard(
   const pendoClient = useSnapshotOnly ? null : await getPendoClient();
 
   // Build id -> display name and id -> entity type (for Metric details: Page / Feature / Track event)
-  let pendoEventIdToName: Record<string, string> = {};
-  let pendoEventIdToType: Record<string, 'Page' | 'Feature' | 'Track event'> = {};
+  const pendoEventIdToName: Record<string, string> = {};
+  const pendoEventIdToType: Record<string, 'Page' | 'Feature' | 'Track event'> = {};
   if (pendoClient) {
     try {
       const [events, features, pages] = await Promise.all([
@@ -1684,7 +1684,7 @@ export async function getEpicHeartDashboard(
     let trend: 'up' | 'down' | 'stable' | null = null;
     let history: EpicHeartSnapshot[] = [];
     // #region agent log
-    let storedHistoryLength = 0;
+    const storedHistoryLength = 0;
     let usedPendoFallback = false;
     let pendoRawLength = 0;
     // #endregion
@@ -2226,7 +2226,7 @@ export async function getEpicsHeartList(
   for (const epic of epics || []) {
     const heartConfig = (epic as any).epic_heart_configs?.[0] || null;
     
-    let categoryStatuses: EpicHeartListItem['categoryStatuses'] = {
+    const categoryStatuses: EpicHeartListItem['categoryStatuses'] = {
       happiness: null,
       engagement: null,
       adoption: null,

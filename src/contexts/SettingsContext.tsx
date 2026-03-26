@@ -2,8 +2,9 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { AppSettings } from "@/lib/settings-db";
-import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getReleaseStages, getLaunchCriteria, getLaunchSchedule } from "@/lib/services/settingsService";
+import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getReleaseStages, getLaunchCriteria, getLaunchSchedule, type ReleaseStagesScope } from "@/lib/services/settingsService";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 
 interface SettingsContextType {
     // Settings
@@ -55,14 +56,14 @@ interface SettingsContextType {
     handleSynchronizeFields: () => Promise<void>;
     
     // Release Stages (Release Schedule scope)
-    releaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
+    releaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
     releaseStagesLoading: boolean;
-    setReleaseStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
+    setReleaseStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
     fetchReleaseStages: () => Promise<void>;
     // UI Rollout Stages
-    uiRolloutStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
+    uiRolloutStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
     uiRolloutStagesLoading: boolean;
-    setUiRolloutStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
+    setUiRolloutStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
     fetchUiRolloutStages: () => Promise<void>;
     
     // Email Templates
@@ -135,9 +136,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null>(null);
     
-    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
     const [releaseStagesLoading, setReleaseStagesLoading] = useState(false);
-    const [uiRolloutStages, setUiRolloutStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [uiRolloutStages, setUiRolloutStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: ReleaseStagesScope; level_durations?: ReleaseStageLevelDurations | null; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
     const [uiRolloutStagesLoading, setUiRolloutStagesLoading] = useState(false);
 
     const [launchCriteria, setLaunchCriteria] = useState<any[]>([]);

@@ -809,7 +809,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         };
 
         fetchMissingReleaseDates();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups]);
 
     // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)

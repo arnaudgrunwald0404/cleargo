@@ -97,7 +97,7 @@ export async function assessEpicRisk(epic: any): Promise<RiskFactors & { riskSco
 
     let hasGateBlockers = false;
     let overdueCriteriaCount = 0;
-    let totalCriteriaCount = criteriaStatuses?.length || 0;
+    const totalCriteriaCount = criteriaStatuses?.length || 0;
 
     // Check for gate blockers and overdue criteria
     if (criteriaStatuses) {
