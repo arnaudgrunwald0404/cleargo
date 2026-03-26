@@ -11,11 +11,65 @@ import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
-import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
+import { addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
+}
+
+type DbReleaseStageRow = {
+    id: number;
+    name: string;
+    sort_order: number;
+    duration_days: number | null;
+    details?: string | null;
+    scope?: string;
+    level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+    is_gate?: boolean;
+    stage_type?: 'phase' | 'milestone';
+};
+
+function isUiFrameworkEpic(epic: Epic): boolean {
+    const raw = epic.aha_fields?.custom_fields?.cleargo_candidate;
+    const v =
+        typeof raw === 'object' && raw !== null && 'name' in raw
+            ? String((raw as { name?: unknown }).name ?? '')
+            : typeof raw === 'string'
+              ? raw
+              : undefined;
+    return v === 'Yes - UI Framework';
+}
+
+function parseUiLevelFromEpic(epic: Epic): number | null {
+    const uiuxImpact = epic.aha_fields?.custom_fields?.uiux_impact;
+    const s =
+        typeof uiuxImpact === 'object' && uiuxImpact !== null && 'name' in uiuxImpact
+            ? String((uiuxImpact as { name?: unknown }).name ?? '')
+            : uiuxImpact != null
+              ? String(uiuxImpact)
+              : '';
+    const m = s.match(/\b([123])\b/);
+    return m ? parseInt(m[1], 10) : null;
+}
+
+/** Next release after this launch (for GA / Cohort 2 pin on UI rollout timeline); matches epic detail fallback. */
+function getCohort2DateForUiTimeline(
+    currentReleaseName: string,
+    launchDate: string,
+    schedule: Array<{ release_name: string; launch_date: string | null }>
+): string | null {
+    const anchor = parseDateOnlyLocal(launchDate);
+    if (!anchor) return addCalendarMonth(launchDate);
+    let best: { d: Date; iso: string } | null = null;
+    for (const r of schedule) {
+        if (!r.launch_date || r.release_name === currentReleaseName) continue;
+        const d = parseDateOnlyLocal(r.launch_date);
+        if (!d || d <= anchor) continue;
+        const iso = r.launch_date.includes('T') ? r.launch_date.split('T')[0]! : r.launch_date;
+        if (!best || d < best.d) best = { d, iso };
+    }
+    return best?.iso ?? addCalendarMonth(launchDate);
 }
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
@@ -59,6 +113,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [selectedRelease, setSelectedRelease] = useState<string | null>(searchParams.get('release') || null);
     const [releasesView, setReleasesView] = useState<'upcoming' | 'recent' | 'all'>('upcoming');
     const [showTimelineForRelease, setShowTimelineForRelease] = useState<string | null>(null);
+    /** Configured stages from DB — same scopes as epic readiness tab (`release_schedule` vs `ui_rollout`). */
+    const [releaseScheduleStagesForTimeline, setReleaseScheduleStagesForTimeline] = useState<DbReleaseStageRow[] | undefined>(undefined);
+    const [uiRolloutStagesForTimeline, setUiRolloutStagesForTimeline] = useState<DbReleaseStageRow[] | undefined>(undefined);
 
     // Sync with Aha state
     const [refreshingEpics, setRefreshingEpics] = useState(false);
@@ -123,6 +180,43 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             })();
         }
     }, [initialEpics.length]);
+
+    useEffect(() => {
+        let cancelled = false;
+        void (async () => {
+            try {
+                const res = await fetch('/api/release-stages', { credentials: 'include' });
+                if (!res.ok || cancelled) return;
+                const json = await res.json();
+                const rows = (json?.stages ?? []) as DbReleaseStageRow[];
+                if (cancelled || !Array.isArray(rows)) return;
+
+                const hasScope = rows.some((r) => r.scope != null && String(r.scope).trim() !== '');
+                const scheduleRows = hasScope
+                    ? rows.filter((r) => r.scope === 'release_schedule')
+                    : rows;
+                const uiRows = hasScope ? rows.filter((r) => r.scope === 'ui_rollout') : [];
+
+                if (scheduleRows.length > 0) {
+                    setReleaseScheduleStagesForTimeline(
+                        [...scheduleRows].sort((a, b) => a.sort_order - b.sort_order),
+                    );
+                }
+                if (uiRows.length > 0) {
+                    setUiRolloutStagesForTimeline(
+                        [...uiRows].sort((a, b) => a.sort_order - b.sort_order),
+                    );
+                }
+            } catch (e) {
+                if (process.env.NODE_ENV === 'development') {
+                    console.warn('[EpicsClient] release_stages fetch failed:', e);
+                }
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
 
     async function loadData() {
         try {
@@ -1987,11 +2081,65 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                         </div>
                                     )}
                                 </div>
-                                {showTimelineForRelease === group.releaseName && group.releaseDate && (
-                                    <div className="mt-3">
-                                        <ReleaseStagesChart releaseDate={group.releaseDate} showHeading={false} noContainer />
-                                    </div>
-                                )}
+                                {showTimelineForRelease === group.releaseName && group.releaseDate && (() => {
+                                    if (group.epics.length === 0) return null;
+                                    const uiEpics = [...group.epics].filter(isUiFrameworkEpic).sort((a, b) => a.name.localeCompare(b.name));
+                                    const hasUi = uiEpics.length > 0;
+                                    const hasStandard = group.epics.some((e) => !isUiFrameworkEpic(e));
+                                    const cohort2 = getCohort2DateForUiTimeline(group.releaseName, group.releaseDate, releaseScheduleWithIds);
+                                    const uiLevels = uiEpics.map(parseUiLevelFromEpic).filter((x): x is number => x != null);
+                                    const primaryUiLevel = uiLevels.length > 0 ? uiLevels[0] : undefined;
+                                    const uiLevelsDiffer = new Set(uiLevels).size > 1;
+                                    /** UI rollout math requires a level; default matches epic detail when impact is unset. */
+                                    const effectiveUiLevelForUiRollout = primaryUiLevel ?? 1;
+
+                                    return (
+                                        <div className="mt-3 space-y-4">
+                                            {hasStandard && (
+                                                <div>
+                                                    {hasUi && (
+                                                        <Text size="sm" fw={600} c="dimmed" mb={6} style={{ fontFamily: 'var(--font-body)' }}>
+                                                            Standard launch timeline
+                                                        </Text>
+                                                    )}
+                                                    <ReleaseStagesChart
+                                                        releaseDate={group.releaseDate}
+                                                        stages={releaseScheduleStagesForTimeline}
+                                                        showHeading={false}
+                                                        noContainer
+                                                    />
+                                                </div>
+                                            )}
+                                            {hasUi && (
+                                                <div>
+                                                    {hasStandard && (
+                                                        <Text size="sm" fw={600} c="dimmed" mb={6} style={{ fontFamily: 'var(--font-body)' }}>
+                                                            UI framework rollout timeline
+                                                        </Text>
+                                                    )}
+                                                    {primaryUiLevel == null && (
+                                                        <Text size="xs" c="dimmed" mb={6} style={{ fontFamily: 'var(--font-body)' }}>
+                                                            No UI/UX impact level (1–3) found on these epics; using level {effectiveUiLevelForUiRollout} for phase lengths. Set the field in Aha! or open an epic for its chart.
+                                                        </Text>
+                                                    )}
+                                                    {uiLevelsDiffer && (
+                                                        <Text size="xs" c="dimmed" mb={6} style={{ fontFamily: 'var(--font-body)' }}>
+                                                            UI impact levels differ across epics in this release; showing durations for level {primaryUiLevel ?? effectiveUiLevelForUiRollout}. Open an epic for its exact level.
+                                                        </Text>
+                                                    )}
+                                                    <ReleaseStagesChart
+                                                        releaseDate={group.releaseDate}
+                                                        cohort2Date={cohort2}
+                                                        stages={uiRolloutStagesForTimeline}
+                                                        uiLevel={effectiveUiLevelForUiRollout}
+                                                        showHeading={false}
+                                                        noContainer
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
                                 <div className="rounded-lg" style={{ 
                                     border: "1px solid #E5E7EB",
                                     backgroundColor: "#FFFFFF",
