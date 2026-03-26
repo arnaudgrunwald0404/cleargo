@@ -64,6 +64,7 @@ function StatusTrafficLight({
     showNotApplicable = false,
     isGate = false,
     definitions,
+    readOnly = false,
 }: {
     status: string;
     itemId: string;
@@ -73,6 +74,7 @@ function StatusTrafficLight({
     showNotApplicable?: boolean;
     isGate?: boolean;
     definitions?: { go?: string | null; conditional?: string | null; no_go?: string | null };
+    readOnly?: boolean;
 }) {
     const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
     const [isUpdating, setIsUpdating] = useState(false);
@@ -223,17 +225,17 @@ function StatusTrafficLight({
                         }}
                     >
                         <button
-                            onClick={() => !isSaving && !isUpdating && handleStatusChange(light.value)}
-                            disabled={isSaving || isUpdating}
+                            onClick={() => !readOnly && !isSaving && !isUpdating && handleStatusChange(light.value)}
+                            disabled={readOnly || isSaving || isUpdating}
                             style={{
                                 width: 24,
                                 height: 24,
                                 borderRadius: '50%',
                                 border: isSelected ? `3px solid ${light.color}` : '2px solid #e5e7eb',
                                 backgroundColor: isSelected ? light.color : light.greyColor,
-                                cursor: (isSaving || isUpdating) ? 'not-allowed' : 'pointer',
+                                cursor: readOnly ? 'default' : (isSaving || isUpdating) ? 'not-allowed' : 'pointer',
                                 transition: 'all 0.2s ease',
-                                opacity: (isSaving || isUpdating) ? 0.5 : 1,
+                                opacity: (isSaving || isUpdating) && !readOnly ? 0.5 : 1,
                                 boxShadow: isSelected ? `0 0 8px ${light.color}66` : 'none',
                                 transform: isSelected ? 'scale(1.1)' : 'scale(1)',
                                 display: 'flex',
@@ -241,13 +243,13 @@ function StatusTrafficLight({
                                 justifyContent: 'center',
                             }}
                             onMouseEnter={(e) => {
-                                if (!isSaving && !isUpdating && !isSelected) {
+                                if (!readOnly && !isSaving && !isUpdating && !isSelected) {
                                     e.currentTarget.style.backgroundColor = `${light.color}40`;
                                     e.currentTarget.style.transform = 'scale(1.05)';
                                 }
                             }}
                             onMouseLeave={(e) => {
-                                if (!isSaving && !isUpdating && !isSelected) {
+                                if (!readOnly && !isSaving && !isUpdating && !isSelected) {
                                     e.currentTarget.style.backgroundColor = light.greyColor;
                                     e.currentTarget.style.transform = 'scale(1)';
                                 }
@@ -460,6 +462,24 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     })();
     return () => { cancelled = true; };
   }, [userEmail, isSuperAdmin]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch('/api/me', { credentials: 'include' });
+      if (!res.ok || cancelled) return;
+      const me = await res.json();
+      if (cancelled || !me?.impersonating || !me?.user?.email) return;
+      const u = me.user;
+      const name =
+        [u.first_name, u.last_name].filter(Boolean).join(' ').trim() ||
+        (typeof u.name === 'string' ? u.name.trim() : '') ||
+        u.email;
+      setViewAsUser({ email: u.email, name: name || u.email });
+    })();
+    return () => { cancelled = true; };
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -1090,7 +1110,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     }
   };
   
-  const displayName = firstName || userEmail?.split('@')[0] || 'dev';
+  const displayName = viewAsUser?.name
+    ? viewAsUser.name.split(' ')[0]
+    : (firstName || userEmail?.split('@')[0] || 'dev');
 
   if (loading && items.length === 0) {
     return (
@@ -1270,7 +1292,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               )}
             </div>
             <Tooltip label="Page Options" position="left" withArrow>
-              <Menu shadow="md" width={280} position="bottom-end">
+              <Menu shadow="md" width={280} position="bottom-end" closeOnClickOutside={false}>
                 <Menu.Target>
                   <UnstyledButton
                     style={{
@@ -1305,13 +1327,50 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                         <Select
                           data={usersForViewAs}
                           value={viewAsUser ? viewAsUser.email : ''}
-                          onChange={(value) => {
+                          onChange={async (value) => {
                             if (value === null || value === '') {
-                              setViewAsUser(null);
+                              try {
+                                const res = await fetch('/api/admin/impersonate/stop', {
+                                  method: 'POST',
+                                  credentials: 'include',
+                                });
+                                if (res.ok) window.location.reload();
+                                else {
+                                  notifications.show({
+                                    title: 'Could not end impersonation',
+                                    message: 'Please try again.',
+                                    color: 'red',
+                                  });
+                                }
+                              } catch {
+                                window.location.reload();
+                              }
                               return;
                             }
-                            const opt = usersForViewAs.find((o) => o.value === value);
-                            setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
+                            try {
+                              const res = await fetch('/api/admin/impersonate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ email: value }),
+                              });
+                              if (res.ok) {
+                                window.location.reload();
+                                return;
+                              }
+                              const err = await res.json().catch(() => ({}));
+                              notifications.show({
+                                title: 'Impersonation failed',
+                                message: typeof err.error === 'string' ? err.error : 'Please try again.',
+                                color: 'red',
+                              });
+                            } catch {
+                              notifications.show({
+                                title: 'Impersonation failed',
+                                message: 'Network error',
+                                color: 'red',
+                              });
+                            }
                           }}
                           placeholder="My tasks"
                           allowDeselect={false}
@@ -1671,14 +1730,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             }}>{item.criterion.category}</div>
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
-                            {readOnly ? (
-                              <span className="px-2 py-1 rounded text-xs font-medium" style={{
-                                backgroundColor: item.status === 'GO' ? '#d1fae5' : item.status === 'CONDITIONAL' ? 'rgba(255, 166, 128, 0.3)' : item.status === 'NO_GO' ? '#fee2e2' : '#f3f4f6',
-                                color: item.status === 'GO' ? '#065f46' : item.status === 'CONDITIONAL' ? '#9a3412' : item.status === 'NO_GO' ? '#991b1b' : '#374151',
-                              }}>
-                                {item.status === 'NOT_APPLICABLE' ? 'n/a' : item.status.replace('_', ' ')}
-                              </span>
-                            ) : (
                             <StatusTrafficLight
                               status={item.status}
                               itemId={item.id}
@@ -1687,13 +1738,13 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               isSaving={savingItems.has(item.id)}
                               showNotApplicable={showNotApplicable}
                               isGate={item.criterion?.gate === true}
+                              readOnly={readOnly}
                               definitions={{
                                 go: item.criterion?.status_definition_go,
                                 conditional: item.criterion?.status_definition_conditional,
                                 no_go: item.criterion?.status_definition_no_go,
                               }}
                             />
-                            )}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
