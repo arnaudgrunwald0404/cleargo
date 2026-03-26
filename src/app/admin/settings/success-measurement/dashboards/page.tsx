@@ -92,11 +92,7 @@ export default function SuccessDashboardsSettingsPage() {
   };
 
   if (loading && !summary) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   return (

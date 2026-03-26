@@ -14,11 +14,7 @@ export default function GeneralPage() {
     } = useSettings();
 
     if (!settings) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <PurpleLoader size="lg" />
-            </div>
-        );
+        return <PurpleLoader size="lg" fullPage />;
     }
 
     const handleSave = async (e: React.FormEvent) => {

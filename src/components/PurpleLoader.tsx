@@ -1,19 +1,24 @@
 "use client";
 
+import { Loader } from "@/components/hoberman";
+
+const SIZE_MAP = { sm: 24, md: 48, lg: 64 } as const;
+
 interface PurpleLoaderProps {
   size?: "sm" | "md" | "lg";
   className?: string;
+  /** When true, centers the loader in the viewport (use for full-page loading states) */
+  fullPage?: boolean;
 }
 
-export function PurpleLoader({ size = "md", className = "" }: PurpleLoaderProps) {
-  const sizeClasses = {
-    sm: "h-4 w-4 border-2",
-    md: "h-8 w-8 border-4",
-    lg: "h-12 w-12 border-4",
-  };
+export function PurpleLoader({ size = "md", className, fullPage }: PurpleLoaderProps) {
+  const loader = <Loader size={SIZE_MAP[size]} className={className} />;
+
+  if (!fullPage) return loader;
 
   return (
-    <div className={`animate-spin ${sizeClasses[size]} border-indigo-600 border-t-transparent rounded-full ${className}`} />
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "calc(100vh - 140px)", width: "100%" }}>
+      {loader}
+    </div>
   );
 }
-

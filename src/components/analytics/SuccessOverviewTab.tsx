@@ -396,11 +396,7 @@ export function SuccessOverviewTab({ filters, refreshKey }: SuccessOverviewTabPr
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   if (error) {
