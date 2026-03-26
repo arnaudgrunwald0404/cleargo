@@ -580,7 +580,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         const recentFour = past.slice(-4);
         if (releasesView === 'upcoming') return upcoming;
         if (releasesView === 'recent') return recentFour;
-        return [...recentFour.reverse(), ...upcoming];
+        // All: chronological order (past then upcoming). Do not reverse past — that broke the
+        // timeline (e.g. Mar, Feb, Jan then Apr, May).
+        return [...recentFour, ...upcoming];
     }, [displayedReleaseGroups, todayString, releasesView]);
 
     useEffect(() => {

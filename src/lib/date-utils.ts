@@ -40,3 +40,23 @@ export function toDateOnlyString(isoDate: string | null | undefined): string | n
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+/**
+ * Same calendar day one month later, as YYYY-MM-DD (local calendar, no UTC shift).
+ * If that day does not exist in the target month (e.g. Jan 31 → Feb), uses the last day of that month.
+ */
+export function addCalendarMonth(isoDate: string | null | undefined): string | null {
+  const date = parseDateOnlyLocal(isoDate);
+  if (!date) return null;
+  const y = date.getFullYear();
+  const m = date.getMonth();
+  const d = date.getDate();
+  const next = new Date(y, m + 1, d);
+  if (next.getDate() !== d) {
+    next.setDate(0);
+  }
+  const y2 = next.getFullYear();
+  const m2 = String(next.getMonth() + 1).padStart(2, '0');
+  const d2 = String(next.getDate()).padStart(2, '0');
+  return `${y2}-${m2}-${d2}`;
+}
