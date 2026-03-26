@@ -14,7 +14,7 @@ This doc ties the **UI Rollout Framework** Levels to the work we do in ClearGO a
 | **4** | No | Optional | Component + in-app | Slack #ui-rollout only | 3 weeks |
 | **5** | No | Optional | Visual regression | Slack #ui-rollout only | 3 weeks |
 
-**Levels 1-3** use the full ClearGO path (UX Preview → Internal → CS Prep → Cohort 1 → Cohort 2).  
+**Levels 1-3** use the full ClearGO path (UX Preview → Internal → CS Prep → Cohort 1 → Cohort 2). ClearGO uses a separate **UI Rollout** stage set (Admin → Launch Stages → UI Rollout Stages) with level-specific duration ranges and multiple Go/No-Go gates; the epic timeline uses min_days as the target date and shows the buffer (max_days - min_days) as a visual extension; see Stage durations below.  
 **Levels 4-5** use the simple path: Slack post, develop/QA, deploy to all; no ClearGO tracking.
 
 ---
@@ -111,6 +111,11 @@ Levels 4-5 do not use these criteria in ClearGO (simple path, no ClearGO trackin
 
 ---
 
+## Launch stages: Release Schedule vs UI Rollout
+
+- **Release Schedule stages** (Product Definition Complete, GTM Access and Prep, Internal Readiness, Cohort 1 Live, GA/Cohort 2) apply to epics that follow the legacy release calendar. They are configured in Admin → Launch Stages → Release Schedule Stages.
+- **UI Rollout stages** (Product Definition Complete, UX Preview, GTM Access and Prep, Internal Readiness, Cohort 1, Cohort 2 / GA) apply to epics with ClearGO Candidate = **Yes - UI Framework**. They are configured in Admin → Launch Stages → UI Rollout Stages. Each stage has **level_durations** (min/max days per Level 1, 2, 3) and optionally **is_gate** (marks the stage as a Go/No-Go checkpoint). The epic detail timeline uses min_days as the target date and shows max_days - min_days as a visual buffer zone.
+
 ## Level = Tier for UI Framework epics
 
 For epics with ClearGO Candidate = **Yes - UI Framework**, **Level (UI/UX Impact) is mapped to Tier** when syncing from Aha. Level 1 → Tier 1, Level 2 → Tier 2, Level 3 → Tier 3. So a UI Framework epic gets the tier that matches its Level. You can use **tier-specific criteria** (TIER_1_ONLY, TIER_2_ONLY, TIER_3_ONLY) so each epic sees exactly the right checklist with definitions that match that level. For non–UI Framework epics, Tier still comes from Aha's launch_tier field.
@@ -137,6 +142,34 @@ If you later want tier-specific criteria (e.g. “UX Validation Complete” only
 ---
 
 **Ownership:** For **Internal CS notification complete**, PM coordinates: ensures Slack is sent and that Product Education (KB) and CS/Support (FAQ, training, draft) have completed their CS Prep tasks. For **Customer notification by CS executed**, Marketing executes the advance email plan; CSM owns the ClearGO criterion and strategic outreach.
+
+---
+
+## Stage durations: Target + Buffer model
+
+ClearGO uses a **target + buffer** model for stage durations. **All durations are in business days** (Mon-Fri); weekends are automatically skipped when calculating dates.
+
+- **Target (min_days):** The aggressive "plan for" date shown on the timeline. Due dates are set here.
+- **Buffer (max_days - min_days):** The realistic ceiling. Shown as a lighter/faded extension on the timeline bar.
+
+On the ClearGO timeline:
+- **Solid bar** = target duration. Node dates use this.
+- **Faded extension** = buffer zone. Tooltip: "Buffer: +Xd (plan for up to Yd)"
+- **Amber status** = today is past the target but within the buffer (slipping, not yet overdue).
+- **Red/overdue** = today is past the buffer ceiling.
+
+| Stage | Type | Gate | L1 target / buffer | L2 target / buffer | L3 target / buffer |
+|-------|------|:----:|:------------------:|:------------------:|:------------------:|
+| Product Definition Complete | milestone | -- | 21d / +7d | 7d / +3d | 3d / +4d |
+| UX Preview | phase | Yes | 42d / +14d | 7d / +7d | 3d / +2d |
+| GTM Access and Prep | phase | Yes | 14d / +7d | 7d / +3d | 3d / +4d |
+| Internal Readiness | phase | -- | 21d / +7d | 7d / +3d | 5d / +2d |
+| Cohort 1 | milestone | -- | 28d / +7d | 14d / +7d | 5d / +9d |
+| Cohort 2 / GA | milestone | -- | -- | -- | -- |
+| **Total target** | | | **126d (18 wk)** | **42d (6 wk)** | **19d (2.7 wk)** |
+| **Total with buffer** | | | **168d (24 wk)** | **65d (9.3 wk)** | **40d (5.7 wk)** |
+
+Configured in Admin -> Launch Stages -> UI Rollout Stages. Each stage's `level_durations` stores the min/max per level; `getEffectiveDuration()` uses `min_days` for the target.
 
 ---
 

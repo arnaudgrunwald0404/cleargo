@@ -54,11 +54,16 @@ interface SettingsContextType {
     autoSaveAhaFields: (fieldsToLoad: string[]) => Promise<void>;
     handleSynchronizeFields: () => Promise<void>;
     
-    // Release Stages
-    releaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>;
+    // Release Stages (Release Schedule scope)
+    releaseStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
     releaseStagesLoading: boolean;
-    setReleaseStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>>;
+    setReleaseStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
     fetchReleaseStages: () => Promise<void>;
+    // UI Rollout Stages
+    uiRolloutStages: Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>;
+    uiRolloutStagesLoading: boolean;
+    setUiRolloutStages: React.Dispatch<React.SetStateAction<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>>;
+    fetchUiRolloutStages: () => Promise<void>;
     
     // Email Templates
     emailTemplates: {
@@ -130,8 +135,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [syncing, setSyncing] = useState(false);
     const [syncResult, setSyncResult] = useState<{ success: boolean; message: string; synced: number; failed: number; total: number; errors?: Array<{ aha_id: string; name: string; error: string }> } | null>(null);
     
-    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null }>>([]);
+    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
     const [releaseStagesLoading, setReleaseStagesLoading] = useState(false);
+    const [uiRolloutStages, setUiRolloutStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; details: string | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [uiRolloutStagesLoading, setUiRolloutStagesLoading] = useState(false);
 
     const [launchCriteria, setLaunchCriteria] = useState<any[]>([]);
     const [launchCriteriaLoading, setLaunchCriteriaLoading] = useState(false);
@@ -342,12 +349,24 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const fetchReleaseStages = async () => {
         setReleaseStagesLoading(true);
         try {
-            const data = await getReleaseStages();
+            const data = await getReleaseStages('release_schedule');
             setReleaseStages(data.stages || []);
         } catch (error: any) {
             console.error("Failed to fetch release stages:", error);
         } finally {
             setReleaseStagesLoading(false);
+        }
+    };
+
+    const fetchUiRolloutStages = async () => {
+        setUiRolloutStagesLoading(true);
+        try {
+            const data = await getReleaseStages('ui_rollout');
+            setUiRolloutStages(data.stages || []);
+        } catch (error: any) {
+            console.error("Failed to fetch UI rollout stages:", error);
+        } finally {
+            setUiRolloutStagesLoading(false);
         }
     };
     
@@ -416,6 +435,7 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
             await fetchLaunchReleaseDates();
             await new Promise(resolve => setTimeout(resolve, 300));
             await fetchReleaseStages();
+            await fetchUiRolloutStages();
         }, 1500);
         
         setTimeout(async () => {
@@ -502,6 +522,10 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 releaseStagesLoading,
                 setReleaseStages,
                 fetchReleaseStages,
+                uiRolloutStages,
+                uiRolloutStagesLoading,
+                setUiRolloutStages,
+                fetchUiRolloutStages,
                 launchCriteria,
                 launchCriteriaLoading,
                 fetchLaunchCriteria,

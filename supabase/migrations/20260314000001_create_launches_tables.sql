@@ -229,6 +229,27 @@ CREATE POLICY "lcs_delete_app_user" ON public.launch_criterion_status
   );
 
 -- =============================================================================
+-- 5b. Backfill columns if `launch` table was created by an earlier migration
+--     without all the columns this migration expects.
+-- =============================================================================
+
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='launch' AND column_name='archived') THEN
+    ALTER TABLE public.launch ADD COLUMN archived BOOLEAN NOT NULL DEFAULT false;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='launch' AND column_name='tier') THEN
+    ALTER TABLE public.launch ADD COLUMN tier TEXT CHECK (tier IN ('TIER_1', 'TIER_2', 'TIER_3'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='launch' AND column_name='readiness_pct') THEN
+    ALTER TABLE public.launch ADD COLUMN readiness_pct NUMERIC NOT NULL DEFAULT 0;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='launch' AND column_name='schedule_id') THEN
+    ALTER TABLE public.launch ADD COLUMN schedule_id BIGINT REFERENCES public.release_schedule(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+-- =============================================================================
 -- 6. Indexes for performance
 -- =============================================================================
 

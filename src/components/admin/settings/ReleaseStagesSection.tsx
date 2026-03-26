@@ -6,12 +6,17 @@ import { RichText } from "@/components/admin/RichText";
 import { PurpleLoader } from '../../PurpleLoader';
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 
+export type ReleaseStageLevelDurations = Record<string, { min_days: number; max_days: number }>;
+
 export type ReleaseStage = {
   id: number;
   name: string;
   sort_order: number;
   duration_days: number | null;
   details: string | null;
+  scope?: 'release_schedule' | 'ui_rollout';
+  level_durations?: ReleaseStageLevelDurations | null;
+  is_gate?: boolean;
 };
 
 type Props = {
@@ -20,6 +25,10 @@ type Props = {
   draggedStageId: number | null;
   setDraggedStageId: (id: number | null) => void;
   onReorder: (draggedId: number, targetId: number, targetIndex: number) => Promise<void> | void;
+  /** Optional section title (e.g. "Release Schedule Stages") */
+  sectionTitle?: string;
+  /** Optional section subtitle */
+  sectionSubtitle?: string;
   // editing state from parent
   editingOpen: boolean;
   setEditingOpen: (open: boolean) => void;
@@ -42,6 +51,8 @@ export default function ReleaseStagesSection({
   draggedStageId,
   setDraggedStageId,
   onReorder,
+  sectionTitle = "Launch Stages",
+  sectionSubtitle = "Configure launch stages and their durations",
   editingOpen,
   setEditingOpen,
   editingId,
@@ -67,8 +78,8 @@ export default function ReleaseStagesSection({
               </svg>
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Release Stages</h2>
-              <p className="text-sm text-gray-500">Configure release stages and their durations</p>
+              <h2 className="text-lg font-semibold text-gray-900">{sectionTitle}</h2>
+              <p className="text-sm text-gray-500">{sectionSubtitle}</p>
             </div>
           </div>
           {!loading && stages.length > 0 && (

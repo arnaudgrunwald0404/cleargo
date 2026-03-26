@@ -495,6 +495,9 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **Overdue Indicators**: Highlight overdue items
 - **Status Summary**: Count of items by status
 - **Quick Actions**: Direct links to update status
+- **Read-only status**: In read-only contexts, the GO / CONDITIONAL / NO_GO traffic lights stay visible but are not clickable (same component as editable mode, with interaction disabled).
+- **Greeting when viewing as**: If an admin uses view-as, the page greeting prefers the viewed user’s first name from their display name when available.
+- **Page options menu**: The options menu stays open when clicking inside it (does not close on outside click) so nested actions remain usable.
 
 #### 6.2 Personal Metrics
 - **Pending Items**: Count of items requiring attention
@@ -706,14 +709,22 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **Stage-Based Criteria**: Link criteria to specific stages
 - **Rating Timing**: Link criteria rating timing to stages
 
-#### 11.2 Launch Stage Phases
-The system uses the following launch stage phases:
-- **GTM Access** (14 days): Features available and functioning properly. Go/No-Go decision typically happens during this phase.
-- **Internal Readiness** (21 days): Product Education documentation and training ready for internal teams.
-- **Cohort 1 Live** (28 days): First batch of customers are live with the new feature.
-- **GA / Cohort 2 Live** (ongoing): All customers are live with the new feature.
+#### 11.2 Two-Scope Stage Model
+Launch stages are scoped so that **Release Schedule** (legacy) and **UI Rollout** (UI Framework epics) each have their own independently managed stage set. Each stage has a `stage_type`: **phase** (duration bar on the timeline) or **milestone** (diamond marker at a point in time).
 
-#### 11.3 Date Calculations
+- **Release Schedule** (`scope = 'release_schedule'`): Used for epics that follow the legacy release calendar. Milestones: Product Definition Complete (left edge), Cohort 1 Live (release point), GA / Cohort 2 (end). Phases: GTM Access and Prep, Internal Readiness. One Go/No-Go checkpoint (in GTM Access and Prep).
+- **UI Rollout** (`scope = 'ui_rollout'`): Used for epics with ClearGO Candidate = "Yes - UI Framework". Phases: UX Preview, GTM Access and Prep, Internal Readiness. Milestones: Cohort 1 (release point), Cohort 2 / GA (end). Durations can vary by UI/UX Impact Level (1–3); multiple Go/No-Go gates (e.g. after UX Preview and after GTM Access and Prep) are supported via the `is_gate` flag.
+
+The epic detail timeline renders phases as colored duration bars and milestones as diamond markers; a lighter "Cohort 1 Feedback" bar spans the period between Cohort 1 release and GA. Criterion due dates use the appropriate stage set and, for UI Rollout, level-aware durations when the epic has a UI/UX Impact level. Matrix **stage boundary** dates (criteria with `rating_timing` tied to a stage) use the **same** walk as the timeline: **Release Schedule** epics use **calendar** days with pre-launch = sum of stage durations **before** Cohort 1 only; **UI Rollout** epics use **business** days and level-aware durations from the anchor date.
+
+#### 11.3 Launch Stage Phases (Release Schedule)
+- **Product Definition Complete** (31 days, milestone): Product definition ready for GTM planning; shown as a diamond at the left edge of the timeline.
+- **GTM Access and Prep** (14 days, phase): Features available and functioning properly. Go/No-Go decision typically happens during this phase.
+- **Internal Readiness** (21 days, phase): Product Education documentation and training ready for internal teams.
+- **Cohort 1 Live** (28 days, milestone): First batch of customers are live; shown as a diamond at the release point. The 28-day period is visualized as a lighter "Cohort 1 Feedback" bar on the timeline.
+- **GA / Cohort 2 Live** (ongoing, milestone): All customers are live; shown as a diamond at the end of the timeline.
+
+#### 11.4 Date Calculations
 - **Target Release Date**: Represents the beginning of Cohort 1 Live phase
 - **Go/No-Go Date Calculation**: Calculated by subtracting only the pre-launch phases (GTM Access + Internal Readiness = 35 days) from the target release date. The calculation excludes Cohort 1 Live duration since the target release date already represents the start of that phase.
 - **Default Fallback**: If launch stages are not configured, defaults to 35 days before target release date
@@ -1062,10 +1073,16 @@ The system uses the following launch stage phases:
 
 #### Launch Stage
 - `id` (Integer, Primary Key, Serial)
-- `name` (Text, Unique)
-- `description` (Text)
-- `sort_order` (Integer)
+- `name` (Text)
+- `sort_order` (Integer; unique per scope)
+- `duration_days` (Integer, Nullable)
+- `details` (Text, Nullable)
+- `scope` (Text, Default: 'release_schedule') — `release_schedule` or `ui_rollout`
+- `level_durations` (JSONB, Nullable) — For UI Rollout: per-level min/max days, e.g. `{"1": {"min_days": 56, "max_days": 70}, "2": {...}, "3": {...}}`
+- `is_gate` (Boolean, Default: false) — When true, stage boundary is a Go/No-Go checkpoint on the timeline
+- `stage_type` (Text, Nullable) — `phase` (duration bar) or `milestone` (point-in-time diamond on the timeline)
 - `created_at` (Timestamp)
+- `updated_at` (Timestamp)
 
 #### Meeting Epic Junction
 - `id` (UUID, Primary Key)

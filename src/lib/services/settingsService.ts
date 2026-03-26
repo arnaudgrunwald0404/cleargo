@@ -340,15 +340,26 @@ export async function patchPermissions(payload: { rules: Record<string, string[]
   return res.json().catch(() => ({}));
 }
 
-export async function getReleaseStages() {
-  const res = await fetchWithRateLimit("/api/release-stages", {
+export type ReleaseStagesScope = 'release_schedule' | 'ui_rollout';
+
+export async function getReleaseStages(scope?: ReleaseStagesScope) {
+  const url = scope ? `/api/release-stages?scope=${encodeURIComponent(scope)}` : "/api/release-stages";
+  const res = await fetchWithRateLimit(url, {
     maxRetries: 1,
   });
   if (!res.ok) return { stages: [] };
   return res.json();
 }
 
-export async function addReleaseStage(payload: { name: string; sort_order: number; duration_days: number | null; details: string | null }) {
+export async function addReleaseStage(payload: {
+  name: string;
+  sort_order: number;
+  duration_days: number | null;
+  details: string | null;
+  scope?: ReleaseStagesScope;
+  level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+  is_gate?: boolean;
+}) {
   const res = await fetch("/api/release-stages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -358,7 +369,16 @@ export async function addReleaseStage(payload: { name: string; sort_order: numbe
   return res.json();
 }
 
-export async function updateReleaseStage(payload: { id: number; name?: string; sort_order?: number; duration_days?: number | null; details?: string | null }) {
+export async function updateReleaseStage(payload: {
+  id: number;
+  name?: string;
+  sort_order?: number;
+  duration_days?: number | null;
+  details?: string | null;
+  scope?: ReleaseStagesScope;
+  level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+  is_gate?: boolean;
+}) {
   const res = await fetch("/api/release-stages", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

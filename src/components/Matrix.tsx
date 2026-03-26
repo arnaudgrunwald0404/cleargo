@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, memo } from "react";
-import { Select, Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
+import { Avatar, Modal, Button, Group, Tooltip } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { IconChevronDown, IconChevronRight, IconPencil, IconPaperclip, IconMessageCircle, IconArrowsRightLeft, IconLink, IconDatabase, IconFileText } from "@tabler/icons-react";
 import { UserDisplay } from "./UserDisplay";
@@ -18,6 +18,8 @@ type MatrixItem = {
     status: string;
     current_status_notes?: string;
     condition_due_date?: string | null;
+    /** Stage name (e.g. "UX Preview") this criterion is due by; aligns with timeline phase. */
+    due_by_stage_name?: string | null;
     last_updated_at?: string | null;
     approverEmail?: string | null;
     approverInfo?: {
@@ -55,6 +57,19 @@ type MatrixItem = {
         data_sources?: Array<{ type: string; value: string; label?: string }> | null;
     };
 };
+
+/** Timeline order when grouping by phase (e.g. with My Tasks). Phases not in this list sort after. */
+const PHASE_ORDER = [
+    'Product Definition Complete',
+    'UX Preview',
+    'GTM Access and Prep',
+    'Internal Readiness',
+    'Cohort 1',
+    'Cohort 1 Live',
+    'Cohort 2',
+    'Cohort 2 / GA',
+    'GA · Cohort 2',
+];
 
 // Traffic light (Go/No-Go score: GO / CONDITIONAL / NO_GO / NOT_APPLICABLE)
 interface TrafficLightProps {
@@ -236,9 +251,11 @@ type Props = {
     onUpdate: () => void;
     epic?: { aha_fields?: Record<string, any> | null; jira_epic_key?: string | null } | null;
     showNotApplicable?: boolean;
+    /** When true (e.g. epic page "My Tasks" is on), group criteria by release phase in chronological order, then by strategy category. */
+    groupByPhase?: boolean;
 };
 
-function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false }: Props) {
+function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotApplicable = false, groupByPhase = false }: Props) {
     // Helper function to check if a data source has data for this epic
     const hasDataSourceData = (item: MatrixItem, source: { type: string; value: string }, index: number): boolean => {
         if (source.type === 'success_metrics_defined') {
@@ -568,7 +585,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             return new Set();
         }
     );
-    
+
     // Track which items are shown within each category
     const [shownItems, setShownItems] = useState<Set<string>>(() => {
         const shown = new Set<string>();
@@ -587,16 +604,16 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             );
             
             if (hasSignoff) {
-                // Show signoff items, hide others
+                // Show signoff items and all Gates
                 categoryItems.forEach(item => {
-                    if (item.criterion.label?.toLowerCase().includes('signoff')) {
+                    if (item.criterion.label?.toLowerCase().includes('signoff') || item.criterion.gate) {
                         shown.add(item.id);
                     }
                 });
             } else {
-                // Show required items, hide non-required
+                // Show required items and all Gate criteria
                 categoryItems.forEach(item => {
-                    if (!item.notRequired) {
+                    if (!item.notRequired || item.criterion.gate) {
                         shown.add(item.id);
                     }
                 });
@@ -625,11 +642,11 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             );
             if (hasSignoff) {
                 categoryItems.forEach(item => {
-                    if (item.criterion.label?.toLowerCase().includes('signoff')) nextShown.add(item.id);
+                    if (item.criterion.label?.toLowerCase().includes('signoff') || item.criterion.gate) nextShown.add(item.id);
                 });
             } else {
                 categoryItems.forEach(item => {
-                    if (!item.notRequired) nextShown.add(item.id);
+                    if (!item.notRequired || item.criterion.gate) nextShown.add(item.id);
                 });
             }
         });
@@ -901,6 +918,26 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
         const orderB = categoryOrder.get(b) ?? Infinity;
         return orderA - orderB;
     });
+
+    // Phase grouping (My Tasks): phase -> category -> items (phase order from timeline)
+    const phaseOrderMap = new Map(PHASE_ORDER.map((name, i) => [name, i]));
+    const phaseToCategoriesData = (() => {
+        const phaseToCat: Map<string, Record<string, MatrixItem[]>> = new Map();
+        for (const item of sortedItems) {
+            const phase = (item.due_by_stage_name?.trim() || null) ?? 'Other';
+            const cat = item.criterion.category || 'OTHER';
+            if (!phaseToCat.has(phase)) phaseToCat.set(phase, {});
+            const catMap = phaseToCat.get(phase)!;
+            if (!catMap[cat]) catMap[cat] = [];
+            catMap[cat].push(item);
+        }
+        const phases = Array.from(phaseToCat.keys()).sort((a, b) => {
+            const orderA = phaseOrderMap.get(a) ?? PHASE_ORDER.length;
+            const orderB = phaseOrderMap.get(b) ?? PHASE_ORDER.length;
+            return orderA - orderB;
+        });
+        return { phases, phaseToCat };
+    })();
 
     async function handleStatusChange(id: string, newStatus: string) {
         if (!newStatus) return; // Don't proceed if no status selected
@@ -1378,9 +1415,224 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
     const isCollapsed = (cat: string) => collapsedCategories.has(cat);
     const hasOverall = (cat: string) => categoryOverallItems[cat] !== null;
 
+    const phaseCollapseKey = (phase: string) => `phase:${phase}`;
+    const phaseCategoryCollapseKey = (phase: string, cat: string) => `phase:${phase}|${cat}`;
+
     return (
         <>
-            {categories.map((cat, index) => {
+            {groupByPhase ? (
+                phaseToCategoriesData.phases.map((phase) => {
+                    const phaseKey = phaseCollapseKey(phase);
+                    const phaseCollapsed = isCollapsed(phaseKey);
+                    const catMap = phaseToCategoriesData.phaseToCat.get(phase)!;
+                    const phaseCategories = Object.keys(catMap).sort((a, b) => {
+                        const orderA = categoryOrder.get(a) ?? Infinity;
+                        const orderB = categoryOrder.get(b) ?? Infinity;
+                        return orderA - orderB;
+                    });
+                    // Phase end date from any item in this phase (same as Release Timeline tooltips: short date)
+                    const firstItemInPhase = phaseCategories.length > 0 ? catMap[phaseCategories[0]]?.[0] : null;
+                    const phaseEndDateStr = firstItemInPhase?.condition_due_date
+                        ? (() => {
+                            try {
+                                const d = new Date(firstItemInPhase.condition_due_date);
+                                return isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+                            } catch {
+                                return null;
+                            }
+                        })()
+                        : null;
+                    return (
+                        <div key={phase}>
+                            <div
+                                className="flex items-center gap-2 px-3 md:px-6 py-2.5 cursor-pointer select-none hover:bg-gray-50 transition-colors border-b border-gray-100"
+                                onClick={() => toggleCategory(phaseKey)}
+                            >
+                                <span className="text-gray-500">
+                                    {phaseCollapsed ? <IconChevronRight size={20} /> : <IconChevronDown size={20} />}
+                                </span>
+                                <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={2}>
+                                    {phase}
+                                    {phaseEndDateStr && <span className="font-normal text-gray-500 ml-1.5">(by {phaseEndDateStr})</span>}
+                                </span>
+                            </div>
+                            {!phaseCollapsed && phaseCategories.map((cat) => {
+                                const phaseCatKey = phaseCategoryCollapseKey(phase, cat);
+                                const itemsInPhaseCat = catMap[cat];
+                                const allItems = itemsInPhaseCat;
+                                const collapsed = isCollapsed(phaseCatKey);
+                                const showOverall = false;
+                                const hasSignoff = allItems.some(item => item.criterion.label?.toLowerCase().includes('signoff'));
+                                let primaryItems: MatrixItem[] = [];
+                                let secondaryItems: MatrixItem[] = [];
+                                if (hasSignoff) {
+                                    primaryItems = allItems.filter(item => item.criterion.label?.toLowerCase().includes('signoff') || !!item.criterion.gate);
+                                    secondaryItems = allItems.filter(item => !item.criterion.label?.toLowerCase().includes('signoff') && !item.criterion.gate);
+                                } else {
+                                    primaryItems = allItems.filter(item => !item.notRequired || !!item.criterion.gate);
+                                    secondaryItems = allItems.filter(item => item.notRequired && !item.criterion.gate);
+                                }
+                                const visibleItems = allItems.filter(item => shownItems.has(item.id));
+                                const hiddenItems = secondaryItems.filter(item => !shownItems.has(item.id));
+                                const hiddenCount = hiddenItems.length;
+                                return (
+                                    <div key={phaseCatKey}>
+                                        <div className="flex items-center gap-2 pl-6 md:pl-10 pr-3 md:pr-6 py-2 cursor-pointer select-none hover:bg-gray-50 transition-colors" onClick={() => toggleCategory(phaseCatKey)}>
+                                            <span className="text-gray-500">{collapsed ? <IconChevronRight size={18} /> : <IconChevronDown size={18} />}</span>
+                                            <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={3}>{cat}</span>
+                                        </div>
+                                        {!collapsed && (
+                                            <div className="pl-3 md:pl-6 pr-3 md:pr-6 pb-6">
+                                                <div className="rounded-lg overflow-x-auto" style={{ border: '1px solid #E5E7EB', backgroundColor: '#FFFFFF', boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)' }}>
+                                                    <div className="overflow-y-visible min-w-0">
+                                                        <table className="min-w-full table-fixed w-full" style={{ borderCollapse: 'collapse', minWidth: '700px' }}>
+                                                            <colgroup>
+                                                                <col style={{ width: 'auto' }} />
+                                                                <col style={{ width: showNotApplicable ? '148px' : '120px' }} />
+                                                                <col style={{ width: '150px' }} />
+                                                                <col style={{ width: '120px' }} />
+                                                                <col style={{ width: '100px' }} />
+                                                                <col style={{ width: 'auto' }} />
+                                                                <col style={{ width: '40px' }} />
+                                                            </colgroup>
+                                                            <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
+                                                                <tr>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
+                                                                    <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Comments</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '40px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="bg-white" style={{ borderTop: '1px solid #E5E7EB' }}>
+                                                                {allItems.map((item, index) => {
+                                                                    if (!shownItems.has(item.id)) return null;
+                                                                    return (
+                                                                        <tr key={item.id} className={`!bg-white hover:bg-gray-50 transition-colors ${item.notRequired ? 'opacity-60' : ''}`} style={{ backgroundColor: '#FFFFFF', borderBottom: '1px solid #E5E7EB' }}>
+                                                                            <td className="px-4 py-3">
+                                                                                <div className={`font-medium flex items-center gap-2 text-sm ${item.notRequired ? 'text-gray-500' : 'text-gray-900'}`}>
+                                                                                    <button onClick={() => handleOpenComments(item)} className="flex items-center gap-1.5 hover:text-blue-600 transition-colors cursor-pointer text-left">
+                                                                                        {item.criterion.label}
+                                                                                        {item.criterion.gate && (
+                                                                                            <Tooltip label="This is a Gate criterion — it must be resolved before the epic can receive a Go decision. A single unresolved Gate blocks the entire launch." multiline w={280} withArrow position="top">
+                                                                                                <span className="bg-red-100 text-red-800 text-xs px-2 py-0.5 rounded-full cursor-default">GATE</span>
+                                                                                            </Tooltip>
+                                                                                        )}
+                                                                                    </button>
+                                                                                </div>
+                                                                                {item.criterion.description && <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px' }}>
+                                                                                {item.notRequired ? <div className="text-xs font-medium text-gray-500 text-center">Not required</div> : (
+                                                                                    <div className="flex justify-center">
+                                                                                        <TrafficLight currentStatus={item.status} onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)} disabled={savingItems.has(item.id)} definitions={{ go: item.criterion.status_definition_go, conditional: item.criterion.status_definition_conditional, no_go: item.criterion.status_definition_no_go }} showNotApplicable={showNotApplicable && !item.criterion.gate} />
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>
+                                                                                {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
+                                                                                    <div className="flex items-center gap-2 min-w-0">
+                                                                                        <div style={{ position: 'relative', display: 'inline-flex' }} onMouseEnter={() => setHoveredAvatarId(item.id)} onMouseLeave={() => setHoveredAvatarId(null)}>
+                                                                                            <Avatar src={item.approverInfo?.avatar_url} alt={item.approverEmail} radius="xl" size={24} color={getAvatarColor(item.approverEmail)} className="flex-shrink-0" style={{ opacity: hoveredAvatarId === item.id ? 0 : 1 }} />
+                                                                                            {(() => {
+                                                                                                const hasPermission = canRolesPerform(currentUserRoles, 'criteria.delegate');
+                                                                                                return hasPermission && (
+                                                                                                    <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                                                        <button type="button" className="flex-shrink-0 absolute" onClick={(e) => { e.stopPropagation(); handleOpenDelegation(item); }} style={{ top: 0, left: 0, width: 24, height: 24, borderRadius: '50%', background: '#f3f4f6', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: hoveredAvatarId === item.id ? 1 : 0, transition: 'opacity 0.2s', pointerEvents: hoveredAvatarId === item.id ? 'auto' : 'none' }} title="Delegate this task">
+                                                                                                            <IconArrowsRightLeft size={14} className="text-gray-600" />
+                                                                                                        </button>
+                                                                                                    </Tooltip>
+                                                                                                );
+                                                                                            })()}
+                                                                                        </div>
+                                                                                        <span className="text-sm truncate min-w-0 flex-1 flex items-center min-h-[24px]">{getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}</span>
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <span className="text-sm text-gray-500">-</span>
+                                                                                        {canRolesPerform(currentUserRoles, 'criteria.delegate') && (
+                                                                                            <Tooltip label="Delegate this task" position="top" withArrow>
+                                                                                                <button type="button" className="p-1 rounded hover:bg-gray-100 text-gray-600" onClick={(e) => { e.stopPropagation(); handleOpenDelegation(item); }}><IconArrowsRightLeft size={16} className="text-gray-600" /></button>
+                                                                                            </Tooltip>
+                                                                                        )}
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ width: '120px' }}>
+                                                                                {(() => {
+                                                                                    const dueDateStr = item.condition_due_date;
+                                                                                    const dueByStage = item.due_by_stage_name?.trim() || null;
+                                                                                    if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                    }
+                                                                                    try {
+                                                                                        const dueDate = new Date(dueDateStr);
+                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        const today = new Date(); today.setHours(0, 0, 0, 0); dueDate.setHours(0, 0, 0, 0);
+                                                                                        const isOverdue = dueDate < today;
+                                                                                        const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'}>{dueDate.toLocaleDateString()}</span>;
+                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">{content}</Tooltip> : content;
+                                                                                    } catch {
+                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                    }
+                                                                                })()}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm cursor-pointer" style={{ width: '100px' }} onClick={() => handleOpenComments(item)}>
+                                                                                {(!item.criterion.data_sources || item.criterion.data_sources.length === 0) ? <span className="text-gray-400">-</span> : (
+                                                                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                        {item.criterion.data_sources.map((source, idx) => {
+                                                                                            const hasData = hasDataSourceData(item, source, idx);
+                                                                                            const IconComponent = getDataSourceIcon(source.type);
+                                                                                            const ticketCount = jiraTicketCounts[`${item.id}-${idx}`];
+                                                                                            return (
+                                                                                                <Tooltip key={idx} label={getDataSourceTooltip(source, ticketCount)} withArrow position="bottom">
+                                                                                                    <span className={hasData ? 'text-gray-700' : 'text-gray-300'}>{IconComponent ? <IconComponent size={16} /> : '📊'}</span>
+                                                                                                </Tooltip>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-sm cursor-pointer" style={{ width: '100px' }} onClick={() => handleOpenComments(item)}>
+                                                                                <span className="text-gray-500 hover:text-blue-600">Click to add comment</span>
+                                                                                <div className="inline-flex items-center gap-1 ml-2">
+                                                                                    {item.commentCount != null && item.commentCount > 0 && <IconMessageCircle size={14} className="text-blue-600" />}
+                                                                                    {item.attachmentCount != null && item.attachmentCount > 0 && <IconPaperclip size={14} className="text-gray-500" />}
+                                                                                    <IconChevronRight size={16} className="text-gray-400" />
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-4 py-3 text-center">
+                                                                                <button onClick={() => handleOpenComments(item)} className="text-gray-400 hover:text-gray-600 transition-colors" title="Open details"><IconChevronRight size={20} /></button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                                {hiddenCount > 0 && (
+                                                    <button type="button" onClick={() => toggleShowCollapsedItems(hiddenItems, false)} className="mt-2 text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                                        Show {hiddenCount} optional item{hiddenCount !== 1 ? 's' : ''}
+                                                    </button>
+                                                )}
+                                                {hiddenCount === 0 && secondaryItems.length > 0 && (
+                                                    <button type="button" onClick={() => toggleShowCollapsedItems(secondaryItems, true)} className="mt-2 text-sm text-gray-500 hover:text-gray-700">
+                                                        Hide optional items
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })
+            ) : null}
+            {!groupByPhase ? categories.map((cat, index) => {
                 const overallItem = categoryOverallItems[cat];
                 const regularItems = categoryRegularItems[cat];
                 const allItems = overallItem 
@@ -1400,17 +1652,17 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                 let secondaryItems: MatrixItem[] = [];
                 
                 if (hasSignoff) {
-                    // Show signoff items, hide others
-                    primaryItems = allItems.filter(item => 
-                        item.criterion.label?.toLowerCase().includes('signoff')
+                    // Show signoff items, hide others (but Gates stay primary)
+                    primaryItems = allItems.filter(item =>
+                        item.criterion.label?.toLowerCase().includes('signoff') || !!item.criterion.gate
                     );
-                    secondaryItems = allItems.filter(item => 
-                        !item.criterion.label?.toLowerCase().includes('signoff')
+                    secondaryItems = allItems.filter(item =>
+                        !item.criterion.label?.toLowerCase().includes('signoff') && !item.criterion.gate
                     );
                 } else {
-                    // Show required items, hide non-required
-                    primaryItems = allItems.filter(item => !item.notRequired);
-                    secondaryItems = allItems.filter(item => item.notRequired);
+                    // Show required items and all Gate criteria; hide non-required non-Gate
+                    primaryItems = allItems.filter(item => !item.notRequired || !!item.criterion.gate);
+                    secondaryItems = allItems.filter(item => item.notRequired && !item.criterion.gate);
                 }
                 
                 // Filter items based on visibility
@@ -1431,7 +1683,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     <IconChevronDown size={20} />
                                 )}
                             </span>
-                            <h3 className="text-sm font-semibold text-gray-900">{cat}</h3>
+                            <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={3}>{cat}</span>
                         </div>
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">
@@ -1451,7 +1703,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                 <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                     <tr>
                                         <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
-                                        <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
@@ -1509,24 +1761,26 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
+                                        <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
                                             {item.notRequired ? (
-                                                <div className="text-xs font-medium text-gray-500">Not required</div>
+                                                <div className="text-xs font-medium text-gray-500 text-center">Not required</div>
                                             ) : (
-                                                <TrafficLight
-                                                    currentStatus={item.status}
-                                                    onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
-                                                    disabled={savingItems.has(item.id)}
-                                                    definitions={{
-                                                        go: item.criterion.status_definition_go,
-                                                        conditional: item.criterion.status_definition_conditional,
-                                                        no_go: item.criterion.status_definition_no_go,
-                                                    }}
-                                                    showNotApplicable={showNotApplicable && !item.criterion.gate}
-                                                />
+                                                <div className="flex justify-center">
+                                                    <TrafficLight
+                                                        currentStatus={item.status}
+                                                        onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
+                                                        disabled={savingItems.has(item.id)}
+                                                        definitions={{
+                                                            go: item.criterion.status_definition_go,
+                                                            conditional: item.criterion.status_definition_conditional,
+                                                            no_go: item.criterion.status_definition_no_go,
+                                                        }}
+                                                        showNotApplicable={showNotApplicable && !item.criterion.gate}
+                                                    />
+                                                </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm text-gray-700" style={{ width: '150px' }}>
+                                        <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>
                                             {item.approverEmail && item.approverEmail !== "[name of pod's product manager]" && item.approverEmail.includes("@") ? (
                                                 <div 
                                                     className="flex items-center gap-2 min-w-0"
@@ -1593,7 +1847,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             );
                                                         })()}
                                                     </div>
-                                                    <span className="text-sm truncate min-w-0 flex-1">
+                                                    <span className="text-sm truncate min-w-0 flex-1 flex items-center min-h-[24px]">
                                                         {getDisplayName(item.approverInfo?.first_name, item.approverInfo?.last_name, item.approverEmail)}
                                                     </span>
                                                 </div>
@@ -1623,16 +1877,25 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                         <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ width: '120px' }}>
                                             {(() => {
                                                 const dueDateStr = item.condition_due_date;
+                                                const dueByStage = item.due_by_stage_name?.trim() || null;
                                                 // Check for null, undefined, or empty string
                                                 if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
-                                                    return '-';
+                                                    return dueByStage ? (
+                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                            <span className="text-gray-500">{dueByStage}</span>
+                                                        </Tooltip>
+                                                    ) : '-';
                                                 }
                                                 
                                                 try {
                                                     const dueDate = new Date(dueDateStr);
                                                     // Check if date is valid
                                                     if (isNaN(dueDate.getTime())) {
-                                                        return '-';
+                                                        return dueByStage ? (
+                                                            <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                                <span className="text-gray-500">{dueByStage}</span>
+                                                            </Tooltip>
+                                                        ) : '-';
                                                     }
                                                     
                                                     const today = new Date();
@@ -1640,13 +1903,22 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                     dueDate.setHours(0, 0, 0, 0);
                                                     const isOverdue = dueDate < today;
                                                     
-                                                    return (
-                                                        <div className={`${isOverdue ? 'text-red-600' : 'text-gray-700'}`}>
-                                                            <span>{dueDate.toLocaleDateString()}</span>
-                                                        </div>
+                                                    const content = (
+                                                        <span className={isOverdue ? 'text-red-600' : 'text-gray-700'}>
+                                                            {dueDate.toLocaleDateString()}
+                                                        </span>
                                                     );
+                                                    return dueByStage ? (
+                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                            {content}
+                                                        </Tooltip>
+                                                    ) : content;
                                                 } catch (e) {
-                                                    return '-';
+                                                    return dueByStage ? (
+                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                            <span className="text-gray-500">{dueByStage}</span>
+                                                        </Tooltip>
+                                                    ) : '-';
                                                 }
                                             })()}
                                         </td>
@@ -1870,14 +2142,15 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     // Render due date
                                     const renderDueDate = () => {
                                         const dueDateStr = item.condition_due_date;
+                                        const dueByStage = item.due_by_stage_name?.trim() || null;
                                         if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
-                                            return '-';
+                                            return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
                                         }
                                         
                                         try {
                                             const dueDate = new Date(dueDateStr);
                                             if (isNaN(dueDate.getTime())) {
-                                                return '-';
+                                                return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
                                             }
                                             
                                             const today = new Date();
@@ -1886,12 +2159,12 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                             const isOverdue = dueDate < today;
                                             
                                             return (
-                                                <div className={`${isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}`}>
-                                                    <span>{dueDate.toLocaleDateString()}</span>
-                                                </div>
+                                                <span className={isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}>
+                                                    {dueDate.toLocaleDateString()}
+                                                </span>
                                             );
                                         } catch (e) {
-                                            return '-';
+                                            return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
                                         }
                                     };
                                     
@@ -2179,7 +2452,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                         )}
                     </div>
                 );
-            })}
+            }) : null}
 
             {/* File Attachment Modal */}
             {selectedItemForAttachment && (
@@ -2242,6 +2515,7 @@ export default memo(Matrix, (prevProps, nextProps) => {
         prevProps.epicName !== nextProps.epicName ||
         prevProps.epicStatus !== nextProps.epicStatus ||
         prevProps.showNotApplicable !== nextProps.showNotApplicable ||
+        prevProps.groupByPhase !== nextProps.groupByPhase ||
         prevProps.onUpdate !== nextProps.onUpdate) {
         return false; // Props changed, need to re-render
     }
