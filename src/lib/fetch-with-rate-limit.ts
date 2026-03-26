@@ -13,7 +13,7 @@ interface FetchWithRateLimitOptions extends RequestInit {
 
 // Shared state to coordinate retries across parallel requests
 let globalRateLimitResetTime: number | null = null;
-let retryQueue: Array<() => Promise<void>> = [];
+const retryQueue: Array<() => Promise<void>> = [];
 
 // Request throttling: max concurrent requests
 const MAX_CONCURRENT_REQUESTS = 5;

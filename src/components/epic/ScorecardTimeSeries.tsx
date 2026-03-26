@@ -111,7 +111,7 @@ export function ScorecardTimeSeries({ epicId }: Props) {
         setEpic({ id: epicData.id, target_launch_date: epicData.target_launch_date, status: epicData.status });
         setScorecards(Array.isArray(scData) ? scData : []);
       } catch (e) {
-        // eslint-disable-next-line no-console
+         
         console.error(e);
       } finally {
         if (mounted) setLoading(false);

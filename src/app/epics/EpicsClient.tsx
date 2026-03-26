@@ -183,24 +183,36 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
     useEffect(() => {
         let cancelled = false;
-        const supabase = createClient();
-        const select = 'id, name, sort_order, duration_days, scope, level_durations, is_gate, stage_type';
-        void Promise.all([
-            supabase.from('release_stages').select(select).eq('scope', 'release_schedule').order('sort_order', { ascending: true }),
-            supabase.from('release_stages').select(select).eq('scope', 'ui_rollout').order('sort_order', { ascending: true }),
-        ]).then(([relRes, uiRes]) => {
-            if (cancelled) return;
-            if (relRes.error) {
-                console.error('[EpicsClient] release_stages (release_schedule):', relRes.error);
-            } else if (relRes.data && relRes.data.length > 0) {
-                setReleaseScheduleStagesForTimeline(relRes.data);
+        void (async () => {
+            try {
+                const res = await fetch('/api/release-stages', { credentials: 'include' });
+                if (!res.ok || cancelled) return;
+                const json = await res.json();
+                const rows = (json?.stages ?? []) as DbReleaseStageRow[];
+                if (cancelled || !Array.isArray(rows)) return;
+
+                const hasScope = rows.some((r) => r.scope != null && String(r.scope).trim() !== '');
+                const scheduleRows = hasScope
+                    ? rows.filter((r) => r.scope === 'release_schedule')
+                    : rows;
+                const uiRows = hasScope ? rows.filter((r) => r.scope === 'ui_rollout') : [];
+
+                if (scheduleRows.length > 0) {
+                    setReleaseScheduleStagesForTimeline(
+                        [...scheduleRows].sort((a, b) => a.sort_order - b.sort_order),
+                    );
+                }
+                if (uiRows.length > 0) {
+                    setUiRolloutStagesForTimeline(
+                        [...uiRows].sort((a, b) => a.sort_order - b.sort_order),
+                    );
+                }
+            } catch (e) {
+                if (process.env.NODE_ENV === 'development') {
+                    console.warn('[EpicsClient] release_stages fetch failed:', e);
+                }
             }
-            if (uiRes.error) {
-                console.error('[EpicsClient] release_stages (ui_rollout):', uiRes.error);
-            } else if (uiRes.data && uiRes.data.length > 0) {
-                setUiRolloutStagesForTimeline(uiRes.data);
-            }
-        });
+        })();
         return () => {
             cancelled = true;
         };
@@ -568,7 +580,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         const recentFour = past.slice(-4);
         if (releasesView === 'upcoming') return upcoming;
         if (releasesView === 'recent') return recentFour;
-        return [...recentFour.reverse(), ...upcoming];
+        // All: chronological order (past then upcoming). Do not reverse past — that broke the
+        // timeline (e.g. Mar, Feb, Jan then Apr, May).
+        return [...recentFour, ...upcoming];
     }, [displayedReleaseGroups, todayString, releasesView]);
 
     useEffect(() => {
@@ -795,7 +809,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         };
 
         fetchMissingReleaseDates();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups]);
 
     // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)

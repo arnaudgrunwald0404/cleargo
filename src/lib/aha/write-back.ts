@@ -95,7 +95,7 @@ export async function writeBackEpicReadiness(epicId: string): Promise<void> {
     }
 
     // Build custom fields payload
-    let customFields = buildWriteBackPayload(epicData);
+    const customFields = buildWriteBackPayload(epicData);
 
     if (Object.keys(customFields).length === 0) {
         console.log(`No fields to write back for epic ${epicId}`);

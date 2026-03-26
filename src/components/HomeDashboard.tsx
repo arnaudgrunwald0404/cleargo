@@ -464,6 +464,24 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   }, [userEmail, isSuperAdmin]);
 
   useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch('/api/me', { credentials: 'include' });
+      if (!res.ok || cancelled) return;
+      const me = await res.json();
+      if (cancelled || !me?.impersonating || !me?.user?.email) return;
+      const u = me.user;
+      const name =
+        [u.first_name, u.last_name].filter(Boolean).join(' ').trim() ||
+        (typeof u.name === 'string' ? u.name.trim() : '') ||
+        u.email;
+      setViewAsUser({ email: u.email, name: name || u.email });
+    })();
+    return () => { cancelled = true; };
+  }, [isSuperAdmin]);
+
+  useEffect(() => {
     const checkAuth = async () => {
       if (!userEmail) {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1309,13 +1327,50 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                         <Select
                           data={usersForViewAs}
                           value={viewAsUser ? viewAsUser.email : ''}
-                          onChange={(value) => {
+                          onChange={async (value) => {
                             if (value === null || value === '') {
-                              setViewAsUser(null);
+                              try {
+                                const res = await fetch('/api/admin/impersonate/stop', {
+                                  method: 'POST',
+                                  credentials: 'include',
+                                });
+                                if (res.ok) window.location.reload();
+                                else {
+                                  notifications.show({
+                                    title: 'Could not end impersonation',
+                                    message: 'Please try again.',
+                                    color: 'red',
+                                  });
+                                }
+                              } catch {
+                                window.location.reload();
+                              }
                               return;
                             }
-                            const opt = usersForViewAs.find((o) => o.value === value);
-                            setViewAsUser(opt ? { email: opt.value, name: opt.label } : null);
+                            try {
+                              const res = await fetch('/api/admin/impersonate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                credentials: 'include',
+                                body: JSON.stringify({ email: value }),
+                              });
+                              if (res.ok) {
+                                window.location.reload();
+                                return;
+                              }
+                              const err = await res.json().catch(() => ({}));
+                              notifications.show({
+                                title: 'Impersonation failed',
+                                message: typeof err.error === 'string' ? err.error : 'Please try again.',
+                                color: 'red',
+                              });
+                            } catch {
+                              notifications.show({
+                                title: 'Impersonation failed',
+                                message: 'Network error',
+                                color: 'red',
+                              });
+                            }
                           }}
                           placeholder="My tasks"
                           allowDeselect={false}

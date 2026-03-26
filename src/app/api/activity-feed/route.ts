@@ -142,7 +142,7 @@ export async function GET(req: NextRequest) {
         const statusIds = (commentRows || [])
             .map((c: { launch_criterion_status_id?: string }) => c.launch_criterion_status_id)
             .filter(Boolean) as string[];
-        let statusToEpic: Map<string, { epic_id: string; epic_name: string }> = new Map();
+        const statusToEpic: Map<string, { epic_id: string; epic_name: string }> = new Map();
         if (statusIds.length > 0) {
             const { data: statuses } = await supabase
                 .from('epic_criterion_status')

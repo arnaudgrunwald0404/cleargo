@@ -154,7 +154,7 @@ export async function POST(req: NextRequest) {
 
         for (const [alias, fieldConfig] of Object.entries(config.fields)) {
             const label = (fieldConfig as { label?: string }).label;
-            let ahaField = (label != null ? fieldsByLabel.get(label) ?? fieldsByLabelNormalized.get(normalize(label)) : null)
+            const ahaField = (label != null ? fieldsByLabel.get(label) ?? fieldsByLabelNormalized.get(normalize(label)) : null)
                 ?? (fieldConfig.key ? null : fieldsByKey.get(alias));
             if (ahaField) {
                 const oldKey = fieldConfig.key;

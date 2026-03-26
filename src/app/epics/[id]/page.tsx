@@ -21,6 +21,8 @@ import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
 import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
+import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
+import type { ReleaseStagesScope } from "@/lib/services/settingsService";
 import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
@@ -58,7 +60,19 @@ export default function EpicDetailPage() {
     const [cohort2Date, setCohort2Date] = useState<string | null>(null);
     const [releaseName, setReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDate, setFetchingReleaseDate] = useState(false);
-    const [releaseStages, setReleaseStages] = useState<Array<{ id: number; name: string; sort_order: number; duration_days: number | null; scope?: string; level_durations?: unknown; is_gate?: boolean; stage_type?: 'phase' | 'milestone' }>>([]);
+    const [releaseStages, setReleaseStages] = useState<
+        Array<{
+            id: number;
+            name: string;
+            sort_order: number;
+            duration_days: number | null;
+            details?: string | null;
+            scope?: ReleaseStagesScope;
+            level_durations?: ReleaseStageLevelDurations | null;
+            is_gate?: boolean;
+            stage_type?: 'phase' | 'milestone';
+        }>
+    >([]);
     const [uiLevel, setUiLevel] = useState<number | null>(null);
     const [isUiFrameworkEpic, setIsUiFrameworkEpic] = useState(false);
     const [stageEndDates, setStageEndDates] = useState<Map<number, string>>(new Map());
@@ -329,8 +343,8 @@ export default function EpicDetailPage() {
             // Process release stages - prefer fresh query over cache so DB changes (e.g. is_gate after migrations) apply immediately
             const releaseStagesCached = epicDetailCache.getLaunchStagesReleaseSchedule();
             const uiRolloutStagesCached = epicDetailCache.getLaunchStagesUiRollout();
-            let releaseStagesData: any[] = releaseStagesReleaseQuery.data ?? releaseStagesCached ?? [];
-            let uiRolloutStagesData: any[] = releaseStagesUiRolloutQuery.data ?? uiRolloutStagesCached ?? [];
+            const releaseStagesData: any[] = releaseStagesReleaseQuery.data ?? releaseStagesCached ?? [];
+            const uiRolloutStagesData: any[] = releaseStagesUiRolloutQuery.data ?? uiRolloutStagesCached ?? [];
             if (releaseStagesReleaseQuery.data) {
                 epicDetailCache.setLaunchStagesReleaseSchedule(releaseStagesReleaseQuery.data);
             }

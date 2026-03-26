@@ -594,7 +594,7 @@ function getPeriodValue(
     }
   }
 
-  let values: number[] = [];
+  const values: number[] = [];
   for (const s of history) {
     if (s.value === null || s.value === undefined) continue;
     if (inRange(s)) values.push(s.value);

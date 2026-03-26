@@ -166,7 +166,7 @@ export function computeLaunchReadiness(criteria: CriterionInput[]): LaunchReadin
     sumCategoryWeights += weight;
   }
 
-  let readiness = sumCategoryWeights === 0 ? 0 : sumCategoryScores / sumCategoryWeights;
+  const readiness = sumCategoryWeights === 0 ? 0 : sumCategoryScores / sumCategoryWeights;
   const readinessPct = Math.round(readiness * 100);
 
   const blocked = activeCategories.some(cs => cs.hasGatingNoGo);

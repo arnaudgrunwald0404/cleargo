@@ -315,7 +315,7 @@ export async function getUserActivityTrends(
     : now;
 
   // Get all activities in date range
-  let activityQuery = supabase
+  const activityQuery = supabase
     .from('user_activity')
     .select('user_id, created_at, activity_type')
     .gte('created_at', startDate.toISOString())

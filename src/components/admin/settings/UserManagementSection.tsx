@@ -1000,13 +1000,31 @@ function PodMappingTable({
 }
 
 function ImpersonateForm({ email }: { email: string }) {
+  const [loading, setLoading] = useState(false);
   return (
-    <form action="/api/admin/impersonate" method="post" className="inline">
-      <input type="hidden" name="email" value={email} />
-      <Button type="submit" variant="outline" color="amber" leftSection={<IconUserCircle size={16} />}>
-        Impersonate
-      </Button>
-    </form>
+    <Button
+      type="button"
+      variant="outline"
+      color="amber"
+      leftSection={<IconUserCircle size={16} />}
+      loading={loading}
+      onClick={async () => {
+        setLoading(true);
+        try {
+          const res = await fetch("/api/admin/impersonate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ email }),
+          });
+          if (res.ok) window.location.reload();
+        } finally {
+          setLoading(false);
+        }
+      }}
+    >
+      Impersonate
+    </Button>
   );
 }
 

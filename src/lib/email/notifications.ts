@@ -37,7 +37,7 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
     // Check if this notification type is enabled
     if (!(await isEmailNotificationTypeEnabled(payload.type))) {
         let userId = payload.userId;
-        let epicId = payload.epicId;
+        const epicId = payload.epicId;
 
         // Look up user_id from email if not provided
         if (!userId) {

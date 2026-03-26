@@ -89,7 +89,7 @@ export async function POST(
     }
 
     // Fetch read status for all comments if user is authenticated
-    let readStatusMap = new Map<string, boolean>();
+    const readStatusMap = new Map<string, boolean>();
     if (userId && comments && comments.length > 0) {
       const commentIds = comments.map((c: any) => c.id);
       const { data: readStatuses, error: readError } = await supabase
