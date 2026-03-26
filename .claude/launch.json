@@ -3,15 +3,15 @@
   "configurations": [
     {
       "name": "next-dev",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
       "port": 3000,
       "autoPort": true
     },
     {
       "name": "next-dev-webpack",
-      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
-      "runtimeArgs": ["node_modules/next/dist/bin/next", "dev", "--turbopack=false"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:webpack"],
       "port": 3000
     }
   ]

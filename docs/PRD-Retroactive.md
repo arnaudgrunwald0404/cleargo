@@ -495,6 +495,9 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **Overdue Indicators**: Highlight overdue items
 - **Status Summary**: Count of items by status
 - **Quick Actions**: Direct links to update status
+- **Read-only status**: In read-only contexts, the GO / CONDITIONAL / NO_GO traffic lights stay visible but are not clickable (same component as editable mode, with interaction disabled).
+- **Greeting when viewing as**: If an admin uses view-as, the page greeting prefers the viewed user’s first name from their display name when available.
+- **Page options menu**: The options menu stays open when clicking inside it (does not close on outside click) so nested actions remain usable.
 
 #### 6.2 Personal Metrics
 - **Pending Items**: Count of items requiring attention
