@@ -413,8 +413,10 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
     const GAP = 8;
     const TRACK_CENTER = LABEL_AREA + GAP + 5;
     const DATE_ROW_TOP = TRACK_CENTER + 12;
-    const BUFFER_ROW_TOP = DATE_ROW_TOP + 14;
-    const BADGE_ROW_TOP = hasBufferRow ? BUFFER_ROW_TOP + 14 : DATE_ROW_TOP + 14;
+    /** Space for date line + gap + "in X days" / "X days ago" (two lines). Badges must start below this, not under DATE_ROW_TOP+14. */
+    const DATE_COLUMN_HEIGHT = 30;
+    const BUFFER_ROW_TOP = DATE_ROW_TOP + DATE_COLUMN_HEIGHT;
+    const BADGE_ROW_TOP = hasBufferRow ? BUFFER_ROW_TOP + 14 : DATE_ROW_TOP + DATE_COLUMN_HEIGHT;
     const TRACK_H = 2;
     const PHASE_H = 6;
     const DOT_R = 4;
