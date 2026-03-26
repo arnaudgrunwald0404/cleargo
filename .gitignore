@@ -40,6 +40,9 @@ yarn-error.log*
 # netlify (local link state; site id is not secret but keep local)
 .netlify
 
+# Salesforce CLI / VS Code (local tooling; do not commit)
+.sfdx/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
