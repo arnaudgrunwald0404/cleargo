@@ -140,11 +140,7 @@ export function RetroPageContent({ epicId }: RetroPageContentProps) {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   return (

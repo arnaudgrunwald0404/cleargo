@@ -113,11 +113,7 @@ export function ScorecardPageContent({ epicId }: ScorecardPageContentProps) {
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   if (trackOffline) {

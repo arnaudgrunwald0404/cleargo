@@ -19,11 +19,7 @@ export default function EmailIntegrationPage() {
     } = useSettings();
 
     if (!settings) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <PurpleLoader size="lg" />
-            </div>
-        );
+        return <PurpleLoader size="lg" fullPage />;
     }
 
     return (

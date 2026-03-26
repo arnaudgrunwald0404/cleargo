@@ -327,11 +327,7 @@ export default function AnalyticsDashboardPage() {
   };
 
   if (checkingAccess) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   if (!hasAccess) {

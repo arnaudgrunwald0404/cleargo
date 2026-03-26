@@ -96,11 +96,7 @@ export function ScorecardDetail({
   };
 
   if (loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '2rem' }}>
-        <PurpleLoader />
-      </div>
-    );
+    return <PurpleLoader fullPage />;
   }
 
   if (!scorecard) {

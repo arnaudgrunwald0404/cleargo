@@ -1377,11 +1377,7 @@ export default function EpicDetailPage() {
     }, [matrix, featureFlags]);
 
     if (loading) {
-        return (
-            <div className="p-8 flex items-center justify-center">
-                <PurpleLoader size="md" />
-            </div>
-        );
+        return <PurpleLoader size="md" fullPage />;
     }
     if (error) {
         return <div className="p-8 text-red-600">Error: {error}</div>;
