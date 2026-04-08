@@ -774,6 +774,72 @@ export async function recalculateDueDatesForEpic(
 }
 
 /**
+ * Cascade a release date change to all epics in that release.
+ * Updates each epic's target_launch_date and recalculates all criteria due dates.
+ * Call this whenever a release_schedule.launch_date is modified.
+ */
+export async function cascadeReleaseDateToEpics(
+    releaseName: string,
+    newLaunchDate: string,
+    client?: SupabaseClient
+): Promise<{ updated: number; errors: string[] }> {
+    const sb = client ?? supabase;
+    const result = { updated: 0, errors: [] as string[] };
+
+    // Find all non-archived epics whose aha_fields->standard_fields->aha_release_name matches
+    const { data: epics, error: queryError } = await sb
+        .from('epic')
+        .select('id, name, aha_id, target_launch_date')
+        .or(
+            `aha_fields->standard_fields->>aha_release_name.eq.${releaseName},aha_fields->standard_fields->release->>name.eq.${releaseName}`
+        )
+        .eq('archived', false);
+
+    if (queryError) {
+        console.error('Error querying epics for release cascade:', queryError);
+        throw new Error(`Failed to query epics for release "${releaseName}": ${queryError.message}`);
+    }
+
+    if (!epics || epics.length === 0) {
+        console.log(`No active epics found for release "${releaseName}", skipping cascade`);
+        return result;
+    }
+
+    console.log(`📅 Cascading release date change for "${releaseName}" (${newLaunchDate}) to ${epics.length} epics`);
+
+    for (const epic of epics) {
+        try {
+            // Update the epic's target_launch_date if it changed
+            if (epic.target_launch_date !== newLaunchDate) {
+                const { error: updateError } = await sb
+                    .from('epic')
+                    .update({ target_launch_date: newLaunchDate, updated_at: new Date().toISOString() })
+                    .eq('id', epic.id);
+
+                if (updateError) {
+                    const msg = `Failed to update target_launch_date for epic ${epic.id} (${epic.aha_id}): ${updateError.message}`;
+                    console.error(msg);
+                    result.errors.push(msg);
+                    continue;
+                }
+            }
+
+            // Recalculate all criteria due dates for this epic
+            await recalculateDueDatesForEpic(epic.id, sb);
+            result.updated++;
+            console.log(`  ✅ Updated epic: ${epic.name} (${epic.aha_id})`);
+        } catch (err) {
+            const msg = `Failed to cascade date for epic ${epic.id} (${epic.aha_id}): ${(err as Error).message}`;
+            console.error(msg);
+            result.errors.push(msg);
+        }
+    }
+
+    console.log(`📅 Release date cascade complete: ${result.updated}/${epics.length} epics updated, ${result.errors.length} errors`);
+    return result;
+}
+
+/**
  * Send grouped Slack notifications for newly assigned criteria
  */
 export async function sendCriteriaAssignmentNotifications(

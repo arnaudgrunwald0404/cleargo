@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 import { getEffectivePermissionRules } from "@/lib/settings-db";
 import { canRolesPerformWithRules } from "@/lib/permissions";
+import { cascadeReleaseDateToEpics } from "@/lib/db/epics";
 
 export async function PATCH(
     request: NextRequest,
@@ -81,7 +82,18 @@ export async function PATCH(
             return NextResponse.json({ error: 'Release not found' }, { status: 404 });
         }
 
-        return NextResponse.json(data);
+        // When launch_date changes, cascade to all epics in this release
+        let cascadeResult = null;
+        if (updateData.launch_date && data.release_name) {
+            try {
+                cascadeResult = await cascadeReleaseDateToEpics(data.release_name, updateData.launch_date);
+            } catch (cascadeError) {
+                console.error('Error cascading release date to epics:', cascadeError);
+                // Don't fail the release update - the release was saved successfully
+            }
+        }
+
+        return NextResponse.json({ ...data, cascade: cascadeResult });
     } catch (error: any) {
         console.error("Error in PATCH /api/releases/[id]:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
