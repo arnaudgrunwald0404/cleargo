@@ -23,7 +23,8 @@ import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 import type { ReleaseStagesScope } from "@/lib/services/settingsService";
-import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
+import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal } from "@/lib/date-utils";
+import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 // Lazy load tab components for code splitting
@@ -728,90 +729,16 @@ export default function EpicDetailPage() {
                 }
             }
 
-            // Calculate due dates for criteria based on rating_timing and release stages
-            // Use fetched values directly instead of state (state updates are async)
+            // Criterion due dates = end of each stage segment (same as ReleaseStagesChart)
             const targetDate = fetchedReleaseDate || data.target_launch_date || null;
-
-            // Compute stage end dates using same algorithm as ReleaseStagesChart useTimelineData
-            const computedStageEndDates = new Map<number, string>();
-            if (fetchedReleaseStages.length > 0 && targetDate) {
-                const getEffectiveDuration = (s: any) => {
-                    if (epicIsUiFramework && parsedUiLevel != null && s.level_durations && typeof s.level_durations === 'object') {
-                        const d = s.level_durations[String(parsedUiLevel)];
-                        if (d && typeof d.min_days === 'number') return d.min_days;
-                    }
-                    return s.duration_days;
-                };
-                const subtractBiz = (end: Date, days: number): Date => {
-                    const d = new Date(end);
-                    let rem = days;
-                    while (rem > 0) { d.setDate(d.getDate() - 1); if (d.getDay() !== 0 && d.getDay() !== 6) rem--; }
-                    return d;
-                };
-                const addBiz = (start: Date, days: number): Date => {
-                    const d = new Date(start);
-                    let rem = days;
-                    while (rem > 0) { d.setDate(d.getDate() + 1); if (d.getDay() !== 0 && d.getDay() !== 6) rem--; }
-                    return d;
-                };
-
-                const sorted = [...fetchedReleaseStages]
-                    .sort((a: any, b: any) => a.sort_order - b.sort_order);
-                const anchorDate = parseDateOnlyLocal(targetDate) ?? new Date(targetDate);
-                const stageStarts: { id: number; date: Date }[] = [];
-
-                if (epicIsUiFramework) {
-                    const totalPreLaunchBizDays = sorted
-                        .filter((s: any) => s.sort_order < (sorted[sorted.length - 1]?.sort_order ?? 0))
-                        .reduce((sum: number, s: any) => sum + (getEffectiveDuration(s) ?? 0), 0);
-
-                    const startDate = subtractBiz(anchorDate, totalPreLaunchBizDays);
-                    let cursor = new Date(startDate);
-                    for (const stage of sorted) {
-                        const dur = getEffectiveDuration(stage) ?? 0;
-                        stageStarts.push({ id: stage.id, date: new Date(cursor) });
-                        cursor = dur > 0 ? addBiz(cursor, dur) : new Date(cursor);
-                    }
-                } else {
-                    // Traditional: calendar days; pre-launch = stages before Cohort 1 only (matches timeline chart)
-                    const cohort1Stage = sorted.find(
-                        (s: any) => typeof s.name === 'string' && s.name.toLowerCase().includes('cohort 1')
-                    );
-                    const preLaunchDays = cohort1Stage
-                        ? sorted
-                            .filter((s: any) => s.sort_order < cohort1Stage.sort_order && s.duration_days != null)
-                            .reduce((sum: number, s: any) => sum + (s.duration_days ?? 0), 0)
-                        : 0;
-                    const startDate =
-                        anchorDate && preLaunchDays > 0
-                            ? subtractCalendarDays(anchorDate, preLaunchDays)
-                            : anchorDate;
-
-                    let cursor = new Date(startDate);
-                    for (const stage of sorted) {
-                        const dur = stage.duration_days ?? 0;
-                        stageStarts.push({ id: stage.id, date: new Date(cursor) });
-                        cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
-                    }
-
-                    if (cohort2DateFetched && stageStarts.length > 0) {
-                        const gaParsed = parseDateOnlyLocal(cohort2DateFetched) ?? new Date(cohort2DateFetched);
-                        stageStarts[stageStarts.length - 1].date = new Date(gaParsed);
-                    }
-                    if (anchorDate && stageStarts.length >= 2) {
-                        stageStarts[stageStarts.length - 2].date = new Date(anchorDate);
-                    }
-                }
-
-                for (let i = 0; i < stageStarts.length; i++) {
-                    const endDate = i < stageStarts.length - 1
-                        ? stageStarts[i + 1].date
-                        : (epicIsUiFramework && cohort2DateFetched
-                            ? (parseDateOnlyLocal(cohort2DateFetched) ?? new Date(cohort2DateFetched))
-                            : anchorDate);
-                    computedStageEndDates.set(stageStarts[i].id, dateToLocalDateString(endDate));
-                }
-            }
+            const computedStageEndDates =
+                fetchedReleaseStages.length > 0 && targetDate
+                    ? computeStageEndDatesByStageId(fetchedReleaseStages, targetDate, {
+                          useBusinessDayTimeline: epicIsUiFramework,
+                          uiLevel: parsedUiLevel,
+                          cohort2Date: cohort2DateFetched,
+                      })
+                    : new Map<number, string>();
             setStageEndDates(computedStageEndDates);
 
             const categoryStageMap = new Map<string, number>();

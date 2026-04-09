@@ -71,6 +71,11 @@ const PHASE_ORDER = [
     'GA · Cohort 2',
 ];
 
+/** Criterion due date = last day of this stage’s segment on the launch timeline (Release Timeline chart). */
+function dueByStageSegmentTooltip(stageName: string): string {
+    return `Last day of the “${stageName}” segment on the launch timeline (same rule as the Release Timeline chart).`;
+}
+
 // Traffic light (Go/No-Go score: GO / CONDITIONAL / NO_GO / NOT_APPLICABLE)
 interface TrafficLightProps {
     currentStatus: string;
@@ -1565,17 +1570,17 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                     const dueDateStr = item.condition_due_date;
                                                                                     const dueByStage = item.due_by_stage_name?.trim() || null;
                                                                                     if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
-                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
                                                                                     }
                                                                                     try {
                                                                                         const dueDate = new Date(dueDateStr);
-                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
                                                                                         const today = new Date(); today.setHours(0, 0, 0, 0); dueDate.setHours(0, 0, 0, 0);
                                                                                         const isOverdue = dueDate < today;
                                                                                         const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'}>{dueDate.toLocaleDateString()}</span>;
-                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">{content}</Tooltip> : content;
+                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">{content}</Tooltip> : content;
                                                                                     } catch {
-                                                                                        return dueByStage ? <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
                                                                                     }
                                                                                 })()}
                                                                             </td>
@@ -1881,7 +1886,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 // Check for null, undefined, or empty string
                                                 if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
                                                     return dueByStage ? (
-                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
                                                             <span className="text-gray-500">{dueByStage}</span>
                                                         </Tooltip>
                                                     ) : '-';
@@ -1892,7 +1897,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                     // Check if date is valid
                                                     if (isNaN(dueDate.getTime())) {
                                                         return dueByStage ? (
-                                                            <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                            <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
                                                                 <span className="text-gray-500">{dueByStage}</span>
                                                             </Tooltip>
                                                         ) : '-';
@@ -1909,13 +1914,13 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                         </span>
                                                     );
                                                     return dueByStage ? (
-                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
                                                             {content}
                                                         </Tooltip>
                                                     ) : content;
                                                 } catch (e) {
                                                     return dueByStage ? (
-                                                        <Tooltip label={`Due by end of ${dueByStage}`} withArrow position="top">
+                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
                                                             <span className="text-gray-500">{dueByStage}</span>
                                                         </Tooltip>
                                                     ) : '-';

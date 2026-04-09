@@ -51,6 +51,30 @@ export function subtractCalendarDays(d: Date, days: number): Date {
   return addCalendarDays(d, -days);
 }
 
+/** Add N business days (Mon–Fri) in local time, starting after `start` (exclusive of start day). */
+export function addBusinessDays(start: Date, days: number): Date {
+  const d = new Date(start);
+  let remaining = days;
+  while (remaining > 0) {
+    d.setDate(d.getDate() + 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return d;
+}
+
+/** Subtract N business days (Mon–Fri) in local time, stepping backward from `end` (exclusive of end day). */
+export function subtractBusinessDays(end: Date, days: number): Date {
+  const d = new Date(end);
+  let remaining = days;
+  while (remaining > 0) {
+    d.setDate(d.getDate() - 1);
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) remaining--;
+  }
+  return d;
+}
+
 /**
  * Normalize an ISO or date string to YYYY-MM-DD (calendar date, no UTC shift).
  * Use when saving to DB so we never store a value that displays as the wrong day.

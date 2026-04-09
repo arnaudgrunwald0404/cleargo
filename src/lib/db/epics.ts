@@ -7,6 +7,7 @@ import { syncUserSlackHandle } from '../slack/notifications';
 import { pruneCriteria } from '../ai/client';
 import { isEnabled, FEATURE_AI_PRUNING } from '../flags';
 import { getFeatureFlags } from '../settings-db';
+import { computeStageEndDatesByStageId, type ReleaseTimelineStage } from '../releaseTimeline';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -350,31 +351,18 @@ async function resolveDecisionOwnersForCriteria(
     return ownerMap;
 }
 
-/** Resolve effective duration for a launch stage (level_durations when uiLevel set, else duration_days). Uses target (min_days) so timeline and criterion due dates stay aligned. */
-function getEffectiveStageDuration(
-    stage: { duration_days?: number | null; level_durations?: Record<string, { min_days: number; max_days: number }> | null },
-    uiLevel: number | null | undefined
-): number | null {
-    if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
-        const d = stage.level_durations[String(uiLevel)];
-        if (d && typeof d.min_days === 'number') {
-            return d.min_days;
-        }
-    }
-    return stage.duration_days ?? null;
-}
-
 /**
  * Calculate due date based on target launch date and rating timing (launch stage).
- * When uiLevel is provided (1, 2, or 3), stages with level_durations use that level's target (min_days) for duration.
+ * Uses the same segment end dates as the epic matrix and ReleaseStagesChart (end of rated stage).
+ * When uiLevel is provided (1, 2, or 3), ui_rollout stages use level_durations min_days.
  */
 export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
     ratingTimingId: number | null,
     client: SupabaseClient,
-    options?: { uiLevel?: number }
+    options?: { uiLevel?: number; cohort2Date?: string | null }
 ): Promise<string | null> {
-    if (!targetLaunchDate) {
+    if (!targetLaunchDate || ratingTimingId == null) {
         return null;
     }
 
@@ -390,7 +378,7 @@ export async function calculateDueDateForCriterion(
         return null;
     }
 
-    const targetStage = allStages.find((s) => s.id === ratingTimingId) as typeof allStages[0] & { scope?: string };
+    const targetStage = allStages.find((s) => s.id === ratingTimingId);
     if (!targetStage) {
         return null;
     }
@@ -398,45 +386,13 @@ export async function calculateDueDateForCriterion(
     const scope = (targetStage as { scope?: string }).scope ?? 'release_schedule';
     const releaseStages = allStages.filter((s) => (s as { scope?: string }).scope === scope);
 
-    const cohort1Stage = releaseStages.find((s) =>
-        String((s as { name?: string }).name || '').toLowerCase().includes('cohort 1')
-    );
-    const lastPreLaunchSortOrder = cohort1Stage
-        ? (cohort1Stage.sort_order as number) - 1
-        : 3;
+    const endMap = computeStageEndDatesByStageId(releaseStages as ReleaseTimelineStage[], targetLaunchDate, {
+        useBusinessDayTimeline: scope === 'ui_rollout',
+        uiLevel,
+        cohort2Date: options?.cohort2Date ?? null,
+    });
 
-    const targetDate = new Date(targetLaunchDate);
-    const dueDate = new Date(targetDate);
-
-    if (targetStage.sort_order <= lastPreLaunchSortOrder) {
-        // Pre-launch stage: due date = first day of stage
-        // = targetDate - (own duration + sum of all later pre-launch stages)
-        const stagesAfterTarget = releaseStages.filter((s) => {
-            const dur = getEffectiveStageDuration(s, uiLevel);
-            return (
-                s.sort_order > targetStage!.sort_order &&
-                s.sort_order <= lastPreLaunchSortOrder &&
-                dur !== null
-            );
-        });
-        const totalDaysBefore = (getEffectiveStageDuration(targetStage, uiLevel) || 0) +
-            stagesAfterTarget.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
-        dueDate.setDate(dueDate.getDate() - totalDaysBefore);
-    } else {
-        // Post-launch stage: due date = targetDate + sum of post-launch stage durations up to this stage
-        const postLaunchStages = releaseStages.filter((s) => {
-            const dur = getEffectiveStageDuration(s, uiLevel);
-            return (
-                s.sort_order > lastPreLaunchSortOrder &&
-                s.sort_order <= targetStage!.sort_order &&
-                dur !== null
-            );
-        });
-        const totalDaysAfter = postLaunchStages.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
-        dueDate.setDate(dueDate.getDate() + totalDaysAfter);
-    }
-
-    return dueDate.toISOString().split('T')[0];
+    return endMap.get(ratingTimingId) ?? null;
 }
 
 export async function instantiateReleaseCriteriaForEpic(
