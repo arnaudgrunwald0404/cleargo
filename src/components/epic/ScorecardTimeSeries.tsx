@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Group, Stack, Text, Badge } from '@mantine/core';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { parseDateOnlyLocal, dateToLocalDateString, formatDateOnlyForDisplay } from '@/lib/date-utils';
 import type { EpicScorecard } from '@/lib/success/types';
 
 interface Props {
@@ -124,22 +125,22 @@ export function ScorecardTimeSeries({ epicId }: Props) {
     const result = { dates: [] as string[], series: [] as Array<{ key: string; color: string; values: Array<number | null> }> };
     if (!epic?.target_launch_date) return result;
 
-    const launch = new Date(epic.target_launch_date);
+    const launch = parseDateOnlyLocal(epic.target_launch_date);
+    if (!launch) return result;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     // Window: -90 days to +120 days, but cap end at today
     const start = new Date(launch);
     start.setDate(start.getDate() - 90);
-    start.setHours(0, 0, 0, 0);
 
     const end = new Date(Math.min(launch.getTime() + 120 * 86400000, today.getTime()));
 
-    // build date array inclusive
+    // build date array inclusive (local calendar dates, no UTC shift)
     const cursor = new Date(start);
     const dateStrings: string[] = [];
     while (cursor <= end) {
-      dateStrings.push(cursor.toISOString().split('T')[0]);
+      dateStrings.push(dateToLocalDateString(cursor));
       cursor.setDate(cursor.getDate() + 1);
     }
 
@@ -182,7 +183,7 @@ export function ScorecardTimeSeries({ epicId }: Props) {
           <Text size="md" fw={600} c="dark">Success metrics over time</Text>
           <Text size="sm" c="dimmed">
             {epic?.target_launch_date && dates.length
-              ? `${new Date(epic.target_launch_date).toLocaleDateString()} → +120 days (from Success Metrics)`
+              ? `${formatDateOnlyForDisplay(epic.target_launch_date)} → +120 days (from Success Metrics)`
               : ''}
           </Text>
         </div>
