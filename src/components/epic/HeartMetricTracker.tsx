@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Group, SegmentedControl, Stack, Text } from '@mantine/core';
 import type { HeartMetricDisplay } from '@/lib/heart/types';
 import { getWindowBounds, type HeartTrackerWindow } from '@/lib/heart/window';
+import { parseDateOnlyLocal } from '@/lib/date-utils';
 
 export type { HeartTrackerWindow };
 export { getWindowBounds };
@@ -433,7 +434,7 @@ export function HeartMetricTracker({
 
         {/* X axis: window start, middle, end */}
         {xAxisLabels.map(({ key, x: xx }) => {
-          const date = new Date(key);
+          const date = parseDateOnlyLocal(key);
           const isEnd = key === displayWindowEnd;
           return (
             <g key={key}>
@@ -444,7 +445,7 @@ export function HeartMetricTracker({
                 fontSize={10}
                 fill="var(--mantine-color-dimmed)"
               >
-                {date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: isEnd ? '2-digit' : undefined })}
+                {date?.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: isEnd ? '2-digit' : undefined }) ?? key}
               </text>
             </g>
           );
