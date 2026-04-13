@@ -62,3 +62,12 @@ export {
 // Settings & Feature Flags
 export { FeatureFlagsProvider, useFeatureFlags, createSettingsContext } from './settings';
 export type { FeatureFlagsProviderProps } from './settings';
+
+// Brand Guidelines
+export {
+  colors, mantineColorScales, typography, spacing, shadows, radii, transitions, zIndex, breakpoints, layout, statusBadges,
+  brandGuidelines, approvedColors, validateColor, validateTypography, auditColors,
+  componentStyles,
+  generateCssVariables, generateMantineThemeConfig,
+} from './brand';
+export type { ApprovedColor, ColorValidationResult, TypographyValidationResult } from './brand';

@@ -16,7 +16,8 @@
     "./jobs": "./dist/jobs/index.js",
     "./dates": "./dist/dates/index.js",
     "./settings": "./dist/settings/index.js",
-    "./types": "./dist/types/index.js"
+    "./types": "./dist/types/index.js",
+    "./brand": "./dist/brand/index.js"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
