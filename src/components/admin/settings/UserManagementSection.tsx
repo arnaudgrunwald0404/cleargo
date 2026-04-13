@@ -174,6 +174,32 @@ export default function UserManagementSection(props: Props) {
     }
   };
 
+  const exportToCSV = () => {
+    const headers = ['First Name', 'Last Name', 'Email', 'Roles', 'Active', 'Slack Handle', 'Last Logged In'];
+    const rows = users.map(u => [
+      u.first_name || '',
+      u.last_name || '',
+      u.email,
+      (u.roles && u.roles.length > 0 ? u.roles : [u.role || 'OTHER']).join('; '),
+      u.is_active !== false ? 'Yes' : 'No',
+      (u as any).slack_handle || '',
+      u.last_logged_in ? new Date(u.last_logged_in).toLocaleString() : '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const parsedEmails = useMemo(() => {
     if (!bulkImportEmailsText.trim()) return [];
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -378,6 +404,9 @@ export default function UserManagementSection(props: Props) {
                 </button>
                 <button type="button" onClick={() => { setBulkImportDrawerOpen(true); setBulkImportMode(null); setBulkImportEmailsStep(1); setBulkImportEmailsText(""); setBulkImportRoles({}); }} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
                   Import Bulk
+                </button>
+                <button type="button" onClick={exportToCSV} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
+                  Export CSV
                 </button>
                 {selectedUserIds.size > 0 && (
                   <>
