@@ -6,10 +6,35 @@
       "sourceType": "github",
       "computedHash": "1f6f4adee0b964e8344c0baef46b4e303ab3ba20932907bcbb1444ba7b3273b2"
     },
+    "gws-calendar": {
+      "source": "googleworkspace/cli",
+      "sourceType": "github",
+      "computedHash": "0c5956e1069552444b00bf45381f08ffa9a7bca9810fefb1801866216008bcfc"
+    },
+    "internal-comms": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "computedHash": "b36b333bee983462008af46d74689ae5832c2f79ae5f2c18680ee82f6e6bef56"
+    },
+    "prd": {
+      "source": "github/awesome-copilot",
+      "sourceType": "github",
+      "computedHash": "1f3e1f005fc40fda85d250ae906c8ee4f7e8e833e23adfeca6542c19609fd7cd"
+    },
     "pricing-strategy": {
       "source": "coreyhaines31/marketingskills",
       "sourceType": "github",
       "computedHash": "4312095789cc328883428b1f9bd61549ca44b376aeda8d62bb977efad017e594"
+    },
+    "sales-enablement": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "computedHash": "7447155639ac2677bc23ef826b079bbf8e415ec35900f6a3c7b25c33e6ad856a"
+    },
+    "subagent-driven-development": {
+      "source": "obra/superpowers",
+      "sourceType": "github",
+      "computedHash": "a197f8e5fba5ea59013e1adbaa90dd42db35de8f074feca200c8038de584a83b"
     },
     "webapp-testing": {
       "source": "anthropics/skills",
