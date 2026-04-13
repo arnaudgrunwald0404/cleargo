@@ -58,7 +58,18 @@
       "mcp__0e8cc4d4-100b-4477-a3ea-a5f97516677f__apply_migration",
       "Bash(find /c/Users/ArnaudGrunwald/Documents/GitHub/cleargo/src/app/api -type f -name *.ts)",
       "Bash(ls -la /c/Users/ArnaudGrunwald/Documents/GitHub/cleargo/src/app/api/epics/[id]/)",
-      "Bash(grep -r \"epic_criterion_status\\\\|launch_criterion_status\" /c/Users/ArnaudGrunwald/Documents/GitHub/cleargo/supabase/migrations/*.sql)"
+      "Bash(grep -r \"epic_criterion_status\\\\|launch_criterion_status\" /c/Users/ArnaudGrunwald/Documents/GitHub/cleargo/supabase/migrations/*.sql)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(rm /Users/arnaudgrunwald/AGcodework/cleargo/.git/index.lock)",
+      "Bash(git commit -m 'feat: add Export CSV button to admin user management:*)",
+      "Bash(ls /Users/arnaudgrunwald/AGcodework/cleargo/.git/*.lock)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo add src/components/admin/settings/UserManagementSection.tsx)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo commit -m 'feat: add Export CSV button to admin user management:*)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo push)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo pull --rebase)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo stash)",
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo stash pop)"
     ]
   }
 }
