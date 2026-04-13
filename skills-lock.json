@@ -6,6 +6,11 @@
       "sourceType": "github",
       "computedHash": "1f6f4adee0b964e8344c0baef46b4e303ab3ba20932907bcbb1444ba7b3273b2"
     },
+    "pricing-strategy": {
+      "source": "coreyhaines31/marketingskills",
+      "sourceType": "github",
+      "computedHash": "4312095789cc328883428b1f9bd61549ca44b376aeda8d62bb977efad017e594"
+    },
     "webapp-testing": {
       "source": "anthropics/skills",
       "sourceType": "github",
