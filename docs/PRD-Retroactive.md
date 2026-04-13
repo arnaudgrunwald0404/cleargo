@@ -491,7 +491,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 #### 6.1 My Items View
 - **Criterion Ownership**: All criteria where user is decision owner or condition owner
-- **Due Date Tracking**: Show condition due dates
+- **Due Date Tracking**: Criterion due dates are computed from the **release train date** (`release_schedule.launch_date` for the epic’s Aha release name when present), otherwise the epic’s `target_launch_date`, plus each criterion’s **rating timing** (launch stages). The My Items API returns a computed `due_date` for display; stored `condition_due_date` is recalculated on epic sync / release cascade using the same rules. When an epic **moves to another release** (or its anchor launch date / UI-framework timing changes), Aha upsert and manual epic PATCH on `target_launch_date` or `aha_fields` trigger a full **recalculation of every criterion due date** for that epic.
 - **Overdue Indicators**: Highlight overdue items
 - **Status Summary**: Count of items by status
 - **Quick Actions**: Direct links to update status
@@ -679,7 +679,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
   - `/update-criterion [launch-id] [criterion-id] [status]`: Update criterion
 - **Interactive Messages**: Buttons and dropdowns for quick actions; links use `/epics/{id}` for epic detail.
 - **Stale Criterion Reminders**: Daily job (`/api/jobs/stale-criteria`) sends Slack (and email) reminders; when `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set, each reminder can include an **AI-generated personalized nudge** (context-aware, concise) to improve engagement.
-- **Criteria Due Date Nudges**: Daily job (`/api/jobs/criteria-nudges`) sends Slack and email reminders for criteria based on due dates:
+- **Criteria Due Date Nudges**: Daily job (`/api/jobs/criteria-nudges`) sends Slack and email reminders for criteria based on due dates stored on `epic_criterion_status.condition_due_date` (recalculated from the release schedule anchor and rating timing as above):
   - **1 week before due date**: Reminder sent 7 days before `condition_due_date`
   - **On due date**: Reminder sent on the exact `condition_due_date`
   - **Daily after overdue**: Daily reminders for criteria past their due date

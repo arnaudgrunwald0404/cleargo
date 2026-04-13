@@ -12,7 +12,6 @@ import {
     fetchAndUpsertReleaseFromAha,
     setAhaRecordNotFoundByAhaId,
     clearAhaRecordNotFound,
-    recalculateDueDatesForEpic,
 } from '@/lib/db/epics';
 import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
@@ -295,13 +294,6 @@ export async function POST(req: NextRequest) {
                         await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
-                        // Recalculate due dates for existing epics
-                        try {
-                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                        } catch (dueDateError) {
-                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                        }
                         results.updated++;
                     }
 
@@ -412,13 +404,6 @@ export async function POST(req: NextRequest) {
                         await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
-                        // Recalculate due dates for existing epics
-                        try {
-                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                        } catch (dueDateError) {
-                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                        }
                         results.updated++;
                     }
 
@@ -632,15 +617,6 @@ export async function POST(req: NextRequest) {
                     results.created++;
                     console.log(`🆕 Created epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 } else {
-                    // For existing epics, recalculate due dates for all criteria
-                    // This ensures due dates are updated if target_launch_date changed
-                    try {
-                        await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                        console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                    } catch (dueDateError) {
-                        // Log error but don't fail the sync
-                        console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                    }
                     results.updated++;
                     console.log(`🔄 Updated epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 }

@@ -7,6 +7,11 @@ import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { CommentsModal } from "@/components/CommentsModal";
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import {
+    type CriterionDueDateStageRow,
+    computeCriterionDueDateYmd,
+    resolveAnchorLaunchDateFromReleaseSchedule,
+} from '@/lib/criterion-due-date';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -29,6 +34,8 @@ type MyItem = {
     status: string;
     condition?: string;
     condition_due_date?: string;
+    /** Server-computed from release_schedule anchor + rating_timing (preferred over condition_due_date for display). */
+    due_date?: string | null;
     launch: {
         id: string;
         name: string;
@@ -436,9 +443,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [showAllItems, setShowAllItems] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
-  const [releaseStages, setReleaseStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
-  const [stageDaysBeforeLaunch, setStageDaysBeforeLaunch] = useState<Map<number, number>>(new Map());
-  const [stageDaysAfterLaunch, setStageDaysAfterLaunch] = useState<Map<number, number>>(new Map());
+  const [releaseStagesFull, setReleaseStagesFull] = useState<CriterionDueDateStageRow[]>([]);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -628,48 +633,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       const res = await fetch('/api/release-stages', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        const stages = data.stages || [];
-        setReleaseStages(stages);
-        
-        // Calculate days before/after launch for each stage
-        const daysBeforeMap = new Map<number, number>();
-        const daysAfterMap = new Map<number, number>();
-        
-        const lastPreLaunchStage = stages.find((s: any) => s.sort_order === 3);
-        
-        stages.forEach((stage: any) => {
-          if (stage.sort_order <= 3 && lastPreLaunchStage && stage.duration_days !== null) {
-            // Pre-launch stage: due date = first day of stage
-            // = targetDate - (own duration + sum of all later pre-launch stages)
-            const stagesAfter = stages.filter(
-              (s: any) =>
-                s.sort_order > stage.sort_order &&
-                s.sort_order <= lastPreLaunchStage.sort_order &&
-                s.duration_days !== null
-            );
-            const totalDaysBefore = (stage.duration_days || 0) +
-              stagesAfter.reduce((sum: number, s: any) => sum + (s.duration_days || 0), 0);
-            daysBeforeMap.set(stage.id, totalDaysBefore);
-          } else if (stage.sort_order > 3 && stage.duration_days !== null) {
-            // Post-launch stages: sum durations from first post-launch stage up to this one
-            const postLaunchStages = stages.filter(
-              (s: any) =>
-                s.sort_order > 3 &&
-                s.sort_order <= stage.sort_order &&
-                s.duration_days !== null
-            );
-            const totalDaysAfter = postLaunchStages.reduce(
-              (sum: number, s: any) => sum + (s.duration_days || 0),
-              0
-            );
-            if (totalDaysAfter > 0) {
-              daysAfterMap.set(stage.id, totalDaysAfter);
-            }
-          }
-        });
-        
-        setStageDaysBeforeLaunch(daysBeforeMap);
-        setStageDaysAfterLaunch(daysAfterMap);
+        const stages = (data.stages || []) as CriterionDueDateStageRow[];
+        setReleaseStagesFull(stages);
       }
     } catch (error) {
       console.error('Failed to fetch release stages:', error);
@@ -992,24 +957,29 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   }, [items, releaseSchedule, epicReleaseMap, showAllItems, isLoadingReleaseNames]);
 
   const getItemDueDate = (item: MyItem): string | null => {
-    if (item.condition_due_date && item.condition_due_date.trim() !== '') {
-      return item.condition_due_date;
+    if (item.due_date && String(item.due_date).trim() !== '') {
+      return String(item.due_date).trim().split('T')[0];
     }
-    if (releaseStages.length === 0) return null;
-    const targetDate = item.launch.target_launch_date;
-    if (!targetDate) return null;
-    const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
-    if (!ratingTimingId) return null;
-    const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
-    const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
-    if (daysBefore === undefined && daysAfter === undefined) return null;
-    const dueDate = new Date(targetDate);
-    if (daysBefore !== undefined) {
-      dueDate.setDate(dueDate.getDate() - daysBefore);
-    } else if (daysAfter !== undefined) {
-      dueDate.setDate(dueDate.getDate() + daysAfter);
+    const releaseName = epicReleaseMap.get(item.launch.id) ?? null;
+    const anchor = resolveAnchorLaunchDateFromReleaseSchedule(
+      releaseName,
+      releaseSchedule,
+      item.launch.target_launch_date ?? null
+    );
+    if (!anchor || releaseStagesFull.length === 0) return null;
+    const defaultStageId = releaseStagesFull.find((s) => s.sort_order === 1)?.id ?? releaseStagesFull[0]?.id ?? null;
+    const rawRt = item.criterion?.rating_timing;
+    let ratingTimingId: number | null = defaultStageId;
+    if (rawRt != null && rawRt !== undefined) {
+      const n = Number(rawRt);
+      if (!Number.isNaN(n)) ratingTimingId = n;
     }
-    return dueDate.toISOString().split('T')[0];
+    return computeCriterionDueDateYmd({
+      anchorYmd: anchor,
+      ratingTimingId,
+      allStages: releaseStagesFull,
+      uiLevel: undefined,
+    });
   };
 
   const headingStats = useMemo(() => {
@@ -1034,7 +1004,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       total: totalCriteria,
       overdue: overdueCount
     };
-  }, [releaseGroups, releaseStages, stageDaysBeforeLaunch, stageDaysAfterLaunch]);
+  }, [releaseGroups, releaseSchedule, epicReleaseMap, releaseStagesFull]);
 
   useEffect(() => {
     setCriteriaCount(headingStats.total);
@@ -1748,48 +1718,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
-                              // Calculate due date: use condition_due_date if available, otherwise calculate from release stages
-                              const calculateDueDate = (): string | null => {
-                                // First, try to use stored condition_due_date
-                                if (item.condition_due_date && item.condition_due_date.trim() !== '') {
-                                  return item.condition_due_date;
-                                }
-                                
-                                // If no stored date, calculate from release stages (same logic as Epic detail page)
-                                if (releaseStages.length === 0) {
-                                  return null;
-                                }
+                              const dueDateStr = getItemDueDate(item);
 
-                                const targetDate = item.launch.target_launch_date;
-                                if (!targetDate) {
-                                  return null;
-                                }
-
-                                // Default to first stage if no rating_timing is set
-                                const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
-                                if (!ratingTimingId) {
-                                  return null;
-                                }
-                                const daysBefore = stageDaysBeforeLaunch.get(ratingTimingId);
-                                const daysAfter = stageDaysAfterLaunch.get(ratingTimingId);
-                                
-                                if (daysBefore === undefined && daysAfter === undefined) {
-                                  return null;
-                                }
-                                
-                                const dueDate = new Date(targetDate);
-                                
-                                if (daysBefore !== undefined) {
-                                  dueDate.setDate(dueDate.getDate() - daysBefore);
-                                } else if (daysAfter !== undefined) {
-                                  dueDate.setDate(dueDate.getDate() + daysAfter);
-                                }
-                                
-                                return dueDate.toISOString().split('T')[0];
-                              };
-                              
-                              const dueDateStr = calculateDueDate();
-                              
                               if (!dueDateStr) {
                                 return (
                                   <span style={{
@@ -1799,7 +1729,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                   }}>-</span>
                                 );
                               }
-                              
+
                               try {
                                 const dueDate = new Date(dueDateStr);
                                 if (isNaN(dueDate.getTime())) {
@@ -1812,12 +1742,12 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                     }}>-</span>
                                   );
                                 }
-                                
+
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 dueDate.setHours(0, 0, 0, 0);
                                 const isOverdue = dueDate < today;
-                                
+
                                 return (
                                   <span style={{
                                     fontSize: "14px",
