@@ -373,6 +373,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                             epic_groups: payload.metadata.epic_groups,
                             criteria: payload.metadata.criteria || [],
                             total_criteria_count: payload.metadata.total_criteria_count || 0,
+                            org_time_zone: payload.metadata.org_time_zone,
                         },
                         'combined',
                         theme

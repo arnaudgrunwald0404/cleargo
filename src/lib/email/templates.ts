@@ -1,3 +1,5 @@
+import { diffCalendarDaysBetweenYmd, getCalendarDateStringInTimeZone } from '@/lib/date-utils';
+
 export function getLaunchStatusChangeEmail(
     launchName: string,
     oldStatus: string,
@@ -273,11 +275,12 @@ export function getCriteriaNudgeEmail(
         }>;
     }>,
     totalCriteriaCount: number,
-    appUrl: string
+    appUrl: string,
+    orgTimeZone = 'America/New_York'
 ) {
     const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,';
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const todayYmd = getCalendarDateStringInTimeZone(orgTimeZone);
+    const toYmd = (d: string | null | undefined) => (typeof d === 'string' ? d.trim().split('T')[0] : '') || '';
 
     // Calculate summary
     let overdueCount = 0;
@@ -287,11 +290,8 @@ export function getCriteriaNudgeEmail(
     for (const rg of releaseGroups) {
         for (const eg of rg.epic_groups) {
             for (const c of eg.criteria) {
-                if (!c.due_date) continue;
-                const dueDate = new Date(c.due_date);
-                dueDate.setHours(0, 0, 0, 0);
-                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                
+                const daysDiff = diffCalendarDaysBetweenYmd(c.due_date, todayYmd);
+                if (daysDiff == null) continue;
                 if (daysDiff < 0) overdueCount++;
                 else if (daysDiff === 0) dueTodayCount++;
                 else if (daysDiff <= 7) dueSoonCount++;
@@ -311,15 +311,15 @@ export function getCriteriaNudgeEmail(
         if (releaseGroup.release_name) {
             releaseHeader = `<h3 style="font-family: 'Atkinson Hyperlegible', sans-serif; color: #1f2937; margin-top: 24px; margin-bottom: 12px; font-size: 18px;">Release ${releaseGroup.release_name}`;
             if (releaseGroup.release_date) {
-                const releaseDate = new Date(releaseGroup.release_date);
-                releaseDate.setHours(0, 0, 0, 0);
-                const daysDiff = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                if (daysDiff < 0) {
-                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)</span>`;
-                } else if (daysDiff === 0) {
-                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(Today)</span>`;
-                } else {
-                    releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                const daysDiff = diffCalendarDaysBetweenYmd(releaseGroup.release_date, todayYmd);
+                if (daysDiff != null) {
+                    if (daysDiff < 0) {
+                        releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)</span>`;
+                    } else if (daysDiff === 0) {
+                        releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(Today)</span>`;
+                    } else {
+                        releaseHeader += ` <span style="color: #6b7280; font-size: 14px; font-weight: normal;">(in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                    }
                 }
             }
             releaseHeader += '</h3>';
@@ -330,36 +330,28 @@ export function getCriteriaNudgeEmail(
         releaseSectionsHtml += releaseHeader;
 
         for (const epicGroup of releaseGroup.epic_groups) {
-            // Sort criteria by urgency
-            const sortedCriteria = [...epicGroup.criteria].sort((a, b) => {
-                const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-                const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-                return dateA - dateB;
-            });
+            const sortedCriteria = [...epicGroup.criteria].sort((a, b) =>
+                toYmd(a.due_date).localeCompare(toYmd(b.due_date))
+            );
 
             const mostUrgent = sortedCriteria[0];
-            const dueDate = mostUrgent?.due_date ? new Date(mostUrgent.due_date) : null;
-            
             let urgencyText = '';
-            if (dueDate) {
-                dueDate.setHours(0, 0, 0, 0);
-                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                if (daysDiff < 0) {
-                    urgencyText = ` <span style="color: #dc2626; font-size: 13px;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)</span>`;
-                } else if (daysDiff === 0) {
+            const epicDaysDiff = diffCalendarDaysBetweenYmd(mostUrgent?.due_date, todayYmd);
+            if (epicDaysDiff != null) {
+                if (epicDaysDiff < 0) {
+                    urgencyText = ` <span style="color: #dc2626; font-size: 13px;">(${Math.abs(epicDaysDiff)} day${Math.abs(epicDaysDiff) !== 1 ? 's' : ''} overdue)</span>`;
+                } else if (epicDaysDiff === 0) {
                     urgencyText = ' <span style="color: #f59e0b; font-size: 13px;">(Due today)</span>';
-                } else if (daysDiff <= 7) {
-                    urgencyText = ` <span style="color: #f59e0b; font-size: 13px;">(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})</span>`;
+                } else if (epicDaysDiff <= 7) {
+                    urgencyText = ` <span style="color: #f59e0b; font-size: 13px;">(Due in ${epicDaysDiff} day${epicDaysDiff !== 1 ? 's' : ''})</span>`;
                 }
             }
 
             const epicUrl = `${appUrl}/epics/${epicGroup.epic_id}`;
-            const criteriaList = epicGroup.criteria.map(c => {
-                const dueDate = c.due_date ? new Date(c.due_date) : null;
+            const criteriaList = sortedCriteria.map((c) => {
                 let dueText = '';
-                if (dueDate) {
-                    dueDate.setHours(0, 0, 0, 0);
-                    const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                const daysDiff = diffCalendarDaysBetweenYmd(c.due_date, todayYmd);
+                if (daysDiff != null) {
                     if (daysDiff < 0) {
                         dueText = ` <span style="color: #dc2626;">(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)</span>`;
                     } else if (daysDiff === 0) {

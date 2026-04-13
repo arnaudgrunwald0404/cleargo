@@ -81,3 +81,44 @@ export function addCalendarMonth(isoDate: string | null | undefined): string | n
   const d2 = String(next.getDate()).padStart(2, '0');
   return `${y2}-${m2}-${d2}`;
 }
+
+/** Calendar YYYY-MM-DD for `instant` in an IANA timezone (e.g. app settings). */
+export function getCalendarDateStringInTimeZone(timeZone: string, instant: Date = new Date()): string {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(instant);
+  } catch {
+    return dateToLocalDateString(instant);
+  }
+}
+
+/** Add calendar days to a YYYY-MM-DD string; returns YYYY-MM-DD or null. */
+export function addCalendarDaysToYmd(ymd: string, deltaDays: number): string | null {
+  const key = ymd.trim().split('T')[0];
+  const d = parseDateOnlyLocal(key);
+  if (!d) return null;
+  return dateToLocalDateString(addCalendarDays(d, deltaDays));
+}
+
+/**
+ * Whole-day difference dueYmd - todayYmd using civil calendar (no UTC-midnight parsing).
+ * Positive if the due date is after "today".
+ */
+export function diffCalendarDaysBetweenYmd(
+  dueYmd: string | null | undefined,
+  todayYmd: string | null | undefined
+): number | null {
+  if (!todayYmd) return null;
+  const dueKey = dueYmd?.trim().split('T')[0];
+  if (!dueKey) return null;
+  const m1 = dueKey.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const m2 = todayYmd.trim().split('T')[0]?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m1 || !m2) return null;
+  const utcDue = Date.UTC(+m1[1], +m1[2] - 1, +m1[3]);
+  const utcToday = Date.UTC(+m2[1], +m2[2] - 1, +m2[3]);
+  return Math.round((utcDue - utcToday) / 86400000);
+}

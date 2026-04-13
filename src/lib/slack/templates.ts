@@ -3,7 +3,12 @@
  */
 
 import type { SlackBlock } from '@/types/slack';
-import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
+import {
+    diffCalendarDaysBetweenYmd,
+    formatDateOnlyForDisplay,
+    getCalendarDateStringInTimeZone,
+    parseDateOnlyLocal,
+} from '@/lib/date-utils';
 import type { GroupedCriteria } from './notification-groups';
 import type { SlackThemeConfig } from './theme';
 import { defaultSlackTheme } from './theme';
@@ -845,7 +850,15 @@ export function buildCriteriaAssignmentMessage(
  * Now supports combined format with multiple epics and criteria
  */
 export function buildCriteriaNudgeMessage(
-    groupedCriteria: GroupedCriteria | { release_groups?: any[]; epic_groups?: any[]; criteria?: any[]; total_criteria_count?: number },
+    groupedCriteria:
+        | GroupedCriteria
+        | {
+              release_groups?: any[];
+              epic_groups?: any[];
+              criteria?: any[];
+              total_criteria_count?: number;
+              org_time_zone?: string;
+          },
     nudgeType: '1_week_before' | 'on_due_date' | 'daily_after' | 'combined',
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
@@ -860,13 +873,12 @@ export function buildCriteriaNudgeMessage(
         throw new Error('Cannot build nudge message without due date');
     }
 
-    const dueDateObj = new Date(dueDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const dueDateNormalized = new Date(dueDateObj);
-    dueDateNormalized.setHours(0, 0, 0, 0);
-
-    const daysDiff = Math.ceil((dueDateNormalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const tz =
+        'org_time_zone' in groupedCriteria && (groupedCriteria as { org_time_zone?: string }).org_time_zone
+            ? (groupedCriteria as { org_time_zone?: string }).org_time_zone!
+            : 'America/New_York';
+    const todayYmd = getCalendarDateStringInTimeZone(tz);
+    const daysDiff = diffCalendarDaysBetweenYmd(dueDate, todayYmd) ?? 0;
 
     let headerText: string;
     let urgencyEmoji: string;
@@ -960,24 +972,40 @@ export function buildCriteriaNudgeMessage(
  * Now supports release grouping
  */
 function buildCombinedCriteriaNudgeMessage(
-    data: { release_groups?: any[]; epic_groups: any[]; criteria: any[]; total_criteria_count: number },
+    data: {
+        release_groups?: any[];
+        epic_groups: any[];
+        criteria: any[];
+        total_criteria_count: number;
+        org_time_zone?: string;
+    },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const tz = data.org_time_zone || 'America/New_York';
+    const todayYmd = getCalendarDateStringInTimeZone(tz);
 
-    // Calculate urgency breakdown
+    const toYmd = (d: string | null | undefined) => (typeof d === 'string' ? d.trim().split('T')[0] : '') || '';
+
+    const epicUrgencyFromDiff = (daysDiff: number | null): string => {
+        if (daysDiff == null) return '';
+        if (daysDiff < 0) {
+            return ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
+        }
+        if (daysDiff === 0) return ' *(Due today)*';
+        if (daysDiff <= 7) return ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
+        return '';
+    };
+
+    // Calculate urgency breakdown (civil calendar vs org timezone "today")
     let overdueCount = 0;
     let dueTodayCount = 0;
     let dueSoonCount = 0;
     let mostUrgentDays = 0;
 
     for (const c of data.criteria) {
-        if (!c.due_date) continue;
-        const dueDate = new Date(c.due_date);
-        dueDate.setHours(0, 0, 0, 0);
-        const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-        
+        const daysDiff = diffCalendarDaysBetweenYmd(c.due_date, todayYmd);
+        if (daysDiff == null) continue;
+
         if (daysDiff < 0) {
             overdueCount++;
             if (daysDiff < mostUrgentDays) mostUrgentDays = daysDiff;
@@ -1043,15 +1071,15 @@ function buildCombinedCriteriaNudgeMessage(
             if (releaseGroup.release_name) {
                 releaseHeader = `*Release ${releaseGroup.release_name}*`;
                 if (releaseGroup.release_date) {
-                    const releaseDate = new Date(releaseGroup.release_date);
-                    releaseDate.setHours(0, 0, 0, 0);
-                    const daysDiff = Math.ceil((releaseDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                    if (daysDiff < 0) {
-                        releaseHeader += ` (${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)`;
-                    } else if (daysDiff === 0) {
-                        releaseHeader += ' (Today)';
-                    } else {
-                        releaseHeader += ` (in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})`;
+                    const daysDiff = diffCalendarDaysBetweenYmd(releaseGroup.release_date, todayYmd);
+                    if (daysDiff != null) {
+                        if (daysDiff < 0) {
+                            releaseHeader += ` (${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} ago)`;
+                        } else if (daysDiff === 0) {
+                            releaseHeader += ' (Today)';
+                        } else {
+                            releaseHeader += ` (in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})`;
+                        }
                     }
                 }
             } else {
@@ -1068,34 +1096,19 @@ function buildCombinedCriteriaNudgeMessage(
             
             // Add epics within this release
             for (const epicGroup of releaseGroup.epic_groups) {
-                // Calculate days until/since due for this epic's most urgent criterion
-                const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
-                    const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-                    const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-                    return dateA - dateB;
-                });
-                
+                const epicCriteria = [...epicGroup.criteria].sort((a: any, b: any) =>
+                    toYmd(a.due_date).localeCompare(toYmd(b.due_date))
+                );
                 const mostUrgentCriterion = epicCriteria[0];
-                const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
-                
-                let epicUrgencyText = '';
-                if (dueDate) {
-                    dueDate.setHours(0, 0, 0, 0);
-                    const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                    if (daysDiff < 0) {
-                        epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
-                    } else if (daysDiff === 0) {
-                        epicUrgencyText = ' *(Due today)*';
-                    } else if (daysDiff <= 7) {
-                        epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
-                    }
-                }
+                const epicUrgencyText = epicUrgencyFromDiff(
+                    diffCalendarDaysBetweenYmd(mostUrgentCriterion?.due_date, todayYmd)
+                );
 
                 blocks.push({
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `  • *${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `    • ${c.label}`).join('\n')}`,
+                        text: `  • *${epicGroup.epic_name}*${epicUrgencyText}\n${epicCriteria.map((c: any) => `    • ${c.label}`).join('\n')}`,
                     },
                     accessory: {
                         type: 'button',
@@ -1120,34 +1133,19 @@ function buildCombinedCriteriaNudgeMessage(
     } else {
         // Fallback to epic grouping (backward compatibility)
         for (const epicGroup of data.epic_groups) {
-            // Calculate days until/since due for this epic's most urgent criterion
-            const epicCriteria = epicGroup.criteria.sort((a: any, b: any) => {
-                const dateA = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-                const dateB = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-                return dateA - dateB;
-            });
-            
+            const epicCriteria = [...epicGroup.criteria].sort((a: any, b: any) =>
+                toYmd(a.due_date).localeCompare(toYmd(b.due_date))
+            );
             const mostUrgentCriterion = epicCriteria[0];
-            const dueDate = mostUrgentCriterion?.due_date ? new Date(mostUrgentCriterion.due_date) : null;
-            
-            let epicUrgencyText = '';
-            if (dueDate) {
-                dueDate.setHours(0, 0, 0, 0);
-                const daysDiff = Math.ceil((dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                if (daysDiff < 0) {
-                    epicUrgencyText = ` *(${Math.abs(daysDiff)} day${Math.abs(daysDiff) !== 1 ? 's' : ''} overdue)*`;
-                } else if (daysDiff === 0) {
-                    epicUrgencyText = ' *(Due today)*';
-                } else if (daysDiff <= 7) {
-                    epicUrgencyText = ` *(Due in ${daysDiff} day${daysDiff !== 1 ? 's' : ''})*`;
-                }
-            }
+            const epicUrgencyText = epicUrgencyFromDiff(
+                diffCalendarDaysBetweenYmd(mostUrgentCriterion?.due_date, todayYmd)
+            );
 
             blocks.push({
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*${epicGroup.epic_name}*${epicUrgencyText}\n${epicGroup.criteria.map((c: any) => `• ${c.label}`).join('\n')}`,
+                    text: `*${epicGroup.epic_name}*${epicUrgencyText}\n${epicCriteria.map((c: any) => `• ${c.label}`).join('\n')}`,
                 },
                 accessory: {
                     type: 'button',
