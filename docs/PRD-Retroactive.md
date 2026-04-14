@@ -166,6 +166,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 
 #### 1.1 Epic Portfolio View
 - **Grid/List View**: Display all epics with key metrics
+- **Releases list (`/epics`)**: The epics table includes three adjacent date columns — **Internal Orgs** (internal rollout milestone: computed from Admin release-schedule or UI-rollout stages to match the epic timeline, or overridden by the Aha! custom field *Phase 4b: Internal Readiness Distributed* when present), **Cohort 1** (target release / `target_launch_date`, i.e. Cohort 1 go-live), and **GA** (`scheduled_ga_dev_date` when set, otherwise Cohort 1 + 28 calendar days, consistent with release status logic).
 - **Filtering**: By tier (TIER_1, TIER_2, TIER_3), status, risk level, release, product, pod
 - **My Scope Filter**: Filter to epics where the user is the decision owner of at least one criterion
 - **Sorting**: By date, risk, readiness score, name
@@ -1367,6 +1368,10 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 
 #### Product Manager Resolution
 - **GET** `/api/epics/[id]/product-manager` - Get product manager user ID for an epic (resolves from epic owner and pod mapping)
+
+#### Criterion delegation (per epic)
+- **POST** `/api/epics/[id]/criteria/clear-delegation` - Clears `decision_owner_id` on `epic_criterion_status` for the given criterion **labels** on that epic so the matrix “Accountable” column falls back to the criterion template (`decision_owner_email`). Requires `criteria.delegate`. Body: `{ "labels": string[] }` (exact label match). Returns counts and cleared status row IDs.
+- **POST** `/api/criteria/clear-accountable-delegation` - Clears `decision_owner_id` wherever it points at a given `app_user` (by **accountable email**), scoped to one or more **epic IDs** and optionally to specific **criterion labels**. Requires `criteria.delegate`. Body: `{ "accountableEmail": string, "epicIds": string[], "criterionLabels"?: string[] }`. Omit `criterionLabels` to remove that person’s delegation on all criteria rows for those epics.
 
 ### Jira Integration
 

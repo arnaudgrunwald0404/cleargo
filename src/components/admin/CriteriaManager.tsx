@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text, Tabs, Combobox, useCombobox, InputBase } from "@mantine/core";
+import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text, Tabs } from "@mantine/core";
 import { IconTrash, IconAlertCircle } from '@tabler/icons-react';
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
@@ -42,6 +42,18 @@ interface ReleaseStage {
   sort_order: number;
   duration_days: number | null;
   details?: string | null;
+  scope?: string | null;
+}
+
+function formatRatingStageOptionLabel(stage: ReleaseStage): string {
+  const scope = stage.scope ?? "release_schedule";
+  const scopeNote =
+    scope === "ui_rollout"
+      ? "UI rollout"
+      : scope === "release_schedule"
+        ? "Release schedule"
+        : scope;
+  return `${stage.name} (${scopeNote})`;
 }
 
 const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2", "TIER_2_ONLY", "TIER_3_ONLY"];
@@ -133,7 +145,7 @@ export function CriteriaManager() {
   const getReleaseStageName = (stageId: number | null | undefined): string => {
     if (!stageId) return "—";
     const stage = releaseStages.find(s => s.id === stageId);
-    return stage?.name || `Unknown (${stageId})`;
+    return stage ? formatRatingStageOptionLabel(stage) : `Unknown (${stageId})`;
   };
 
   async function handlePreviewImport() {
@@ -842,10 +854,13 @@ export function CriteriaManager() {
                             submitEdit(c.id, { rating_timing: Number(value) });
                           }
                         }}
-                        data={releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
+                        data={releaseStages.map((stage) => ({
+                          value: stage.id.toString(),
+                          label: formatRatingStageOptionLabel(stage),
+                        }))}
                         size="xs"
                         allowDeselect={false}
-                        comboboxProps={{ width: 250, position: 'bottom-start' }}
+                        comboboxProps={{ width: 320, position: 'bottom-start' }}
                       />
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -940,10 +955,6 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
   const [ahaFields, setAhaFields] = useState<Array<{ alias: string; label: string; type: string }>>([]);
   const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("details");
-  
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
 
   useEffect(() => {
     if (opened) {
@@ -1013,9 +1024,6 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
     // Include custom email if it exists and doesn't match a user
     ...(isCustomEmail ? [{ value: patch.decision_owner_email!, label: patch.decision_owner_email!, user: null }] : [])
   ];
-
-  const selectedOption = userSelectData.find(opt => opt.value === (patch.decision_owner_email || ""));
-  const selectedLabel = selectedOption?.label || "";
 
   const dataSources = patch.data_sources || [];
   const canAddDataSource = dataSources.length < 5;
@@ -1132,76 +1140,87 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
                 onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
                 data={[
                   { value: "", label: "None" },
-                  ...releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
+                  ...releaseStages.map((stage) => ({
+                    value: stage.id.toString(),
+                    label: formatRatingStageOptionLabel(stage),
+                  })),
                 ]}
                 placeholder="Select launch stage"
-                description="Launch stage by which the criteria needs to be rated"
+                description='Launch stage by which the criteria needs to be rated. "Release schedule" is for normal launches; "UI rollout" pairs with criteria marked UI Framework only.'
                 clearable
               />
 
-              <Combobox
-                store={combobox}
-                withinPortal={false}
-                onOptionSubmit={(value) => {
-                  setPatch({ ...patch, decision_owner_email: value === "" ? undefined : value });
-                  combobox.closeDropdown();
+              <Select
+                label="Decision Owner"
+                searchable
+                disabled={usersLoading}
+                placeholder="Search by name or email..."
+                comboboxProps={{ withinPortal: false }}
+                data={userSelectData.map(({ value, label }) => ({ value, label }))}
+                value={patch.decision_owner_email ?? ""}
+                onChange={(v) =>
+                  setPatch({
+                    ...patch,
+                    decision_owner_email: v === "" || v == null ? undefined : v,
+                  })
+                }
+                filter={({ options, search, limit }) => {
+                  const q = search.trim().toLowerCase();
+                  const lim = limit ?? Infinity;
+                  if (!q) {
+                    return options.slice(0, lim);
+                  }
+                  const result: typeof options = [];
+                  for (const opt of options) {
+                    if (result.length >= lim) break;
+                    if ("items" in opt && Array.isArray(opt.items)) {
+                      continue;
+                    }
+                    const o = opt as { value: string; label: string };
+                    if (
+                      o.label.toLowerCase().includes(q) ||
+                      String(o.value).toLowerCase().includes(q)
+                    ) {
+                      result.push(o);
+                    }
+                  }
+                  return result;
                 }}
-              >
-                <Combobox.Target>
-                  <InputBase
-                    component="button"
-                    type="button"
-                    pointer
-                    rightSection={<Combobox.Chevron />}
-                    rightSectionPointerEvents="none"
-                    onClick={() => combobox.toggleDropdown()}
-                    label="Decision Owner"
-                    disabled={usersLoading}
-                  >
-                    {selectedLabel || (
-                      <Text component="span" c="dimmed">
-                        Select a user
-                      </Text>
-                    )}
-                  </InputBase>
-                </Combobox.Target>
-
-                <Combobox.Dropdown>
-                  <Combobox.Options>
-                    {userSelectData.map((item) => {
-                      const user = item.user;
-                      const isPlaceholder = item.value === POD_PM_PLACEHOLDER;
-                      return (
-                        <Combobox.Option value={item.value} key={item.value}>
-                          <Group gap="xs">
-                            {user && (
-                              <Avatar
-                                src={user.avatar_url || undefined}
-                                radius="xl"
-                                size="sm"
-                                color={getColor(user.email)}
-                              >
-                                {getInitials(user.email, user.first_name, user.last_name)}
-                              </Avatar>
-                            )}
-                            {isPlaceholder && (
-                              <Avatar radius="xl" size="sm" color="gray">
-                                PM
-                              </Avatar>
-                            )}
-                            {!user && !isPlaceholder && item.value !== "" && (
-                              <Avatar radius="xl" size="sm" color="gray">
-                                {item.value.substring(0, 2).toUpperCase()}
-                              </Avatar>
-                            )}
-                            <span>{item.label}</span>
-                          </Group>
-                        </Combobox.Option>
-                      );
-                    })}
-                  </Combobox.Options>
-                </Combobox.Dropdown>
-              </Combobox>
+                renderOption={({ option }) => {
+                  const item = userSelectData.find((i) => i.value === option.value);
+                  if (!item) {
+                    return <span>{option.label}</span>;
+                  }
+                  const user = item.user;
+                  const isPlaceholder = item.value === POD_PM_PLACEHOLDER;
+                  return (
+                    <Group gap="xs">
+                      {user && (
+                        <Avatar
+                          src={user.avatar_url || undefined}
+                          radius="xl"
+                          size="sm"
+                          color={getColor(user.email)}
+                        >
+                          {getInitials(user.email, user.first_name, user.last_name)}
+                        </Avatar>
+                      )}
+                      {isPlaceholder && (
+                        <Avatar radius="xl" size="sm" color="gray">
+                          PM
+                        </Avatar>
+                      )}
+                      {!user && !isPlaceholder && item.value !== "" && (
+                        <Avatar radius="xl" size="sm" color="gray">
+                          {item.value.substring(0, 2).toUpperCase()}
+                        </Avatar>
+                      )}
+                      <span>{item.label}</span>
+                    </Group>
+                  );
+                }}
+                maxDropdownHeight={320}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Status Definitions</label>
