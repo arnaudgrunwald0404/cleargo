@@ -37,6 +37,7 @@ type MyItem = {
     condition_due_date?: string;
     /** Server-computed from release_schedule anchor + rating_timing (preferred over condition_due_date for display). */
     due_date?: string | null;
+    data_source_values?: Record<string, string> | null;
     launch: {
         id: string;
         name: string;
@@ -1763,7 +1764,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               const ahaFields = item.launch.aha_fields as any;
 
                               // Only render icons for sources that have visible content
-                              const visibleSources = sources.filter((source) => {
+                              const dsv = item.data_source_values || {};
+                              const visibleSources = sources.filter((source, idx) => {
                                 if (source.type === 'aha_field' && source.value) {
                                   const sf = ahaFields?.standard_fields || {};
                                   const cf = ahaFields?.custom_fields || {};
@@ -1773,8 +1775,11 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                 if (source.type === 'aha_description_part') {
                                   return !!(ahaFields?.standard_fields?.description);
                                 }
-                                // url / jira_jql / success_metrics_defined: always show
-                                // (content is determined at click-time; these are configured for a reason)
+                                if (source.type === 'url' || source.type === 'jira_jql') {
+                                  const saved = dsv[idx.toString()];
+                                  return !!(saved && typeof saved === 'string' && saved.trim() !== '');
+                                }
+                                // success_metrics_defined: always show if configured
                                 return true;
                               });
 

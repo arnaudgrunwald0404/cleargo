@@ -124,10 +124,13 @@ export async function GET(req: NextRequest) {
         if (statusIds.length > 0) {
             const { data: statusRows } = await supabase
                 .from('epic_criterion_status')
-                .select('id, criterion_id')
+                .select('id, criterion_id, data_source_values')
                 .in('id', statusIds);
             const criterionIdByStatusId = new Map(
                 (statusRows || []).map((r) => [r.id, r.criterion_id])
+            );
+            const dataSourceValuesByStatusId = new Map(
+                (statusRows || []).map((r) => [r.id, (r as any).data_source_values ?? null])
             );
             const criterionIds = [...new Set((statusRows || []).map((r) => r.criterion_id).filter(Boolean))] as string[];
             if (criterionIds.length > 0) {
@@ -149,15 +152,18 @@ export async function GET(req: NextRequest) {
                     const statusId = (item as { id?: string }).id;
                     const cid = statusId ? criterionIdByStatusId.get(statusId) : null;
                     const defs = cid ? defByCriterionId.get(cid) : null;
-                    if (!defs || !item.criterion || typeof item.criterion !== 'object') return item;
+                    const dsv = statusId ? dataSourceValuesByStatusId.get(statusId) : null;
                     return {
                         ...item,
-                        criterion: {
-                            ...(item.criterion as object),
-                            status_definition_go: defs.status_definition_go,
-                            status_definition_conditional: defs.status_definition_conditional,
-                            status_definition_no_go: defs.status_definition_no_go,
-                        },
+                        data_source_values: dsv ?? null,
+                        ...(defs && item.criterion && typeof item.criterion === 'object' ? {
+                            criterion: {
+                                ...(item.criterion as object),
+                                status_definition_go: defs.status_definition_go,
+                                status_definition_conditional: defs.status_definition_conditional,
+                                status_definition_no_go: defs.status_definition_no_go,
+                            },
+                        } : {}),
                     };
                 });
             }
