@@ -1771,36 +1771,41 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           >
                             {(() => {
                               const sources = item.criterion.data_sources;
-                              if (!sources || sources.length === 0) {
-                                return <span style={{ color: "#D1D5DB" }}>—</span>;
-                              }
+                              if (!sources || sources.length === 0) return null;
                               const ahaFields = item.launch.aha_fields as any;
+
+                              // Only render icons for sources that have visible content
+                              const visibleSources = sources.filter((source) => {
+                                if (source.type === 'aha_field' && source.value) {
+                                  const sf = ahaFields?.standard_fields || {};
+                                  const cf = ahaFields?.custom_fields || {};
+                                  const v = sf[source.value] ?? cf[source.value];
+                                  return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+                                }
+                                if (source.type === 'aha_description_part') {
+                                  return !!(ahaFields?.standard_fields?.description);
+                                }
+                                // url / jira_jql / success_metrics_defined: always show
+                                // (content is determined at click-time; these are configured for a reason)
+                                return true;
+                              });
+
+                              if (visibleSources.length === 0) return null;
+
                               return (
                                 <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                                  {sources.map((source, idx) => {
-                                    // Determine if this source has data (for Aha sources only)
-                                    let hasData = true;
-                                    if (source.type === 'aha_field' && source.value) {
-                                      const sf = ahaFields?.standard_fields || {};
-                                      const cf = ahaFields?.custom_fields || {};
-                                      const v = sf[source.value] ?? cf[source.value];
-                                      hasData = v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
-                                    } else if (source.type === 'aha_description_part') {
-                                      const desc = ahaFields?.standard_fields?.description;
-                                      hasData = !!desc;
-                                    }
-                                    const color = hasData ? "#374151" : "#D1D5DB";
+                                  {visibleSources.map((source, idx) => {
                                     const tooltipLabel = source.label || source.value || source.type;
                                     return (
                                       <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
-                                        <span style={{ display: "inline-flex", alignItems: "center", color }}>
+                                        <span style={{ display: "inline-flex", alignItems: "center", color: "#374151" }}>
                                           {source.type === 'success_metrics_defined' ? (
                                             <span style={{ fontSize: "14px" }}>📊</span>
                                           ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                             <img
                                               src="https://www.google.com/s2/favicons?domain=aha.io&sz=12"
                                               alt="Aha"
-                                              style={{ width: 12, height: 12, display: "block", opacity: hasData ? 1 : 0.3 }}
+                                              style={{ width: 12, height: 12, display: "block" }}
                                               onError={(e) => {
                                                 const el = e.target as HTMLImageElement;
                                                 el.onerror = null;
