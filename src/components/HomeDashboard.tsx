@@ -1181,7 +1181,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                       <tr>
                         <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "20%", width: "20%" }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Pod</th>
                         <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
                         <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
@@ -1195,9 +1194,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="px-4 py-3 w-24">
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
-                          </td>
-                          <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                           </td>
                           <td style={{ padding: "12px 20px", minWidth: "300px", width: "30%" }}>
                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
@@ -1647,13 +1643,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           letterSpacing: "0.05em",
                           color: "#6B7280"
                         }}>Tier</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          color: "#6B7280"
-                        }}>Pod</th>
                         <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
                           fontSize: "12px",
                           fontWeight: 600,
@@ -1741,9 +1730,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               }`}>
                               {item.launch.tier.replace('_', ' ')}
                             </span>
-                          </td>
-                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                            {item.launch.pod || '-'}
                           </td>
                           <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             <Cohort1DateBadge epic={item.launch} dateOptions={{ month: 'short', day: 'numeric' }} />
