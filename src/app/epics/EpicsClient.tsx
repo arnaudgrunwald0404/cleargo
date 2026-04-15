@@ -87,42 +87,14 @@ function GtmOrgsHeaderIcon() {
     );
 }
 
-/** Returns the next upcoming stage from the release timeline and days until it starts. */
-function getNextUpcomingStage(
-    releaseDate: string,
-    stages: DbReleaseStageRow[] | undefined
-): { name: string; daysUntil: number } | null {
+/** Returns days until Cohort 1 Live (the release anchor date). */
+function getDaysUntilCohort1(releaseDate: string): number | null {
     const anchorDate = parseDateOnlyLocal(releaseDate);
     if (!anchorDate) return null;
     const today = new Date(); today.setHours(0, 0, 0, 0);
-
-    if (!stages || stages.length === 0) {
-        // No stage data yet — fall back to days until Cohort 1 (the release date itself)
-        anchorDate.setHours(0, 0, 0, 0);
-        const daysUntil = Math.round((anchorDate.getTime() - today.getTime()) / 86400000);
-        return daysUntil > 0 ? { name: 'Cohort 1 Live', daysUntil } : null;
-    }
-
-    const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
-    const cohort1Stage = sortedStages.find(s => s.name.toLowerCase().includes('cohort 1'));
-    const preLaunchDays = cohort1Stage
-        ? sortedStages
-            .filter(s => s.sort_order < cohort1Stage.sort_order && s.duration_days != null)
-            .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
-        : 0;
-
-    let cursor = preLaunchDays > 0
-        ? subtractCalendarDays(anchorDate, preLaunchDays)
-        : new Date(anchorDate);
-
-    for (const stage of sortedStages) {
-        const dur = stage.duration_days ?? 0;
-        const stageDate = new Date(cursor); stageDate.setHours(0, 0, 0, 0);
-        cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
-        const daysUntil = Math.round((stageDate.getTime() - today.getTime()) / 86400000);
-        if (daysUntil > 0) return { name: stage.name, daysUntil };
-    }
-    return null;
+    anchorDate.setHours(0, 0, 0, 0);
+    const days = Math.round((anchorDate.getTime() - today.getTime()) / 86400000);
+    return days > 0 ? days : null;
 }
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
@@ -1952,9 +1924,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </span>
                                         ) : null}
                                         {group.releaseName !== "Ungrouped" && group.releaseDate && (() => {
-                                            const next = getNextUpcomingStage(group.releaseDate, releaseScheduleStagesForTimeline);
-                                            if (!next) return null;
-                                            const urgent = next.daysUntil <= 7;
+                                            const daysUntil = getDaysUntilCohort1(group.releaseDate);
+                                            if (!daysUntil) return null;
+                                            const urgent = daysUntil <= 7;
                                             return (
                                                 <span style={{
                                                     marginLeft: 'var(--spacing-2)',
@@ -1974,8 +1946,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         whiteSpace: 'nowrap',
                                                         letterSpacing: '-0.01em',
                                                     }}>
-                                                        <span style={{ fontSize: 15, fontWeight: 800 }}>{next.daysUntil}</span>
-                                                        {' '}day{next.daysUntil !== 1 ? 's' : ''} until {next.name}
+                                                        <span style={{ fontSize: 15, fontWeight: 800 }}>{daysUntil}</span>
+                                                        {' '}day{daysUntil !== 1 ? 's' : ''} until Cohort 1 Live
                                                     </span>
                                                 </span>
                                             );
