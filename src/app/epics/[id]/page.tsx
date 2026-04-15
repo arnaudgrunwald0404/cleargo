@@ -1934,11 +1934,7 @@ export default function EpicDetailPage() {
                             {releaseStages.length > 0 && (
                                 <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
                                     <ReleaseStagesChart
-                                        releaseDate={
-                                            epic
-                                                ? getEpicCohort1DisplayYmd(epic, releaseDate)
-                                                : releaseDate || epic?.target_launch_date || null
-                                        }
+                                        releaseDate={getEpicCohort1DisplayYmd(epic, releaseDate)}
                                         cohort2Date={cohort2Date}
                                         stages={releaseStages}
                                         showHeading={true}

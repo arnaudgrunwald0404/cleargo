@@ -109,26 +109,98 @@ async function getFieldDefinitionOptions(fieldKey: string): Promise<Map<string, 
     }
 }
 
-/** Get custom field value from epic by Aha API key (used when alias key may be missing in config). */
-async function getCustomFieldValueByKey(epic: AhaEpic, key: string): Promise<any> {
-    let field: any = null;
-    if (Array.isArray(epic.custom_fields)) {
-        field = epic.custom_fields.find((f: any) => f?.key === key);
-    } else if (epic.custom_fields && typeof epic.custom_fields === 'object') {
-        field = epic.custom_fields[key];
+/**
+ * Aha custom fields often return strings, but date fields may return objects
+ * (e.g. `{ date: 'YYYY-MM-DD' }`); dropdowns use `{ name: '...' }`.
+ */
+function coerceAhaCustomFieldScalar(raw: unknown): string | number | boolean | null {
+    if (raw == null) return null;
+    if (typeof raw === 'string' || typeof raw === 'number' || typeof raw === 'boolean') return raw;
+    if (Array.isArray(raw)) {
+        return raw.length > 0 ? coerceAhaCustomFieldScalar(raw[0]) : null;
     }
-    if (!field) return null;
-    const value = field.value;
-    if (value && typeof value === 'object' && !Array.isArray(value) && value.name) {
-        return value.name;
-    }
-    if (typeof value === 'string' && value.trim()) {
-        const optionsMap = await getFieldDefinitionOptions(key);
-        if (optionsMap && optionsMap.has(value)) {
-            return optionsMap.get(value);
+    if (typeof raw === 'object') {
+        const o = raw as Record<string, unknown>;
+        if (typeof o.name === 'string') return o.name;
+        if (typeof o.date === 'string') return o.date;
+        if (typeof o.value === 'string') return o.value;
+        if (raw instanceof Date && !isNaN((raw as Date).getTime())) {
+            return (raw as Date).toISOString().split('T')[0];
         }
     }
-    return value ?? null;
+    return null;
+}
+
+/** Find custom field entry; match exact key, then case-insensitive; for off-schedule, allow fuzzy key match. */
+function findEpicCustomFieldEntry(epic: AhaEpic, key: string): { value?: unknown } | null {
+    if (Array.isArray(epic.custom_fields)) {
+        let field = epic.custom_fields.find((f: any) => f?.key === key);
+        if (field) return field;
+        const lower = key.toLowerCase();
+        field = epic.custom_fields.find(
+            (f: any) => typeof f?.key === 'string' && f.key.toLowerCase() === lower
+        );
+        if (field) return field;
+        if (key === 'off_schedule_release_date') {
+            field = epic.custom_fields.find(
+                (f: any) =>
+                    typeof f?.key === 'string' &&
+                    /off_schedule|offschedule|schedule_release|release_date_off/i.test(f.key)
+            );
+            if (field) return field;
+        }
+        return null;
+    }
+    if (epic.custom_fields && typeof epic.custom_fields === 'object' && !Array.isArray(epic.custom_fields)) {
+        const rec = epic.custom_fields as Record<string, unknown>;
+        const pick = (v: unknown): { value?: unknown } | null => {
+            if (v === undefined || v === null) return null;
+            if (typeof v === 'object' && v !== null && 'value' in v) {
+                return v as { value?: unknown };
+            }
+            return { value: v };
+        };
+        let wrapped = pick(rec[key]) ?? pick(rec[key.toLowerCase()]);
+        if (wrapped) return wrapped;
+        const lower = key.toLowerCase();
+        for (const k of Object.keys(rec)) {
+            if (k.toLowerCase() === lower) {
+                wrapped = pick(rec[k]);
+                if (wrapped) return wrapped;
+            }
+        }
+        if (key === 'off_schedule_release_date') {
+            for (const k of Object.keys(rec)) {
+                if (/off_schedule|offschedule|schedule_release|release_date_off/i.test(k)) {
+                    wrapped = pick(rec[k]);
+                    if (wrapped) return wrapped;
+                }
+            }
+        }
+    }
+    return null;
+}
+
+/** Get custom field value from epic by Aha API key (used when alias key may be missing in config). */
+async function getCustomFieldValueByKey(epic: AhaEpic, key: string): Promise<any> {
+    const field = findEpicCustomFieldEntry(epic, key);
+    if (!field) return null;
+    const value = field.value;
+    if (value && typeof value === 'object' && !Array.isArray(value) && (value as { name?: string }).name) {
+        return (value as { name: string }).name;
+    }
+    const coerced = coerceAhaCustomFieldScalar(value);
+    if (typeof coerced === 'string' && coerced.trim()) {
+        const optionsMap = await getFieldDefinitionOptions(key);
+        if (optionsMap && optionsMap.has(coerced)) {
+            return optionsMap.get(coerced);
+        }
+        return coerced;
+    }
+    if (typeof coerced === 'number' || typeof coerced === 'boolean') {
+        return coerced;
+    }
+    return coerced ?? null;
 }
 
 export async function getCustomFieldValue(epic: AhaEpic, fieldAlias: string): Promise<any> {
@@ -277,6 +349,23 @@ export async function mapEpicToEpic(
         }
     }
 
+    const normalizeReleaseValue = (value: any): string | null => {
+        if (value === null || value === undefined) return null;
+        if (typeof value === 'string') return value;
+        if (Array.isArray(value)) {
+            return value.length > 0 ? String(value[0]) : null;
+        }
+        const coerced = coerceAhaCustomFieldScalar(value);
+        if (typeof coerced === 'string') return coerced;
+        if (coerced == null) return null;
+        return String(coerced);
+    };
+
+    const offScheduleReleaseDate = normalizeReleaseValue(await getCustomFieldValue(epic, 'off_schedule_release_date'));
+    if (offScheduleReleaseDate) {
+        customFields.off_schedule_release_date = offScheduleReleaseDate;
+    }
+
     // Store the full release name in standard fields (no parsing)
     const releaseName = epic.release?.name || null;
     if (releaseName) {
@@ -304,18 +393,6 @@ export async function mapEpicToEpic(
         custom_fields: customFields,
     };
 
-    // Helper function to normalize release values (can be string, array, or date)
-    const normalizeReleaseValue = (value: any): string | null => {
-        if (value === null || value === undefined) return null;
-        if (typeof value === 'string') return value;
-        if (Array.isArray(value)) {
-            // If array, join with comma or take first element
-            return value.length > 0 ? String(value[0]) : null;
-        }
-        // For dates or other types, convert to string
-        return String(value);
-    };
-
     // For UI Framework epics, Tier = Level (Level 1 → Tier 1, Level 2 → Tier 2, Level 3 → Tier 3)
     const isUiFramework = customFields.cleargo_candidate === 'Yes - UI Framework';
     const tierFromUiLevel = isUiFramework ? mapUiLevelToTier(customFields.uiux_impact) : null;
@@ -328,7 +405,7 @@ export async function mapEpicToEpic(
         tier,
         target_launch_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
         scheduled_ga_dev_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
-        off_schedule_release_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'off_schedule_release_date')),
+        off_schedule_release_date: offScheduleReleaseDate,
         owner_email: epic.assigned_to_user?.email ?? null,
         product_component: await getCustomFieldValue(epic, 'components'),
         pod: await getCustomFieldValue(epic, 'dev_backlog_pod'),
