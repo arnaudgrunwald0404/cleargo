@@ -208,7 +208,21 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             throw new Error(`Multi-recipient is only supported for criterion_comment_or_attachment`);
         }
         const slackIds = valid.map((r) => r.slack_handle!);
-        const channel = await client.openMultiUserConversation(slackIds);
+        let channel: string;
+        try {
+            channel = await client.openMultiUserConversation(slackIds);
+        } catch (mpimError: any) {
+            console.error('Failed to open MPDM conversation, falling back to default channel:', mpimError);
+            // Fall back to individual DMs for each recipient
+            for (const r of valid) {
+                await sendSlackNotification({
+                    ...payload,
+                    recipient: r,
+                    recipients: undefined,
+                });
+            }
+            return;
+        }
         const response = await client.postMessage({ channel, ...message });
         console.log('Slack MPDM notification sent:', { type: payload.type, channel, ts: response.ts });
         const logPayload = { ...payload.metadata, multi_recipient: true, recipient_ids: valid.map((r) => r.id) };

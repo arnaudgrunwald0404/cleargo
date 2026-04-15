@@ -28,6 +28,7 @@ oauth_config:
       - channels:read
       - commands
       - im:write
+      - mpim:write
 
 settings:
   org_deploy_enabled: false
