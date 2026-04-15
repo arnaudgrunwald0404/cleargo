@@ -54,6 +54,7 @@ type MyItem = {
         status_definition_conditional?: string | null;
         status_definition_no_go?: string | null;
         rating_timing?: number | null;
+        data_sources?: Array<{ type: string; value: string; label?: string }> | null;
     };
 };
 
@@ -443,6 +444,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
   const [epicReleaseMap, setEpicReleaseMap] = useState<Map<string, string | null>>(new Map());
   const [showAllItems, setShowAllItems] = useState(false);
+  const [showOnlyAsap, setShowOnlyAsap] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
   const [releaseStagesFull, setReleaseStagesFull] = useState<CriterionDueDateStageRow[]>([]);
@@ -1012,6 +1014,24 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     setCriteriaCount(headingStats.total);
   }, [headingStats.total]);
 
+  const displayedGroups = useMemo(() => {
+    if (!showOnlyAsap) return releaseGroups;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return releaseGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          const dueDateStr = getItemDueDate(item);
+          if (!dueDateStr) return false;
+          const dueDate = new Date(dueDateStr);
+          dueDate.setHours(0, 0, 0, 0);
+          return dueDate < today;
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [releaseGroups, showOnlyAsap, getItemDueDate]);
+
   const handleOpenDelegation = (item: MyItem) => {
     setSelectedItemForDelegation(item);
     setDelegationModalOpen(true);
@@ -1025,6 +1045,12 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const handleOpenComments = (item: MyItem) => {
     setSelectedItemForComments(item);
     setCommentsModalInitialTab('comments');
+    setCommentsModalOpen(true);
+  };
+
+  const handleOpenDocs = (item: MyItem) => {
+    setSelectedItemForComments(item);
+    setCommentsModalInitialTab('content');
     setCommentsModalOpen(true);
   };
 
@@ -1259,7 +1285,26 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   </span>
                   {headingStats.total - headingStats.overdue > 0 && (
                     <span style={{ fontWeight: 400 }}> (plus, {headingStats.total - headingStats.overdue} to start thinking about)</span>
-                  )}.
+                  )}.{' '}
+                  {headingStats.overdue > 0 && (
+                    <button
+                      onClick={() => setShowOnlyAsap((v) => !v)}
+                      style={{
+                        fontFamily: 'var(--font-marcellus), serif',
+                        fontSize: 'var(--font-size-4xl)',
+                        fontWeight: 400,
+                        color: 'var(--table-steel, #697771)',
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textUnderlineOffset: '3px',
+                      }}
+                    >
+                      {showOnlyAsap ? 'Show all' : `Show them ${headingStats.overdue}`}
+                    </button>
+                  )}
                 </Text>
               )}
             </div>
@@ -1548,7 +1593,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-6)' }}>
-              {releaseGroups.map((group, groupIndex) => (
+              {displayedGroups.map((group, groupIndex) => (
                 <div key={group.releaseName}>
                   <div style={{
                     marginBottom: 'var(--spacing-3)'
@@ -1625,7 +1670,15 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           minWidth: "300px",
                           width: "30%"
                         }}>Criterion</th>
-                        <th className="px-4 py-3 text-left w-24" style={{ 
+                        <th className="px-4 py-3 text-left" style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          color: "#6B7280",
+                          width: "80px"
+                        }}>Docs</th>
+                        <th className="px-4 py-3 text-left w-24" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1710,6 +1763,74 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               color: "#6B7280",
                               marginTop: "4px"
                             }}>{item.criterion.category}</div>
+                          </td>
+                          <td
+                            className="px-4 py-3"
+                            style={{ padding: "12px 16px", width: "80px", cursor: "pointer" }}
+                            onClick={() => handleOpenDocs(item)}
+                          >
+                            {(() => {
+                              const sources = item.criterion.data_sources;
+                              if (!sources || sources.length === 0) {
+                                return <span style={{ color: "#D1D5DB" }}>—</span>;
+                              }
+                              const ahaFields = item.launch.aha_fields as any;
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                  {sources.map((source, idx) => {
+                                    // Determine if this source has data (for Aha sources only)
+                                    let hasData = true;
+                                    if (source.type === 'aha_field' && source.value) {
+                                      const sf = ahaFields?.standard_fields || {};
+                                      const cf = ahaFields?.custom_fields || {};
+                                      const v = sf[source.value] ?? cf[source.value];
+                                      hasData = v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+                                    } else if (source.type === 'aha_description_part') {
+                                      const desc = ahaFields?.standard_fields?.description;
+                                      hasData = !!desc;
+                                    }
+                                    const color = hasData ? "#374151" : "#D1D5DB";
+                                    const tooltipLabel = source.label || source.value || source.type;
+                                    return (
+                                      <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
+                                        <span style={{ display: "inline-flex", alignItems: "center", color }}>
+                                          {source.type === 'success_metrics_defined' ? (
+                                            <span style={{ fontSize: "14px" }}>📊</span>
+                                          ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
+                                            <img
+                                              src="https://www.google.com/s2/favicons?domain=aha.io&sz=12"
+                                              alt="Aha"
+                                              style={{ width: 12, height: 12, display: "block", opacity: hasData ? 1 : 0.3 }}
+                                              onError={(e) => {
+                                                const el = e.target as HTMLImageElement;
+                                                el.onerror = null;
+                                                el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                              }}
+                                            />
+                                          ) : source.type === 'jira_jql' ? (
+                                            <img
+                                              src="https://www.google.com/s2/favicons?domain=atlassian.com&sz=12"
+                                              alt="Jira"
+                                              style={{ width: 12, height: 12, display: "block" }}
+                                              onError={(e) => {
+                                                const el = e.target as HTMLImageElement;
+                                                el.onerror = null;
+                                                el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                              }}
+                                            />
+                                          ) : (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                            </svg>
+                                          )}
+                                        </span>
+                                      </Tooltip>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                             <StatusTrafficLight
@@ -1845,6 +1966,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               taskLabel={selectedItemForComments.criterion.label}
               currentUserEmail={currentUserEmail}
               initialTab={commentsModalInitialTab}
+              criterion={selectedItemForComments.criterion.data_sources ? { data_sources: selectedItemForComments.criterion.data_sources } : undefined}
+              epic={selectedItemForComments.launch.aha_fields ? { aha_fields: selectedItemForComments.launch.aha_fields } : undefined}
             />
           )}
         </div>
