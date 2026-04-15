@@ -75,7 +75,7 @@ async function getTierThreshold(tier: string): Promise<number> {
  * Assess risk factors for a single epic
  */
 export async function assessEpicRisk(epic: any): Promise<RiskFactors & { riskScore: number; riskReasons: string[] }> {
-    const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+    const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
     const daysToLaunch = calculateDaysToLaunch(cohortYmd);
     const readinessScore = epic.readiness_score;
     const readinessStatus = epic.readiness_status;

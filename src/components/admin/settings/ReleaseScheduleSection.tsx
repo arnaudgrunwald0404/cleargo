@@ -609,13 +609,13 @@ export default function ReleaseScheduleSection(props: Props) {
                               onClick={async () => {
                                 setSyncingReleaseId(release.id);
                                 try {
-                                  const res = await fetch(`/api/integrations/aha/sync?release_name=${encodeURIComponent(release.release_name)}`, {
+                                  const res = await fetch(`/api/integrations/aha/sync?release=${encodeURIComponent(release.release_name)}`, {
                                     method: "POST",
                                     credentials: "include",
                                   });
-                                  
+
                                   if (!res.ok) {
-                                    const errorData = await res.json();
+                                    const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
                                     throw new Error(errorData.error || "Failed to sync epics");
                                   }
                                   

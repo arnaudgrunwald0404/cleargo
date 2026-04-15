@@ -65,21 +65,23 @@ function findCohort1Stage(sorted: EpicRolloutStageRow[]): EpicRolloutStageRow | 
   return sorted.find((s) => s.name.toLowerCase().includes('cohort 1'));
 }
 
-function findInternalStageBeforeCohort1(
+/** GTM Access and Prep stage (or the stage just before Internal Readiness as fallback). */
+function findGtmStageBeforeCohort1(
   sorted: EpicRolloutStageRow[],
   cohort1: EpicRolloutStageRow
 ): EpicRolloutStageRow | undefined {
-  return sorted.find(
-    (s) => s.sort_order < cohort1.sort_order && s.name.toLowerCase().includes('internal')
+  return (
+    sorted.find((s) => s.sort_order < cohort1.sort_order && s.name.toLowerCase().includes('gtm')) ??
+    sorted.find((s) => s.sort_order < cohort1.sort_order && s.name.toLowerCase().includes('internal'))
   );
 }
 
-/** Start of Internal Readiness (calendar walk) — legacy release schedule. */
+/** Start of GTM Access and Prep stage (calendar walk) — legacy release schedule. */
 function internalOrgsDateTraditional(anchor: string, sorted: EpicRolloutStageRow[]): string | null {
   const cohort1Stage = findCohort1Stage(sorted);
   if (!cohort1Stage) return null;
-  const internalStage = findInternalStageBeforeCohort1(sorted, cohort1Stage);
-  if (!internalStage) return null;
+  const gtmStage = findGtmStageBeforeCohort1(sorted, cohort1Stage);
+  if (!gtmStage) return null;
 
   const preLaunchDays = sorted
     .filter((s) => s.sort_order < cohort1Stage.sort_order && s.duration_days != null)
@@ -91,7 +93,7 @@ function internalOrgsDateTraditional(anchor: string, sorted: EpicRolloutStageRow
   const startDate = preLaunchDays > 0 ? subtractCalendarDays(anchorDate, preLaunchDays) : new Date(anchorDate);
   let cursor = new Date(startDate);
   for (const stage of sorted) {
-    if (stage.sort_order >= internalStage.sort_order) break;
+    if (stage.sort_order >= gtmStage.sort_order) break;
     const dur = stage.duration_days ?? 0;
     if (dur > 0) cursor = addCalendarDays(cursor, dur);
   }
@@ -157,13 +159,13 @@ export function getEpicInternalOrgsDateYmd(
 }
 
 /** Cohort 1 go-live — off-schedule release date overrides target launch when set. */
-export function getEpicCohort1DateYmd(epic: Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>): string | null {
+export function getEpicCohort1DateYmd(epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>): string | null {
   return getEffectiveCohort1DateYmd(epic);
 }
 
 /** GA date: scheduled GA from Aha, else effective Cohort 1 + 28 calendar days. */
 export function getEpicGaDateYmd(
-  epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'off_schedule_release_date'>
+  epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>
 ): string | null {
   const scheduled = parseDateOnlyLocal(epic.scheduled_ga_dev_date);
   if (scheduled) return dateToLocalDateString(scheduled);

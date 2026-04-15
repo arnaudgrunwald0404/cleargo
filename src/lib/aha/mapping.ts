@@ -248,7 +248,6 @@ export interface MappedEpicData {
     tier: string;
     target_launch_date: string | null;
     scheduled_ga_dev_date: string | null;
-    off_schedule_release_date: string | null;
     owner_email: string | null;
     product_component: string | null;
     pod: string | null;
@@ -405,7 +404,6 @@ export async function mapEpicToEpic(
         tier,
         target_launch_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'estimated_ga_release_pm_owned')),
         scheduled_ga_dev_date: normalizeReleaseValue(await getCustomFieldValue(epic, 'scheduled_ga_release_dev_only')),
-        off_schedule_release_date: offScheduleReleaseDate,
         owner_email: epic.assigned_to_user?.email ?? null,
         product_component: await getCustomFieldValue(epic, 'components'),
         pod: await getCustomFieldValue(epic, 'dev_backlog_pod'),

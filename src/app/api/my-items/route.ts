@@ -81,16 +81,16 @@ export async function GET(req: NextRequest) {
 
         const { data: epicsWithRelease } = await supabase
             .from('epic')
-            .select('id, aha_fields, target_launch_date, off_schedule_release_date')
+            .select('id, aha_fields, target_launch_date')
             .in('id', epicIds);
 
         const epicToRelease = new Map<string, string>();
         const epicRowById = new Map<
             string,
-            { id: string; aha_fields: unknown; target_launch_date: string | null; off_schedule_release_date: string | null }
+            { id: string; aha_fields: unknown; target_launch_date: string | null }
         >();
         for (const e of epicsWithRelease || []) {
-            epicRowById.set(e.id, e as { id: string; aha_fields: unknown; target_launch_date: string | null; off_schedule_release_date: string | null });
+            epicRowById.set(e.id, e as { id: string; aha_fields: unknown; target_launch_date: string | null });
             const name = getReleaseNameFromAhaFields(e.aha_fields);
             if (name) epicToRelease.set(e.id, name);
         }
@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
                 item.launch && epicRow
                     ? {
                           ...item.launch,
-                          off_schedule_release_date: epicRow.off_schedule_release_date ?? null,
+                          aha_fields: epicRow.aha_fields ?? null,
                       }
                     : item.launch;
             const releaseName =

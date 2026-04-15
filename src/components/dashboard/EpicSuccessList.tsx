@@ -107,7 +107,7 @@ export function EpicSuccessList({
                     <Cohort1DateBadge
                       epic={{
                         target_launch_date: epic.target_launch_date ?? undefined,
-                        off_schedule_release_date: epic.off_schedule_release_date ?? undefined,
+                        aha_fields: epic.aha_fields ?? undefined,
                       }}
                       dateOptions={{ month: 'short', day: 'numeric', year: 'numeric' }}
                       emptyLabel="—"

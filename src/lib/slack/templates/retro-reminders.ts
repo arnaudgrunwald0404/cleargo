@@ -6,7 +6,7 @@ import type { DayMarker } from '@/lib/success/types';
 import { formatCohort1DateForSlack } from '@/lib/epic-cohort1-date';
 import type { Epic } from '@/types/epics';
 
-type RetroReminderEpic = Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'> & {
+type RetroReminderEpic = Pick<Epic, 'target_launch_date' | 'aha_fields'> & {
   id: string;
   name: string;
 };

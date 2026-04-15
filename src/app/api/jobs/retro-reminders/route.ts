@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
               id: epic.epicId,
               name: epic.epicName,
               target_launch_date: epic.target_launch_date ?? undefined,
-              off_schedule_release_date: epic.off_schedule_release_date ?? undefined,
+              aha_fields: epic.aha_fields ?? undefined,
             },
             dayMarker,
             epic.daysSinceLaunch
@@ -88,7 +88,7 @@ export async function GET(request: NextRequest) {
                   id: epic.epicId,
                   name: epic.epicName,
                   target_launch_date: epic.target_launch_date,
-                  off_schedule_release_date: epic.off_schedule_release_date,
+                  aha_fields: epic.aha_fields,
                 },
                 dayMarker,
                 daysSinceLaunch: epic.daysSinceLaunch,

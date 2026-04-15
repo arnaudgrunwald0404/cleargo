@@ -19,7 +19,7 @@ export interface EpicWithReviewStatus {
   epicId: string;
   epicName: string;
   target_launch_date: string | null;
-  off_schedule_release_date: string | null;
+  aha_fields: Record<string, any> | null;
   lastReviewDate: string | null;
   daysSinceLastReview: number | null;
   needsReview: boolean;
@@ -99,12 +99,12 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
       id,
       name,
       target_launch_date,
-      off_schedule_release_date,
+      aha_fields,
       status
     `)
     .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
     .or('target_launch_date.not.is.null,off_schedule_release_date.not.is.null');
-  
+
   if (epicsError) {
     console.error('Error fetching epics for review check:', epicsError);
     throw new Error(`Failed to fetch epics: ${epicsError.message}`);
@@ -160,7 +160,7 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
   const ninetyDaysAgoYmd = ninetyDaysAgo.toISOString().split('T')[0];
 
   for (const epic of epics) {
-    const effectiveLaunch = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+    const effectiveLaunch = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
     if (!effectiveLaunch || effectiveLaunch > todayYmd || effectiveLaunch < ninetyDaysAgoYmd) {
       continue;
     }
@@ -187,7 +187,7 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
         epicId: epic.id,
         epicName: epic.name,
         target_launch_date: epic.target_launch_date ?? null,
-        off_schedule_release_date: epic.off_schedule_release_date ?? null,
+        aha_fields: (epic as any).aha_fields ?? null,
         lastReviewDate,
         daysSinceLastReview,
         needsReview: true,
@@ -253,7 +253,7 @@ export async function getEpicsNeedingEscalation(): Promise<Array<{
       id,
       name,
       target_launch_date,
-      off_schedule_release_date,
+      aha_fields,
       epic_success_configs!inner(
         post_launch_owner,
         post_launch_owner_user:app_user!post_launch_owner(email, id)
@@ -269,7 +269,7 @@ export async function getEpicsNeedingEscalation(): Promise<Array<{
   
   if (epicsWithRetros) {
     for (const epic of epicsWithRetros) {
-      const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+      const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
       if (!effectiveYmd || effectiveYmd > todayYmdEsc) continue;
 
       const daysSinceLaunch = calculateDaysSinceLaunch(effectiveYmd);

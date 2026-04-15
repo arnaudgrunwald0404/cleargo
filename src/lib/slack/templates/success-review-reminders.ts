@@ -6,7 +6,7 @@ import type { Epic } from '@/types/epics';
 import { formatCohort1DateForSlack } from '@/lib/epic-cohort1-date';
 
 export function buildSuccessReviewReminderMessage(metadata: {
-  epic: Pick<Epic, 'id' | 'name' | 'target_launch_date' | 'off_schedule_release_date'>;
+  epic: Pick<Epic, 'id' | 'name' | 'target_launch_date' | 'aha_fields'>;
   daysSinceLastReview: number | null;
   lastReviewDate: string | null;
 }): {

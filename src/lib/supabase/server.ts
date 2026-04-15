@@ -2,10 +2,10 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-// Custom fetch with better error handling and timeout
+// Custom fetch with better error handling, timeout, and retry for transient network errors
 const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    
+
     // Validate URL format
     if (!supabaseUrl) {
         throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set in environment variables');
@@ -14,51 +14,60 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
     // Convert url to string for error messages
     const urlString = typeof url === 'string' ? url : url.toString();
 
-    // Create AbortController for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+    const MAX_RETRIES = 3;
+    let lastError: any;
 
-    try {
-        const response = await fetch(url, {
-            ...options,
-            signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-        return response;
-    } catch (error: any) {
-        clearTimeout(timeoutId);
-        
-        // Provide more detailed error messages
-        if (error.name === 'AbortError') {
-            throw new Error(`Supabase request timed out after 30 seconds. URL: ${urlString}`);
-        }
-        
-        if (error.message === 'fetch failed' || error.message?.includes('fetch failed')) {
-            // Check if it's a network error
-            try {
-                const urlObj = new URL(urlString);
-                throw new Error(
-                    `Failed to connect to Supabase at ${urlObj.origin}. ` +
-                    `Please check:\n` +
-                    `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
-                    `2. The Supabase project is running and accessible\n` +
-                    `3. Network connectivity is available\n` +
-                    `Original error: ${error.message}`
-                );
-            } catch {
-                // If URL parsing fails, provide generic error
-                throw new Error(
-                    `Failed to connect to Supabase. ` +
-                    `Please check:\n` +
-                    `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
-                    `2. The Supabase project is running and accessible\n` +
-                    `3. Network connectivity is available\n` +
-                    `Original error: ${error.message}`
-                );
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        // Create AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+        try {
+            const response = await fetch(url, {
+                ...options,
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            return response;
+        } catch (error: any) {
+            clearTimeout(timeoutId);
+            lastError = error;
+
+            if (error.name === 'AbortError') {
+                throw new Error(`Supabase request timed out after 30 seconds. URL: ${urlString}`);
             }
+
+            const isFetchFailed = error.message === 'fetch failed' || error.message?.includes('fetch failed');
+            if (isFetchFailed && attempt < MAX_RETRIES - 1) {
+                // Brief delay before retry (exponential backoff: 100ms, 200ms)
+                await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempt)));
+                continue;
+            }
+
+            throw error;
         }
-        
-        throw error;
+    }
+
+    // All retries exhausted — format a useful error
+    try {
+        const urlObj = new URL(urlString);
+        throw new Error(
+            `Failed to connect to Supabase at ${urlObj.origin} after ${MAX_RETRIES} attempts. ` +
+            `Please check:\n` +
+            `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
+            `2. The Supabase project is running and accessible\n` +
+            `3. Network connectivity is available\n` +
+            `Original error: ${lastError?.message}`
+        );
+    } catch {
+        throw new Error(
+            `Failed to connect to Supabase after ${MAX_RETRIES} attempts. ` +
+            `Please check:\n` +
+            `1. NEXT_PUBLIC_SUPABASE_URL is correct: ${supabaseUrl}\n` +
+            `2. The Supabase project is running and accessible\n` +
+            `3. Network connectivity is available\n` +
+            `Original error: ${lastError?.message}`
+        );
     }
 };
 

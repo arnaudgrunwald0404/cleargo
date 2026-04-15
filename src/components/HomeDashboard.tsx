@@ -41,7 +41,7 @@ type MyItem = {
         id: string;
         name: string;
         target_launch_date?: string;
-        off_schedule_release_date?: string | null;
+        aha_fields?: Record<string, any> | null;
         tier: string;
         pod?: string | null;
     };

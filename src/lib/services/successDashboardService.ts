@@ -30,7 +30,7 @@ export interface EpicSuccessSummary {
   epicId: string;
   epicName: string;
   target_launch_date: string | null;
-  off_schedule_release_date: string | null;
+  aha_fields: Record<string, any> | null;
   tier: string;
   latestScorecardStatus: ScorecardStatus | null;
   latestScorecardDate: string | null;
@@ -243,7 +243,7 @@ export async function getEpicsWithSuccessData(
   // Build query with filters
   let epicQuery = supabase
     .from('epic')
-    .select('id, name, target_launch_date, off_schedule_release_date, tier')
+    .select('id, name, target_launch_date, aha_fields, tier')
     .in('id', configuredEpicIds)
     .order('target_launch_date', { ascending: false });
 
@@ -322,7 +322,7 @@ export async function getEpicsWithSuccessData(
       epicId: epic.id,
       epicName: epic.name,
       target_launch_date: epic.target_launch_date,
-      off_schedule_release_date: epic.off_schedule_release_date ?? null,
+      aha_fields: (epic as any).aha_fields ?? null,
       tier: epic.tier,
       latestScorecardStatus: scorecard?.status || null,
       latestScorecardDate: scorecard?.date || null,

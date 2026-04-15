@@ -170,7 +170,6 @@ export async function upsertEpicFromAha(
         tier: epicData.tier,
         target_launch_date: epicData.target_launch_date,
         scheduled_ga_dev_date: epicData.scheduled_ga_dev_date,
-        off_schedule_release_date: epicData.off_schedule_release_date,
         owner_email: epicData.owner_email,
         product_component: epicData.product_component,
         pod: epicData.pod,

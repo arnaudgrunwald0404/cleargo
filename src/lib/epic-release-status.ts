@@ -32,7 +32,7 @@ export interface EpicForStatus {
   status?: string | null;
   target_launch_date?: string | null;
   scheduled_ga_dev_date?: string | null;
-  off_schedule_release_date?: string | null;
+  aha_fields?: Record<string, any> | null;
 }
 
 export interface RetroForStatus {
@@ -65,7 +65,7 @@ export function computeEpicReleaseStatus(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+  const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
   const launchDate = cohortYmd ? new Date(cohortYmd + 'T12:00:00') : null;
 
   if (!launchDate || isNaN(launchDate.getTime())) {

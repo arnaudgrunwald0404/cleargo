@@ -12,7 +12,7 @@ export interface EpicWithDueRetro {
   epicId: string;
   epicName: string;
   target_launch_date: string | null;
-  off_schedule_release_date: string | null;
+  aha_fields: Record<string, any> | null;
   daysSinceLaunch: number;
   dueRetros: DayMarker[];
   postLaunchOwnerEmail: string;
@@ -66,7 +66,7 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
       id,
       name,
       target_launch_date,
-      off_schedule_release_date,
+      aha_fields,
       status
     `)
     .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
@@ -97,7 +97,7 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
   const results: EpicWithDueRetro[] = [];
 
   for (const epic of epics) {
-    const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+    const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
     if (!effectiveYmd || effectiveYmd > today) continue;
 
     const config = configMap.get(epic.id);
@@ -130,7 +130,7 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
       epicId: epic.id,
       epicName: epic.name,
       target_launch_date: epic.target_launch_date ?? null,
-      off_schedule_release_date: epic.off_schedule_release_date ?? null,
+      aha_fields: (epic as any).aha_fields ?? null,
       daysSinceLaunch,
       dueRetros: pendingRetros,
       postLaunchOwnerEmail: ownerUser.email,

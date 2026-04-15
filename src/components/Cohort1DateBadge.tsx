@@ -10,7 +10,7 @@ import {
 } from '@/lib/epic-cohort1-date';
 
 type Props = {
-  epic: Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>;
+  epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>;
   /**
    * When defined (including null), use detail precedence: off-schedule → schedule row → target launch.
    * When omitted, use list-style: off-schedule → target launch only.
@@ -30,11 +30,11 @@ export function Cohort1DateBadge({ epic, scheduleReleaseDate, dateOptions, empty
   const text = formatDateOnlyForDisplay(ymd, dateOptions);
   if (!off) return <span>{text}</span>;
   return (
-    <Tooltip label="Scheduled release date" withArrow>
+    <Tooltip label="Off Schedule Release Date" withArrow>
       <span
         style={{
-          backgroundColor: '#FEF3C7',
-          color: '#92400E',
+          backgroundColor: '#FDE047',
+          color: '#713F12',
           padding: '2px 8px',
           borderRadius: 6,
           display: 'inline-block',

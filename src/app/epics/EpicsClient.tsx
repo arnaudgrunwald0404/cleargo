@@ -4,14 +4,14 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, HoverCard, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
-import { addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
+import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
 import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
@@ -50,6 +50,79 @@ function getCohort2DateForUiTimeline(
         if (!best || d < best.d) best = { d, iso };
     }
     return best?.iso ?? addCalendarMonth(launchDate);
+}
+
+const COHORT_DATE_TOOLTIP = "Date that the feature has automatically been turned on or can manually be turned on (i.e. needs to be purchased or needs to opt in). All enablement materials have been created before this date. Communications have been sent or will be sent to customers and reference this date as the date the customer will have the feature available to them.";
+function CohortDateHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                {COHORT_DATE_TOOLTIP}
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
+}
+function GtmOrgsHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                This is the date that GTM orgs have been enabled with the new feature.{' '}
+                <a
+                    href="https://docs.google.com/spreadsheets/d/17Qka5O9fcZcRfCZ42k0MHLScMRu4BKvH2Zp00efI2oQ/edit?gid=0#gid=0"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#2196F3', textDecoration: 'underline' }}
+                    onClick={e => e.stopPropagation()}
+                >
+                    You can see a list of the GTM orgs here.
+                </a>
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
+}
+
+/** Returns the next upcoming stage from the release timeline and days until it starts. */
+function getNextUpcomingStage(
+    releaseDate: string,
+    stages: DbReleaseStageRow[] | undefined
+): { name: string; daysUntil: number } | null {
+    const anchorDate = parseDateOnlyLocal(releaseDate);
+    if (!anchorDate) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+
+    if (!stages || stages.length === 0) {
+        // No stage data yet — fall back to days until Cohort 1 (the release date itself)
+        anchorDate.setHours(0, 0, 0, 0);
+        const daysUntil = Math.round((anchorDate.getTime() - today.getTime()) / 86400000);
+        return daysUntil > 0 ? { name: 'Cohort 1 Live', daysUntil } : null;
+    }
+
+    const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
+    const cohort1Stage = sortedStages.find(s => s.name.toLowerCase().includes('cohort 1'));
+    const preLaunchDays = cohort1Stage
+        ? sortedStages
+            .filter(s => s.sort_order < cohort1Stage.sort_order && s.duration_days != null)
+            .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
+        : 0;
+
+    let cursor = preLaunchDays > 0
+        ? subtractCalendarDays(anchorDate, preLaunchDays)
+        : new Date(anchorDate);
+
+    for (const stage of sortedStages) {
+        const dur = stage.duration_days ?? 0;
+        const stageDate = new Date(cursor); stageDate.setHours(0, 0, 0, 0);
+        cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
+        const daysUntil = Math.round((stageDate.getTime() - today.getTime()) / 86400000);
+        if (daysUntil > 0) return { name: stage.name, daysUntil };
+    }
+    return null;
 }
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
@@ -1143,9 +1216,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {col}
+                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {["Cohort 1", "GA"].includes(col) ? (
+                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                ) : col === "GTM Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col}
                                             </th>
                                         ))}
                                         <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
@@ -1768,9 +1845,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {col}
+                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {["Cohort 1", "GA"].includes(col) ? (
+                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                ) : col === "GTM Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col}
                                             </th>
                                         ))}
                                         <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
@@ -1853,7 +1934,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 color: 'var(--color-gray-500)',
                                                 fontFamily: 'var(--font-body)'
                                             }}>
-                                                - {formatDateOnlyForDisplay(group.releaseDate)}
+                                                - Cohort 1 on {formatDateOnlyForDisplay(group.releaseDate)}
                                             </span>
                                         ) : fetchingReleaseDates.has(group.releaseName) ? (
                                             <span style={{ 
@@ -1870,6 +1951,35 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 - <PurpleLoader size="sm" />
                                             </span>
                                         ) : null}
+                                        {group.releaseName !== "Ungrouped" && group.releaseDate && (() => {
+                                            const next = getNextUpcomingStage(group.releaseDate, releaseScheduleStagesForTimeline);
+                                            if (!next) return null;
+                                            const urgent = next.daysUntil <= 7;
+                                            return (
+                                                <span style={{
+                                                    marginLeft: 'var(--spacing-2)',
+                                                    display: 'inline-flex', alignItems: 'center',
+                                                    verticalAlign: 'middle',
+                                                }}>
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                        padding: '2px 10px',
+                                                        borderRadius: 20,
+                                                        background: urgent ? '#FEF08A' : '#FEF9C3',
+                                                        border: `1.5px solid ${urgent ? '#EAB308' : '#FDE047'}`,
+                                                        color: '#713F12',
+                                                        fontSize: 13,
+                                                        fontWeight: 700,
+                                                        fontFamily: 'var(--font-body)',
+                                                        whiteSpace: 'nowrap',
+                                                        letterSpacing: '-0.01em',
+                                                    }}>
+                                                        <span style={{ fontSize: 15, fontWeight: 800 }}>{next.daysUntil}</span>
+                                                        {' '}day{next.daysUntil !== 1 ? 's' : ''} until {next.name}
+                                                    </span>
+                                                </span>
+                                            );
+                                        })()}
                                         {group.releaseName !== "Ungrouped" && group.releaseDate && (
                                             <span style={{
                                                 marginLeft: 'var(--spacing-2)',
@@ -2164,9 +2274,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Internal Orgs</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Cohort 1</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>GA</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2231,9 +2341,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Internal Orgs</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Cohort 1</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>GA</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
