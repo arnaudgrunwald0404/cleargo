@@ -361,6 +361,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 );
                 break;
 
+            case 'success_review_reminder':
+                if (!payload.metadata) throw new Error('Missing metadata for success_review_reminder');
+                const { buildSuccessReviewReminderMessage } = await import('./templates/success-review-reminders');
+                message = buildSuccessReviewReminderMessage(payload.metadata as any);
+                break;
+
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');

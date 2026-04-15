@@ -24,6 +24,8 @@ import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 import type { ReleaseStagesScope } from "@/lib/services/settingsService";
 import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, dateToLocalDateString, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
+import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
+import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 // Lazy load tab components for code splitting
@@ -730,7 +732,7 @@ export default function EpicDetailPage() {
 
             // Calculate due dates for criteria based on rating_timing and release stages
             // Use fetched values directly instead of state (state updates are async)
-            const targetDate = fetchedReleaseDate || data.target_launch_date || null;
+            const targetDate = getEpicCohort1DisplayYmd(data as Epic, fetchedReleaseDate);
 
             // Compute stage end dates using same algorithm as ReleaseStagesChart useTimelineData
             const computedStageEndDates = new Map<number, string>();
@@ -1767,7 +1769,11 @@ export default function EpicDetailPage() {
                     <span>
                         <span style={{ color: 'var(--color-gray-500)' }}>Release </span>
                         <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
-                            {releaseDate ? formatDateOnlyForDisplay(releaseDate) : epic?.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : 'Not set'}
+                            {epic ? (
+                                <Cohort1DateBadge epic={epic} scheduleReleaseDate={releaseDate} emptyLabel="Not set" />
+                            ) : (
+                                'Not set'
+                            )}
                         </span>
                     </span>
                     <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
@@ -1928,7 +1934,11 @@ export default function EpicDetailPage() {
                             {releaseStages.length > 0 && (
                                 <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
                                     <ReleaseStagesChart
-                                        releaseDate={releaseDate || epic?.target_launch_date || null}
+                                        releaseDate={
+                                            epic
+                                                ? getEpicCohort1DisplayYmd(epic, releaseDate)
+                                                : releaseDate || epic?.target_launch_date || null
+                                        }
                                         cohort2Date={cohort2Date}
                                         stages={releaseStages}
                                         showHeading={true}

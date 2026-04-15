@@ -10,6 +10,8 @@ export interface Epic {
     product_id?: string;
     tier: EpicTier;
     target_launch_date?: string;
+    /** Aha "Off Schedule Release Date"; when set, overrides Cohort 1 display and effective launch date. */
+    off_schedule_release_date?: string | null;
     status: EpicStatus;
     readiness_score?: number;
     readiness_status?: string;

@@ -13,6 +13,9 @@ import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 import { addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
+import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
+import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
+import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -29,29 +32,6 @@ type DbReleaseStageRow = {
     is_gate?: boolean;
     stage_type?: 'phase' | 'milestone';
 };
-
-function isUiFrameworkEpic(epic: Epic): boolean {
-    const raw = epic.aha_fields?.custom_fields?.cleargo_candidate;
-    const v =
-        typeof raw === 'object' && raw !== null && 'name' in raw
-            ? String((raw as { name?: unknown }).name ?? '')
-            : typeof raw === 'string'
-              ? raw
-              : undefined;
-    return v === 'Yes - UI Framework';
-}
-
-function parseUiLevelFromEpic(epic: Epic): number | null {
-    const uiuxImpact = epic.aha_fields?.custom_fields?.uiux_impact;
-    const s =
-        typeof uiuxImpact === 'object' && uiuxImpact !== null && 'name' in uiuxImpact
-            ? String((uiuxImpact as { name?: unknown }).name ?? '')
-            : uiuxImpact != null
-              ? String(uiuxImpact)
-              : '';
-    const m = s.match(/\b([123])\b/);
-    return m ? parseInt(m[1], 10) : null;
-}
 
 /** Next release after this launch (for GA / Cohort 2 pin on UI rollout timeline); matches epic detail fallback. */
 function getCohort2DateForUiTimeline(
@@ -75,6 +55,8 @@ function getCohort2DateForUiTimeline(
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    /** Stable for effect deps — `searchParams` object identity can change every render in App Router. */
+    const epicsSearchQueryString = searchParams.toString();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
@@ -588,11 +570,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     useEffect(() => {
         if (selectedRelease && !releaseGroupsForView.some(g => g.releaseName === selectedRelease)) {
             setSelectedRelease(null);
-            const params = new URLSearchParams(searchParams.toString());
+            const params = new URLSearchParams(epicsSearchQueryString);
             params.delete('release');
             router.replace(`/epics${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
         }
-    }, [releaseGroupsForView, selectedRelease, searchParams, router]);
+    }, [releaseGroupsForView, selectedRelease, epicsSearchQueryString, router]);
 
     // Fetch owner (PM) info from app_user for avatar and display name
     useEffect(() => {
@@ -1158,11 +1140,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }}
                     >
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "Tier", "Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1184,8 +1166,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
@@ -1195,9 +1183,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                                             </td>
                                             <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
@@ -1767,22 +1752,24 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                     }}>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <colgroup>
                                     <col className="w-100" />
                                     <col className="w-24" />
                                     <col className="w-auto" />
                                     <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-24" />
                                     <col className="w-32" />
-                                    <col className="w-24" />
-                                    <col className="w-24" />
                                     <col className="w-24" />
                                     <col className="w-24" />
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "Tier", "Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {col}
                                             </th>
                                         ))}
@@ -1804,8 +1791,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
@@ -1815,9 +1808,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
                                             </td>
                                             <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
@@ -2149,13 +2139,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
                                                 <col className="w-28" />
-                                                <col className="w-32" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2172,7 +2164,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Internal Orgs</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Cohort 1</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>GA</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2200,7 +2194,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
@@ -2210,13 +2206,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
                                                 <col className="w-28" />
-                                                <col className="w-32" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2233,7 +2231,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Internal Orgs</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Cohort 1</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>GA</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2321,8 +2321,20 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             );
                                                         })()}
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {epic.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : '-'}
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        {(() => {
+                                                            const ymd = getEpicInternalOrgsDateYmd(epic, releaseScheduleStagesForTimeline, uiRolloutStagesForTimeline);
+                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
+                                                        })()}
+                                                    </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        <Cohort1DateBadge epic={epic} dateOptions={{ month: 'short', day: 'numeric' }} />
+                                                    </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        {(() => {
+                                                            const ymd = getEpicGaDateYmd(epic);
+                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
+                                                        })()}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <span className="px-2 py-1 rounded text-xs font-medium" style={{

@@ -5,11 +5,14 @@
 
 import { getClient } from '@/lib/db';
 import type { DayMarker } from '@/lib/success/types';
+import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
+import type { Epic } from '@/types/epics';
 
 export interface EpicWithDueRetro {
   epicId: string;
   epicName: string;
-  launchDate: string;
+  target_launch_date: string | null;
+  off_schedule_release_date: string | null;
   daysSinceLaunch: number;
   dueRetros: DayMarker[];
   postLaunchOwnerEmail: string;
@@ -63,11 +66,11 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
       id,
       name,
       target_launch_date,
+      off_schedule_release_date,
       status
     `)
     .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
-    .lte('target_launch_date', today)
-    .not('target_launch_date', 'is', null);
+    .or('target_launch_date.not.is.null,off_schedule_release_date.not.is.null');
 
   if (error) {
     console.error('Error fetching epics for retro reminders:', error);
@@ -94,7 +97,8 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
   const results: EpicWithDueRetro[] = [];
 
   for (const epic of epics) {
-    if (!epic.target_launch_date) continue;
+    const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'off_schedule_release_date'>);
+    if (!effectiveYmd || effectiveYmd > today) continue;
 
     const config = configMap.get(epic.id);
     if (!config) continue;
@@ -104,7 +108,7 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
       : config.post_launch_owner_user;
     if (!ownerUser) continue;
 
-    const daysSinceLaunch = calculateDaysSinceLaunch(epic.target_launch_date);
+    const daysSinceLaunch = calculateDaysSinceLaunch(effectiveYmd);
     const dueRetros = getDueRetros(daysSinceLaunch, reminderDaysBefore);
 
     if (dueRetros.length === 0) continue;
@@ -125,7 +129,8 @@ export async function getEpicsWithDueRetros(reminderDaysBefore: number = 3): Pro
     results.push({
       epicId: epic.id,
       epicName: epic.name,
-      launchDate: epic.target_launch_date,
+      target_launch_date: epic.target_launch_date ?? null,
+      off_schedule_release_date: epic.off_schedule_release_date ?? null,
       daysSinceLaunch,
       dueRetros: pendingRetros,
       postLaunchOwnerEmail: ownerUser.email,

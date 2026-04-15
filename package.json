@@ -2,8 +2,9 @@
   "name": "cleargo",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "dev:webpack": "next dev --turbopack=false",
+    "dev": "next dev --webpack",
+    "dev:turbo": "next dev --turbopack",
+    "dev:webpack": "next dev --webpack",
     "build": "node scripts/netlify-build.js",
     "start": "next start",
     "lint": "eslint src",

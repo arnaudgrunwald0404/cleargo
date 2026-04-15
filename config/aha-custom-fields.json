@@ -464,6 +464,26 @@
     "uiux_impact": {
       "label": "UI/UX Impact",
       "key": "uiux_impact"
+    },
+    "assigned_engineers": {
+      "label": "Assigned Engineers",
+      "key": "assigned_engineers"
+    },
+    "beta_program": {
+      "label": "Beta Program",
+      "key": "beta_program"
+    },
+    "customer_commitment_date": {
+      "label": "Customer Commitment Date",
+      "key": "customer_commitment_date"
+    },
+    "gtm_name": {
+      "label": "GTM Name",
+      "key": "gtm_name"
+    },
+    "off_schedule_release_date": {
+      "label": "Off Schedule Release Date",
+      "key": "off_schedule_release_date"
     }
   }
 }

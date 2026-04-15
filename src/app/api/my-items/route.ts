@@ -81,13 +81,16 @@ export async function GET(req: NextRequest) {
 
         const { data: epicsWithRelease } = await supabase
             .from('epic')
-            .select('id, aha_fields, target_launch_date')
+            .select('id, aha_fields, target_launch_date, off_schedule_release_date')
             .in('id', epicIds);
 
         const epicToRelease = new Map<string, string>();
-        const epicRowById = new Map<string, { id: string; aha_fields: unknown; target_launch_date: string | null }>();
+        const epicRowById = new Map<
+            string,
+            { id: string; aha_fields: unknown; target_launch_date: string | null; off_schedule_release_date: string | null }
+        >();
         for (const e of epicsWithRelease || []) {
-            epicRowById.set(e.id, e as { id: string; aha_fields: unknown; target_launch_date: string | null });
+            epicRowById.set(e.id, e as { id: string; aha_fields: unknown; target_launch_date: string | null; off_schedule_release_date: string | null });
             const name = getReleaseNameFromAhaFields(e.aha_fields);
             if (name) epicToRelease.set(e.id, name);
         }
@@ -165,11 +168,18 @@ export async function GET(req: NextRequest) {
 
         filtered = (filtered as Array<Record<string, unknown>>).map((row) => {
             const item = row as {
-                launch?: { id?: string };
+                launch?: { id?: string; [key: string]: unknown };
                 criterion?: { rating_timing?: number | null };
             };
             const launchId = item.launch?.id;
             const epicRow = launchId ? epicRowById.get(launchId) : undefined;
+            const launchEnriched =
+                item.launch && epicRow
+                    ? {
+                          ...item.launch,
+                          off_schedule_release_date: epicRow.off_schedule_release_date ?? null,
+                      }
+                    : item.launch;
             const releaseName =
                 (launchId && epicToRelease.get(launchId)) || getReleaseNameFromAhaFields(epicRow?.aha_fields) || null;
             const anchor = resolveAnchorLaunchDateFromReleaseSchedule(
@@ -187,7 +197,7 @@ export async function GET(req: NextRequest) {
                 allStages: stagesForDue,
                 uiLevel: uiOpts.isUiFramework ? uiOpts.uiLevel : undefined,
             });
-            return { ...row, due_date };
+            return { ...row, launch: launchEnriched, due_date };
         });
 
         return NextResponse.json(filtered);

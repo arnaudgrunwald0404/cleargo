@@ -107,6 +107,7 @@ async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
                 status: epic.status,
                 target_launch_date: epic.target_launch_date,
                 scheduled_ga_dev_date: epic.scheduled_ga_dev_date,
+                off_schedule_release_date: epic.off_schedule_release_date,
             };
             const status = computeEpicReleaseStatus(epicForStatus, retrosForStatus);
             return { ...epic, status };

@@ -7,6 +7,7 @@ import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { CommentsModal } from "@/components/CommentsModal";
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 import {
     type CriterionDueDateStageRow,
     computeCriterionDueDateYmd,
@@ -40,6 +41,7 @@ type MyItem = {
         id: string;
         name: string;
         target_launch_date?: string;
+        off_schedule_release_date?: string | null;
         tier: string;
         pod?: string | null;
     };
@@ -1605,6 +1607,13 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           letterSpacing: "0.05em",
                           color: "#6B7280"
                         }}>Pod</th>
+                        <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          color: "#6B7280"
+                        }}>Cohort 1</th>
                         <th style={{
                           padding: "12px 16px",
                           textAlign: "left",
@@ -1680,6 +1689,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           </td>
                           <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {item.launch.pod || '-'}
+                          </td>
+                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                            <Cohort1DateBadge epic={item.launch} dateOptions={{ month: 'short', day: 'numeric' }} />
                           </td>
                           <td style={{
                             padding: "12px 20px",

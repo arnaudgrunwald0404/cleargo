@@ -57,7 +57,8 @@ export async function GET(request: NextRequest) {
             {
               id: epic.epicId,
               name: epic.epicName,
-              target_launch_date: epic.launchDate,
+              target_launch_date: epic.target_launch_date ?? undefined,
+              off_schedule_release_date: epic.off_schedule_release_date ?? undefined,
             },
             dayMarker,
             epic.daysSinceLaunch
@@ -86,7 +87,8 @@ export async function GET(request: NextRequest) {
                 epic: {
                   id: epic.epicId,
                   name: epic.epicName,
-                  target_launch_date: epic.launchDate,
+                  target_launch_date: epic.target_launch_date,
+                  off_schedule_release_date: epic.off_schedule_release_date,
                 },
                 dayMarker,
                 daysSinceLaunch: epic.daysSinceLaunch,

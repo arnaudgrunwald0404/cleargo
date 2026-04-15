@@ -32,6 +32,7 @@ function LoginForm() {
   const code = searchParams.get("code");
   const token = searchParams.get("token");
   const redirectTo = searchParams.get("redirect") || "/";
+  const emailFromQuery = searchParams.get("email");
   
   // Only create Supabase client if we don't have a code (to prevent it from trying to exchange)
   // If we have a code, we'll redirect immediately before the client initializes
@@ -53,11 +54,10 @@ function LoginForm() {
 
   // Pre-fill email from query params
   useEffect(() => {
-    const emailParam = searchParams.get("email");
-    if (emailParam) {
-      setEmail(emailParam);
+    if (emailFromQuery) {
+      setEmail(emailFromQuery);
     }
-  }, [searchParams]);
+  }, [emailFromQuery]);
 
   // Handle magic link token redirect - only once
   useEffect(() => {

@@ -56,6 +56,8 @@ const FIELD_ORDER = [
     'release_target_after_pod_planning',
     'estimated_ga_release_pm_owned',
     'scheduled_ga_release_dev_only',
+    'target_launch_date',
+    'off_schedule_release_date',
     'workflow_status',
     'readiness_status',
     'readiness_score',
