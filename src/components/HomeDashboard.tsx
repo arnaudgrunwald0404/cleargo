@@ -1179,7 +1179,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
-                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Epic</th>
+                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "20%", width: "20%" }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
                         <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Pod</th>
                         <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
@@ -1631,12 +1631,14 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                         borderBottom: "2px solid #E5E7EB"
                       }}>
                       <tr>
-                        <th className="px-4 py-3 text-left" style={{ 
+                        <th className="px-4 py-3 text-left" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
-                          color: "#6B7280"
+                          color: "#6B7280",
+                          minWidth: "15%",
+                          width: "15%"
                         }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ 
                           fontSize: "12px",
