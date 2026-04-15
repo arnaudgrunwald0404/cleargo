@@ -1180,9 +1180,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
-                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "20%", width: "20%" }}>Epic</th>
+                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "25%", width: "25%" }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
-                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
+                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "240px", width: "25%" }}>Criterion</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
                         <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
                       </tr>
@@ -1196,7 +1196,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           <td className="px-4 py-3 w-24">
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
                           </td>
-                          <td style={{ padding: "12px 20px", minWidth: "300px", width: "30%" }}>
+                          <td style={{ padding: "12px 20px", minWidth: "240px", width: "25%" }}>
                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
                             <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "50%" }} />
                           </td>
@@ -1634,8 +1634,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
                           color: "#6B7280",
-                          minWidth: "15%",
-                          width: "15%"
+                          minWidth: "25%",
+                          width: "25%"
                         }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ 
                           fontSize: "12px",
@@ -1659,8 +1659,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
                           color: "#6B7280",
-                          minWidth: "300px",
-                          width: "30%"
+                          minWidth: "240px",
+                          width: "25%"
                         }}>Criterion</th>
                         <th className="px-4 py-3 text-left" style={{
                           fontSize: "12px",
@@ -1739,8 +1739,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             padding: "12px 20px",
                             fontSize: "14px",
                             color: "#111827",
-                            minWidth: "300px",
-                            width: "30%"
+                            minWidth: "240px",
+                            width: "25%"
                           }}>
                             <div style={{
                               fontWeight: 500,
