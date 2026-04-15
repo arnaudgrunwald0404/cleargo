@@ -319,7 +319,14 @@ function ThreadCard({ thread, onMarkRead, onNavigateToEpic, onOpenThread }: Thre
                 variant="light"
                 size="xs"
                 leftSection={<IconMessageCircle size={14} />}
-                onClick={() => onOpenThread(epic.id, thread.launch_criterion_status_id, criterion.label)}
+                onClick={() => {
+                  // Auto-mark thread's unread comments as read when opening
+                  if (onMarkRead) {
+                    const unreadIds = comments.filter((c) => !c.is_read).map((c) => c.id);
+                    if (unreadIds.length > 0) onMarkRead(unreadIds);
+                  }
+                  onOpenThread(epic.id, thread.launch_criterion_status_id, criterion.label);
+                }}
               >
                 View thread
               </Button>

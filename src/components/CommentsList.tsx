@@ -14,7 +14,7 @@ import {
   Tooltip,
   Card,
 } from '@mantine/core';
-import { IconMessageCircle, IconCheck } from '@tabler/icons-react';
+import { IconMessageCircle, IconCheck, IconChecks } from '@tabler/icons-react';
 import { UserDisplay } from './UserDisplay';
 
 interface Comment {
@@ -197,6 +197,17 @@ export function CommentsList({
                 onClick={handleMarkSelectedAsRead}
               >
                 Mark {selectedCommentIds.size} as read
+              </Button>
+            )}
+            {unreadComments.length > 0 && (
+              <Button
+                size="xs"
+                variant="filled"
+                color="blue"
+                leftSection={<IconChecks size={16} />}
+                onClick={() => onMarkRead(unreadComments.map((c) => c.id))}
+              >
+                Mark all {unreadComments.length} as read
               </Button>
             )}
           </Group>
