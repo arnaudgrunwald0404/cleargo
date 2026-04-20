@@ -816,7 +816,13 @@ export async function GET(request: NextRequest) {
                 }
                 
                 // Today or future: exclude items rated n/a (consistent with Home list)
-                return normalizeStatus(c.status) !== 'NOT_APPLICABLE';
+                if (normalizeStatus(c.status) === 'NOT_APPLICABLE') return false;
+                // Suppress overdue criteria that have been past due longer than the days remaining until release.
+                // If you've missed it for longer than the release is away, daily nudges are unhelpful noise.
+                const daysUntilRelease = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                const dueDateDiff = diffCalendarDaysBetweenYmd(c.condition_due_date, todayStr); // negative = overdue
+                if (dueDateDiff !== null && dueDateDiff < 0 && -dueDateDiff > daysUntilRelease) return false;
+                return true;
             });
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
