@@ -1,13 +1,18 @@
 import { validateApiKey } from './_shared/auth';
 import { createAdminSupabase } from './_shared/supabase';
 import { ok, notFound, unauthorized, badRequest, internalError } from './_shared/response';
-import type { EpicSummary, EscalationItem, OneOnOnePrepDoc } from './_shared/types';
+import type { EpicSummary, Blocker, EscalationItem, OneOnOnePrepDoc } from './_shared/types';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'X-ClearGo-Key, Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
+
+function deriveSeverity(status: string, isGate: boolean): Blocker['severity'] {
+  if (status === 'NO_GO') return isGate ? 'critical' : 'high';
+  return 'medium'; // CONDITIONAL
+}
 
 export default async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
@@ -20,9 +25,7 @@ export default async (req: Request): Promise<Response> => {
 
   const url = new URL(req.url);
   const person_id = url.searchParams.get('person_id');
-  if (!person_id) {
-    return badRequest('Missing required query param: person_id');
-  }
+  if (!person_id) return badRequest('Missing required query param: person_id');
 
   let supabase: ReturnType<typeof createAdminSupabase>;
   try {
@@ -37,9 +40,7 @@ export default async (req: Request): Promise<Response> => {
     .eq('id', person_id)
     .single();
 
-  if (personError || !person) {
-    return notFound('Person not found');
-  }
+  if (personError || !person) return notFound('Person not found');
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -58,11 +59,11 @@ export default async (req: Request): Promise<Response> => {
   ]);
 
   if (activeEpicsResult.error) {
-    console.error('[v1-1on1-prep] active epics query error:', activeEpicsResult.error);
+    console.error('[v1-1on1-prep] active epics error:', activeEpicsResult.error);
     return internalError();
   }
   if (completedResult.error) {
-    console.error('[v1-1on1-prep] completed epics query error:', completedResult.error);
+    console.error('[v1-1on1-prep] completed epics error:', completedResult.error);
     return internalError();
   }
 
@@ -83,25 +84,70 @@ export default async (req: Request): Promise<Response> => {
   const active_epics: EpicSummary[] = (activeEpicsResult.data ?? []).map(toEpicSummary);
   const completed_this_week: EpicSummary[] = (completedResult.data ?? []).map(toEpicSummary);
 
-  // ClearGO tracks risk via epic.risk_level rather than a separate blocker table.
-  // Surface high/critical-risk active epics as escalation-worthy items.
-  const escalations_needed: EscalationItem[] = active_epics
-    .filter((e) => e.risk_level === 'high' || e.risk_level === 'critical')
-    .map((e) => ({
-      blocker_id: e.id,
-      epic_id: e.id,
-      epic_name: e.name,
-      blocker_title: `Epic is ${e.risk_level} risk`,
-      severity: e.risk_level as 'high' | 'critical',
-      days_blocked: 0,
+  // Derive blockers from NO_GO / CONDITIONAL criteria on active epics
+  const epicIds = active_epics.map((e) => e.id);
+  const epicNameById: Record<string, string> = Object.fromEntries(active_epics.map((e) => [e.id, e.name]));
+
+  let personBlockers: Blocker[] = [];
+
+  if (epicIds.length > 0) {
+    const { data: csData, error: csError } = await supabase
+      .from('epic_criterion_status')
+      .select('id, epic_id, status, current_status_notes, last_updated_at, criterion:criterion_id(label, gate)')
+      .in('epic_id', epicIds)
+      .in('status', ['NO_GO', 'CONDITIONAL']);
+
+    if (csError) {
+      console.error('[v1-1on1-prep] criteria_status error:', csError);
+      return internalError();
+    }
+
+    const now = Date.now();
+    personBlockers = (csData ?? []).map((cs) => {
+      const criterion = cs.criterion as { label?: string; gate?: boolean } | null;
+      const severity = deriveSeverity(cs.status, criterion?.gate ?? false);
+      const logged_at = cs.last_updated_at as string;
+      const days_blocked = Math.floor((now - new Date(logged_at).getTime()) / 86400000);
+      return {
+        id: cs.id as string,
+        epic_id: cs.epic_id as string,
+        epic_name: epicNameById[cs.epic_id as string] ?? '',
+        title: (criterion?.label as string) ?? 'Unknown criterion',
+        description: (cs.current_status_notes as string | null) ?? null,
+        severity,
+        status: 'open' as const,
+        days_blocked,
+        needs_escalation: days_blocked >= 3 && (severity === 'high' || severity === 'critical'),
+        logged_at,
+      };
+    });
+  }
+
+  const escalations_needed: EscalationItem[] = personBlockers
+    .filter((b) => b.needs_escalation)
+    .map((b) => ({
+      blocker_id: b.id,
+      epic_id: b.epic_id,
+      epic_name: b.epic_name,
+      blocker_title: b.title,
+      severity: b.severity,
+      days_blocked: b.days_blocked,
     }));
 
   const suggested_talking_points: string[] = [];
 
   for (const esc of escalations_needed) {
     suggested_talking_points.push(
-      `[RISK] ${esc.epic_name} is ${esc.severity} risk — review launch readiness`
+      `[ESCALATE] ${esc.epic_name}: ${esc.blocker_title} — blocked ${esc.days_blocked} days (${esc.severity})`
     );
+  }
+
+  for (const epic of active_epics) {
+    if (epic.risk_level === 'high' || epic.risk_level === 'critical') {
+      suggested_talking_points.push(
+        `Review risk on '${epic.name}' — currently ${epic.risk_level} risk`
+      );
+    }
   }
 
   if (completed_this_week.length > 0) {
@@ -126,16 +172,11 @@ export default async (req: Request): Promise<Response> => {
   }
 
   const doc: OneOnOnePrepDoc = {
-    person: {
-      id: person.id,
-      name: person.name,
-      email: person.email,
-      role: person.role,
-    },
+    person: { id: person.id, name: person.name, email: person.email, role: person.role },
     summary: {
       active_epics: active_epics.length,
       completed_this_week: completed_this_week.length,
-      open_blockers: 0,
+      open_blockers: personBlockers.length,
       escalations_needed: escalations_needed.length,
     },
     active_epics,
