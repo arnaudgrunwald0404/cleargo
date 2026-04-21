@@ -69,7 +69,14 @@
       "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo push)",
       "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo pull --rebase)",
       "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo stash)",
-      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo stash pop)"
+      "Bash(git -C /Users/arnaudgrunwald/AGcodework/cleargo stash pop)",
+      "Bash(chmod +x /Users/arnaudgrunwald/AGcodework/cleargo/.claude/worktrees/modest-easley-f2c350/scripts/qa-ai-api.sh)",
+      "Bash(npx jest *)",
+      "Bash(node -e \"const j = require\\('jest'\\); console.log\\(j.getVersion ? j.getVersion\\(\\) : 'unknown'\\)\")",
+      "Bash(node -e \"const cfg = require\\('/Users/arnaudgrunwald/AGcodework/cleargo/.claude/worktrees/modest-easley-f2c350/next.config.js'\\); console.log\\(JSON.stringify\\(cfg, null, 2\\)\\)\")",
+      "Bash(npx ts-jest *)",
+      "Bash(python3 -m json.tool)",
+      "Bash(git commit -m ' *)"
     ]
   }
 }
