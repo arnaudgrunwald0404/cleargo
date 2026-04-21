@@ -18,3 +18,29 @@
   for = "/auth/*"
   [headers.values]
     Cache-Control = "no-store, no-cache, must-revalidate"
+
+# AI Chief of Staff API — read-only REST endpoints for 1:1 prep packs
+[[redirects]]
+  from = "/api/v1/team-members"
+  to = "/.netlify/functions/v1-team-members"
+  status = 200
+
+[[redirects]]
+  from = "/api/v1/team-members/:id/epics"
+  to = "/.netlify/functions/v1-team-member-epics?id=:id"
+  status = 200
+
+[[redirects]]
+  from = "/api/v1/team-members/:id/blockers"
+  to = "/.netlify/functions/v1-team-member-blockers?id=:id"
+  status = 200
+
+[[redirects]]
+  from = "/api/v1/1on1-prep/:person_id"
+  to = "/.netlify/functions/v1-1on1-prep?person_id=:person_id"
+  status = 200
+
+[[redirects]]
+  from = "/api/v1/epics/:id"
+  to = "/.netlify/functions/v1-epic?id=:id"
+  status = 200
