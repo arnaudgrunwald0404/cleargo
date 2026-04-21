@@ -487,85 +487,10 @@ export function buildLeadershipDigestMessage(
         });
     }
 
-    blocks.push({ type: 'divider' });
-
-    // ---- Recent Releases SECOND (past releases) ----
-    blocks.push({
-        type: 'section',
-        text: { type: 'mrkdwn', text: '*How are the recent releases doing?*' },
-    });
-
-    if (data.last_releases && data.last_releases.length > 0) {
-        data.last_releases.forEach((release) => {
-            const launchDateStr = release.launch_date
-                ? formatDateOnlyForDisplay(release.launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
-                : 'Date TBD';
-            const ago = daysAgo(release.launch_date);
-            const dateSuffix = ago !== null ? ` = ${ago} days ago` : '';
-            const retroLabel =
-                ago === 30 ? 'first' : ago === 60 ? 'second' : ago === 90 ? 'third' : null;
-            const retroHint =
-                retroLabel !== null ? `  ·  *🔍 time for ${retroLabel} retro*` : '';
-            const metricsCount = (release as { metrics_count?: number }).metrics_count ?? 0;
-
-            blocks.push({
-                type: 'section',
-                text: {
-                    type: 'mrkdwn',
-                    text: `*${release.release_name}*  ·  ${launchDateStr}${dateSuffix}${retroHint}`,
-                },
-            });
-            blocks.push({
-                type: 'context',
-                elements: [
-                    { type: 'mrkdwn', text: `Avg readiness *${release.average_readiness}%*  ·  *${metricsCount}* metrics tracked` },
-                ],
-            });
-            const lastHighRisk = (release as { high_risk_epics?: Array<{ name: string; id: string; tier: string | null; risk_level: string | null; readiness: number }> }).high_risk_epics ?? [];
-            if (lastHighRisk.length > 0) {
-                const highRiskLines = lastHighRisk
-                    .map((e) => {
-                        const riskBadge = e.risk_level === 'HIGH' ? '🔴' : '🟡';
-                        return `${riskBadge} <${APP_URL}/epics/${e.id}|${e.name}> (${e.tier || '?'}) ${e.readiness}%`;
-                    })
-                    .join('\n');
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_High risk:_\n${highRiskLines}` },
-                });
-            }
-            const noMetricsEpics = (release as { no_metrics_epics?: Array<{ name: string; id: string }> }).no_metrics_epics ?? [];
-            const noProgressionEpics = (release as { no_progression_epics?: Array<{ name: string; id: string }> }).no_progression_epics ?? [];
-            const redFlagLines: string[] = [];
-            for (const e of noMetricsEpics) {
-                redFlagLines.push(`<${APP_URL}/epics/${e.id}|${e.name}> no metric`);
-            }
-            for (const e of noProgressionEpics) {
-                redFlagLines.push(`<${APP_URL}/epics/${e.id}|${e.name}> no progression on metric`);
-            }
-            if (redFlagLines.length > 0) {
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_Red flags:_\n${redFlagLines.join('\n')}` },
-                });
-            }
-            const aboveTarget = (release as { above_target_epics?: Array<{ name: string; id: string; percent_of_goal: number }> }).above_target_epics ?? [];
-            if (aboveTarget.length > 0) {
-                const aboveLines = aboveTarget
-                    .map((e) => `<${APP_URL}/epics/${e.id}|${e.name}> ${e.percent_of_goal}% of goal`)
-                    .join('\n');
-                blocks.push({
-                    type: 'section',
-                    text: { type: 'mrkdwn', text: `_Above target:_\n${aboveLines}` },
-                });
-            }
-        });
-    } else {
-        blocks.push({
-            type: 'section',
-            text: { type: 'mrkdwn', text: '_No past releases in the schedule._' },
-        });
-    }
+    // ---- Recent Releases section temporarily commented out ----
+    // blocks.push({ type: 'divider' });
+    // blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*How are the recent releases doing?*' } });
+    // ... last_releases rendering omitted for brevity ...
 
     blocks.push({
         type: 'actions',

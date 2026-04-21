@@ -12,6 +12,7 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
 import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, getCohort2DateForTimeline, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
+import { fetchStreamJSON } from '@/lib/fetch-stream';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
 import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
@@ -1117,17 +1118,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
         setRefreshingEpics(true);
         try {
-            const res = await fetch('/api/integrations/aha/sync?sync_all=true', {
+            await fetchStreamJSON('/api/integrations/aha/sync?sync_all=true', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
             });
-            
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Failed to refresh epics');
-            }
-            
+
             notifications.show({
                 title: 'Success',
                 message: 'Epics refreshed successfully',
@@ -2038,29 +2034,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         .map(e => e.aha_id)
                                                         .filter((id): id is string => Boolean(id));
 
-                                                    // Create an AbortController for timeout handling
-                                                    const controller = new AbortController();
-                                                    const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
-
-                                                    const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
-                                                        method: "POST",
-                                                        credentials: "include",
-                                                        headers: { "Content-Type": "application/json" },
-                                                        body: JSON.stringify({
-                                                            releaseName: group.releaseName,
-                                                            existingAhaIds,
-                                                        }),
-                                                        signal: controller.signal,
-                                                    });
-                                                    
-                                                    clearTimeout(fetchTimeoutId);
-                                                    
-                                                    if (!res.ok) {
-                                                        const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                                                        throw new Error(errorData.error || "Failed to sync epics");
-                                                    }
-                                                    
-                                                    const result = await res.json();
+                                                    const result = await fetchStreamJSON(
+                                                        `/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`,
+                                                        {
+                                                            method: "POST",
+                                                            credentials: "include",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ releaseName: group.releaseName, existingAhaIds }),
+                                                        }
+                                                    );
                                                     const skipDetails = [];
                                                     if (result.results.skipped_no_release > 0) {
                                                         skipDetails.push(`${result.results.skipped_no_release} with no release`);
