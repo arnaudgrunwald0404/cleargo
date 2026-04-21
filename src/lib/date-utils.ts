@@ -105,6 +105,34 @@ export function addCalendarDaysToYmd(ymd: string, deltaDays: number): string | n
 }
 
 /**
+ * Returns the GA Cohort 2 date for the given release on the UI-rollout timeline.
+ * Priority:
+ *  1. `cohort2_date` stored on the release_schedule row (authoritative, from Aha!)
+ *  2. Earliest launch_date in the schedule that is strictly after the current release's launch_date
+ *  3. +1 calendar month fallback
+ */
+export function getCohort2DateForTimeline(
+    currentReleaseName: string,
+    launchDate: string,
+    schedule: Array<{ release_name: string; launch_date: string | null; cohort2_date?: string | null }>
+): string | null {
+    const current = schedule.find(r => r.release_name === currentReleaseName);
+    if (current?.cohort2_date) return current.cohort2_date;
+
+    const anchor = parseDateOnlyLocal(launchDate);
+    if (!anchor) return addCalendarMonth(launchDate);
+    let best: { d: Date; iso: string } | null = null;
+    for (const r of schedule) {
+        if (!r.launch_date || r.release_name === currentReleaseName) continue;
+        const d = parseDateOnlyLocal(r.launch_date);
+        if (!d || d <= anchor) continue;
+        const iso = r.launch_date.includes('T') ? r.launch_date.split('T')[0]! : r.launch_date;
+        if (!best || d < best.d) best = { d, iso };
+    }
+    return best?.iso ?? addCalendarMonth(launchDate);
+}
+
+/**
  * Whole-day difference dueYmd - todayYmd using civil calendar (no UTC-midnight parsing).
  * Positive if the due date is after "today".
  */

@@ -11,7 +11,7 @@ import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
-import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
+import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, getCohort2DateForTimeline, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
 import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
@@ -33,27 +33,8 @@ type DbReleaseStageRow = {
     stage_type?: 'phase' | 'milestone';
 };
 
-/** GA Cohort 2 date for the UI rollout timeline. Uses the cohort2_date stored from Aha! if available; falls back to next release in schedule. */
-function getCohort2DateForUiTimeline(
-    currentReleaseName: string,
-    launchDate: string,
-    schedule: Array<{ release_name: string; launch_date: string | null; cohort2_date?: string | null }>
-): string | null {
-    const current = schedule.find(r => r.release_name === currentReleaseName);
-    if (current?.cohort2_date) return current.cohort2_date;
-
-    const anchor = parseDateOnlyLocal(launchDate);
-    if (!anchor) return addCalendarMonth(launchDate);
-    let best: { d: Date; iso: string } | null = null;
-    for (const r of schedule) {
-        if (!r.launch_date || r.release_name === currentReleaseName) continue;
-        const d = parseDateOnlyLocal(r.launch_date);
-        if (!d || d <= anchor) continue;
-        const iso = r.launch_date.includes('T') ? r.launch_date.split('T')[0]! : r.launch_date;
-        if (!best || d < best.d) best = { d, iso };
-    }
-    return best?.iso ?? addCalendarMonth(launchDate);
-}
+/** GA Cohort 2 date for the UI rollout timeline. Delegates to the shared utility in lib/date-utils. */
+const getCohort2DateForUiTimeline = getCohort2DateForTimeline;
 
 const COHORT_DATE_TOOLTIP = "Date that the feature has automatically been turned on or can manually be turned on (i.e. needs to be purchased or needs to opt in). All enablement materials have been created before this date. Communications have been sent or will be sent to customers and reference this date as the date the customer will have the feature available to them.";
 function CohortDateHeaderIcon() {
@@ -123,7 +104,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
-    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; cohort2_date?: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
     // Only show skeleton if we don't have initial data - if we have epics, we can show them immediately
     const [isDeterminingOrder, setIsDeterminingOrder] = useState(initialEpics.length === 0);
     const [podOrder, setPodOrder] = useState<string[]>([]);
@@ -668,27 +649,42 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             
             // First, check the database (releaseSchedule) to see which releases already have dates
             const releasesInDb = new Set<string>();
-            releaseSchedule.forEach(release => {
+            const releasesWithCohort2 = new Set<string>();
+            releaseSchedule.forEach((release: any) => {
                 if (release.release_name && release.launch_date) {
                     releasesInDb.add(release.release_name);
                 }
+                if (release.release_name && release.cohort2_date) {
+                    releasesWithCohort2.add(release.release_name);
+                }
             });
-            
+
             // Only fetch dates for releases that:
             // 1. Are not "Ungrouped"
             // 2. Don't have a date in the current releaseDateMap (from releaseSchedule)
             // 3. Are not already in the database
             // 4. Haven't been fetched in this session
             const releasesNeedingDates = displayedReleaseGroups
-                .filter(group => 
-                    group.releaseName !== "Ungrouped" && 
-                    !group.releaseDate && 
+                .filter(group =>
+                    group.releaseName !== "Ungrouped" &&
+                    !group.releaseDate &&
                     !releasesInDb.has(group.releaseName) &&
                     !fetchedReleaseDatesRef.current.has(group.releaseName)
                 )
                 .map(group => group.releaseName);
 
-            if (releasesNeedingDates.length === 0) {
+            // Also fetch cohort2_date for releases that have a launch_date but no cohort2_date yet
+            const releasesMissingCohort2 = displayedReleaseGroups
+                .filter(group =>
+                    group.releaseName !== "Ungrouped" &&
+                    group.releaseDate &&
+                    releasesInDb.has(group.releaseName) &&
+                    !releasesWithCohort2.has(group.releaseName) &&
+                    !fetchedReleaseDatesRef.current.has(`cohort2:${group.releaseName}`)
+                )
+                .map(group => group.releaseName);
+
+            if (releasesNeedingDates.length === 0 && releasesMissingCohort2.length === 0) {
                 // No releases need dates, order is determined
                 setIsDeterminingOrder(false);
                 return;
@@ -699,7 +695,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
             // Mark as fetched to prevent duplicate requests and set loading state
             releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.add(name));
-            setFetchingReleaseDates(new Set(releasesNeedingDates));
+            releasesMissingCohort2.forEach(name => fetchedReleaseDatesRef.current.add(`cohort2:${name}`));
+            setFetchingReleaseDates(new Set([...releasesNeedingDates, ...releasesMissingCohort2]));
 
             try {
                 const res = await fetch("/api/epics/release-dates", { credentials: 'include' });
@@ -708,24 +705,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     const releaseDates = data.releases || [];
                     
                     // Find dates for missing releases
-                    const datesToSave: Array<{ release_name: string; launch_date: string }> = [];
-                    
+                    const datesToSave: Array<{ release_name: string; launch_date: string; cohort2_date?: string | null }> = [];
+
+                    /** Find a release in releaseDates by name (exact, then case-insensitive) */
+                    const findRelease = (releaseName: string) => {
+                        return releaseDates.find((r: any) => r.releaseName === releaseName)
+                            ?? releaseDates.find((r: any) => r.releaseName?.toLowerCase() === releaseName.toLowerCase());
+                    };
+
                     releasesNeedingDates.forEach(releaseName => {
-                        // Try exact match first
-                        let found = releaseDates.find((r: any) => r.releaseName === releaseName);
-                        
-                        // If no exact match, try case-insensitive match
-                        if (!found) {
-                            found = releaseDates.find((r: any) => 
-                                r.releaseName && r.releaseName.toLowerCase() === releaseName.toLowerCase()
-                            );
-                        }
-                        
+                        const found = findRelease(releaseName);
                         if (found && found.launchDate) {
                             console.log(`[EpicsClient] Found date for "${releaseName}": ${found.launchDate} (matched with "${found.releaseName}") - saving to database`);
                             datesToSave.push({
-                                release_name: found.releaseName, // Use the exact name from API response
-                                launch_date: found.launchDate
+                                release_name: found.releaseName,
+                                launch_date: found.launchDate,
+                                cohort2_date: found.cohort2Date ?? null,
                             });
                         } else {
                             console.warn(`[EpicsClient] No date found for release: "${releaseName}"`);
@@ -733,10 +728,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }
                     });
 
+                    // Also persist cohort2_date for releases that already have a launch_date
+                    releasesMissingCohort2.forEach(releaseName => {
+                        const found = findRelease(releaseName);
+                        if (found?.cohort2Date) {
+                            console.log(`[EpicsClient] Found cohort2_date for "${releaseName}": ${found.cohort2Date} - saving to database`);
+                            // Only update cohort2_date; use the existing launch_date from releaseSchedule
+                            const existing = releaseSchedule.find((r: any) => r.release_name === releaseName);
+                            if (existing?.launch_date) {
+                                datesToSave.push({
+                                    release_name: releaseName,
+                                    launch_date: existing.launch_date,
+                                    cohort2_date: found.cohort2Date,
+                                });
+                            }
+                        }
+                    });
+
                     // Save all found dates
                     if (datesToSave.length > 0) {
                         const saveResults = await Promise.all(
-                            datesToSave.map(async ({ release_name, launch_date }) => {
+                            datesToSave.map(async ({ release_name, launch_date, cohort2_date }) => {
                                 const res = await fetch("/api/releases", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -744,6 +756,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     body: JSON.stringify({
                                         release_name,
                                         launch_date,
+                                        ...(cohort2_date ? { cohort2_date } : {}),
                                     }),
                                 });
                                 
