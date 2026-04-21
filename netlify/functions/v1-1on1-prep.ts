@@ -1,18 +1,13 @@
 import { validateApiKey } from './_shared/auth';
 import { createAdminSupabase } from './_shared/supabase';
 import { ok, notFound, unauthorized, badRequest, internalError } from './_shared/response';
-import type { EpicSummary, Blocker, EscalationItem, OneOnOnePrepDoc } from './_shared/types';
+import type { EpicSummary, EscalationItem, OneOnOnePrepDoc } from './_shared/types';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'X-ClearGo-Key, Content-Type',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
-
-function daysBlocked(loggedAt: string): number {
-  const ms = Date.now() - new Date(loggedAt).getTime();
-  return Math.floor(ms / (1000 * 60 * 60 * 24));
-}
 
 export default async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
@@ -48,7 +43,7 @@ export default async (req: Request): Promise<Response> => {
 
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-  const [activeEpicsResult, completedResult, blockersResult] = await Promise.all([
+  const [activeEpicsResult, completedResult] = await Promise.all([
     supabase
       .from('epic')
       .select('id, name, status, tier, target_launch_date, risk_level, readiness_score, product:product_id(name)')
@@ -60,10 +55,6 @@ export default async (req: Request): Promise<Response> => {
       .eq('owner_id', person_id)
       .in('status', ['LAUNCHED', 'COMPLETED'])
       .gte('updated_at', sevenDaysAgo),
-    supabase
-      .from('blocker')
-      .select('id, epic_id, title, description, severity, status, logged_at, epic:epic_id(name, owner_id)')
-      .eq('status', 'open'),
   ]);
 
   if (activeEpicsResult.error) {
@@ -74,14 +65,6 @@ export default async (req: Request): Promise<Response> => {
     console.error('[v1-1on1-prep] completed epics query error:', completedResult.error);
     return internalError();
   }
-  if (blockersResult.error) {
-    console.error('[v1-1on1-prep] blockers query error:', blockersResult.error);
-    return internalError();
-  }
-
-  const rawActive = activeEpicsResult.data ?? [];
-  const rawCompleted = completedResult.data ?? [];
-  const rawBlockers = blockersResult.data ?? [];
 
   const toEpicSummary = (row: Record<string, unknown>): EpicSummary => {
     const product = row.product as Record<string, unknown> | null;
@@ -97,57 +80,28 @@ export default async (req: Request): Promise<Response> => {
     };
   };
 
-  const active_epics: EpicSummary[] = rawActive.map(toEpicSummary);
-  const completed_this_week: EpicSummary[] = rawCompleted.map(toEpicSummary);
+  const active_epics: EpicSummary[] = (activeEpicsResult.data ?? []).map(toEpicSummary);
+  const completed_this_week: EpicSummary[] = (completedResult.data ?? []).map(toEpicSummary);
 
-  const personBlockers: Blocker[] = rawBlockers
-    .filter((b) => {
-      const epic = (b.epic as unknown) as Record<string, unknown> | null;
-      return epic && epic.owner_id === person_id;
-    })
-    .map((b) => {
-      const epic = (b.epic as unknown) as Record<string, unknown>;
-      const days = daysBlocked(b.logged_at as string);
-      const severity = b.severity as Blocker['severity'];
-      return {
-        id: b.id as string,
-        epic_id: b.epic_id as string,
-        epic_name: epic.name as string,
-        title: b.title as string,
-        description: (b.description as string | null) ?? null,
-        severity,
-        status: b.status as Blocker['status'],
-        days_blocked: days,
-        needs_escalation: days >= 3 && (severity === 'high' || severity === 'critical'),
-        logged_at: b.logged_at as string,
-      };
-    });
-
-  const escalations_needed: EscalationItem[] = personBlockers
-    .filter((b) => b.needs_escalation)
-    .map((b) => ({
-      blocker_id: b.id,
-      epic_id: b.epic_id,
-      epic_name: b.epic_name,
-      blocker_title: b.title,
-      severity: b.severity,
-      days_blocked: b.days_blocked,
+  // ClearGO tracks risk via epic.risk_level rather than a separate blocker table.
+  // Surface high/critical-risk active epics as escalation-worthy items.
+  const escalations_needed: EscalationItem[] = active_epics
+    .filter((e) => e.risk_level === 'high' || e.risk_level === 'critical')
+    .map((e) => ({
+      blocker_id: e.id,
+      epic_id: e.id,
+      epic_name: e.name,
+      blocker_title: `Epic is ${e.risk_level} risk`,
+      severity: e.risk_level as 'high' | 'critical',
+      days_blocked: 0,
     }));
 
   const suggested_talking_points: string[] = [];
 
   for (const esc of escalations_needed) {
     suggested_talking_points.push(
-      `[ESCALATE] ${esc.epic_name}: ${esc.blocker_title} — blocked ${esc.days_blocked} days (${esc.severity})`
+      `[RISK] ${esc.epic_name} is ${esc.severity} risk — review launch readiness`
     );
-  }
-
-  for (const epic of active_epics) {
-    if (epic.risk_level === 'high' || epic.risk_level === 'critical') {
-      suggested_talking_points.push(
-        `Review risk on '${epic.name}' — currently ${epic.risk_level} risk`
-      );
-    }
   }
 
   if (completed_this_week.length > 0) {
@@ -181,7 +135,7 @@ export default async (req: Request): Promise<Response> => {
     summary: {
       active_epics: active_epics.length,
       completed_this_week: completed_this_week.length,
-      open_blockers: personBlockers.length,
+      open_blockers: 0,
       escalations_needed: escalations_needed.length,
     },
     active_epics,

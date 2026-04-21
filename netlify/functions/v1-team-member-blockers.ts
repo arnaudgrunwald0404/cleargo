@@ -41,35 +41,6 @@ export default async (req: Request): Promise<Response> => {
     return internalError();
   }
 
-  const { data: blockers, error: blockersError } = await supabase
-    .from('blocker')
-    .select('id, epic_id, title, description, severity, status, logged_at, epic:epic_id!inner(name, owner_id)')
-    .eq('status', 'open')
-    .eq('epic.owner_id', id);
-
-  if (blockersError) {
-    console.error('[v1-team-member-blockers] Failed to fetch blockers:', blockersError);
-    return internalError();
-  }
-
-  const now = Date.now();
-
-  const data = (blockers ?? []).map((b) => {
-    const days_blocked = Math.floor((now - new Date(b.logged_at).getTime()) / 86400000);
-    const needs_escalation = days_blocked >= 3 && ['high', 'critical'].includes(b.severity);
-    return {
-      id: b.id,
-      epic_id: b.epic_id,
-      epic_name: (b.epic as { name?: string } | null)?.name ?? null,
-      title: b.title,
-      description: b.description,
-      severity: b.severity,
-      status: b.status,
-      days_blocked,
-      needs_escalation,
-      logged_at: b.logged_at,
-    };
-  });
-
-  return ok({ member: { id: member.id, name: member.name, email: member.email }, data });
+  // ClearGO does not have a standalone blockers table — risk is tracked per epic via risk_level.
+  return ok({ member: { id: member.id, name: member.name, email: member.email }, data: [] });
 };

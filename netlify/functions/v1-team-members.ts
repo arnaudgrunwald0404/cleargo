@@ -25,7 +25,7 @@ export default async (req: Request): Promise<Response> => {
   const { data: members, error: membersError } = await supabase
     .from('app_user')
     .select('id, name, email, role, slack_handle')
-    .eq('reports_to_email', MANAGER_EMAIL)
+    .eq('manager_email', MANAGER_EMAIL)
     .eq('is_active', true);
 
   if (membersError) {
@@ -39,37 +39,20 @@ export default async (req: Request): Promise<Response> => {
 
   const memberIds = members.map((m) => m.id);
 
-  const [epicsResult, blockersResult] = await Promise.all([
-    supabase
-      .from('epic')
-      .select('owner_id')
-      .in('owner_id', memberIds)
-      .not('status', 'in', '("LAUNCHED","CANCELLED","ARCHIVED")'),
-    supabase
-      .from('blocker')
-      .select('owner_id')
-      .in('owner_id', memberIds)
-      .eq('status', 'open'),
-  ]);
+  const epicsResult = await supabase
+    .from('epic')
+    .select('owner_id')
+    .in('owner_id', memberIds)
+    .not('status', 'in', '("LAUNCHED","CANCELLED","ARCHIVED")');
 
   if (epicsResult.error) {
     console.error('[v1-team-members] Failed to fetch epics:', epicsResult.error);
     return internalError();
   }
 
-  if (blockersResult.error) {
-    console.error('[v1-team-members] Failed to fetch blockers:', blockersResult.error);
-    return internalError();
-  }
-
   const epicCountByOwner: Record<string, number> = {};
   for (const epic of epicsResult.data ?? []) {
     epicCountByOwner[epic.owner_id] = (epicCountByOwner[epic.owner_id] ?? 0) + 1;
-  }
-
-  const blockerCountByOwner: Record<string, number> = {};
-  for (const blocker of blockersResult.data ?? []) {
-    blockerCountByOwner[blocker.owner_id] = (blockerCountByOwner[blocker.owner_id] ?? 0) + 1;
   }
 
   const data = members.map((m) => ({
@@ -79,7 +62,7 @@ export default async (req: Request): Promise<Response> => {
     role: m.role,
     slack_handle: m.slack_handle,
     active_epics_count: epicCountByOwner[m.id] ?? 0,
-    open_blockers_count: blockerCountByOwner[m.id] ?? 0,
+    open_blockers_count: 0,
   }));
 
   return ok({ data });
