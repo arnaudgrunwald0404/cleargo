@@ -33,12 +33,15 @@ type DbReleaseStageRow = {
     stage_type?: 'phase' | 'milestone';
 };
 
-/** Next release after this launch (for GA / Cohort 2 pin on UI rollout timeline); matches epic detail fallback. */
+/** GA Cohort 2 date for the UI rollout timeline. Uses the cohort2_date stored from Aha! if available; falls back to next release in schedule. */
 function getCohort2DateForUiTimeline(
     currentReleaseName: string,
     launchDate: string,
-    schedule: Array<{ release_name: string; launch_date: string | null }>
+    schedule: Array<{ release_name: string; launch_date: string | null; cohort2_date?: string | null }>
 ): string | null {
+    const current = schedule.find(r => r.release_name === currentReleaseName);
+    if (current?.cohort2_date) return current.cohort2_date;
+
     const anchor = parseDateOnlyLocal(launchDate);
     if (!anchor) return addCalendarMonth(launchDate);
     let best: { d: Date; iso: string } | null = null;

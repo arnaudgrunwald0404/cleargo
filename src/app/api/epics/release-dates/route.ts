@@ -7,7 +7,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 let ahaReleasesCache: { releases: any[]; timestamp: number } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-async function getHandler(): Promise<NextResponse<{ releases: { releaseName: string; launchDate: string | null; }[] }> | NextResponse<{ error: any }>> {
+async function getHandler(): Promise<NextResponse<{ releases: { releaseName: string; launchDate: string | null; cohort2Date: string | null }[] }> | NextResponse<{ error: any }>> {
     try {
         const supabase = createClient();
         
@@ -106,6 +106,18 @@ async function getHandler(): Promise<NextResponse<{ releases: { releaseName: str
         });
 
         console.log(`Found ${releaseNames.size} unique release names:`, Array.from(releaseNames));
+
+        // Also fetch cohort2_date from DB
+        const cohort2DateMap = new Map<string, string>();
+        const { data: cohort2DbRows } = await supabase
+            .from('release_schedule')
+            .select('release_name, cohort2_date')
+            .not('cohort2_date', 'is', null);
+        cohort2DbRows?.forEach((r: any) => {
+            if (r.release_name && r.cohort2_date) {
+                cohort2DateMap.set(r.release_name, r.cohort2_date);
+            }
+        });
 
         // Merge database dates into releaseDateMap
         dbReleaseDateMap.forEach((date, name) => {
@@ -306,6 +318,25 @@ async function getHandler(): Promise<NextResponse<{ releases: { releaseName: str
                             ));
                         }
                         
+                        // Extract GA Cohort 2 date: check cohort2_date field first, then release_phases
+                        if (matchedRelease.cohort2_date) {
+                            cohort2DateMap.set(matchedRelease.name, matchedRelease.cohort2_date);
+                            console.log(`  ✅ Found GA Cohort 2 date in cohort2_date field: ${matchedRelease.cohort2_date}`);
+                        } else {
+                            const phases = matchedRelease.release_phases;
+                            if (Array.isArray(phases)) {
+                                const cohort2Phase = phases.find((p: any) => {
+                                    const name = (p.name || '').toLowerCase();
+                                    return name.includes('cohort 2') || name.includes('ga cohort');
+                                });
+                                if (cohort2Phase?.end_on || cohort2Phase?.start_on) {
+                                    const c2Date = cohort2Phase.end_on || cohort2Phase.start_on;
+                                    cohort2DateMap.set(matchedRelease.name, c2Date);
+                                    console.log(`  ✅ Found GA Cohort 2 date in release_phases: ${c2Date}`);
+                                }
+                            }
+                        }
+
                         if (launchDate) {
                             // Use the exact name from Aha (not the search term) to ensure consistency
                             releaseDateMap.set(matchedRelease.name, launchDate);
@@ -370,6 +401,7 @@ async function getHandler(): Promise<NextResponse<{ releases: { releaseName: str
             .map((releaseName) => ({
                 releaseName,
                 launchDate: releaseDateMap.get(releaseName) || null,
+                cohort2Date: cohort2DateMap.get(releaseName) || null,
             }));
 
         return NextResponse.json({ releases: releaseData });

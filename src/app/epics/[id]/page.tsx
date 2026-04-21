@@ -416,7 +416,7 @@ export default function EpicDetailPage() {
             if (extractedReleaseName) {
                 const { data: releaseSchedule, error: releaseError } = await supabase
                     .from('release_schedule')
-                    .select('launch_date')
+                    .select('launch_date, cohort2_date')
                     .eq('release_name', extractedReleaseName)
                     .maybeSingle();
 
@@ -424,6 +424,10 @@ export default function EpicDetailPage() {
                 if (releaseSchedule?.launch_date) {
                     fetchedReleaseDate = releaseSchedule.launch_date;
                     setReleaseDate(releaseSchedule.launch_date);
+                    if (releaseSchedule.cohort2_date) {
+                        cohort2DateFetched = releaseSchedule.cohort2_date;
+                        setCohort2Date(releaseSchedule.cohort2_date);
+                    }
                 } else {
                     // Automatically fetch release date from API if not in schedule
                     setFetchingReleaseDate(true);
@@ -438,8 +442,8 @@ export default function EpicDetailPage() {
                             console.log(`[Epic Detail] Found release date:`, found);
 
                             if (found && found.launchDate) {
-                                // Save to release_schedule
-                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate });
+                                // Save to release_schedule (including cohort2_date if available)
+                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate, cohort2_date: found.cohort2Date });
                                 const saveRes = await fetch("/api/releases", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -447,6 +451,7 @@ export default function EpicDetailPage() {
                                     body: JSON.stringify({
                                         release_name: extractedReleaseName,
                                         launch_date: found.launchDate,
+                                        ...(found.cohort2Date ? { cohort2_date: found.cohort2Date } : {}),
                                     }),
                                 });
 
@@ -455,6 +460,10 @@ export default function EpicDetailPage() {
                                     console.log(`[Epic Detail] Successfully saved release date:`, savedData);
                                     fetchedReleaseDate = found.launchDate;
                                     setReleaseDate(found.launchDate);
+                                    if (found.cohort2Date) {
+                                        cohort2DateFetched = found.cohort2Date;
+                                        setCohort2Date(found.cohort2Date);
+                                    }
                                 } else {
                                     const errorData = await saveRes.json().catch(() => ({}));
                                     console.error("[Epic Detail] Failed to save release date:", errorData);
@@ -478,18 +487,6 @@ export default function EpicDetailPage() {
                 }
             } else {
                 setReleaseDate(null);
-                setCohort2Date(null);
-            }
-
-            // Cohort 2 / GA = next release after epic's release (for UI Framework timeline)
-            if (fetchedReleaseDate && epicIsUiFramework) {
-                const dateOnly = toDateOnlyString(fetchedReleaseDate) ?? fetchedReleaseDate.split('T')[0] ?? fetchedReleaseDate;
-                const { data: nextDate } = await supabase.rpc('get_next_release_date', {
-                    after_date: dateOnly,
-                });
-                cohort2DateFetched = nextDate ?? addCalendarMonth(fetchedReleaseDate);
-                setCohort2Date(cohort2DateFetched);
-            } else {
                 setCohort2Date(null);
             }
 

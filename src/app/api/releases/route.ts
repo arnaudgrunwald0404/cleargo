@@ -100,7 +100,7 @@ async function postHandler(request: NextRequest) {
 
         const body = await request.json();
 
-        const { release_name, launch_date } = body;
+        const { release_name, launch_date, cohort2_date } = body;
 
         if (!release_name || !launch_date) {
             return NextResponse.json(
@@ -151,6 +151,7 @@ async function postHandler(request: NextRequest) {
             release_name,
             launch_date: normalizedDate,
             updated_at: new Date().toISOString(),
+            ...(cohort2_date ? { cohort2_date: toDateOnlyString(cohort2_date) ?? cohort2_date } : {}),
         };
 
         // Try with context column (launches migration applied)
