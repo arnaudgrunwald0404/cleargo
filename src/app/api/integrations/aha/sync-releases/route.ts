@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { getReleases } from '@/lib/aha/client';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
@@ -36,6 +36,8 @@ export async function POST(req: NextRequest) {
 
     const body = await req.json().catch(() => ({}));
     const startDate: string | null = body.start_date || null;
+
+    const adminClient = createAdminClient();
 
     const stream = new ReadableStream({
         async start(controller) {
@@ -126,7 +128,7 @@ export async function POST(req: NextRequest) {
                         }
 
                         const normalizedLaunchDate = toDateOnlyString(launchDate) ?? launchDate;
-                        const { error } = await supabase
+                        const { error } = await adminClient
                             .from('release_schedule')
                             .upsert(
                                 { release_name: release.name, launch_date: normalizedLaunchDate, updated_at: new Date().toISOString() },
