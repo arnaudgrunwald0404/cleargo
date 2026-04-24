@@ -107,6 +107,14 @@ export function CriteriaManager() {
   const [criteriaToDelete, setCriteriaToDelete] = useState<Item | null>(null);
   const [listFilter, setListFilter] = useState<"all" | "ui_framework">("all");
 
+  // Backfill confirmation modal
+  const [backfillConfirmOpen, setBackfillConfirmOpen] = useState(false);
+  const [backfillConfirmCount, setBackfillConfirmCount] = useState(0);
+  const [backfillConfirmId, setBackfillConfirmId] = useState<string | null>(null);
+  const [backfillConfirmLabel, setBackfillConfirmLabel] = useState('');
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillDoneResult, setBackfillDoneResult] = useState<{ processed: number; failed: number } | null>(null);
+
   const filteredItems = useMemo(() => {
     if (listFilter === "ui_framework") return items.filter((c) => !!c.ui_framework_only);
     return items;
@@ -300,9 +308,9 @@ export function CriteriaManager() {
     setShowCreateForm(false);
   }
 
-  async function submitEdit(id: string, patch: Partial<Item>) {
+  async function submitEdit(id: string, patch: Partial<Item>, fromDrawer = false) {
     setError(null);
-    
+
     // Ensure data_sources have value field for all items, and preserve label
     const cleanedPatch = { ...patch };
     if (cleanedPatch.data_sources) {
@@ -312,7 +320,7 @@ export function CriteriaManager() {
         ...(ds.label !== undefined && { label: ds.label }), // Preserve label if present
       }));
     }
-    
+
     const res = await fetch(`/api/criteria/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -335,7 +343,22 @@ export function CriteriaManager() {
     }
     const { item } = await res.json();
     setItems((prev) => prev.map((c) => (c.id === id ? item : c)).sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)));
-    setEditingId(null);
+
+    // After a full drawer save, check how many active epics are missing this criterion
+    if (fromDrawer) {
+      fetch(`/api/criteria/${id}/backfill`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.count > 0) {
+            setBackfillConfirmId(id);
+            setBackfillConfirmLabel(item.label);
+            setBackfillConfirmCount(data.count);
+            setBackfillDoneResult(null);
+            setBackfillConfirmOpen(true);
+          }
+        })
+        .catch(err => console.error('Failed to check backfill count:', err));
+    }
   }
 
   async function handleDelete(id: string) {
@@ -357,6 +380,21 @@ export function CriteriaManager() {
       }
     } catch (e: any) {
       setError(e.message || "Failed to delete criteria");
+    }
+  }
+
+  async function handleBackfillConfirm() {
+    if (!backfillConfirmId) return;
+    setBackfillRunning(true);
+    try {
+      const res = await fetch(`/api/criteria/${backfillConfirmId}/backfill`, { method: 'POST' });
+      const data = await res.json();
+      setBackfillDoneResult({ processed: data.processed ?? 0, failed: data.failed ?? 0 });
+    } catch (e: any) {
+      setBackfillDoneResult({ processed: 0, failed: -1 });
+    } finally {
+      setBackfillRunning(false);
+      setBackfillConfirmOpen(false);
     }
   }
 
@@ -885,7 +923,7 @@ export function CriteriaManager() {
             opened={!!editingId}
             onClose={() => setEditingId(null)}
             onSave={(patch) => {
-              submitEdit(editingId, patch);
+              submitEdit(editingId, patch, true);
               setEditingId(null);
             }}
             onDelete={() => {
@@ -944,6 +982,62 @@ export function CriteriaManager() {
           </Group>
         </div>
       </Modal>
+
+      {/* Backfill Confirmation Modal */}
+      <Modal
+        opened={backfillConfirmOpen}
+        onClose={() => setBackfillConfirmOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Add to active epics?</span>
+          </div>
+        }
+        centered
+        size="md"
+      >
+        <div className="space-y-4">
+          <Text size="sm">
+            <strong>{backfillConfirmLabel}</strong> is not yet assigned to{' '}
+            <strong>{backfillConfirmCount} active epic{backfillConfirmCount !== 1 ? 's' : ''}</strong> that
+            match its tier and applicability settings.
+          </Text>
+          <Text size="sm" c="dimmed">
+            Would you like to add it now? Decision owners will be notified via Slack, and due dates will be
+            calculated based on each epic's release schedule.
+          </Text>
+          <Group justify="flex-end" mt="xl">
+            <Button variant="subtle" onClick={() => setBackfillConfirmOpen(false)}>
+              Skip
+            </Button>
+            <Button
+              color="blue"
+              loading={backfillRunning}
+              onClick={handleBackfillConfirm}
+            >
+              Add to {backfillConfirmCount} epic{backfillConfirmCount !== 1 ? 's' : ''}
+            </Button>
+          </Group>
+        </div>
+      </Modal>
+
+      {/* Backfill result toast-style alert */}
+      {backfillDoneResult && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Alert
+            color={backfillDoneResult.failed > 0 ? 'orange' : 'green'}
+            withCloseButton
+            onClose={() => setBackfillDoneResult(null)}
+            title={backfillDoneResult.failed > 0 ? 'Backfill completed with errors' : 'Backfill complete'}
+          >
+            {backfillDoneResult.failed > 0
+              ? `Added to ${backfillDoneResult.processed} epics, ${backfillDoneResult.failed} failed.`
+              : `Successfully added to ${backfillDoneResult.processed} epic${backfillDoneResult.processed !== 1 ? 's' : ''}.`}
+          </Alert>
+        </div>
+      )}
     </div>
   );
 }
@@ -955,11 +1049,29 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
   const [ahaFields, setAhaFields] = useState<Array<{ alias: string; label: string; type: string }>>([]);
   const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("details");
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ processed: number; skipped: number; failed: number; errors: { epicId: string; epicName: string; error: string }[] } | null>(null);
+
+  async function handleBackfill() {
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch(`/api/criteria/${item.id}/backfill`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Backfill failed");
+      setBackfillResult(data);
+    } catch (e: any) {
+      setBackfillResult({ processed: 0, skipped: 0, failed: -1, errors: [{ epicId: "", epicName: "", error: e.message }] });
+    } finally {
+      setBackfillLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (opened) {
       setPatch({ ...item });
       setActiveTab("details");
+      setBackfillResult(null);
       fetchUsers();
       fetchAhaFields();
     }
@@ -1431,21 +1543,44 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
         </Tabs>
           </Stack>
         </div>
-        <div style={{ 
-          borderTop: '1px solid var(--mantine-color-gray-3)', 
+        <div style={{
+          borderTop: '1px solid var(--mantine-color-gray-3)',
           padding: '20px var(--mantine-spacing-lg) 0',
           backgroundColor: 'var(--mantine-color-body)',
           flexShrink: 0
         }}>
-          <Group justify="space-between">
-            <Button 
-              variant="outline" 
-              color="red" 
-              leftSection={<IconTrash size={16} />} 
-              onClick={onDelete}
+          {backfillResult && (
+            <Alert
+              color={backfillResult.failed === -1 ? "red" : backfillResult.failed > 0 ? "orange" : "green"}
+              mb="sm"
+              onClose={() => setBackfillResult(null)}
+              withCloseButton
             >
-              Delete
-            </Button>
+              {backfillResult.failed === -1
+                ? `Backfill error: ${backfillResult.errors[0]?.error}`
+                : `Backfill complete — ${backfillResult.processed} epics updated, ${backfillResult.skipped} skipped${backfillResult.failed > 0 ? `, ${backfillResult.failed} failed` : ""}`}
+            </Alert>
+          )}
+          <Group justify="space-between">
+            <Group gap="xs">
+              <Button
+                variant="outline"
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={onDelete}
+              >
+                Delete
+              </Button>
+              <Button
+                variant="outline"
+                color="blue"
+                loading={backfillLoading}
+                onClick={handleBackfill}
+                title="Add this criterion to all active epics that don't have it yet"
+              >
+                Backfill to active epics
+              </Button>
+            </Group>
             <Group>
               <Button variant="outline" onClick={onClose}>
                 Cancel
