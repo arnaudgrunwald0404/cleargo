@@ -892,12 +892,10 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
     
     Object.keys(grouped).forEach(cat => {
         const items = grouped[cat];
-        const overallItem = items.find(item => 
+        const overallItem = items.find(item =>
             item.criterion.label?.toLowerCase().startsWith('overall')
         );
-        const regularItems = items.filter(item => 
-            !item.criterion.label?.toLowerCase().startsWith('overall')
-        );
+        const regularItems = items.filter(item => item !== overallItem);
         
         categoryOverallItems[cat] = overallItem || null;
         categoryRegularItems[cat] = regularItems;
