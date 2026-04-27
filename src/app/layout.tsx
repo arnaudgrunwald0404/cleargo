@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
 import { theme } from "@/lib/mantine-theme";
+import { QueryProviders } from "@/components/QueryProviders";
 import { FeatureFlagsProvider } from "@/contexts/FeatureFlagsContext";
 import { AppModeProvider } from "@/contexts/AppModeContext";
 import { cookies } from "next/headers";
@@ -104,17 +105,19 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${marcellus.variable} antialiased`}
       >
         <MantineProvider theme={theme}>
-          <FeatureFlagsProvider>
-            <AppModeProvider>
-              <Notifications />
-              <SidebarWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
-              <div className="sidebar-content-area" style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
-                <TableScopeWrapper>{children}</TableScopeWrapper>
-              </div>
-              <ImpersonationBanner />
-              <ProfileCompletionModal />
-            </AppModeProvider>
-          </FeatureFlagsProvider>
+          <QueryProviders>
+            <FeatureFlagsProvider>
+              <AppModeProvider>
+                <Notifications />
+                <SidebarWrapper serverEmail={email} serverRole={role} serverImageUrl={avatarUrl} />
+                <div className="sidebar-content-area" style={{ minHeight: '100vh', background: 'var(--color-platinum)' }}>
+                  <TableScopeWrapper>{children}</TableScopeWrapper>
+                </div>
+                <ImpersonationBanner />
+                <ProfileCompletionModal />
+              </AppModeProvider>
+            </FeatureFlagsProvider>
+          </QueryProviders>
         </MantineProvider>
       </body>
     </html>

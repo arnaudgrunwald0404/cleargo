@@ -1,4 +1,5 @@
 import type { Role } from "./roles-constants";
+import { ALL_ROLES } from "./roles-constants";
 
 export type CapabilityId =
   | "criteria.status.update"
@@ -36,7 +37,11 @@ export type CapabilityId =
   | "settings.webhookUrl.update"
   | "meetings.read"
   | "analytics.read"
-  | "settings.successMeasurement.update";
+  | "settings.successMeasurement.update"
+  | "roadmap.confidence.adjust"
+  | "roadmap.impactOverride.write"
+  | "roadmap.hiddenItem.write"
+  | "roadmap.movementNote.write";
 
 export type Capability = {
   id: CapabilityId;
@@ -225,6 +230,26 @@ export const CAPABILITIES: Capability[] = [
     label: "Configure Success Metrics (HEART)",
     description: "Allow setting up and editing HEART metrics, Pendo config, and success measurement. Others can view only.",
   },
+  {
+    id: "roadmap.confidence.adjust",
+    label: "Adjust Roadmap Confidence",
+    description: "Adjust PM confidence offset on delivery confidence ratings (Roadmap Rewind).",
+  },
+  {
+    id: "roadmap.impactOverride.write",
+    label: "Override Release Movement Impact",
+    description: "Create or edit PM impact overrides for roadmap release movements.",
+  },
+  {
+    id: "roadmap.hiddenItem.write",
+    label: "Hide Roadmap Items (self)",
+    description: "Hide individual epics from your own roadmap views (per-user preference).",
+  },
+  {
+    id: "roadmap.movementNote.write",
+    label: "Add Roadmap Movement Notes",
+    description: "Add epic-level movement notes (PM notes) on the Rewind timeline.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -264,6 +289,10 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "meetings.read": ["CPO", "SUPERADMIN"],
   "analytics.read": ["CPO"],
   "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "PM", "PMM", "SUPERADMIN"],
+  "roadmap.confidence.adjust": ["PM", "PRODUCT_OPS", "CPO"],
+  "roadmap.impactOverride.write": ["PM", "PRODUCT_OPS", "CPO"],
+  "roadmap.hiddenItem.write": [...ALL_ROLES],
+  "roadmap.movementNote.write": [...ALL_ROLES],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

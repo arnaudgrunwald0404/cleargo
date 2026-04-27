@@ -1,0 +1,31 @@
+name: Ensure roadmap_snapshot partitions
+
+on:
+  schedule:
+    # 1st of month 00:15 UTC — creates rolling monthly partitions via DB RPC
+    - cron: '15 0 1 * *'
+  workflow_dispatch: {}
+
+jobs:
+  ensure:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call ensure-snapshot-partitions
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            "$BASE_URL/api/jobs/ensure-snapshot-partitions") || true
+          echo "HTTP $STATUS"
+          cat response.json || true
+          test "$STATUS" = "200"
