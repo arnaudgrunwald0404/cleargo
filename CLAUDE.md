@@ -54,10 +54,12 @@ src/
 │   ├── rovo/               # Rovo MCP client
 │   ├── integrations/       # Pendo, Snowflake clients
 │   ├── heart/              # HEART metrics framework
+│   ├── roadmap/            # Roadmap Rewind (confidence calculator, ported from RRV)
 │   ├── services/           # Business logic services
 │   ├── middleware/          # Rate limiting middleware
 │   ├── __tests__/          # Unit tests
 │   └── __mocks__/          # Test mocks
+├── hooks/                  # React Query hooks (roadmap snapshots, movements, confidence)
 ├── types/                  # TypeScript type definitions
 └── proxy.ts                # Request deduplication
 
@@ -87,6 +89,7 @@ e2e/                        # Playwright E2E tests
 - Query via Supabase query builder — no raw SQL
 - Custom fetch wrapper with 30s timeout on server client
 - Key tables: `epic`, `product`, `criterion`, `epic_criterion_status`, `app_user`, `app_settings`
+- Roadmap Rewind tables: `roadmap_snapshot` (partitioned by `snapshot_date`, monthly partitions), `confidence_rating`, `confidence_adjustment_history`, `pm_impact_override`, `roadmap_hidden_item`, `epic_comment`
 
 ### API Routes
 
@@ -114,6 +117,19 @@ All external API clients use **exponential backoff retry logic** (typically 3 re
 ### Background Jobs
 
 Triggered via GitHub Actions cron → HTTP POST to `/api/jobs/*` endpoints, authenticated with `CRON_SECRET`.
+
+### Roadmap Rewind Module
+
+Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind `FEATURE_ROADMAP_REWIND` (`src/lib/flags.ts`).
+
+- **Pages:** `/portfolio/snapshot` (current vs. previous week pivot) and `/portfolio/rewind` (movement analytics with weekly heatmap, recharts powered). Both are visible to every authenticated user.
+- **Epic detail tabs:** `/epics/[id]` adds Rewind + Confidence tabs (rendered by `EpicRoadmapRewindPanel` and `EpicRoadmapConfidencePanel` in `src/components/epic/`).
+- **Snapshot ingestion:** `src/app/api/jobs/roadmap-snapshot/route.ts` paginates an Aha! custom pivot, normalizes via `src/lib/aha/pivotNormalizer.ts`, maps via `src/lib/aha/pivotMapping.ts`, and inserts into `roadmap_snapshot`. Cron in `.github/workflows/roadmap-snapshot.yml` (Mondays 08:00 UTC).
+- **Partition maintenance:** monthly `/api/jobs/ensure-snapshot-partitions` calls `public.ensure_roadmap_snapshot_partitions()`.
+- **Confidence calculator:** pure TS at `src/lib/roadmap/confidenceCalculator.ts`. Bump `CONFIDENCE_FORMULA_VERSION` when changing the formula.
+- **Server APIs (rate-limited):** `src/app/api/roadmap/{snapshots,movements,delivery-metrics,strategic-items,confidence,impact-override}/route.ts`. Adjustment writes are capability-gated (`roadmap.confidence.adjust`, `roadmap.impactOverride.write`).
+- **Hooks:** `src/hooks/use*.ts` (TanStack Query) — see `useRoadmapData`, `useAvailableSnapshots`, `useYearlyMovements`, `useImpactCategorizedMovements`, `usePeriodReleaseMovements`, `useHistoricalRoadmapData`, `useReleaseDeliveryMetrics`, `usePriorityGoalsDeliveryMetrics`, `useStrategicItemsDetail`, `useConfidenceRating`, `useAdjustConfidenceRating`, `usePMImpactOverride`, `useSetImpactOverride`, `useHiddenItems`, `useHideRoadmapItem`, `useUnhideRoadmapItem`.
+- **Bulk historical import (one-time):** `scripts/rrv-import/` — `01-export-from-rrv.sh` → `02-stage-into-cleargo.sh` → `03-reconcile-and-insert.sql` → `04-parity-check.mjs`. Run once during cutover; n8n workflow is then retired (see `.cursor/plans/merge-rrv-into-cleargo.plan.md`).
 
 ## Code Conventions
 

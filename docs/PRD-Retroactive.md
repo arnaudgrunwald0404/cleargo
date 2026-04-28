@@ -759,6 +759,59 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 - **Delegation History**: Track delegation changes
 - **Delegation Notifications**: Notify delegates of assignments
 
+### 11. Roadmap Snapshot & Rewind
+
+Time-series visibility into how the roadmap moves week over week. Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; the merge is gated behind the `roadmap_rewind` feature flag (`FEATURE_ROADMAP_REWIND`, see `src/lib/flags.ts`).
+
+#### 11.1 Weekly Snapshot Job
+- **Cron**: GitHub Actions `roadmap-snapshot.yml` runs Mondays 08:00 UTC, hitting `/api/jobs/roadmap-snapshot` with the standard `CRON_SECRET` bearer auth
+- **Source**: Aha! custom-pivot REST endpoint (`AHA_ROADMAP_PIVOT_ID`), paginated and normalized in `src/lib/aha/pivotNormalizer.ts` and `src/lib/aha/pivotMapping.ts`
+- **Sink**: `roadmap_snapshot` table — partitioned by `snapshot_date` (monthly partitions), with `epic_id` populated via `aha_key ↔ epic.aha_id` lookup; unmatched keys are tracked but not blocked
+- **Maintenance**: monthly `/api/jobs/ensure-snapshot-partitions` cron keeps current+next-3-months partitions ahead of the calendar via `public.ensure_roadmap_snapshot_partitions()`
+- **Replaces**: a standalone n8n workflow that previously fed RRV's `roadmap` table
+
+#### 11.2 Roadmap Snapshot page (`/portfolio/snapshot`)
+- Latest weekly pivot snapshot with field-level "Changes vs prior week" badges (release, dates, status, owner, pod, t-shirt size)
+- Per-epic **Confidence** column rendered as a colored badge (very_low → very_high). PM/PRODUCT_OPS/CPO/SUPERADMIN see a click-to-edit affordance opening the `ConfidenceAdjustmentDialog` (slider + preview + audit-noted save)
+- **Snapshot date selector** — pin the table to any historical snapshot. Historical mode also computes a real diff against the snapshot immediately preceding the chosen date (`useHistoricalRoadmapComparison`), so the "Changes" column stays meaningful for past weeks
+- Click any row to push the **Epic History** view into a stack-based slideout drawer (see 11.4)
+- Universal read access for any authenticated user
+
+#### 11.3 Roadmap Rewind page (`/portfolio/rewind`)
+- Top summary tiles: epics tracked, stable-this-week count + %, moved-this-week, moved-YTD
+- Three KPI cards (week / quarter-to-date / year-to-date) — clickable, push the period drilldown into the slideout stack
+- Movements-per-week bar chart + weekly heatmap (impact-categorized via SQL)
+- **Release delivery** tile: most-recent past release commitment %, on-time / 1-late / 2+late split, in-progress callout (powered by `get_release_delivery_metrics`)
+- **Priority & goals delivered** tile: CSM-priority + goals-linked epics shipped per last release / QTD / YTD (powered by `get_priority_goals_delivery_metrics`)
+- Snapshot date picker for "as-of" historical analytics
+- Universal read access for any authenticated user
+
+#### 11.4 Stack-based slideout drilldown (`SlideoutContext`)
+Mantine `Drawer` driven by a stack of view entries. Each push adds a back-arrow to the header so users can drill arbitrarily deep without losing context.
+- **`PeriodMovementsView`** (top-level from KPI/heatmap clicks): table of epics that moved release in the period, with from/to release, impact badge, and PM-override marker
+- **`EpicHistoryView`** (pushed from snapshot rows or from a `PeriodMovementsView` row): port of RRV's `ItemHistoryView` with a current-state card (status, release, dates, owner, pod, effort), Aha + Jira deep links, `ConfidenceBadge`, "What changed in the latest snapshot" red-strikethrough → green diff, and a unified Mantine `Timeline` of release movements + PM movement notes
+- PM-only **Add note** affordance on each timeline movement row (and a top-level "Add note about this epic" button) — opens an inline `AddEpicNoteForm` that writes to `epic_comment` with `category='movement'` and the prompted `movement_cause` (Internal/External), pre-populated with the relevant `movement_date` / `from_release` / `to_release` / `related_snapshot_date`
+
+#### 11.5 Epic-detail tabs
+On `/epics/[id]`, when the feature flag is enabled and the epic has an `aha_id`:
+- **Rewind tab**: weekly `roadmap_snapshot` rows for this epic (newest first), showing release / end date / status drift over time
+- **Confidence tab**: per-snapshot delivery confidence rating with PM adjustment offset; read-only display by default. Adjustment controls are gated by `roadmap.confidence.adjust`
+
+#### 11.6 Confidence rating
+- Calculator lives in `src/lib/roadmap/confidenceCalculator.ts` (pure TypeScript, unit-tested). Bumping `CONFIDENCE_FORMULA_VERSION` invalidates the cache
+- Stored per `(aha_key, snapshot_date)` in `confidence_rating`; PM offsets persist in the same row and are appended to `confidence_adjustment_history` with the previous + new percentage and an optional note
+- Levels: `very_low` (≤25), `low` (≤45), `medium` (≤65), `high` (≤85), `very_high` (>85)
+- **PM adjustment UX**: `ConfidenceAdjustmentDialog` (Mantine `Modal`) with slider (-20% → +20% in 5% steps), live preview, quick ±5/Reset buttons, optional note. Visible only to roles in `PRODUCT_WRITE_ROLES` (`SUPERADMIN`, `PRODUCT_OPS`, `CPO`, `PM`, `PRODUCT`); enforced both client-side and via `confidence_rating` RLS
+
+#### 11.7 PM impact overrides
+PMs can override the algorithm-calculated impact level on a release movement by `(aha_key, week_start)` via `pm_impact_override`, gated by `roadmap.impactOverride.write`. Stored alongside the calculated impact for full audit.
+
+#### 11.8 Movement notes (PM Notes folded into comments)
+RRV's `pm_notes` migrated into the new `epic_comment` table with `category='movement'`, preserving `movement_cause` (Internal/External), `movement_date`, `from_release`, `to_release`, and `related_snapshot_date`. Threaded under the epic, not the criterion. Read access is universal; write access is gated to `PRODUCT_WRITE_ROLES` via the inline `AddEpicNoteForm` (see 11.4) and `epic_comment` RLS.
+
+#### 11.9 Per-user hidden items
+Each user can hide individual epics from their own roadmap views via `roadmap_hidden_item` (no special role required, gated by `roadmap.hiddenItem.write`).
+
 ---
 
 ## Technical Architecture
@@ -1220,6 +1273,25 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 - **happiness_action_execution**, **happiness_automation_metrics**: Execution and metrics for automations
 - **pendo_events_cache**: Cached Pendo events for AI agent context
 
+#### Roadmap Snapshot & Rewind (RRV merge)
+All gated behind `FEATURE_ROADMAP_REWIND`. RLS pattern is **universal SELECT for authenticated users, role-gated writes**.
+- **roadmap_snapshot**: weekly Aha! pivot rows. Declared as `PARTITION BY RANGE (snapshot_date)` from day one with monthly child partitions (2023-01 → 2032-12 pre-created). Columns mirror RRV's `roadmap`: `epic_id` (FK → `epic.id`, `ON DELETE SET NULL`), `aha_key`, `snapshot_date`, plus 17 Aha! pivot columns (`aha_name`, `aha_release`, `aha_release_date`, `aha_status`, `aha_t_shirt_est`, `aha_primary_goal`, `aha_calculated_devs`, `aha_owner`, `aha_initial_est`, `aha_pod`, `jira_key`, `aha_csm_priority`, `aha_progress`, etc.). Insert-only (one row per epic per weekly snapshot). PK `(snapshot_date, id)`; unique `(snapshot_date, aha_key)`. Indexes on `(epic_id, snapshot_date DESC)`, `(aha_key, snapshot_date DESC)`, and `(snapshot_date)`.
+- **roadmap_delay_history** (view): aggregates `roadmap_snapshot` to surface per-epic delay event counts and totals (lifetime + YTD).
+- **confidence_rating**: per `(aha_key, snapshot_date)` confidence rating from `confidenceCalculator`. Tracks `calculated_*` (algorithmic), `pm_adjustment` ([-20, 20]), `final_*` (clamped 0-100), `last_calculated_at`, `author_email`. Updates gated to PM/PRODUCT_OPS/CPO/SUPERADMIN via RLS.
+- **confidence_adjustment_history**: append-only audit log of PM confidence adjustments (`previous_adjustment`, `new_adjustment`, `adjustment_delta`, `previous_final_percentage`, `new_final_percentage`, `adjustment_note`, `author_email`).
+- **pm_impact_override**: PM impact-level overrides per `(aha_key, week_start)` (`original_impact`, `override_impact`, `override_note`). Optional FK to `epic.id`.
+- **roadmap_hidden_item**: per-user hidden roadmap items, keyed by `(app_user_id, aha_key)`. RLS allows insert/delete only for the owning user.
+- **epic_comment**: epic-level comments (separate from `criterion_comment`). Used for general epic discussion *and* movement notes (PM Notes from RRV) — `category` ∈ general | movement | risk | decision; movement rows additionally store `movement_cause` (Internal/External), `movement_date`, `from_release`, `to_release`, `related_snapshot_date`. RLS: read = all authenticated, write/update/delete = own rows only.
+
+#### Roadmap RPCs (Supabase functions)
+All ported from RRV with ClearGo-aligned table names:
+- `get_latest_and_previous_roadmap_versions()`
+- `get_weekly_roadmap_changes(releases)`, `get_quarter_to_date_roadmap_changes(releases)`, `get_year_to_date_roadmap_changes(releases)`
+- `get_all_year_release_movements(as_of_date)`, `get_year_movements_with_impact(as_of_date)`, `get_year_movements_impact_summary(as_of_date)`
+- `get_release_delivery_metrics(target_release)`, `get_period_release_delivery_metrics(period_type)`
+- `get_priority_goals_delivery_metrics(as_of_date)`, `get_strategic_items_detail(category, period, as_of_date)`
+- `ensure_roadmap_snapshot_partitions()` — `SECURITY DEFINER`, called from the monthly partition-maintenance cron
+
 ---
 
 ## User Flows
@@ -1353,6 +1425,20 @@ The epic detail timeline renders phases as colored duration bars and milestones 
   - Launch Go/No-Go Date
   - Launch Console URL
 - **Retry Logic**: Automatic retries with exponential backoff
+
+#### Weekly Roadmap Pivot Snapshot Job
+- **Endpoint**: `/api/jobs/roadmap-snapshot` (POST + GET, both bearer-auth with `CRON_SECRET`)
+- **Trigger**: GitHub Actions cron `0 8 * * 1` (Mondays 08:00 UTC), defined in `.github/workflows/roadmap-snapshot.yml`
+- **Source**: Aha! custom-pivot REST endpoint at `bookmarks/custom_pivots/$AHA_ROADMAP_PIVOT_ID?view=list`
+- **Pipeline**:
+  1. Paginated fetch via `src/lib/aha/pivotFetch.ts` (reuses standard Aha! retry/backoff)
+  2. Normalize each cell with `src/lib/aha/pivotNormalizer.ts` (handles `rich_value` object/array/string forms, html/text fallbacks, `Epic progress bar` percentage extraction, and `aha_key` regex from the first column's HTML link)
+  3. Map normalized columns to DB columns via `src/lib/aha/pivotMapping.ts` (regex-driven for the year-tagged "Primary Goal" column)
+  4. Resolve `epic_id` per row via batched `aha_id` lookup against `epic`
+  5. Batch insert into `roadmap_snapshot` (chunks of 150)
+  6. Return summary: `{ rows_inserted, unmatched_aha_keys, unmatched_sample[] }`
+- **Partition Maintenance**: monthly `/api/jobs/ensure-snapshot-partitions` calls `public.ensure_roadmap_snapshot_partitions()` to keep the calendar covered
+- **Replaces**: a standalone n8n workflow that previously fed RRV's `roadmap` table
 
 #### Sync API
 - **Manual Sync**: `/api/integrations/aha/sync` - Sync all or filtered epics
@@ -1530,6 +1616,12 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 
 **Capability model**: In addition to role-based access, the app uses a capability matrix (e.g. `criteria.status.update`, `analytics.read`, `users.read`) configurable per role in Admin > Settings > Permissions. Access to specific features (e.g. Analytics dashboard, user management) is determined by these capabilities.
 
+**Roadmap-rewind capabilities** (universal *read* — every authenticated user sees Roadmap Snapshot, Roadmap Rewind, and the Confidence tab; only adjustment/write controls are role-gated):
+- `roadmap.confidence.adjust` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN)
+- `roadmap.impactOverride.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN)
+- `roadmap.hiddenItem.write` — all roles (per-user preference; RLS still scopes writes to the owner)
+- `roadmap.movementNote.write` — all roles (matches the existing comment-thread model)
+
 #### Permissions Matrix
 
 | Action | SUPERADMIN | CPO | PRODUCT_LEAD | PM | PMM/ENG/SUPPORT/SECURITY/LEARNING | PRODUCT_OPS | OTHER |
@@ -1556,6 +1648,12 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 - **Settings**: Product Ops/CPO only
 - **Audit Log**: Product Ops/CPO only
 - **User Management**: Product Ops/CPO only
+- **roadmap_snapshot / roadmap_delay_history**: All authenticated users can read; inserts only via service role (cron job)
+- **confidence_rating**: All authenticated users can read; updates restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN
+- **confidence_adjustment_history**: All authenticated users can read; inserts restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN (append-only)
+- **pm_impact_override**: All authenticated users can read; insert/update/delete restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN
+- **roadmap_hidden_item**: All authenticated users can read; insert/delete only for the owning `app_user`
+- **epic_comment**: All authenticated users can read; insert allowed for any authenticated user; update/delete restricted to the row's `created_by`
 
 ### Data Protection
 - **HTTPS**: All traffic encrypted

@@ -11,7 +11,7 @@ Update `docs/PRD-Retroactive.md` when committing changes to:
 - ✅ New features or components (`src/components/`, `src/app/`)
 - ✅ Database schema changes (`supabase/migrations/`)
 - ✅ API endpoints (`src/app/api/`)
-- ✅ Integration changes (Aha!, Slack, Google Calendar)
+- ✅ Integration changes (Aha!, Slack, Google Calendar, Roadmap Rewind cron)
 - ✅ Authentication or permission changes
 - ✅ Major refactoring that changes user flows
 - ✅ New dependencies that affect architecture
