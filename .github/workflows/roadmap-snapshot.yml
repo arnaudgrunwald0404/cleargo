@@ -2,8 +2,9 @@ name: Roadmap Snapshot
 
 on:
   schedule:
-    # Mondays 08:00 UTC — weekly Aha! pivot ingest (aligned with legacy n8n cadence)
-    - cron: '0 8 * * 1'
+    # Saturdays 05:00 UTC — Friday midnight ET (00:00 EST / 01:00 EDT).
+    # Captures the week's final Aha! state right after end-of-week edits.
+    - cron: '0 5 * * 6'
   workflow_dispatch: {}
 
 jobs:

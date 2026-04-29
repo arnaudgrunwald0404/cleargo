@@ -15,7 +15,7 @@ const FIELDS_TO_COMPARE: (keyof RoadmapItem)[] = [
 ];
 
 const SNAPSHOT_SELECT =
-  'id, created_at, snapshot_date, aha_key, aha_name, aha_description, aha_start_date, aha_end_date, aha_status, aha_t_shirt_est, aha_primary_goal, aha_calculated_devs, aha_owner, aha_initial_est, aha_release, aha_release_date, aha_pod, jira_key, aha_csm_priority';
+  'id, created_at, snapshot_date, aha_key, aha_name, aha_description, aha_start_date, aha_end_date, aha_status, aha_t_shirt_est, aha_primary_goal, aha_calculated_devs, aha_owner, aha_initial_est, aha_release, aha_release_date, aha_pod, jira_key, aha_csm_priority, aha_progress';
 
 function rowToItem(row: Record<string, unknown>): RoadmapItem {
   return {
@@ -40,6 +40,8 @@ function rowToItem(row: Record<string, unknown>): RoadmapItem {
     aha_pod: String(row.aha_pod ?? ''),
     jira_key: String(row.jira_key ?? ''),
     aha_csm_priority: String(row.aha_csm_priority ?? ''),
+    aha_progress:
+      row.aha_progress != null && row.aha_progress !== '' ? Number(row.aha_progress) : null,
   };
 }
 

@@ -162,6 +162,10 @@ export function useRoadmapData() {
           aha_pod: String(item.aha_pod ?? ''),
           jira_key: String(item.jira_key ?? ''),
           aha_csm_priority: String(item.aha_csm_priority ?? ''),
+          aha_progress:
+            item.aha_progress != null && item.aha_progress !== ''
+              ? Number(item.aha_progress)
+              : null,
         };
 
         if (!groupedData[mappedItem.aha_key]) {

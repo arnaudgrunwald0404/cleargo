@@ -232,12 +232,18 @@ export function ReleaseMovementHeatmap({
   return (
     <div className="space-y-3 w-full min-w-0">
       <Group justify="space-between" wrap="wrap" gap="sm">
-        <Text size="sm" fw={600}>
+        <Text size="sm" fw={600} style={{ color: 'var(--color-gray-900)' }}>
           Weekly release movement history
         </Text>
-        <Text size="xs" c="dimmed">
-          Intensity = # of movements
-        </Text>
+        <Group gap="md" wrap="wrap">
+          <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>
+            Intensity = # of movements
+          </Text>
+          <LegendSwatch label="High" colors={['#fee2e2', '#fca5a5', '#ef4444']} />
+          <LegendSwatch label="Positive" colors={['#d1fae5', '#6ee7b7', '#10b981']} />
+          <LegendSwatch label="Medium" colors={['#fde68a', '#fbbf24', '#d97706']} />
+          <LegendSwatch label="Low" colors={['#dbeafe', '#93c5fd', '#3b82f6']} />
+        </Group>
       </Group>
 
       <div className="relative mb-1" style={{ height: 18, marginLeft: '7.25rem' }}>
@@ -253,11 +259,39 @@ export function ReleaseMovementHeatmap({
       </div>
 
       <Box className="space-y-1 overflow-x-auto">
-        {renderImpactRow('high', 'High')}
-        {renderImpactRow('positive', 'Positive')}
-        {renderImpactRow('medium', 'Medium')}
-        {renderImpactRow('low', 'Low')}
+        {renderImpactRow('high', 'High Impact')}
+        {renderImpactRow('positive', 'Positive Impact')}
+        {renderImpactRow('medium', 'Medium Impact')}
+        {renderImpactRow('low', 'Low Impact')}
       </Box>
     </div>
+  );
+}
+
+interface LegendSwatchProps {
+  label: string;
+  colors: [string, string, string];
+}
+
+function LegendSwatch({ label, colors }: LegendSwatchProps) {
+  return (
+    <Group gap={4} align="center" wrap="nowrap">
+      <Group gap={2} wrap="nowrap">
+        {colors.map((c) => (
+          <div
+            key={c}
+            style={{
+              width: 8,
+              height: 12,
+              background: c,
+              borderRadius: 2,
+            }}
+          />
+        ))}
+      </Group>
+      <Text size="xs" style={{ color: 'var(--color-gray-600)' }}>
+        {label}
+      </Text>
+    </Group>
   );
 }

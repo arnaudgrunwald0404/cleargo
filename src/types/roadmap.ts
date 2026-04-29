@@ -22,6 +22,8 @@ export interface RoadmapItem {
   aha_pod: string;
   jira_key: string;
   aha_csm_priority: string;
+  /** % complete from Aha! (0-100). May be null/undefined when missing. */
+  aha_progress?: number | null;
 }
 
 export interface RoadmapComparison {

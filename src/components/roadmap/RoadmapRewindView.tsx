@@ -32,6 +32,7 @@ import { useRoadmapData } from '@/hooks/useRoadmapData';
 import { ReleaseMovementHeatmap } from '@/components/roadmap/ReleaseMovementHeatmap';
 import { ReleaseDeliveryMetricsCard } from '@/components/roadmap/ReleaseDeliveryMetricsCard';
 import { PriorityGoalsMetricsCard } from '@/components/roadmap/PriorityGoalsMetricsCard';
+import { GoalBreakdownCard } from '@/components/roadmap/GoalBreakdownCard';
 import { SlideoutProvider, useSlideout } from '@/components/roadmap/slideout/SlideoutContext';
 import { SlideoutContainer } from '@/components/roadmap/slideout/SlideoutContainer';
 import { PeriodMovementsView } from '@/components/roadmap/slideout/PeriodMovementsView';
@@ -351,6 +352,9 @@ function RoadmapRewindInner() {
         <ReleaseDeliveryMetricsCard />
         <PriorityGoalsMetricsCard asOfDate={selectedDate} />
       </SimpleGrid>
+
+      {/* Goal breakdown — top strategic goals, with item counts and bars */}
+      <GoalBreakdownCard comparisons={roadmapData?.comparisons} />
     </Stack>
   );
 }
