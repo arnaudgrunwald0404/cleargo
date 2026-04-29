@@ -13,7 +13,6 @@ import {
   SimpleGrid,
   Stack,
   Text,
-  Timeline,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -298,32 +297,25 @@ export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
             No release movements or notes recorded yet.
           </Text>
         ) : (
-          <Timeline
-            active={timeline.length}
-            bulletSize={18}
-            lineWidth={2}
-            color="violet"
-            styles={{ itemTitle: { color: 'var(--color-gray-900)' } }}
-          >
+          <div className="rrv-epic-history-timeline">
             {timeline.map((event, idx) => (
-              <Timeline.Item
+              <div
+                className="rrv-epic-history-row"
                 key={`${event.type}-${idx}-${event.date}`}
-                bullet={
-                  event.type === 'movement' ? (
+              >
+                <span className="rrv-epic-history-bullet">
+                  {event.type === 'movement' ? (
                     <IconCalendar size={10} />
                   ) : (
                     <IconNote size={10} />
-                  )
-                }
-                title={
-                  <Text size="xs" style={{ color: 'var(--color-gray-600)' }}>
-                    {format(new Date(event.date), 'MMM d, yyyy')}
-                  </Text>
-                }
-              >
+                  )}
+                </span>
+                <Text size="xs" style={{ color: 'var(--color-gray-600)' }}>
+                  {format(new Date(event.date), 'MMM d, yyyy')}
+                </Text>
                 {event.type === 'movement' ? (
                   <>
-                    <Group gap={6} mt={4} wrap="wrap" align="center">
+                    <Group gap={6} mt={2} wrap="wrap" align="center">
                       {event.fromRelease == null ? (
                         <>
                           <Badge size="xs" variant="light" color="teal">
@@ -398,9 +390,9 @@ export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
                     </Text>
                   </Paper>
                 )}
-              </Timeline.Item>
+              </div>
             ))}
-          </Timeline>
+          </div>
         )}
       </div>
 
