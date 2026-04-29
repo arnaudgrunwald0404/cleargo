@@ -243,10 +243,16 @@ function RoadmapRewindInner() {
         <Group>
           <Select
             w={220}
+            size="sm"
             data={availableSnapshots.map((s) => ({ value: s.date, label: s.date }))}
             value={selectedDate}
             onChange={(v) => setDateOverride(v)}
             disabled={snapshotsLoading}
+            placeholder="Snapshot date"
+            leftSection={<IconCalendar size={14} />}
+            styles={{
+              input: { color: 'var(--color-gray-900)', fontWeight: 500 },
+            }}
           />
           {!isViewingLatest && (
             <Button

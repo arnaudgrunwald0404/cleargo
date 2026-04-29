@@ -392,6 +392,10 @@ function RoadmapSnapshotInner() {
                 value={dateOverride ?? latestSnapshotDate}
                 onChange={(v) => setDateOverride(v)}
                 placeholder="Snapshot date"
+                leftSection={<IconCalendar size={14} />}
+                styles={{
+                  input: { color: 'var(--color-gray-900)', fontWeight: 500 },
+                }}
               />
             )}
             {isHistoricalMode && (

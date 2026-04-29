@@ -261,7 +261,20 @@ export function RoadmapFilters({
           { label: 'Simple', value: 'simple' },
           { label: 'Expanded', value: 'expanded' },
         ]}
-        color="dark"
+        styles={{
+          root: {
+            background: 'var(--color-gray-100)',
+            border: '1px solid var(--color-gray-200)',
+          },
+          label: {
+            color: 'var(--color-gray-600)',
+            fontWeight: 500,
+          },
+          indicator: {
+            background: 'var(--color-white)',
+            boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
+          },
+        }}
       />
 
       {rightActions}
