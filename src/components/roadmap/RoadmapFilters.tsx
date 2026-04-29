@@ -13,7 +13,13 @@ import {
   Text,
   TextInput,
 } from '@mantine/core';
-import { IconAdjustments, IconSearch, IconX } from '@tabler/icons-react';
+import {
+  IconAdjustments,
+  IconChevronDown,
+  IconPackage,
+  IconSearch,
+  IconX,
+} from '@tabler/icons-react';
 
 export type RoadmapViewMode = 'simple' | 'expanded';
 export type RoadmapChangeFilter = 'all' | 'new' | 'changed' | 'unchanged';
@@ -196,21 +202,57 @@ export function RoadmapFilters({
         </Popover.Dropdown>
       </Popover>
 
-      <MultiSelect
-        placeholder={
-          isDefaultRelease ? `Next ${defaultSelectedReleases.length} releases` : 'Releases'
-        }
-        searchable
-        clearable
-        data={availableReleases.map((r) => ({
-          value: r.name,
-          label: r.isPast ? `${r.name} (past)` : r.name,
-        }))}
-        value={value.selectedReleases}
-        onChange={(v) => update({ selectedReleases: v })}
-        maxValues={20}
-        w={{ base: '100%', sm: 320 }}
-      />
+      <Popover position="bottom-start" width={360} withArrow shadow="md" trapFocus>
+        <Popover.Target>
+          <Button
+            variant="default"
+            leftSection={<IconPackage size={16} />}
+            rightSection={<IconChevronDown size={14} />}
+            styles={{ root: { fontWeight: 500 } }}
+          >
+            {isDefaultRelease
+              ? `Next ${defaultSelectedReleases.length} releases`
+              : value.selectedReleases.length === 0
+                ? 'All releases'
+                : `${value.selectedReleases.length} of ${availableReleases.length} releases`}
+          </Button>
+        </Popover.Target>
+        <Popover.Dropdown>
+          <Stack gap="xs">
+            <Group justify="space-between">
+              <Text fw={600} size="sm" style={{ color: 'var(--color-gray-900)' }}>
+                Releases
+              </Text>
+              <Button
+                size="xs"
+                variant="subtle"
+                onClick={() => update({ selectedReleases: defaultSelectedReleases })}
+                disabled={isDefaultRelease}
+              >
+                Reset to next {defaultSelectedReleases.length}
+              </Button>
+            </Group>
+            <MultiSelect
+              size="xs"
+              placeholder="Pick releases…"
+              searchable
+              clearable
+              maxDropdownHeight={280}
+              data={availableReleases.map((r) => ({
+                value: r.name,
+                label: r.isPast ? `${r.name} (past)` : r.name,
+              }))}
+              value={value.selectedReleases}
+              onChange={(v) => update({ selectedReleases: v })}
+              maxValues={50}
+            />
+            <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>
+              {availableReleases.length} releases available · default shows the next{' '}
+              {defaultSelectedReleases.length} upcoming
+            </Text>
+          </Stack>
+        </Popover.Dropdown>
+      </Popover>
 
       <SegmentedControl
         value={viewMode}
