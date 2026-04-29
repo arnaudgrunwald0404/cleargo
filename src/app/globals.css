@@ -234,12 +234,12 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* App is designed light-only. Do not let the OS dark-mode preference
+ * flip the body --foreground color, otherwise native <input> elements
+ * and Mantine combobox <option> items (which inherit body color) become
+ * near-white on a white dropdown and unreadable. If we ever ship a real
+ * dark theme it should be opt-in via Mantine's color scheme, not via
+ * prefers-color-scheme on the root variables. */
 
 body {
   background: var(--background) !important;
