@@ -718,6 +718,8 @@ Launch stages are scoped so that **Release Schedule** (legacy) and **UI Rollout*
 
 The epic detail timeline renders phases as colored duration bars and milestones as diamond markers; a lighter "Cohort 1 Feedback" bar spans the period between Cohort 1 release and GA. Criterion due dates use the appropriate stage set and, for UI Rollout, level-aware durations when the epic has a UI/UX Impact level. Matrix **stage boundary** dates (criteria with `rating_timing` tied to a stage) use the **same** walk as the timeline: **Release Schedule** epics use **calendar** days with pre-launch = sum of stage durations **before** Cohort 1 only; **UI Rollout** epics use **business** days and level-aware durations from the anchor date.
 
+**Unified due-date definition (segment end):** Everywhere the product derives a criterion due date from launch stages (epic recalculation / `condition_due_date`, My Items on Home when unset, analytics on-time and PM-timeliness fallbacks), the date is the **last calendar day of that stage’s segment** on the timeline—the same rule as the Release Timeline chart—implemented in shared logic (`releaseTimeline.ts`), not legacy “offset from launch by summed durations from day one of the stage.” Matrix tooltips describe this as the last day of the named stage’s segment on the launch timeline.
+
 #### 11.3 Launch Stage Phases (Release Schedule)
 - **Product Definition Complete** (31 days, milestone): Product definition ready for GTM planning; shown as a diamond at the left edge of the timeline.
 - **GTM Access and Prep** (14 days, phase): Features available and functioning properly. Go/No-Go decision typically happens during this phase.

@@ -3,7 +3,13 @@
 import React from "react";
 import { Box, Tooltip } from "@mantine/core";
 import { useMediaQuery } from "@mantine/hooks";
-import { parseDateOnlyLocal, addCalendarDays, subtractCalendarDays } from "@/lib/date-utils";
+import { parseDateOnlyLocal, addCalendarDays, dateToLocalDateString, addBusinessDays } from "@/lib/date-utils";
+import {
+    buildTimelineStageStarts,
+    getEffectiveStageDuration,
+    getBufferDays,
+    type ReleaseTimelineStage,
+} from "@/lib/releaseTimeline";
 
 interface ReleaseStage {
     id: number;
@@ -88,48 +94,6 @@ function daysFromToday(today: Date, d: Date): number {
     const end = new Date(d);
     end.setHours(0, 0, 0, 0);
     return diffDays(start, end);
-}
-
-function addBusinessDays(start: Date, days: number): Date {
-    const d = new Date(start);
-    let remaining = days;
-    while (remaining > 0) {
-        d.setDate(d.getDate() + 1);
-        const dow = d.getDay();
-        if (dow !== 0 && dow !== 6) remaining--;
-    }
-    return d;
-}
-
-function subtractBusinessDays(end: Date, days: number): Date {
-    const d = new Date(end);
-    let remaining = days;
-    while (remaining > 0) {
-        d.setDate(d.getDate() - 1);
-        const dow = d.getDay();
-        if (dow !== 0 && dow !== 6) remaining--;
-    }
-    return d;
-}
-
-function getEffectiveDuration(stage: ReleaseStage, uiLevel: number | null | undefined): number | null {
-    if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
-        const d = stage.level_durations[String(uiLevel)];
-        if (d && typeof d.min_days === 'number') {
-            return d.min_days;
-        }
-    }
-    return stage.duration_days;
-}
-
-function getBufferDays(stage: ReleaseStage, uiLevel: number | null | undefined): number {
-    if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
-        const d = stage.level_durations[String(uiLevel)];
-        if (d && typeof d.min_days === 'number' && typeof d.max_days === 'number') {
-            return Math.max(0, d.max_days - d.min_days);
-        }
-    }
-    return 0;
 }
 
 function isPhaseStage(s: ReleaseStage): boolean {
@@ -217,44 +181,48 @@ function useTimelineData(
     const isTraditionalRelease = uiLevel === undefined;
 
     let rawNodes: { stage: ReleaseStage; date: Date; durationDays: number; bufferDays: number; cumulativeDays: number }[];
+    let computedEndOfPhaseBeforeCohort1: Date | null = null;
 
-    if (isTraditionalRelease) {
-        // Original logic: calendar days, preLaunchDays = only stages before Cohort 1 (e.g. 31+14+21 = 66).
-        const cohort1Stage = sortedStages.find(s => s.name.toLowerCase().includes('cohort 1'));
-        const preLaunchDays = cohort1Stage
-            ? sortedStages
-                .filter(s => s.sort_order < cohort1Stage.sort_order && (s.duration_days != null))
-                .reduce((sum, s) => sum + (s.duration_days ?? 0), 0)
-            : 0;
-        const startDate = anchorDate && preLaunchDays > 0
-            ? subtractCalendarDays(anchorDate, preLaunchDays)
-            : anchorDate ?? new Date();
+    const cohort2Ymd =
+        cohort2Date == null
+            ? null
+            : typeof cohort2Date === 'string'
+              ? cohort2Date.trim().split('T')[0] || null
+              : (toDate(cohort2Date) ? dateToLocalDateString(toDate(cohort2Date)!) : null);
 
-        let cursor = new Date(startDate);
-        rawNodes = sortedStages.map(stage => {
-            const dur = stage.duration_days ?? 0;
-            const date = new Date(cursor);
-            const node = { stage, date, durationDays: dur, bufferDays: 0, cumulativeDays: 0 };
-            cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
-            return node;
+    if (anchorDate && sortedStages.length > 0) {
+        const ymd = dateToLocalDateString(anchorDate);
+        const { starts, preAnchorPinSecondToLastStart } = buildTimelineStageStarts(
+            sortedStages as ReleaseTimelineStage[],
+            ymd,
+            {
+                useBusinessDayTimeline: !isTraditionalRelease,
+                uiLevel,
+                cohort2Date: cohort2Ymd,
+            }
+        );
+        if (!isTraditionalRelease && preAnchorPinSecondToLastStart) {
+            computedEndOfPhaseBeforeCohort1 = preAnchorPinSecondToLastStart;
+        }
+        rawNodes = sortedStages.map((stage, i) => {
+            const startRow = starts[i];
+            const date = startRow ? new Date(startRow.date) : new Date(today);
+            const dur = isTraditionalRelease
+                ? (stage.duration_days ?? 0)
+                : (getEffectiveStageDuration(stage, uiLevel) ?? 0);
+            const buf = isTraditionalRelease ? 0 : getBufferDays(stage, uiLevel);
+            return { stage, date, durationDays: dur, bufferDays: buf, cumulativeDays: 0 };
         });
     } else {
-        // UI Rollout: business days, full pre-launch sum.
-        const totalPreLaunchBusinessDays = sortedStages
-            .filter(s => s.sort_order < (sortedStages[sortedStages.length - 1]?.sort_order ?? 0))
-            .reduce((sum, s) => sum + (getEffectiveDuration(s, uiLevel) ?? 0), 0);
-
-        const startDate = anchorDate
-            ? subtractBusinessDays(anchorDate, totalPreLaunchBusinessDays)
-            : new Date();
-
-        let cursor = new Date(startDate);
-        rawNodes = sortedStages.map(stage => {
-            const dur = getEffectiveDuration(stage, uiLevel) ?? 0;
-            const buf = getBufferDays(stage, uiLevel);
+        let cursor = new Date(today);
+        rawNodes = sortedStages.map((stage) => {
+            const dur = isTraditionalRelease
+                ? (stage.duration_days ?? 0)
+                : (getEffectiveStageDuration(stage, uiLevel) ?? 0);
+            const buf = isTraditionalRelease ? 0 : getBufferDays(stage, uiLevel);
             const date = new Date(cursor);
             const node = { stage, date, durationDays: dur, bufferDays: buf, cumulativeDays: 0 };
-            cursor = dur > 0 ? addBusinessDays(cursor, dur) : new Date(cursor);
+            cursor = dur > 0 ? addCalendarDays(cursor, dur) : new Date(cursor);
             return node;
         });
     }
@@ -270,39 +238,12 @@ function useTimelineData(
 
     const summaries = buildCriteriaSummaries(stages, criteriaItems, stageIdBridge);
 
-    let nodes: ComputedNode[] = rawNodes.map((node, i) => ({
+    const nodes: ComputedNode[] = rawNodes.map((node, i) => ({
         ...node,
         status: getStatus(node.date, i < rawNodes.length - 1 ? rawNodes[i + 1].date : null, node.bufferDays),
         isMilestone: !isPhaseStage(node.stage),
         criteriaSummary: summaries.get(node.stage.id) ?? null,
     }));
-
-    // Cohort 2/GA: position last node at actual next release date when provided
-    if (cohort2Date && nodes.length > 0) {
-        const cohort2DateParsed = toDate(cohort2Date);
-        if (cohort2DateParsed) {
-            const last = nodes[nodes.length - 1];
-            nodes = [
-                ...nodes.slice(0, -1),
-                { ...last, date: cohort2DateParsed, status: getStatus(cohort2DateParsed, null, last.bufferDays) },
-            ];
-        }
-    }
-
-    // Cohort 1 Live: position second-to-last node at the release date (anchor) so the go-live milestone shows the real date.
-    // For UI Rollout (business days), the previous phase would otherwise stretch to Apr 16; use computed end in tooltip.
-    // For traditional (calendar days), segment already ends near release, so no override.
-    let computedEndOfPhaseBeforeCohort1: Date | null = null;
-    if (anchorDate && nodes.length >= 2) {
-        const cohort1Node = nodes[nodes.length - 2];
-        if (!isTraditionalRelease) computedEndOfPhaseBeforeCohort1 = new Date(cohort1Node.date);
-        const nextNodeDate = nodes[nodes.length - 1].date;
-        nodes = [
-            ...nodes.slice(0, -2),
-            { ...cohort1Node, date: new Date(anchorDate), status: getStatus(anchorDate, nextNodeDate, cohort1Node.bufferDays) },
-            nodes[nodes.length - 1],
-        ];
-    }
 
     const timelineStart = nodes[0]?.date ?? today;
     const timelineEnd = nodes[nodes.length - 1]?.date ?? today;

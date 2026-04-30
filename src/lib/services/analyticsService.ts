@@ -4,6 +4,12 @@
  */
 
 import { getClient } from '@/lib/db';
+import { parseDateOnlyLocal } from '@/lib/date-utils';
+import {
+  computeStageEndDatesByStageId,
+  parseUiLevelFromEpicAha,
+  type ReleaseTimelineStage,
+} from '@/lib/releaseTimeline';
 
 export type Tier = 'TIER_1' | 'TIER_2' | 'TIER_3';
 
@@ -236,36 +242,43 @@ export async function getSuccessPlanCompletionRate(
   };
 }
 
-type ReleaseStageRow = { id: number; sort_order: number; duration_days: number | null };
+type ReleaseStageRow = {
+  id: number;
+  name: string;
+  sort_order: number;
+  duration_days: number | null;
+  scope?: string | null;
+  level_durations?: Record<string, { min_days: number; max_days: number }> | null;
+};
 
 /**
  * Compute criterion due date from launch stages (sync, no DB).
- * Returns null if inputs are missing or stage not found.
+ * Uses the same segment-end rule as the Release Timeline chart and epic matrix.
  */
 function computeDueDateFromStages(
   epicTargetLaunchDate: string | null,
   ratingTimingId: number | null | undefined,
-  releaseStages: ReleaseStageRow[]
+  releaseStages: ReleaseStageRow[],
+  epicAhaFields?: unknown
 ): Date | null {
   if (!epicTargetLaunchDate || ratingTimingId == null || !releaseStages.length) {
     return null;
   }
   const targetStage = releaseStages.find((s) => s.id === ratingTimingId);
   if (!targetStage) return null;
-  const lastPreLaunchStage = releaseStages.find((s) => s.sort_order === 3);
-  if (!lastPreLaunchStage) return null;
-  const stagesBeforeTarget = releaseStages.filter(
-    (s) =>
-      s.sort_order < targetStage.sort_order &&
-      s.sort_order <= lastPreLaunchStage.sort_order &&
-      s.duration_days !== null
+  const scope = targetStage.scope ?? 'release_schedule';
+  const scoped = releaseStages.filter(
+    (s) => (s.scope ?? 'release_schedule') === scope
   );
-  const totalDaysBefore = stagesBeforeTarget.reduce((sum, s) => sum + (s.duration_days || 0), 0);
-  if (totalDaysBefore === 0) return null;
-  const targetDate = new Date(epicTargetLaunchDate);
-  const dueDate = new Date(targetDate);
-  dueDate.setDate(dueDate.getDate() - totalDaysBefore);
-  return dueDate;
+  const uiLevel = parseUiLevelFromEpicAha(epicAhaFields);
+  const endMap = computeStageEndDatesByStageId(scoped as ReleaseTimelineStage[], epicTargetLaunchDate, {
+    useBusinessDayTimeline: scope === 'ui_rollout',
+    uiLevel: scope === 'ui_rollout' ? uiLevel ?? null : null,
+    cohort2Date: null,
+  });
+  const ymd = endMap.get(ratingTimingId);
+  if (!ymd) return null;
+  return parseDateOnlyLocal(ymd) ?? new Date(ymd);
 }
 
 /**
@@ -275,29 +288,10 @@ async function fetchReleaseStages(): Promise<ReleaseStageRow[]> {
   const supabase = getClient();
   const { data, error } = await supabase
     .from('release_stages')
-    .select('id, sort_order, duration_days')
+    .select('id, name, sort_order, duration_days, scope, level_durations')
     .order('sort_order', { ascending: true });
   if (error || !data) return [];
   return data as ReleaseStageRow[];
-}
-
-/**
- * Calculate criterion due date for a specific epic and criterion
- * Uses condition_due_date if available, otherwise calculates from launch stages
- */
-async function calculateCriterionDueDate(
-  _epicId: string,
-  _criterionId: string,
-  epicTargetLaunchDate: string | null,
-  conditionDueDate: string | null | undefined,
-  ratingTimingId: number | null | undefined,
-  releaseStages?: ReleaseStageRow[] | null
-): Promise<Date | null> {
-  if (conditionDueDate) {
-    return new Date(conditionDueDate);
-  }
-  const stages = releaseStages ?? (await fetchReleaseStages());
-  return computeDueDateFromStages(epicTargetLaunchDate, ratingTimingId, stages);
 }
 
 export interface CriteriaOnTimeStats {
@@ -330,7 +324,7 @@ export async function getCriteriaOnTimeRate(
   // Build query for epics
   let epicQuery = supabase
     .from('epic')
-    .select('id, target_launch_date');
+    .select('id, target_launch_date, aha_fields');
 
   if (filters?.tier) {
     epicQuery = epicQuery.eq('tier', filters.tier);
@@ -403,7 +397,8 @@ export async function getCriteriaOnTimeRate(
       : computeDueDateFromStages(
           epic.target_launch_date,
           criterion.rating_timing as number | null | undefined,
-          releaseStages
+          releaseStages,
+          (epic as { aha_fields?: unknown }).aha_fields
         );
 
     // Calculate days late if completed and due date exists
@@ -1031,7 +1026,7 @@ async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[]
 
   const { data: epic } = await supabase
     .from('epic')
-    .select('id, tier, scheduled_ga_dev_date, target_launch_date, owner_id, owner_email')
+    .select('id, tier, scheduled_ga_dev_date, target_launch_date, owner_id, owner_email, aha_fields')
     .eq('id', epicId)
     .single();
 
@@ -1086,7 +1081,8 @@ async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[]
         : computeDueDateFromStages(
             epic.target_launch_date,
             criterion.rating_timing as number | null | undefined,
-            stages
+            stages,
+            (epic as { aha_fields?: unknown }).aha_fields
           );
 
       const isCompleted = status.status && status.status !== 'NOT_SET';

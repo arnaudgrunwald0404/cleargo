@@ -402,7 +402,7 @@ export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
     ratingTimingId: number | null,
     client: SupabaseClient,
-    options?: { uiLevel?: number }
+    options?: { uiLevel?: number; cohort2Date?: string | null }
 ): Promise<string | null> {
     const uiLevel = options?.uiLevel ?? null;
 
