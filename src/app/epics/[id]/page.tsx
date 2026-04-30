@@ -18,7 +18,7 @@ import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
-import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
+import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE, FEATURE_ROADMAP_REWIND } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
@@ -28,6 +28,8 @@ import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
 import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
+import { EpicRoadmapRewindPanel } from "@/components/epic/EpicRoadmapRewindPanel";
+import { EpicRoadmapConfidencePanel } from "@/components/epic/EpicRoadmapConfidencePanel";
 // Lazy load tab components for code splitting
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
@@ -1558,12 +1560,21 @@ export default function EpicDetailPage() {
         }
     }
 
+    const showRoadmapRewind =
+        isEnabled(FEATURE_ROADMAP_REWIND, featureFlags) && Boolean(epic?.aha_id);
+
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
         { value: "talktrack", label: hasTalkTrackVideo ? "Talk Track \u25B6" : "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
+        ...(showRoadmapRewind
+            ? [
+                  { value: "rewind", label: "Rewind" },
+                  { value: "confidence", label: "Confidence" },
+              ]
+            : []),
     ];
 
     return (
@@ -1837,6 +1848,7 @@ export default function EpicDetailPage() {
                             activeTab={activeTab}
                             onTabChange={(value) => setActiveTab(value)}
                             hasTalkTrackVideo={hasTalkTrackVideo}
+                            showRoadmapRewind={showRoadmapRewind}
                         />
                     )}
                     {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
@@ -1918,6 +1930,8 @@ export default function EpicDetailPage() {
                         <Tabs.Tab value="adoption">Success Metrics</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
+                        {showRoadmapRewind && <Tabs.Tab value="rewind">Rewind</Tabs.Tab>}
+                        {showRoadmapRewind && <Tabs.Tab value="confidence">Confidence</Tabs.Tab>}
                     </Tabs.List>
 
                     <Tabs.Panel value="readiness" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
@@ -2054,6 +2068,21 @@ export default function EpicDetailPage() {
                             </Suspense>
                         )}
                     </Tabs.Panel>
+
+                    {showRoadmapRewind && epic?.aha_id && (
+                        <Tabs.Panel value="rewind" pt="md" style={{ padding: 'var(--spacing-4)' }}>
+                            {activeTab === 'rewind' && (
+                                <EpicRoadmapRewindPanel ahaKey={epic.aha_id} />
+                            )}
+                        </Tabs.Panel>
+                    )}
+                    {showRoadmapRewind && epic?.aha_id && (
+                        <Tabs.Panel value="confidence" pt="md" style={{ padding: 'var(--spacing-4)' }}>
+                            {activeTab === 'confidence' && (
+                                <EpicRoadmapConfidencePanel ahaKey={epic.aha_id} />
+                            )}
+                        </Tabs.Panel>
+                    )}
                 </Tabs>
                 </div>
 
