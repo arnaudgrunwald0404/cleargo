@@ -4,15 +4,19 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, HoverCard, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
-import { addCalendarMonth, formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
+import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, getCohort2DateForTimeline, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
+import { fetchStreamJSON } from '@/lib/fetch-stream';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
+import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
+import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
+import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -30,51 +34,59 @@ type DbReleaseStageRow = {
     stage_type?: 'phase' | 'milestone';
 };
 
-function isUiFrameworkEpic(epic: Epic): boolean {
-    const raw = epic.aha_fields?.custom_fields?.cleargo_candidate;
-    const v =
-        typeof raw === 'object' && raw !== null && 'name' in raw
-            ? String((raw as { name?: unknown }).name ?? '')
-            : typeof raw === 'string'
-              ? raw
-              : undefined;
-    return v === 'Yes - UI Framework';
+/** GA Cohort 2 date for the UI rollout timeline. Delegates to the shared utility in lib/date-utils. */
+const getCohort2DateForUiTimeline = getCohort2DateForTimeline;
+
+const COHORT_DATE_TOOLTIP = "Date that the feature has automatically been turned on or can manually be turned on (i.e. needs to be purchased or needs to opt in). All enablement materials have been created before this date. Communications have been sent or will be sent to customers and reference this date as the date the customer will have the feature available to them.";
+function CohortDateHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                {COHORT_DATE_TOOLTIP}
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
+}
+function GtmOrgsHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                This is the date that GTM orgs have been enabled with the new feature.{' '}
+                <a
+                    href="https://docs.google.com/spreadsheets/d/17Qka5O9fcZcRfCZ42k0MHLScMRu4BKvH2Zp00efI2oQ/edit?gid=0#gid=0"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ color: '#2196F3', textDecoration: 'underline' }}
+                    onClick={e => e.stopPropagation()}
+                >
+                    You can see a list of the GTM orgs here.
+                </a>
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
 }
 
-function parseUiLevelFromEpic(epic: Epic): number | null {
-    const uiuxImpact = epic.aha_fields?.custom_fields?.uiux_impact;
-    const s =
-        typeof uiuxImpact === 'object' && uiuxImpact !== null && 'name' in uiuxImpact
-            ? String((uiuxImpact as { name?: unknown }).name ?? '')
-            : uiuxImpact != null
-              ? String(uiuxImpact)
-              : '';
-    const m = s.match(/\b([123])\b/);
-    return m ? parseInt(m[1], 10) : null;
-}
-
-/** Next release after this launch (for GA / Cohort 2 pin on UI rollout timeline); matches epic detail fallback. */
-function getCohort2DateForUiTimeline(
-    currentReleaseName: string,
-    launchDate: string,
-    schedule: Array<{ release_name: string; launch_date: string | null }>
-): string | null {
-    const anchor = parseDateOnlyLocal(launchDate);
-    if (!anchor) return addCalendarMonth(launchDate);
-    let best: { d: Date; iso: string } | null = null;
-    for (const r of schedule) {
-        if (!r.launch_date || r.release_name === currentReleaseName) continue;
-        const d = parseDateOnlyLocal(r.launch_date);
-        if (!d || d <= anchor) continue;
-        const iso = r.launch_date.includes('T') ? r.launch_date.split('T')[0]! : r.launch_date;
-        if (!best || d < best.d) best = { d, iso };
-    }
-    return best?.iso ?? addCalendarMonth(launchDate);
+/** Returns days until Cohort 1 Live (the release anchor date). */
+function getDaysUntilCohort1(releaseDate: string): number | null {
+    const anchorDate = parseDateOnlyLocal(releaseDate);
+    if (!anchorDate) return null;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    anchorDate.setHours(0, 0, 0, 0);
+    const days = Math.round((anchorDate.getTime() - today.getTime()) / 86400000);
+    return days > 0 ? days : null;
 }
 
 function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
+    /** Stable for effect deps — `searchParams` object identity can change every render in App Router. */
+    const epicsSearchQueryString = searchParams.toString();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
@@ -93,7 +105,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
-    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; cohort2_date?: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
     // Only show skeleton if we don't have initial data - if we have epics, we can show them immediately
     const [isDeterminingOrder, setIsDeterminingOrder] = useState(initialEpics.length === 0);
     const [podOrder, setPodOrder] = useState<string[]>([]);
@@ -588,11 +600,11 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     useEffect(() => {
         if (selectedRelease && !releaseGroupsForView.some(g => g.releaseName === selectedRelease)) {
             setSelectedRelease(null);
-            const params = new URLSearchParams(searchParams.toString());
+            const params = new URLSearchParams(epicsSearchQueryString);
             params.delete('release');
             router.replace(`/epics${params.toString() ? `?${params.toString()}` : ''}`, { scroll: false });
         }
-    }, [releaseGroupsForView, selectedRelease, searchParams, router]);
+    }, [releaseGroupsForView, selectedRelease, epicsSearchQueryString, router]);
 
     // Fetch owner (PM) info from app_user for avatar and display name
     useEffect(() => {
@@ -638,27 +650,42 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
             
             // First, check the database (releaseSchedule) to see which releases already have dates
             const releasesInDb = new Set<string>();
-            releaseSchedule.forEach(release => {
+            const releasesWithCohort2 = new Set<string>();
+            releaseSchedule.forEach((release: any) => {
                 if (release.release_name && release.launch_date) {
                     releasesInDb.add(release.release_name);
                 }
+                if (release.release_name && release.cohort2_date) {
+                    releasesWithCohort2.add(release.release_name);
+                }
             });
-            
+
             // Only fetch dates for releases that:
             // 1. Are not "Ungrouped"
             // 2. Don't have a date in the current releaseDateMap (from releaseSchedule)
             // 3. Are not already in the database
             // 4. Haven't been fetched in this session
             const releasesNeedingDates = displayedReleaseGroups
-                .filter(group => 
-                    group.releaseName !== "Ungrouped" && 
-                    !group.releaseDate && 
+                .filter(group =>
+                    group.releaseName !== "Ungrouped" &&
+                    !group.releaseDate &&
                     !releasesInDb.has(group.releaseName) &&
                     !fetchedReleaseDatesRef.current.has(group.releaseName)
                 )
                 .map(group => group.releaseName);
 
-            if (releasesNeedingDates.length === 0) {
+            // Also fetch cohort2_date for releases that have a launch_date but no cohort2_date yet
+            const releasesMissingCohort2 = displayedReleaseGroups
+                .filter(group =>
+                    group.releaseName !== "Ungrouped" &&
+                    group.releaseDate &&
+                    releasesInDb.has(group.releaseName) &&
+                    !releasesWithCohort2.has(group.releaseName) &&
+                    !fetchedReleaseDatesRef.current.has(`cohort2:${group.releaseName}`)
+                )
+                .map(group => group.releaseName);
+
+            if (releasesNeedingDates.length === 0 && releasesMissingCohort2.length === 0) {
                 // No releases need dates, order is determined
                 setIsDeterminingOrder(false);
                 return;
@@ -669,7 +696,8 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
 
             // Mark as fetched to prevent duplicate requests and set loading state
             releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.add(name));
-            setFetchingReleaseDates(new Set(releasesNeedingDates));
+            releasesMissingCohort2.forEach(name => fetchedReleaseDatesRef.current.add(`cohort2:${name}`));
+            setFetchingReleaseDates(new Set([...releasesNeedingDates, ...releasesMissingCohort2]));
 
             try {
                 const res = await fetch("/api/epics/release-dates", { credentials: 'include' });
@@ -678,24 +706,22 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                     const releaseDates = data.releases || [];
                     
                     // Find dates for missing releases
-                    const datesToSave: Array<{ release_name: string; launch_date: string }> = [];
-                    
+                    const datesToSave: Array<{ release_name: string; launch_date: string; cohort2_date?: string | null }> = [];
+
+                    /** Find a release in releaseDates by name (exact, then case-insensitive) */
+                    const findRelease = (releaseName: string) => {
+                        return releaseDates.find((r: any) => r.releaseName === releaseName)
+                            ?? releaseDates.find((r: any) => r.releaseName?.toLowerCase() === releaseName.toLowerCase());
+                    };
+
                     releasesNeedingDates.forEach(releaseName => {
-                        // Try exact match first
-                        let found = releaseDates.find((r: any) => r.releaseName === releaseName);
-                        
-                        // If no exact match, try case-insensitive match
-                        if (!found) {
-                            found = releaseDates.find((r: any) => 
-                                r.releaseName && r.releaseName.toLowerCase() === releaseName.toLowerCase()
-                            );
-                        }
-                        
+                        const found = findRelease(releaseName);
                         if (found && found.launchDate) {
                             console.log(`[EpicsClient] Found date for "${releaseName}": ${found.launchDate} (matched with "${found.releaseName}") - saving to database`);
                             datesToSave.push({
-                                release_name: found.releaseName, // Use the exact name from API response
-                                launch_date: found.launchDate
+                                release_name: found.releaseName,
+                                launch_date: found.launchDate,
+                                cohort2_date: found.cohort2Date ?? null,
                             });
                         } else {
                             console.warn(`[EpicsClient] No date found for release: "${releaseName}"`);
@@ -703,10 +729,27 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }
                     });
 
+                    // Also persist cohort2_date for releases that already have a launch_date
+                    releasesMissingCohort2.forEach(releaseName => {
+                        const found = findRelease(releaseName);
+                        if (found?.cohort2Date) {
+                            console.log(`[EpicsClient] Found cohort2_date for "${releaseName}": ${found.cohort2Date} - saving to database`);
+                            // Only update cohort2_date; use the existing launch_date from releaseSchedule
+                            const existing = releaseSchedule.find((r: any) => r.release_name === releaseName);
+                            if (existing?.launch_date) {
+                                datesToSave.push({
+                                    release_name: releaseName,
+                                    launch_date: existing.launch_date,
+                                    cohort2_date: found.cohort2Date,
+                                });
+                            }
+                        }
+                    });
+
                     // Save all found dates
                     if (datesToSave.length > 0) {
                         const saveResults = await Promise.all(
-                            datesToSave.map(async ({ release_name, launch_date }) => {
+                            datesToSave.map(async ({ release_name, launch_date, cohort2_date }) => {
                                 const res = await fetch("/api/releases", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -714,6 +757,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                     body: JSON.stringify({
                                         release_name,
                                         launch_date,
+                                        ...(cohort2_date ? { cohort2_date } : {}),
                                     }),
                                 });
                                 
@@ -1074,17 +1118,12 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         }
         setRefreshingEpics(true);
         try {
-            const res = await fetch('/api/integrations/aha/sync?sync_all=true', {
+            await fetchStreamJSON('/api/integrations/aha/sync?sync_all=true', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
             });
-            
-            if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Failed to refresh epics');
-            }
-            
+
             notifications.show({
                 title: 'Success',
                 message: 'Epics refreshed successfully',
@@ -1158,12 +1197,16 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                         }}
                     >
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {col}
+                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {["Cohort 1", "GA"].includes(col) ? (
+                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                ) : col === "GTM Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col}
                                             </th>
                                         ))}
                                         <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
@@ -1184,8 +1227,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
@@ -1195,9 +1244,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
                                             </td>
                                             <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
@@ -1767,23 +1813,29 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                     }}>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <colgroup>
                                     <col className="w-100" />
                                     <col className="w-24" />
                                     <col className="w-auto" />
                                     <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-28" />
+                                    <col className="w-24" />
                                     <col className="w-32" />
-                                    <col className="w-24" />
-                                    <col className="w-24" />
                                     <col className="w-24" />
                                     <col className="w-24" />
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "Date", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "Date", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {col}
+                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                {["Cohort 1", "GA"].includes(col) ? (
+                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                ) : col === "GTM Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col}
                                             </th>
                                         ))}
                                         <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
@@ -1804,8 +1856,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
@@ -1815,9 +1873,6 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
                                             </td>
                                             <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
                                                 <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
@@ -1863,7 +1918,7 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 color: 'var(--color-gray-500)',
                                                 fontFamily: 'var(--font-body)'
                                             }}>
-                                                - {formatDateOnlyForDisplay(group.releaseDate)}
+                                                - Cohort 1 on {formatDateOnlyForDisplay(group.releaseDate)}
                                             </span>
                                         ) : fetchingReleaseDates.has(group.releaseName) ? (
                                             <span style={{ 
@@ -1880,6 +1935,35 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                 - <PurpleLoader size="sm" />
                                             </span>
                                         ) : null}
+                                        {group.releaseName !== "Ungrouped" && group.releaseDate && (() => {
+                                            const daysUntil = getDaysUntilCohort1(group.releaseDate);
+                                            if (!daysUntil) return null;
+                                            const urgent = daysUntil <= 7;
+                                            return (
+                                                <span style={{
+                                                    marginLeft: 'var(--spacing-2)',
+                                                    display: 'inline-flex', alignItems: 'center',
+                                                    verticalAlign: 'middle',
+                                                }}>
+                                                    <span style={{
+                                                        display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                        padding: '2px 10px',
+                                                        borderRadius: 20,
+                                                        background: urgent ? '#FEF08A' : '#FEF9C3',
+                                                        border: `1.5px solid ${urgent ? '#EAB308' : '#FDE047'}`,
+                                                        color: '#713F12',
+                                                        fontSize: 13,
+                                                        fontWeight: 700,
+                                                        fontFamily: 'var(--font-body)',
+                                                        whiteSpace: 'nowrap',
+                                                        letterSpacing: '-0.01em',
+                                                    }}>
+                                                        <span style={{ fontSize: 15, fontWeight: 800 }}>{daysUntil}</span>
+                                                        {' '}day{daysUntil !== 1 ? 's' : ''} until Cohort 1 Live
+                                                    </span>
+                                                </span>
+                                            );
+                                        })()}
                                         {group.releaseName !== "Ungrouped" && group.releaseDate && (
                                             <span style={{
                                                 marginLeft: 'var(--spacing-2)',
@@ -1950,29 +2034,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         .map(e => e.aha_id)
                                                         .filter((id): id is string => Boolean(id));
 
-                                                    // Create an AbortController for timeout handling
-                                                    const controller = new AbortController();
-                                                    const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
-
-                                                    const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`, {
-                                                        method: "POST",
-                                                        credentials: "include",
-                                                        headers: { "Content-Type": "application/json" },
-                                                        body: JSON.stringify({
-                                                            releaseName: group.releaseName,
-                                                            existingAhaIds,
-                                                        }),
-                                                        signal: controller.signal,
-                                                    });
-                                                    
-                                                    clearTimeout(fetchTimeoutId);
-                                                    
-                                                    if (!res.ok) {
-                                                        const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                                                        throw new Error(errorData.error || "Failed to sync epics");
-                                                    }
-                                                    
-                                                    const result = await res.json();
+                                                    const result = await fetchStreamJSON(
+                                                        `/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(group.releaseName)}`,
+                                                        {
+                                                            method: "POST",
+                                                            credentials: "include",
+                                                            headers: { "Content-Type": "application/json" },
+                                                            body: JSON.stringify({ releaseName: group.releaseName, existingAhaIds }),
+                                                        }
+                                                    );
                                                     const skipDetails = [];
                                                     if (result.results.skipped_no_release > 0) {
                                                         skipDetails.push(`${result.results.skipped_no_release} with no release`);
@@ -2149,13 +2219,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
                                                 <col className="w-28" />
-                                                <col className="w-32" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2172,7 +2244,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2200,7 +2274,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                         <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
@@ -2210,13 +2286,15 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
+                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
                                                 <col className="w-24" />
                                                 <col className="w-auto" />
                                                 <col className="w-28" />
-                                                <col className="w-32" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
+                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2233,7 +2311,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Date</th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2321,8 +2401,20 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                             );
                                                         })()}
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {epic.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : '-'}
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        {(() => {
+                                                            const ymd = getEpicInternalOrgsDateYmd(epic, releaseScheduleStagesForTimeline, uiRolloutStagesForTimeline);
+                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
+                                                        })()}
+                                                    </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        <Cohort1DateBadge epic={epic} dateOptions={{ month: 'short', day: 'numeric' }} />
+                                                    </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        {(() => {
+                                                            const ymd = getEpicGaDateYmd(epic);
+                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
+                                                        })()}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <span className="px-2 py-1 rounded text-xs font-medium" style={{

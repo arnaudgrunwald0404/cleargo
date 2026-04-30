@@ -76,7 +76,8 @@ export async function GET(request: NextRequest) {
               epic: {
                 id: epic.epicId,
                 name: epic.epicName,
-                target_launch_date: epic.launchDate || '',
+                target_launch_date: epic.target_launch_date || '',
+                aha_fields: epic.aha_fields ?? null,
               },
               daysSinceLastReview: epic.daysSinceLastReview,
               lastReviewDate: epic.lastReviewDate,

@@ -13,11 +13,15 @@ export const FEATURE_MEETINGS = 'meetings';
 /** Fourth traffic light "Not Applicable" (neutral to readiness score); gating criteria cannot be NA */
 export const FEATURE_NOT_APPLICABLE = 'not_applicable';
 
+/** Roadmap Snapshot / Roadmap Rewind (historical Aha! pivot snapshots from Roadmap Rewind Visualizer merge); off by default */
+export const FEATURE_ROADMAP_REWIND = 'roadmap_rewind';
+
 /** All feature flag keys for UI (Settings > Other Settings) */
 export const ALL_FEATURE_FLAGS = [
   { key: FEATURE_AI_PRUNING, label: 'AI checklist pruning', description: 'Suggest criteria to prune per epic (human-in-the-loop)' },
   { key: FEATURE_MEETINGS, label: 'Meetings', description: 'Meetings page and tab (Calendar sync, transcripts, snippets)' },
   { key: FEATURE_NOT_APPLICABLE, label: 'Not Applicable Go/No-Go Score', description: 'Fourth traffic light option; neutral to readiness; gating cannot be NA' },
+  { key: FEATURE_ROADMAP_REWIND, label: 'Roadmap Rewind', description: 'Roadmap Snapshot & Rewind (weekly Aha! pivot history, confidence, movements)' },
 ] as const;
 
 export function isEnabled(flag: string, flagsFromSettings?: string[]): boolean {

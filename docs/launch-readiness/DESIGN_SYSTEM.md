@@ -1,6 +1,6 @@
 # Design System Documentation
 
-**Single Source of Truth** for all design tokens, components, and patterns used across the application.
+Patterns, spacing, and layout conventions for launch-readiness work. **Canonical brand colors and CSS variables** live in [`docs/COLOR_PALETTE.md`](../COLOR_PALETTE.md) and [`src/app/globals.css`](../../src/app/globals.css); when those sources differ from this file, treat the code as authoritative.
 
 ## Table of Contents
 
@@ -15,100 +15,93 @@
 9. [Navigation](#navigation)
 10. [Usage Guidelines](#usage-guidelines)
 
-**Additional Documentation:**
-- [Layout Patterns](./src/design-system/LAYOUT_PATTERNS.md) - Detailed documentation for headers and sidebars
+**Related documentation:** [`docs/COLOR_PALETTE.md`](../COLOR_PALETTE.md) (brand hex and variable names).
 
 ---
 
 ## Colors
 
-### Primary Colors
+Values below match [`docs/COLOR_PALETTE.md`](../COLOR_PALETTE.md) and the brand section of [`src/app/globals.css`](../../src/app/globals.css).
 
-| Color | HEX | RGB | HSL | Usage |
-|-------|-----|-----|-----|-------|
-| **White** | `#FFFFFF` | `255, 255, 255` | `0, 0%, 100%` | Pure base color for backgrounds and negative space |
-| **Platinum** | `#F5F3F0` | `245, 243, 240` | `30, 20%, 95%` | Subtle neutral for secondary backgrounds |
-| **Copper** | `#C97D60` | `201, 125, 96` | `15, 48%, 58%` | Warm accent for highlights and CTAs |
-| **Titanium** | `#4A5D5F` | `74, 93, 95` | `185, 12%, 33%` | Deep tone for primary text and emphasis |
+### Primary
 
-### Secondary Colors
+| Name | HEX | Usage |
+|------|-----|-------|
+| **White** | `#FFFFFF` | Surfaces, text on dark |
+| **Platinum** | `#FAF8F5` | Default page background |
+| **Cast Iron** | `#37352A` | Primary text, nav surfaces, strong contrast |
 
-| Color | HEX | RGB | HSL | Usage |
-|-------|-----|-----|-----|-------|
-| **Rose Gold** | `#E8B4A0` | `232, 180, 160` | `15, 60%, 77%` | Light warm accent |
-| **Bronze** | `#8B6F47` | `139, 111, 71` | `35, 32%, 41%` | Medium-dark accent |
-| **Verdigris** | `#6B9A8F` | `107, 154, 143` | `165, 18%, 51%` | Calm, balanced accent |
-| **Steel** | `#5B6E7A` | `91, 110, 122` | `205, 15%, 42%` | Cool, professional accent |
-| **Pewter** | `#9FA8B3` | `159, 168, 179` | `215, 12%, 66%` | Light neutral accent |
-| **White Gold** | `#F8F6F2` | `248, 246, 242` | `40, 25%, 96%` | Very light background |
-| **Brass** | `#B89A6B` | `184, 154, 107` | `35, 35%, 57%` | Warm medium accent |
-| **Cast Iron** | `#2C2C2C` | `44, 44, 44` | `0, 0%, 17%` | **Reserved for text and logo only** |
+### Signature accents
 
-### Semantic Colors
+| Name | HEX | Usage |
+|------|-----|-------|
+| **Alloy** | `#FFA680` | Highlights, conditional “go” moments |
+| **Copper** | `#FF7A52` | Primary accent, CTAs, logo moments |
+| **Copper hover** | `#E66E4A` | Hover state (see `--color-copper-hover`) |
 
-| Purpose | Color | HEX | RGB | HSL | Usage |
-|---------|-------|-----|-----|-----|-------|
-| **Success** | Bright Sage Green | `#6FA87F` | `111, 168, 127` | `145, 30%, 55%` | Success states, positive feedback, on-track indicators |
-| **Warning** | Brass | `#B89A6B` | `184, 154, 107` | `35, 35%, 57%` | Warning states, caution |
-| **Error** | Terracotta Red | `#A85D5D` | `168, 93, 93` | `0, 28%, 51%` | Error states, destructive actions, off-track indicators |
-| **Info** | Steel | `#5B6E7A` | `91, 110, 122` | `205, 15%, 42%` | Informational messages |
+### Secondary
 
-### CSS Variables
+| Name | HEX |
+|------|-----|
+| **Bronze** | `#6C3A2A` |
+| **Verdigris** | `#9EB4AB` |
+| **Steel** | `#697771` |
+| **Pewter** | `#A1B4BA` |
+| **White Gold** | `#F4EBD7` |
+| **Brass** | `#C3B497` |
 
-All colors are available as CSS variables:
+### Semantic (UI feedback)
+
+Defined in `globals.css` as base/light/dark ramps, for example:
+
+| Role | Typical variable | Notes |
+|------|------------------|-------|
+| **Success** | `--color-success-base` (e.g. `#10B981`) | On-track, confirmations |
+| **Warning** | `--color-warning-base` (e.g. `#FAB005`) | Caution |
+| **Error** | `--color-error-base` (e.g. `#EF4444`) | Errors, destructive emphasis |
+| **Info** | `--color-info-base` (e.g. `#228BE6`) | Neutral informational |
+
+### CSS variables (brand)
 
 ```css
-/* Primary */
 --color-white
 --color-platinum
+--color-cast-iron
+--color-alloy
 --color-copper
 --color-copper-hover
---color-titanium
---color-titanium-hover
-
-/* Secondary */
---color-rose-gold
 --color-bronze
 --color-verdigris
---color-verdigris-hover
 --color-steel
 --color-pewter
 --color-white-gold
 --color-brass
---color-cast-iron
-
 /* Semantic */
---color-success
---color-warning
---color-error
---color-info
+--color-success-base
+--color-warning-base
+--color-error-base
+--color-info-base
+/* …plus `-light` / `-dark` variants in globals.css */
 ```
 
-### Usage in Code
+### Usage in code
 
-```typescript
-// TypeScript/JavaScript
-import { colors } from '@/design-system/tokens';
-
-const primaryColor = colors.primary.copper.hex; // '#C97D60'
-const hoverColor = colors.primary.copper.hover; // '#B86A4F'
-```
+Brand colors are **hex in `:root`**, not HSL components—use `var(--token)` directly.
 
 ```css
-/* CSS */
 .button {
-  background-color: hsl(var(--color-copper));
+  background-color: var(--color-copper);
 }
 
 .button:hover {
-  background-color: hsl(var(--color-copper-hover));
+  background-color: var(--color-copper-hover);
 }
 ```
 
 ```tsx
-// React/Tailwind
-<div className="bg-[#C97D60] text-white">
-  Copper background
+// Tailwind arbitrary values
+<div className="bg-[var(--color-copper)] text-white">
+  Primary accent surface
 </div>
 ```
 
@@ -116,15 +109,22 @@ const hoverColor = colors.primary.copper.hover; // '#B86A4F'
 
 ## Typography
 
-### Font Families
+### Font families
 
-| Family | Font Stack | Usage |
-|--------|------------|-------|
-| **Heading** | `'Inter', ui-sans-serif, system-ui, sans-serif` | All headings (h1-h6) |
-| **Body** | `'Inter', ui-sans-serif, system-ui, sans-serif` | Body text, paragraphs, UI elements |
-| **Mono** | `'Fira Code', 'Courier New', monospace` | Code blocks, technical content |
+Defined in [`src/app/globals.css`](../../src/app/globals.css) as CSS variables (Google fonts are wired through the Next.js app as needed).
 
-### Font Sizes
+| Role | Font stack | Usage |
+|------|------------|-------|
+| **Heading** | `"Atkinson Hyperlegible", system-ui, …` (`--font-heading`) | Headings (h1–h6), titles |
+| **Body** | `"Public Sans", Inter, system-ui, …` (`--font-body`) | Body copy, most UI text |
+| **Mono** | `"Fira Code", "Courier New", monospace` (`--font-mono`) | Code, IDs, technical strings |
+| **Marcellus** | `var(--font-marcellus)` | Header / nav treatment where specified in product |
+
+Mantine’s theme (`src/lib/mantine-theme.ts`) may still list Inter as a default family; prefer `var(--font-heading)` / `var(--font-body)` on product surfaces for brand consistency.
+
+### Font sizes
+
+The app’s **semantic type scale** (`--font-size-page-title`, `--font-size-body`, `--font-size-caption`, etc.) is defined in `globals.css` and differs slightly from a generic Tailwind rem ladder (for example, default UI body is **14px** via `--font-size-base`). Use those variables for new screens. The table below remains a useful rem reference for prose and marketing-style layouts.
 
 | Size | Rem | Pixels | Usage |
 |------|-----|--------|-------|
@@ -161,17 +161,15 @@ const hoverColor = colors.primary.copper.hover; // '#B86A4F'
 | `relaxed` | `1.625` | Comfortable reading |
 | `loose` | `2` | Spacious text |
 
-### Typography Scale
+### Typography scale
 
 ```tsx
-// Headings
-<h1 className="font-heading text-4xl font-bold">Main Heading</h1>
-<h2 className="font-heading text-3xl font-bold">Section Heading</h2>
-<h3 className="font-heading text-2xl font-semibold">Subsection</h3>
+// Prefer CSS variables from globals.css
+<h1 style={{ fontFamily: "var(--font-heading)" }}>Main heading</h1>
+<p style={{ fontFamily: "var(--font-body)" }}>Body text</p>
 
-// Body text
-<p className="font-body text-base">Regular paragraph text</p>
-<p className="font-body text-sm text-muted-foreground">Secondary text</p>
+// Semantic sizes (examples — see --font-size-* in globals.css)
+<span style={{ fontSize: "var(--font-size-caption)" }}>Caption</span>
 ```
 
 ---
@@ -296,71 +294,23 @@ Base unit: **4px (0.25rem)**
 
 ## Components
 
-### Button
+ClearGO ships with **Mantine** for interactive UI and **Tailwind** for layout and one-off styling. Prefer `@mantine/core` primitives (`Button`, `TextInput`, `Card`, `Badge`, …) and align colors with the CSS variables above.
 
-**Sizes:**
-- `sm`: `2.25rem` (36px) height
-- `md`: `2.5rem` (40px) height (default)
-- `lg`: `2.75rem` (44px) height
+### Button (conceptual)
 
-**Variants:**
-- `default`: Primary action (Copper)
-- `secondary`: Secondary action (Titanium)
-- `outline`: Outlined button
-- `ghost`: Transparent background
-- `destructive`: Destructive action
-- `link`: Link-style button
+- **Primary:** copper (`var(--color-copper)`), sufficient contrast on white/platinum.
+- **Secondary / subtle:** steel, ghost, or outline as appropriate to hierarchy.
+- **Destructive:** semantic error ramp (`--color-error-*`), not bronze alone.
 
-**Example:**
-```tsx
-<Button variant="default" size="md">
-  Primary Action
-</Button>
-```
+Use Mantine `Button` sizes (`xs`–`xl`) rather than hard-coded pixel heights unless matching a legacy spec.
 
-### Input
+### Forms
 
-**Sizes:**
-- `sm`: `2.25rem` (36px) height
-- `md`: `2.5rem` (40px) height (default)
-- `lg`: `2.75rem` (44px) height
+Use Mantine inputs (`TextInput`, `Select`, …) for focus rings, a11y, and density consistency with the rest of the app.
 
-**Example:**
-```tsx
-<Input placeholder="Enter text" />
-```
+### Cards and badges
 
-### Card
-
-**Padding:**
-- `sm`: `1rem` (16px)
-- `md`: `1.5rem` (24px)
-- `lg`: `2rem` (32px)
-
-**Border Radius:** `0.75rem` (12px)
-
-**Example:**
-```tsx
-<Card className="p-6">
-  <CardHeader>
-    <CardTitle>Card Title</CardTitle>
-  </CardHeader>
-  <CardContent>Card content</CardContent>
-</Card>
-```
-
-### Badge
-
-**Sizes:**
-- `sm`: `0.125rem 0.5rem` padding
-- `md`: `0.25rem 0.75rem` padding
-
-**Border Radius:** `9999px` (fully rounded)
-
-**Example:**
-```tsx
-<Badge variant="default">Status</Badge>
-```
+Use Mantine `Card` / `Paper` and `Badge` with theme or `style` / `className` tied to brand tokens. Default radius in tokens is typically `12px` (`--radius-lg`); adjust per surface.
 
 ---
 
@@ -421,35 +371,20 @@ The header follows a **three-section layout pattern**:
   - Positioned absolutely to avoid clipping
   - Includes dropdown menu for account actions
 
-### Styling Tokens
+### Styling tokens
 
 ```css
-/* Header Container */
+/* Header container */
 .header {
   position: sticky;
   top: 0;
   z-index: 50;
-  border-bottom: 1px solid hsl(var(--border));
-  background: white;
+  border-bottom: 1px solid var(--color-cast-iron-border, #e5e5e5);
+  background: var(--color-white);
   flex-shrink: 0;
 }
 
-/* Header Content Container */
-.header-container {
-  container: mx-auto;
-  padding: 1rem; /* px-4 */
-  padding-top: 0.75rem; /* py-3 */
-  padding-bottom: 0.75rem; /* py-3 */
-  /* sm: */
-  padding-top: 1rem; /* py-4 */
-  padding-bottom: 1rem; /* py-4 */
-  
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  position: relative;
-  padding-right: 5rem; /* pr-20 - space for user profile */
-}
+/* Inner row: mirror with Tailwind, e.g. container mx-auto px-4 py-3 sm:py-4 flex … */
 ```
 
 ### Responsive Behavior
@@ -521,42 +456,39 @@ Left sidebars are used for primary navigation, settings, and hierarchical conten
 **Structure:**
 - Fixed width: `16rem` (256px / `w-64`)
 - Full height: `min-h-[calc(100vh-73px)]` (accounts for header)
-- Border: Right border with Rose Gold accent
-- Background: Platinum (`#F5F3F0`)
+- Border: Right border (e.g. `var(--color-cast-iron-border)` or a subtle brass/pewter line)
+- Background: Platinum (`var(--color-platinum)`)
 
 **Navigation Items:**
 - Full-width buttons
-- Active state: Titanium background with white text
-- Inactive state: Ghost variant with Titanium text
+- Active state: Cast Iron background with white text
+- Inactive state: Ghost variant with Steel or Cast Iron text
 - Hover: Subtle Platinum background
 
 **Styling:**
 ```css
 .left-sidebar {
-  width: 16rem; /* w-64 */
-  border-right: 1px solid hsl(15, 60%, 77%, 0.3); /* border-[#E8B4A0]/30 */
-  background: #F5F3F0; /* bg-[#F5F3F0] */
+  width: 16rem;
+  border-right: 1px solid var(--color-cast-iron-border);
+  background: var(--color-platinum);
   min-height: calc(100vh - 73px);
 }
 
 .nav-item-active {
-  background: #4A5D5F; /* bg-[#4A5D5F] */
-  color: white;
+  background: var(--color-cast-iron);
+  color: var(--color-white);
   font-weight: 500;
 }
 
 .nav-item-inactive {
-  color: #4A5D5F; /* text-[#4A5D5F] */
-  hover: {
-    background: #F5F3F0; /* hover:bg-[#F5F3F0] */
-    color: #2C2C2C; /* hover:text-[#2C2C2C] */
-  }
+  color: var(--color-steel);
 }
+/* Hover: light neutral e.g. var(--color-cast-iron-bg) or platinum */
 ```
 
-**Implementation Example:**
+**Implementation example:**
 ```tsx
-<nav className="w-64 border-r border-[#E8B4A0]/30 bg-[#F5F3F0] min-h-[calc(100vh-73px)]">
+<nav className="w-64 border-r border-[var(--color-cast-iron-border)] bg-[var(--color-platinum)] min-h-[calc(100vh-73px)]">
   <div className="p-4 space-y-1">
     {sections.map((section) => (
       <Button
@@ -565,11 +497,12 @@ Left sidebars are used for primary navigation, settings, and hierarchical conten
         size="sm"
         onClick={() => onSectionChange(section.id)}
         className={cn(
-          "font-body w-full justify-start",
-          activeSection === section.id 
-            ? "bg-[#4A5D5F] text-white hover:bg-[#5B6E7A] font-medium" 
-            : "text-[#4A5D5F] hover:bg-[#F5F3F0] hover:text-[#2C2C2C]"
+          "w-full justify-start",
+          activeSection === section.id
+            ? "bg-[var(--color-cast-iron)] text-white hover:bg-[var(--color-steel)] font-medium"
+            : "text-[var(--color-steel)] hover:bg-[var(--color-platinum)] hover:text-[var(--color-cast-iron)]"
         )}
+        style={{ fontFamily: "var(--font-body)" }}
       >
         {section.label}
       </Button>
@@ -792,8 +725,8 @@ export const sidebars = {
       collapsed: '4rem', // 64px
       expanded: '20rem', // 320px
     },
-    background: '#F5F3F0', // Platinum
-    border: 'rgba(232, 180, 160, 0.3)', // Rose Gold / 30%
+    background: '#FAF8F5', // --color-platinum
+    border: 'var(--color-cast-iron-border)',
   },
   right: {
     width: {
@@ -850,32 +783,33 @@ export const sidebars = {
 </Tabs>
 ```
 
-### Mobile Bottom Navigation
+### Mobile bottom navigation
 
-**Height:** `3.5rem` (56px)
-**Background:** White with border top
-**Active State:** Copper color
+**Height:** `3.5rem` (56px)  
+**Background:** White with top border  
+**Active state:** Copper (`var(--color-copper)`)
 
 ---
 
 ## Usage Guidelines
 
-### Color Usage
+### Color usage
 
-1. **Primary Actions:** Use Copper (`#C97D60`)
-2. **Secondary Actions:** Use Titanium (`#4A5D5F`)
-3. **Success States:** Use Verdigris (`#6B9A8F`)
-4. **Warning States:** Use Brass (`#B89A6B`)
-5. **Error States:** Use Bronze (`#8B6F47`)
-6. **Text:** Use Cast Iron (`#2C2C2C`) - **only for text and logos**
-7. **Backgrounds:** Use White, Platinum, or White Gold
+1. **Primary actions:** Copper (`var(--color-copper)`)
+2. **Secondary actions / UI chrome:** Steel, Brass, or neutral grays as appropriate
+3. **Success:** Semantic success tokens (`--color-success-base`, etc.)
+4. **Warning:** Semantic warning tokens (`--color-warning-base`, etc.)
+5. **Error / destructive emphasis:** Semantic error tokens (`--color-error-base`, etc.)
+6. **Body text:** Cast Iron (`var(--color-cast-iron)`); reserve strongest contrast for primary reading
+7. **Backgrounds:** White, Platinum, White Gold, or semantic light tints from `globals.css`
 
-### Typography Guidelines
+### Typography guidelines
 
-1. **Headings:** Always use Atkinson Hyperlegible
-2. **Body Text:** Always use Public Sans
-3. **Code:** Use monospace font
-4. **Line Height:** Use `1.5` for body text, `1.25` for headings
+1. **Headings:** Atkinson Hyperlegible via `var(--font-heading)`
+2. **Body:** Public Sans via `var(--font-body)` (Inter remains in the stack as a fallback)
+3. **Code:** `var(--font-mono)`
+4. **Nav / display accents:** Marcellus where the product uses `var(--font-marcellus)`
+5. **Line height:** `var(--line-height-normal)` for body, `var(--line-height-tight)` for headings
 
 ### Spacing Guidelines
 
@@ -896,49 +830,20 @@ export const sidebars = {
 1. **Color Contrast:** Ensure WCAG AA compliance (4.5:1 for text)
 2. **Focus States:** Always provide visible focus indicators
 3. **Touch Targets:** Minimum 44x44px for mobile
-4. **Font Sizes:** Minimum 16px for body text
+4. **Font sizes:** Default UI body size comes from `--font-size-body` in `globals.css`; use larger tokens for long-form reading and respect user zoom
 
 ---
 
-## Importing Tokens
+## Using tokens in application code
 
-```typescript
-// Import all tokens
-import { designTokens } from '@/design-system';
+There is no separate `@/design-system` token package in this repository. Use:
 
-// Import specific tokens
-import { colors, spacing, typography } from '@/design-system/tokens';
-
-// Use in components
-const primaryColor = colors.primary.copper.hex;
-const baseSpacing = spacing[4];
-const headingFont = typography.fonts.heading;
-```
+- **CSS:** `var(--color-*)`, `var(--font-heading)`, `var(--spacing-4)`, etc., from [`src/app/globals.css`](../../src/app/globals.css).
+- **React:** Inline `style={{ color: "var(--color-cast-iron)" }}` or Tailwind arbitrary values such as `text-[var(--color-steel)]`.
+- **Mantine:** Extend the theme in `src/lib/mantine-theme.ts` when you need defaults to match brand fonts or colors globally.
 
 ---
 
-## CSS Variables
-
-All design tokens are available as CSS variables in `src/index.css`:
-
-```css
-/* Colors */
---color-copper
---color-titanium
-/* ... */
-
-/* Typography */
---font-heading
---font-body
-
-/* Spacing, shadows, etc. */
---radius
---shadow-md
-/* ... */
-```
-
----
-
-**Last Updated:** 2024
-**Version:** 1.0.0
+**Last updated:** April 2026  
+**Version:** 1.1.0
 

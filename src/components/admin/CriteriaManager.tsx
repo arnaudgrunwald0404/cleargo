@@ -1,7 +1,7 @@
 "use client";
 import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text, Tabs, Combobox, useCombobox, InputBase } from "@mantine/core";
+import { Drawer, TextInput, Textarea, Select, Checkbox, Button, Group, Stack, SimpleGrid, Avatar, Modal, Alert, Text, Tabs } from "@mantine/core";
 import { IconTrash, IconAlertCircle } from '@tabler/icons-react';
 import { createClient } from "@/lib/supabase/client";
 import { UserDisplay } from "../UserDisplay";
@@ -42,6 +42,18 @@ interface ReleaseStage {
   sort_order: number;
   duration_days: number | null;
   details?: string | null;
+  scope?: string | null;
+}
+
+function formatRatingStageOptionLabel(stage: ReleaseStage): string {
+  const scope = stage.scope ?? "release_schedule";
+  const scopeNote =
+    scope === "ui_rollout"
+      ? "UI rollout"
+      : scope === "release_schedule"
+        ? "Release schedule"
+        : scope;
+  return `${stage.name} (${scopeNote})`;
 }
 
 const TIERS = ["ALL", "TIER_1_ONLY", "TIER_1_AND_2", "TIER_2_ONLY", "TIER_3_ONLY"];
@@ -95,6 +107,14 @@ export function CriteriaManager() {
   const [criteriaToDelete, setCriteriaToDelete] = useState<Item | null>(null);
   const [listFilter, setListFilter] = useState<"all" | "ui_framework">("all");
 
+  // Backfill confirmation modal
+  const [backfillConfirmOpen, setBackfillConfirmOpen] = useState(false);
+  const [backfillConfirmCount, setBackfillConfirmCount] = useState(0);
+  const [backfillConfirmId, setBackfillConfirmId] = useState<string | null>(null);
+  const [backfillConfirmLabel, setBackfillConfirmLabel] = useState('');
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillDoneResult, setBackfillDoneResult] = useState<{ processed: number; failed: number } | null>(null);
+
   const filteredItems = useMemo(() => {
     if (listFilter === "ui_framework") return items.filter((c) => !!c.ui_framework_only);
     return items;
@@ -133,7 +153,7 @@ export function CriteriaManager() {
   const getReleaseStageName = (stageId: number | null | undefined): string => {
     if (!stageId) return "—";
     const stage = releaseStages.find(s => s.id === stageId);
-    return stage?.name || `Unknown (${stageId})`;
+    return stage ? formatRatingStageOptionLabel(stage) : `Unknown (${stageId})`;
   };
 
   async function handlePreviewImport() {
@@ -288,9 +308,9 @@ export function CriteriaManager() {
     setShowCreateForm(false);
   }
 
-  async function submitEdit(id: string, patch: Partial<Item>) {
+  async function submitEdit(id: string, patch: Partial<Item>, fromDrawer = false) {
     setError(null);
-    
+
     // Ensure data_sources have value field for all items, and preserve label
     const cleanedPatch = { ...patch };
     if (cleanedPatch.data_sources) {
@@ -300,7 +320,7 @@ export function CriteriaManager() {
         ...(ds.label !== undefined && { label: ds.label }), // Preserve label if present
       }));
     }
-    
+
     const res = await fetch(`/api/criteria/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -323,7 +343,22 @@ export function CriteriaManager() {
     }
     const { item } = await res.json();
     setItems((prev) => prev.map((c) => (c.id === id ? item : c)).sort((a, b) => a.sort_order - b.sort_order || a.label.localeCompare(b.label)));
-    setEditingId(null);
+
+    // After a full drawer save, check how many active epics are missing this criterion
+    if (fromDrawer) {
+      fetch(`/api/criteria/${id}/backfill`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.count > 0) {
+            setBackfillConfirmId(id);
+            setBackfillConfirmLabel(item.label);
+            setBackfillConfirmCount(data.count);
+            setBackfillDoneResult(null);
+            setBackfillConfirmOpen(true);
+          }
+        })
+        .catch(err => console.error('Failed to check backfill count:', err));
+    }
   }
 
   async function handleDelete(id: string) {
@@ -345,6 +380,21 @@ export function CriteriaManager() {
       }
     } catch (e: any) {
       setError(e.message || "Failed to delete criteria");
+    }
+  }
+
+  async function handleBackfillConfirm() {
+    if (!backfillConfirmId) return;
+    setBackfillRunning(true);
+    try {
+      const res = await fetch(`/api/criteria/${backfillConfirmId}/backfill`, { method: 'POST' });
+      const data = await res.json();
+      setBackfillDoneResult({ processed: data.processed ?? 0, failed: data.failed ?? 0 });
+    } catch (e: any) {
+      setBackfillDoneResult({ processed: 0, failed: -1 });
+    } finally {
+      setBackfillRunning(false);
+      setBackfillConfirmOpen(false);
     }
   }
 
@@ -842,10 +892,13 @@ export function CriteriaManager() {
                             submitEdit(c.id, { rating_timing: Number(value) });
                           }
                         }}
-                        data={releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))}
+                        data={releaseStages.map((stage) => ({
+                          value: stage.id.toString(),
+                          label: formatRatingStageOptionLabel(stage),
+                        }))}
                         size="xs"
                         allowDeselect={false}
-                        comboboxProps={{ width: 250, position: 'bottom-start' }}
+                        comboboxProps={{ width: 320, position: 'bottom-start' }}
                       />
                     </td>
                     <td className="px-4 py-4 whitespace-nowrap text-center">
@@ -870,7 +923,7 @@ export function CriteriaManager() {
             opened={!!editingId}
             onClose={() => setEditingId(null)}
             onSave={(patch) => {
-              submitEdit(editingId, patch);
+              submitEdit(editingId, patch, true);
               setEditingId(null);
             }}
             onDelete={() => {
@@ -929,6 +982,62 @@ export function CriteriaManager() {
           </Group>
         </div>
       </Modal>
+
+      {/* Backfill Confirmation Modal */}
+      <Modal
+        opened={backfillConfirmOpen}
+        onClose={() => setBackfillConfirmOpen(false)}
+        title={
+          <div className="flex items-center gap-2">
+            <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span className="font-semibold" style={{ fontFamily: "'Atkinson Hyperlegible', sans-serif" }}>Add to active epics?</span>
+          </div>
+        }
+        centered
+        size="md"
+      >
+        <div className="space-y-4">
+          <Text size="sm">
+            <strong>{backfillConfirmLabel}</strong> is not yet assigned to{' '}
+            <strong>{backfillConfirmCount} active epic{backfillConfirmCount !== 1 ? 's' : ''}</strong> that
+            match its tier and applicability settings.
+          </Text>
+          <Text size="sm" c="dimmed">
+            Would you like to add it now? Decision owners will be notified via Slack, and due dates will be
+            calculated based on each epic's release schedule.
+          </Text>
+          <Group justify="flex-end" mt="xl">
+            <Button variant="subtle" onClick={() => setBackfillConfirmOpen(false)}>
+              Skip
+            </Button>
+            <Button
+              color="blue"
+              loading={backfillRunning}
+              onClick={handleBackfillConfirm}
+            >
+              Add to {backfillConfirmCount} epic{backfillConfirmCount !== 1 ? 's' : ''}
+            </Button>
+          </Group>
+        </div>
+      </Modal>
+
+      {/* Backfill result toast-style alert */}
+      {backfillDoneResult && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Alert
+            color={backfillDoneResult.failed > 0 ? 'orange' : 'green'}
+            withCloseButton
+            onClose={() => setBackfillDoneResult(null)}
+            title={backfillDoneResult.failed > 0 ? 'Backfill completed with errors' : 'Backfill complete'}
+          >
+            {backfillDoneResult.failed > 0
+              ? `Added to ${backfillDoneResult.processed} epics, ${backfillDoneResult.failed} failed.`
+              : `Successfully added to ${backfillDoneResult.processed} epic${backfillDoneResult.processed !== 1 ? 's' : ''}.`}
+          </Alert>
+        </div>
+      )}
     </div>
   );
 }
@@ -940,15 +1049,29 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
   const [ahaFields, setAhaFields] = useState<Array<{ alias: string; label: string; type: string }>>([]);
   const [ahaFieldsLoading, setAhaFieldsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("details");
-  
-  const combobox = useCombobox({
-    onDropdownClose: () => combobox.resetSelectedOption(),
-  });
+  const [backfillLoading, setBackfillLoading] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ processed: number; skipped: number; failed: number; errors: { epicId: string; epicName: string; error: string }[] } | null>(null);
+
+  async function handleBackfill() {
+    setBackfillLoading(true);
+    setBackfillResult(null);
+    try {
+      const res = await fetch(`/api/criteria/${item.id}/backfill`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Backfill failed");
+      setBackfillResult(data);
+    } catch (e: any) {
+      setBackfillResult({ processed: 0, skipped: 0, failed: -1, errors: [{ epicId: "", epicName: "", error: e.message }] });
+    } finally {
+      setBackfillLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (opened) {
       setPatch({ ...item });
       setActiveTab("details");
+      setBackfillResult(null);
       fetchUsers();
       fetchAhaFields();
     }
@@ -1013,9 +1136,6 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
     // Include custom email if it exists and doesn't match a user
     ...(isCustomEmail ? [{ value: patch.decision_owner_email!, label: patch.decision_owner_email!, user: null }] : [])
   ];
-
-  const selectedOption = userSelectData.find(opt => opt.value === (patch.decision_owner_email || ""));
-  const selectedLabel = selectedOption?.label || "";
 
   const dataSources = patch.data_sources || [];
   const canAddDataSource = dataSources.length < 5;
@@ -1132,76 +1252,87 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
                 onChange={(value) => setPatch({ ...patch, rating_timing: value ? Number(value) : undefined })}
                 data={[
                   { value: "", label: "None" },
-                  ...releaseStages.map(stage => ({ value: stage.id.toString(), label: stage.name }))
+                  ...releaseStages.map((stage) => ({
+                    value: stage.id.toString(),
+                    label: formatRatingStageOptionLabel(stage),
+                  })),
                 ]}
                 placeholder="Select launch stage"
-                description="Launch stage by which the criteria needs to be rated"
+                description='Launch stage by which the criteria needs to be rated. "Release schedule" is for normal launches; "UI rollout" pairs with criteria marked UI Framework only.'
                 clearable
               />
 
-              <Combobox
-                store={combobox}
-                withinPortal={false}
-                onOptionSubmit={(value) => {
-                  setPatch({ ...patch, decision_owner_email: value === "" ? undefined : value });
-                  combobox.closeDropdown();
+              <Select
+                label="Decision Owner"
+                searchable
+                disabled={usersLoading}
+                placeholder="Search by name or email..."
+                comboboxProps={{ withinPortal: false }}
+                data={userSelectData.map(({ value, label }) => ({ value, label }))}
+                value={patch.decision_owner_email ?? ""}
+                onChange={(v) =>
+                  setPatch({
+                    ...patch,
+                    decision_owner_email: v === "" || v == null ? undefined : v,
+                  })
+                }
+                filter={({ options, search, limit }) => {
+                  const q = search.trim().toLowerCase();
+                  const lim = limit ?? Infinity;
+                  if (!q) {
+                    return options.slice(0, lim);
+                  }
+                  const result: typeof options = [];
+                  for (const opt of options) {
+                    if (result.length >= lim) break;
+                    if ("items" in opt && Array.isArray(opt.items)) {
+                      continue;
+                    }
+                    const o = opt as { value: string; label: string };
+                    if (
+                      o.label.toLowerCase().includes(q) ||
+                      String(o.value).toLowerCase().includes(q)
+                    ) {
+                      result.push(o);
+                    }
+                  }
+                  return result;
                 }}
-              >
-                <Combobox.Target>
-                  <InputBase
-                    component="button"
-                    type="button"
-                    pointer
-                    rightSection={<Combobox.Chevron />}
-                    rightSectionPointerEvents="none"
-                    onClick={() => combobox.toggleDropdown()}
-                    label="Decision Owner"
-                    disabled={usersLoading}
-                  >
-                    {selectedLabel || (
-                      <Text component="span" c="dimmed">
-                        Select a user
-                      </Text>
-                    )}
-                  </InputBase>
-                </Combobox.Target>
-
-                <Combobox.Dropdown>
-                  <Combobox.Options>
-                    {userSelectData.map((item) => {
-                      const user = item.user;
-                      const isPlaceholder = item.value === POD_PM_PLACEHOLDER;
-                      return (
-                        <Combobox.Option value={item.value} key={item.value}>
-                          <Group gap="xs">
-                            {user && (
-                              <Avatar
-                                src={user.avatar_url || undefined}
-                                radius="xl"
-                                size="sm"
-                                color={getColor(user.email)}
-                              >
-                                {getInitials(user.email, user.first_name, user.last_name)}
-                              </Avatar>
-                            )}
-                            {isPlaceholder && (
-                              <Avatar radius="xl" size="sm" color="gray">
-                                PM
-                              </Avatar>
-                            )}
-                            {!user && !isPlaceholder && item.value !== "" && (
-                              <Avatar radius="xl" size="sm" color="gray">
-                                {item.value.substring(0, 2).toUpperCase()}
-                              </Avatar>
-                            )}
-                            <span>{item.label}</span>
-                          </Group>
-                        </Combobox.Option>
-                      );
-                    })}
-                  </Combobox.Options>
-                </Combobox.Dropdown>
-              </Combobox>
+                renderOption={({ option }) => {
+                  const item = userSelectData.find((i) => i.value === option.value);
+                  if (!item) {
+                    return <span>{option.label}</span>;
+                  }
+                  const user = item.user;
+                  const isPlaceholder = item.value === POD_PM_PLACEHOLDER;
+                  return (
+                    <Group gap="xs">
+                      {user && (
+                        <Avatar
+                          src={user.avatar_url || undefined}
+                          radius="xl"
+                          size="sm"
+                          color={getColor(user.email)}
+                        >
+                          {getInitials(user.email, user.first_name, user.last_name)}
+                        </Avatar>
+                      )}
+                      {isPlaceholder && (
+                        <Avatar radius="xl" size="sm" color="gray">
+                          PM
+                        </Avatar>
+                      )}
+                      {!user && !isPlaceholder && item.value !== "" && (
+                        <Avatar radius="xl" size="sm" color="gray">
+                          {item.value.substring(0, 2).toUpperCase()}
+                        </Avatar>
+                      )}
+                      <span>{item.label}</span>
+                    </Group>
+                  );
+                }}
+                maxDropdownHeight={320}
+              />
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Status Definitions</label>
@@ -1412,21 +1543,44 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
         </Tabs>
           </Stack>
         </div>
-        <div style={{ 
-          borderTop: '1px solid var(--mantine-color-gray-3)', 
+        <div style={{
+          borderTop: '1px solid var(--mantine-color-gray-3)',
           padding: '20px var(--mantine-spacing-lg) 0',
           backgroundColor: 'var(--mantine-color-body)',
           flexShrink: 0
         }}>
-          <Group justify="space-between">
-            <Button 
-              variant="outline" 
-              color="red" 
-              leftSection={<IconTrash size={16} />} 
-              onClick={onDelete}
+          {backfillResult && (
+            <Alert
+              color={backfillResult.failed === -1 ? "red" : backfillResult.failed > 0 ? "orange" : "green"}
+              mb="sm"
+              onClose={() => setBackfillResult(null)}
+              withCloseButton
             >
-              Delete
-            </Button>
+              {backfillResult.failed === -1
+                ? `Backfill error: ${backfillResult.errors[0]?.error}`
+                : `Backfill complete — ${backfillResult.processed} epics updated, ${backfillResult.skipped} skipped${backfillResult.failed > 0 ? `, ${backfillResult.failed} failed` : ""}`}
+            </Alert>
+          )}
+          <Group justify="space-between">
+            <Group gap="xs">
+              <Button
+                variant="outline"
+                color="red"
+                leftSection={<IconTrash size={16} />}
+                onClick={onDelete}
+              >
+                Delete
+              </Button>
+              <Button
+                variant="outline"
+                color="blue"
+                loading={backfillLoading}
+                onClick={handleBackfill}
+                title="Add this criterion to all active epics that don't have it yet"
+              >
+                Backfill to active epics
+              </Button>
+            </Group>
             <Group>
               <Button variant="outline" onClick={onClose}>
                 Cancel

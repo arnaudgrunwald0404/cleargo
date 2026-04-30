@@ -12,13 +12,37 @@ import {
     fetchAndUpsertReleaseFromAha,
     setAhaRecordNotFoundByAhaId,
     clearAhaRecordNotFound,
-    recalculateDueDatesForEpic,
 } from '@/lib/db/epics';
 import { getSettings, getEffectivePermissionRules } from '@/lib/settings-db';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // Allow up to 5 minutes for sync operations (needed for large releases)
+
+/** Encode one NDJSON line (keeps streaming connection alive). */
+const enc = new TextEncoder();
+function ndjson(obj: object): Uint8Array { return enc.encode(JSON.stringify(obj) + '\n'); }
+
+/**
+ * Process items in parallel with a fixed concurrency cap.
+ * @param items     Array of work items
+ * @param limit     Max concurrent tasks
+ * @param fn        Async task function
+ */
+async function runConcurrent<T>(
+    items: T[],
+    limit: number,
+    fn: (item: T, index: number) => Promise<void>
+): Promise<void> {
+    let i = 0;
+    const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+        while (i < items.length) {
+            const idx = i++;
+            await fn(items[idx], idx);
+        }
+    });
+    await Promise.all(workers);
+}
 
 /**
  * Manual sync endpoint to pull epics from Aha on-demand.
@@ -36,79 +60,61 @@ export const maxDuration = 300; // Allow up to 5 minutes for sync operations (ne
  * - existingAhaIds: string[] (Aha epic reference numbers currently shown for this release; used for revalidation)
  */
 export async function POST(req: NextRequest) {
-    try {
-        // Auth check - require admin role
-        const supabase = createClient();
-        const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        
-        if (!supabaseUrl) {
-            throw new Error('NEXT_PUBLIC_SUPABASE_URL is not set');
-        }
-        
-        const supabaseAdmin = supabaseServiceKey ? createSupabaseClient(
-            supabaseUrl,
-            supabaseServiceKey
-        ) : supabase;
-        const { data: { user }, error: getUserError } = await supabase.auth.getUser();
-        
-        if (!user?.email) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+    // ── Auth + param parsing (synchronous returns before any stream) ───────────
+    const supabase = createClient();
+    const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) return NextResponse.json({ error: 'NEXT_PUBLIC_SUPABASE_URL not set' }, { status: 500 });
 
-        // Capability check: settings.ahaFields.sync
-        const { data: me, error: userError } = await supabase
-            .from('app_user')
-            .select('roles')
-            .eq('email', user.email)
-            .single();
+    const supabaseAdmin = supabaseServiceKey
+        ? createSupabaseClient(supabaseUrl, supabaseServiceKey)
+        : supabase;
 
-        if (userError && userError.code === 'PGRST116') {
-            return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
-        }
-        if (userError) throw userError;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        const permRules = await getEffectivePermissionRules();
-        const canSync = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.sync', permRules);
-        if (!canSync) {
-            return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
-        }
+    const { data: me, error: userError } = await supabase
+        .from('app_user').select('roles').eq('email', user.email).single();
+    if (userError?.code === 'PGRST116') return NextResponse.json({ error: 'User profile not found' }, { status: 404 });
+    if (userError) return NextResponse.json({ error: userError.message }, { status: 500 });
 
-        const { searchParams } = new URL(req.url);
-        const product = searchParams.get('product') || undefined;
-        const perPage = Math.min(parseInt(searchParams.get('per_page') || '50'), 200);
-        const page = parseInt(searchParams.get('page') || '1');
-        const force = searchParams.get('force') === 'true';
-        const syncAll = searchParams.get('sync_all') === 'true';
-        const releaseName = searchParams.get('release') || undefined;
+    const permRules = await getEffectivePermissionRules();
+    const canSync = canRolesPerformWithRules((me?.roles as string[]) || [], 'settings.ahaFields.sync', permRules);
+    if (!canSync) return NextResponse.json({ error: 'Forbidden - Admin access required' }, { status: 403 });
 
-        // Optional JSON body for UI-driven refreshes (safe if absent)
-        let body: any = null;
-        try {
-            body = await req.json();
-        } catch {
-            body = null;
-        }
+    // ── Build streaming response — all heavy work happens inside ──────────────
+    const { searchParams } = new URL(req.url);
+    const product = searchParams.get('product') || undefined;
+    const perPage = Math.min(parseInt(searchParams.get('per_page') || '50'), 200);
+    const page = parseInt(searchParams.get('page') || '1');
+    const force = searchParams.get('force') === 'true';
+    const syncAll = searchParams.get('sync_all') === 'true';
+    const releaseName = searchParams.get('release') || undefined;
 
-        const existingAhaIdsInput = Array.isArray(body?.existingAhaIds) ? body.existingAhaIds : [];
-        const existingAhaIds = existingAhaIdsInput
-            .filter((id: any) => typeof id === 'string')
-            .map((id: string) => id.trim())
-            .filter(Boolean);
-        const existingAhaIdsSet = new Set(existingAhaIds);
+    let body: any = null;
+    try { body = await req.json(); } catch { body = null; }
 
-        /** Invalidate cached Aha epic counts so the denominator refreshes on next load. */
-        const invalidateAhaEpicCountCache = async (forReleaseName?: string) => {
-            const now = new Date().toISOString();
-            const payload = { aha_epic_count: null, aha_epic_count_updated_at: null };
-            if (forReleaseName) {
-                await supabaseAdmin.from('release_schedule').update(payload).eq('release_name', forReleaseName);
-            } else {
-                await supabaseAdmin.from('release_schedule').update(payload).neq('release_name', '');
-            }
-        };
+    const existingAhaIds: string[] = (Array.isArray(body?.existingAhaIds) ? body.existingAhaIds : [])
+        .filter((id: any) => typeof id === 'string')
+        .map((id: string) => id.trim())
+        .filter(Boolean);
+    const existingAhaIdsSet = new Set(existingAhaIds);
 
-        console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, releaseName, user: user.email });
+    const stream = new ReadableStream({
+        async start(controller) { try {
+
+            /** Invalidate cached Aha epic counts so the denominator refreshes on next load. */
+            const invalidateAhaEpicCountCache = async (forReleaseName?: string) => {
+                const payload = { aha_epic_count: null, aha_epic_count_updated_at: null };
+                if (forReleaseName) {
+                    await supabaseAdmin.from('release_schedule').update(payload).eq('release_name', forReleaseName);
+                } else {
+                    await supabaseAdmin.from('release_schedule').update(payload).neq('release_name', '');
+                }
+            };
+
+            console.log('🔄 Manual Aha sync started', { product, perPage, page, force, syncAll, releaseName, user: user.email });
+            controller.enqueue(ndjson({ progress: 0, total: 0, message: 'Starting sync…' }));
 
         const client = getAhaClient();
         const settings = await getSettings();
@@ -295,13 +301,6 @@ export async function POST(req: NextRequest) {
                         await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
-                        // Recalculate due dates for existing epics
-                        try {
-                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                        } catch (dueDateError) {
-                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                        }
                         results.updated++;
                     }
 
@@ -412,13 +411,6 @@ export async function POST(req: NextRequest) {
                         await instantiateReleaseCriteriaForEpic(savedEpic.id, savedEpic.tier);
                         results.created++;
                     } else {
-                        // Recalculate due dates for existing epics
-                        try {
-                            await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                            console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                        } catch (dueDateError) {
-                            console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                        }
                         results.updated++;
                     }
 
@@ -435,14 +427,14 @@ export async function POST(req: NextRequest) {
             }
 
             console.log('✅ Manual Aha release sync completed', results);
-
             await invalidateAhaEpicCountCache(releaseName);
-
-            return NextResponse.json({
+            controller.enqueue(ndjson({
+                done: true,
                 success: true,
                 message: `Release sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped`,
                 results,
-            });
+            }));
+            return; // exits the release-specific branch
         }
 
         // Fetch all epics from Aha (paginated if sync_all=true)
@@ -521,13 +513,18 @@ export async function POST(req: NextRequest) {
             errors: [] as string[],
         };
 
-        for (const ahaEpic of allEpics) {
+        controller.enqueue(ndjson({ progress: 0, total: allEpics.length, message: `Processing ${allEpics.length} epics…` }));
+
+        // Process epics with concurrency=5 to stay well under Aha rate limits
+        // while being ~5x faster than sequential processing.
+        let processed = 0;
+        await runConcurrent(allEpics, 5, async (ahaEpic) => {
             try {
                 // Check filter criteria (unless force is true)
                 if (!force && !(await shouldProcessEpic(ahaEpic))) {
                     console.log(`⏭️  Skipping epic ${ahaEpic.reference_num || ahaEpic.id}: Does not match filter criteria`);
                     results.skipped++;
-                    continue;
+                    return;
                 }
 
                 // Fetch full epic details to ensure all custom fields are loaded
@@ -553,7 +550,7 @@ export async function POST(req: NextRequest) {
                     console.log(`⏭️  Skipping epic ${ahaEpic.reference_num || ahaEpic.id}: ClearGO Candidate is not Yes or Yes - UI Framework`);
                     results.skipped_cleargo_no++;
                     results.skipped++;
-                    continue;
+                    return;
                 }
 
                 // Map Aha epic to our schema
@@ -565,22 +562,23 @@ export async function POST(req: NextRequest) {
                     console.log(`⏭️  Skipping epic ${epicData.aha_id}: No release assigned`);
                     results.skipped_no_release++;
                     results.skipped++;
-                    continue;
+                    return;
                 }
                 
                 // If release filter is specified, only process epics for that release
                 if (releaseName && epicReleaseName !== releaseName) {
                     console.log(`⏭️  Skipping epic ${epicData.aha_id}: Release "${epicReleaseName}" does not match filter "${releaseName}"`);
                     results.skipped++;
-                    continue;
+                    return;
                 }
                 
                 // Auto-fetch release from Aha API if it doesn't exist in system
-                if (!syncedReleaseNames.has(epicReleaseName)) {
+                const epicReleaseNameStr = epicReleaseName as string;
+                if (!syncedReleaseNames.has(epicReleaseNameStr)) {
                     try {
-                        const fetchedDate = await fetchAndUpsertReleaseFromAha(epicReleaseName);
+                        const fetchedDate = await fetchAndUpsertReleaseFromAha(epicReleaseNameStr);
                         // Add to syncedReleaseNames set so we don't fetch it again in this sync
-                        syncedReleaseNames.add(epicReleaseName);
+                        syncedReleaseNames.add(epicReleaseNameStr);
                         
                         if (fetchedDate === null) {
                             // Release not found in Aha or has no date - still continue processing epic
@@ -632,15 +630,6 @@ export async function POST(req: NextRequest) {
                     results.created++;
                     console.log(`🆕 Created epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 } else {
-                    // For existing epics, recalculate due dates for all criteria
-                    // This ensures due dates are updated if target_launch_date changed
-                    try {
-                        await recalculateDueDatesForEpic(savedEpic.id, supabaseAdmin);
-                        console.log(`📅 Recalculated due dates for criteria in epic: ${savedEpic.name} (${savedEpic.aha_id})`);
-                    } catch (dueDateError) {
-                        // Log error but don't fail the sync
-                        console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                    }
                     results.updated++;
                     console.log(`🔄 Updated epic: ${savedEpic.name} (${savedEpic.aha_id})`);
                 }
@@ -656,53 +645,57 @@ export async function POST(req: NextRequest) {
                 if (err.message?.includes('404') || err.message?.toLowerCase().includes('record not found')) {
                     await setAhaRecordNotFoundByAhaId(ahaIdForEpic);
                 }
+            } finally {
+                // Stream progress every 5 epics to keep the connection alive
+                processed++;
+                if (processed % 5 === 0 || processed === allEpics.length) {
+                    controller.enqueue(ndjson({
+                        progress: processed,
+                        total: allEpics.length,
+                        message: `Processed ${processed} / ${allEpics.length} epics…`,
+                    }));
+                }
             }
-        }
+        }); // end runConcurrent
 
         console.log('✅ Manual Aha sync completed', results);
-
         await invalidateAhaEpicCountCache();
 
         const skipReasons = [];
-        if (results.skipped_cleargo_no > 0) {
-            skipReasons.push(`${results.skipped_cleargo_no} ClearGO Candidate not Yes`);
-        }
-        if (results.skipped_no_release > 0) {
-            skipReasons.push(`${results.skipped_no_release} with no release`);
-        }
-        if (results.skipped_release_not_synced > 0) {
-            skipReasons.push(`${results.skipped_release_not_synced} with unsynced release`);
-        }
+        if (results.skipped_cleargo_no > 0) skipReasons.push(`${results.skipped_cleargo_no} ClearGO Candidate not Yes`);
+        if (results.skipped_no_release > 0) skipReasons.push(`${results.skipped_no_release} with no release`);
+        if (results.skipped_release_not_synced > 0) skipReasons.push(`${results.skipped_release_not_synced} with unsynced release`);
         const skipMessage = skipReasons.length > 0 ? ` (${skipReasons.join(', ')})` : '';
-        
-        return NextResponse.json({
+
+        controller.enqueue(ndjson({
+            done: true,
             success: true,
             message: `Sync completed: ${results.created} created, ${results.updated} updated, ${results.skipped} skipped${skipMessage}`,
             results,
-        });
+        }));
 
-    } catch (error) {
-        const err = error as Error;
-        console.error('❌ Manual Aha sync error:', {
-            message: err.message,
-            stack: err.stack,
-            name: err.name,
-            url: req.url,
-        });
-        
-        // Provide more detailed error information
-        const errorDetails: any = {
-            error: 'Sync failed',
-            message: err.message,
-        };
-        
-        // Include additional context if available
-        if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
-            errorDetails.suggestion = 'The sync operation timed out. Try syncing a smaller batch or a specific release.';
+        } catch (error) {
+            const err = error as Error;
+            console.error('❌ Manual Aha sync error:', { message: err.message, stack: err.stack, url: req.url });
+            const errorDetails: any = { error: 'Sync failed', message: err.message };
+            if (err.message?.includes('timeout') || err.message?.includes('Timeout')) {
+                errorDetails.suggestion = 'The sync operation timed out. Try syncing a smaller batch or a specific release.';
+            }
+            controller.enqueue(ndjson(errorDetails));
+        } finally {
+            controller.close();
         }
-        
-        return NextResponse.json(errorDetails, { status: 500 });
-    }
+        }, // end start()
+    }); // end ReadableStream
+
+    return new Response(stream, {
+        headers: {
+            'Content-Type': 'application/x-ndjson',
+            'Transfer-Encoding': 'chunked',
+            'X-Accel-Buffering': 'no',
+            'Cache-Control': 'no-cache',
+        },
+    });
 }
 
 /**

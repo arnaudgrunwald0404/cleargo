@@ -3,19 +3,19 @@
  */
 
 import type { DayMarker } from '@/lib/success/types';
-import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { formatCohort1DateForSlack } from '@/lib/epic-cohort1-date';
+import type { Epic } from '@/types/epics';
 
-interface Epic {
+type RetroReminderEpic = Pick<Epic, 'target_launch_date' | 'aha_fields'> & {
   id: string;
   name: string;
-  target_launch_date: string;
-}
+};
 
 /**
  * Build Slack message for retro reminder
  */
 export function buildRetroReminderMessage(
-  epic: Epic,
+  epic: RetroReminderEpic,
   dayMarker: DayMarker,
   daysSinceLaunch: number
 ): any {
@@ -45,7 +45,7 @@ export function buildRetroReminderMessage(
           },
           {
             type: 'mrkdwn',
-            text: `*Launch Date:*\n${formatDateOnlyForDisplay(epic.target_launch_date)}`,
+            text: `*Launch Date:*\n${formatCohort1DateForSlack(epic)}`,
           },
           {
             type: 'mrkdwn',

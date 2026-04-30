@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         // Get more releases to ensure we don't miss important ones (especially those with delays)
         // We'll still show top 2 in the digest, but having more helps prioritize releases with issues
         const lastReleases = await getLastNReleases(2, supabase);
-        const nextReleases = await getNextNReleases(4, supabase); // Increased from 2 to 4 to catch releases like 2026.2
+        const nextReleases = await getNextNReleases(2, supabase);
         const lastReleasesAnalytics = await Promise.all(
             lastReleases.map((r) => getLastReleaseAnalytics(r.release_name, r.launch_date, supabase))
         );

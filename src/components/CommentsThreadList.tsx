@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef, useCallback } from 'react';
 import {
   ActionIcon,
   Card,
@@ -50,11 +50,6 @@ interface CommentsThreadListProps {
   onOpenThread?: (epicId: string, taskId: string, taskLabel: string) => void;
   loading?: boolean;
   previewRepliesCount?: number;
-}
-
-function stripHtml(html: string): string {
-  if (!html) return '';
-  return html.replace(/<[^>]*>/g, '').trim();
 }
 
 function getStatusColor(status: string | null | undefined): string | null {
@@ -172,15 +167,57 @@ function buildThreads(comments: CommentForThread[]): ThreadGroup[] {
   return threads;
 }
 
+const AUTO_READ_MS = 10_000;
+
+const AUTO_READ_KEYFRAMES = `
+@keyframes auto-read-fill {
+  0%   { width: 0%;    background-color: #60a5fa; }
+  70%  { width: 70%;   background-color: #facc15; }
+  100% { width: 100%;  background-color: #ef4444; }
+}
+`;
+
 export function CommentsThreadList({
   comments,
   onMarkRead,
   onNavigateToEpic,
   onOpenThread,
   loading = false,
-  previewRepliesCount = 3,
 }: CommentsThreadListProps) {
-  const threads = useMemo(() => buildThreads(comments), [comments]);
+  // Keep a snapshot of all comments ever seen so they stay visible in the current
+  // session even if the parent filters them out after they are marked as read.
+  const [seenComments, setSeenComments] = useState<Map<string, CommentForThread>>(() => {
+    const m = new Map<string, CommentForThread>();
+    for (const c of comments) m.set(c.id, c);
+    return m;
+  });
+
+  useEffect(() => {
+    setSeenComments((prev) => {
+      const next = new Map(prev);
+      for (const c of comments) next.set(c.id, c);
+      return next;
+    });
+  }, [comments]);
+
+  const handleMarkRead = useCallback(
+    (ids: string[]) => {
+      // Optimistic local update so unread styling clears immediately
+      setSeenComments((prev) => {
+        const next = new Map(prev);
+        for (const id of ids) {
+          const c = next.get(id);
+          if (c) next.set(id, { ...c, is_read: true });
+        }
+        return next;
+      });
+      onMarkRead?.(ids);
+    },
+    [onMarkRead]
+  );
+
+  const allSeenComments = useMemo(() => Array.from(seenComments.values()), [seenComments]);
+  const threads = useMemo(() => buildThreads(allSeenComments), [allSeenComments]);
 
   if (loading) {
     return (
@@ -199,17 +236,20 @@ export function CommentsThreadList({
   }
 
   return (
-    <Stack gap="md">
-      {threads.map((thread) => (
-        <ThreadCard
-          key={thread.launch_criterion_status_id}
-          thread={thread}
-          onMarkRead={onMarkRead}
-          onNavigateToEpic={onNavigateToEpic}
-          onOpenThread={onOpenThread}
-        />
-      ))}
-    </Stack>
+    <>
+      <style>{AUTO_READ_KEYFRAMES}</style>
+      <Stack gap="md">
+        {threads.map((thread) => (
+          <ThreadCard
+            key={thread.launch_criterion_status_id}
+            thread={thread}
+            onMarkRead={handleMarkRead}
+            onNavigateToEpic={onNavigateToEpic}
+            onOpenThread={onOpenThread}
+          />
+        ))}
+      </Stack>
+    </>
   );
 }
 
@@ -319,7 +359,14 @@ function ThreadCard({ thread, onMarkRead, onNavigateToEpic, onOpenThread }: Thre
                 variant="light"
                 size="xs"
                 leftSection={<IconMessageCircle size={14} />}
-                onClick={() => onOpenThread(epic.id, thread.launch_criterion_status_id, criterion.label)}
+                onClick={() => {
+                  // Auto-mark thread's unread comments as read when opening
+                  if (onMarkRead) {
+                    const unreadIds = comments.filter((c) => !c.is_read).map((c) => c.id);
+                    if (unreadIds.length > 0) onMarkRead(unreadIds);
+                  }
+                  onOpenThread(epic.id, thread.launch_criterion_status_id, criterion.label);
+                }}
               >
                 View thread
               </Button>
@@ -369,11 +416,44 @@ function CommentRow({
   onMarkRead?: (commentIds: string[]) => void | Promise<void>;
 }) {
   const isUnread = !comment.is_read;
+  const rowRef = useRef<HTMLDivElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isUnread || !onMarkRead) return;
+    const el = rowRef.current;
+    const progressEl = progressRef.current;
+    if (!el || !progressEl) return;
+
+    const handleAnimationEnd = () => {
+      onMarkRead([comment.id]);
+    };
+    progressEl.addEventListener('animationend', handleAnimationEnd);
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          progressEl.style.animationPlayState = 'running';
+        } else {
+          progressEl.style.animationPlayState = 'paused';
+        }
+      },
+      { threshold: 0.5 }
+    );
+    observer.observe(el);
+
+    return () => {
+      observer.disconnect();
+      progressEl.removeEventListener('animationend', handleAnimationEnd);
+    };
+  }, [isUnread, comment.id, onMarkRead]);
 
   return (
     <Box
+      ref={rowRef}
       py={4}
       style={{
+        position: 'relative',
         borderLeft: isUnread ? '3px solid var(--mantine-color-blue-5)' : undefined,
         paddingLeft: isUnread ? 8 : 0,
         marginLeft: isUnread ? 0 : 2,
@@ -415,6 +495,24 @@ function CommentRow({
           </Tooltip>
         )}
       </Group>
+
+      {/* Auto-read progress bar: fills left→right over AUTO_READ_MS, blue→yellow→red */}
+      {isUnread && onMarkRead && (
+        <div
+          ref={progressRef}
+          title="This comment will be marked as read after being visible for 10 seconds"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            height: 3,
+            width: 0,
+            borderRadius: '0 2px 2px 0',
+            animation: `auto-read-fill ${AUTO_READ_MS}ms linear forwards`,
+            animationPlayState: 'paused',
+          }}
+        />
+      )}
     </Box>
   );
 }

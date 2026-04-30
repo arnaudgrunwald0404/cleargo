@@ -39,6 +39,7 @@ import {
   IconWorldOff,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
+import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { HeartSetupWizard } from './HeartSetupWizard';
 import { HeartManualConfigForm } from './HeartManualConfigForm';
 import { HeartMetricTracker, getWindowBounds, toDateKey } from './HeartMetricTracker';
@@ -792,12 +793,8 @@ function DataCollectionInfo({
   daysSinceLaunch: number | null;
 }) {
   const isPreLaunch = daysSinceLaunch === null || daysSinceLaunch < 0;
-  const formattedReleaseDate = launchDate 
-    ? new Date(launchDate).toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      })
+  const formattedReleaseDate = launchDate
+    ? formatDateOnlyForDisplay(launchDate, { month: 'short', day: 'numeric', year: 'numeric' })
     : null;
 
   return (

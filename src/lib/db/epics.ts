@@ -7,7 +7,12 @@ import { syncUserSlackHandle } from '../slack/notifications';
 import { pruneCriteria } from '../ai/client';
 import { isEnabled, FEATURE_AI_PRUNING } from '../flags';
 import { getFeatureFlags } from '../settings-db';
-import { computeStageEndDatesByStageId, type ReleaseTimelineStage } from '../releaseTimeline';
+import {
+    computeCriterionDueDateYmd,
+    fetchAnchorLaunchDateForEpic,
+    getReleaseNameFromAhaFields,
+    getUiFrameworkDueDateOptions,
+} from '../criterion-due-date';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -116,6 +121,32 @@ function getClearGOCandidateValue(epicData: MappedEpicData): boolean {
  * Get raw cleargo_candidate value from epic data (for UI Framework filtering).
  * Returns the string value from Aha (e.g. "Yes", "Yes - UI Framework", "No") or undefined.
  */
+function normalizeLaunchYmd(v: string | null | undefined): string | null {
+    if (v == null || String(v).trim() === '') return null;
+    return String(v).trim().split('T')[0];
+}
+
+/**
+ * When an epic moves between releases or its anchor launch date / UI-framework timing changes,
+ * all criterion due dates must be recomputed from release schedule + rating_timing.
+ */
+function shouldRecalculateCriterionDueDatesAfterUpsert(existing: Epic, updated: Epic): boolean {
+    if (normalizeLaunchYmd(existing.target_launch_date) !== normalizeLaunchYmd(updated.target_launch_date)) {
+        return true;
+    }
+    const oldRel = getReleaseNameFromAhaFields(existing.aha_fields);
+    const newRel = getReleaseNameFromAhaFields(updated.aha_fields);
+    if ((oldRel ?? '') !== (newRel ?? '')) {
+        return true;
+    }
+    const oldUi = getUiFrameworkDueDateOptions(existing.aha_fields);
+    const newUi = getUiFrameworkDueDateOptions(updated.aha_fields);
+    if (oldUi.isUiFramework !== newUi.isUiFramework || oldUi.uiLevel !== newUi.uiLevel) {
+        return true;
+    }
+    return false;
+}
+
 export function getClearGOCandidateRawValue(epicData: { aha_fields?: { custom_fields?: Record<string, unknown> } | null }): string | boolean | undefined {
     const customFields = epicData.aha_fields?.custom_fields;
     if (!customFields || typeof customFields !== 'object') return undefined;
@@ -272,6 +303,17 @@ export async function upsertEpicFromAha(
         });
     }
 
+    if (existing && finalEpic && shouldRecalculateCriterionDueDatesAfterUpsert(existing, finalEpic)) {
+        try {
+            await recalculateDueDatesForEpic(finalEpic.id, supabase);
+            console.log(
+                `📅 Recalculated criterion due dates after epic release/date anchor change: ${finalEpic.name} (${finalEpic.id})`
+            );
+        } catch (e) {
+            console.error(`Failed to recalculate due dates after Aha upsert for epic ${finalEpic.id}:`, e);
+        }
+    }
+
     return finalEpic;
 }
 
@@ -352,9 +394,9 @@ async function resolveDecisionOwnersForCriteria(
 }
 
 /**
- * Calculate due date based on target launch date and rating timing (launch stage).
- * Uses the same segment end dates as the epic matrix and ReleaseStagesChart (end of rated stage).
- * When uiLevel is provided (1, 2, or 3), ui_rollout stages use level_durations min_days.
+ * Calculate due date from the anchor launch date (prefer release_schedule via callers that use
+ * `fetchAnchorLaunchDateForEpic`) and rating timing (launch stage).
+ * When uiLevel is provided (1, 2, or 3), stages with level_durations use that level's target (min_days) for duration.
  */
 export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
@@ -362,10 +404,6 @@ export async function calculateDueDateForCriterion(
     client: SupabaseClient,
     options?: { uiLevel?: number; cohort2Date?: string | null }
 ): Promise<string | null> {
-    if (!targetLaunchDate || ratingTimingId == null) {
-        return null;
-    }
-
     const uiLevel = options?.uiLevel ?? null;
 
     const { data: allStages, error: stagesError } = await client
@@ -378,21 +416,12 @@ export async function calculateDueDateForCriterion(
         return null;
     }
 
-    const targetStage = allStages.find((s) => s.id === ratingTimingId);
-    if (!targetStage) {
-        return null;
-    }
-
-    const scope = (targetStage as { scope?: string }).scope ?? 'release_schedule';
-    const releaseStages = allStages.filter((s) => (s as { scope?: string }).scope === scope);
-
-    const endMap = computeStageEndDatesByStageId(releaseStages as ReleaseTimelineStage[], targetLaunchDate, {
-        useBusinessDayTimeline: scope === 'ui_rollout',
+    return computeCriterionDueDateYmd({
+        anchorYmd: targetLaunchDate,
+        ratingTimingId,
+        allStages,
         uiLevel,
-        cohort2Date: options?.cohort2Date ?? null,
     });
-
-    return endMap.get(ratingTimingId) ?? null;
 }
 
 export async function instantiateReleaseCriteriaForEpic(
@@ -440,9 +469,7 @@ export async function instantiateReleaseCriteriaForEpic(
         return; // Nothing to instantiate
     }
 
-    const cleargoCandidateRaw = getClearGOCandidateRawValue({ aha_fields: epic?.aha_fields });
-    const cleargoCandidateValue = typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : (cleargoCandidateRaw === true ? 'Yes' : undefined);
-    const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
+    const { isUiFramework: isUiFrameworkEpic, uiLevel } = getUiFrameworkDueDateOptions(epic?.aha_fields);
 
     const applicableCriteria = criteria.filter((c) => {
         // UI Framework only: include only when epic has ClearGO Candidate = "Yes - UI Framework"
@@ -502,25 +529,26 @@ export async function instantiateReleaseCriteriaForEpic(
         if (defaultUser?.id) defaultOwnerId = defaultUser.id;
     }
 
-    const ahaFields = epic?.aha_fields as { custom_fields?: { uiux_impact?: { name?: string } | string } } | undefined;
-    const uiuxImpact = ahaFields?.custom_fields?.uiux_impact;
-    const uiuxImpactStr = typeof uiuxImpact === 'object' && uiuxImpact && 'name' in uiuxImpact
-        ? String((uiuxImpact as { name?: string }).name)
-        : (uiuxImpact != null ? String(uiuxImpact) : '');
-    const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
-    const uiLevel = levelMatch ? parseInt(levelMatch[1], 10) : undefined;
+    const anchor = await fetchAnchorLaunchDateForEpic(sb, epic);
+    const { data: allStagesForDue, error: stagesDueErr } = await sb
+        .from('release_stages')
+        .select('id, name, sort_order, duration_days, level_durations, scope')
+        .order('sort_order', { ascending: true });
 
-    const dueDatePromises = newCriteria.map(async (c) => {
-        const dueDate = await calculateDueDateForCriterion(
-            epic.target_launch_date,
-            c.rating_timing,
-            sb,
-            isUiFrameworkEpic ? { uiLevel } : undefined
-        );
-        return { criterionId: c.id, dueDate };
-    });
-    const dueDateResults = await Promise.all(dueDatePromises);
-    const dueDateMap = new Map(dueDateResults.map((r) => [r.criterionId, r.dueDate]));
+    if (stagesDueErr || !allStagesForDue?.length) {
+        console.warn('instantiateReleaseCriteriaForEpic: release_stages fetch failed or empty', stagesDueErr);
+    }
+
+    const dueDateMap = new Map<string, string | null>();
+    for (const c of newCriteria) {
+        const dueDate = computeCriterionDueDateYmd({
+            anchorYmd: anchor,
+            ratingTimingId: c.rating_timing,
+            allStages: allStagesForDue ?? [],
+            uiLevel: isUiFrameworkEpic ? uiLevel : undefined,
+        });
+        dueDateMap.set(c.id, dueDate);
+    }
 
     // AI Pruning Suggestion (Human-in-the-Loop), gated by feature flag
     let aiSuggestions: Array<{ id: string; reason: string }> = [];
@@ -639,16 +667,20 @@ export async function recalculateDueDatesForEpic(
         throw new Error(`Epic ${epicId} not found`);
     }
 
-    const cleargoCandidateRaw = getClearGOCandidateRawValue({ aha_fields: epic?.aha_fields });
-    const cleargoCandidateValue = typeof cleargoCandidateRaw === 'string' ? cleargoCandidateRaw : (cleargoCandidateRaw === true ? 'Yes' : undefined);
-    const isUiFrameworkEpic = cleargoCandidateValue === 'Yes - UI Framework';
-    const ahaFields = epic?.aha_fields as { custom_fields?: { uiux_impact?: { name?: string } | string } } | undefined;
-    const uiuxImpact = ahaFields?.custom_fields?.uiux_impact;
-    const uiuxImpactStr = typeof uiuxImpact === 'object' && uiuxImpact && 'name' in uiuxImpact
-        ? String((uiuxImpact as { name?: string }).name)
-        : (uiuxImpact != null ? String(uiuxImpact) : '');
-    const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
-    const uiLevel = levelMatch ? parseInt(levelMatch[1], 10) : undefined;
+    const { isUiFramework: isUiFrameworkEpic, uiLevel } = getUiFrameworkDueDateOptions(epic?.aha_fields);
+    const anchor = await fetchAnchorLaunchDateForEpic(sb, epic);
+
+    const { data: allStagesForRecalc, error: stagesRecalcErr } = await sb
+        .from('release_stages')
+        .select('id, name, sort_order, duration_days, level_durations, scope')
+        .order('sort_order', { ascending: true });
+
+    if (stagesRecalcErr || !allStagesForRecalc?.length) {
+        console.error('recalculateDueDatesForEpic: failed to load release_stages', stagesRecalcErr);
+        throw new Error(
+            `Failed to fetch release stages for due date recalculation: ${stagesRecalcErr?.message ?? 'empty'}`
+        );
+    }
 
     // Get all criteria statuses for this epic with their criterion info (rating_timing)
     const { data: criteriaStatuses, error: criteriaError } = await sb
@@ -678,13 +710,13 @@ export async function recalculateDueDatesForEpic(
     for (const status of criteriaStatuses) {
         const criterion = status.criterion as any;
         const ratingTimingId = criterion?.rating_timing;
-        
-        const dueDate = await calculateDueDateForCriterion(
-            epic.target_launch_date,
+
+        const dueDate = computeCriterionDueDateYmd({
+            anchorYmd: anchor,
             ratingTimingId,
-            sb,
-            isUiFrameworkEpic ? { uiLevel } : undefined
-        );
+            allStages: allStagesForRecalc,
+            uiLevel: isUiFrameworkEpic ? uiLevel : undefined,
+        });
 
         updates.push({
             id: status.id,

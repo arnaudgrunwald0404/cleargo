@@ -208,7 +208,21 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             throw new Error(`Multi-recipient is only supported for criterion_comment_or_attachment`);
         }
         const slackIds = valid.map((r) => r.slack_handle!);
-        const channel = await client.openMultiUserConversation(slackIds);
+        let channel: string;
+        try {
+            channel = await client.openMultiUserConversation(slackIds);
+        } catch (mpimError: any) {
+            console.error('Failed to open MPDM conversation, falling back to default channel:', mpimError);
+            // Fall back to individual DMs for each recipient
+            for (const r of valid) {
+                await sendSlackNotification({
+                    ...payload,
+                    recipient: r,
+                    recipients: undefined,
+                });
+            }
+            return;
+        }
         const response = await client.postMessage({ channel, ...message });
         console.log('Slack MPDM notification sent:', { type: payload.type, channel, ts: response.ts });
         const logPayload = { ...payload.metadata, multi_recipient: true, recipient_ids: valid.map((r) => r.id) };
@@ -361,6 +375,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 );
                 break;
 
+            case 'success_review_reminder':
+                if (!payload.metadata) throw new Error('Missing metadata for success_review_reminder');
+                const { buildSuccessReviewReminderMessage } = await import('./templates/success-review-reminders');
+                message = buildSuccessReviewReminderMessage(payload.metadata as any);
+                break;
+
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');
@@ -373,6 +393,7 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                             epic_groups: payload.metadata.epic_groups,
                             criteria: payload.metadata.criteria || [],
                             total_criteria_count: payload.metadata.total_criteria_count || 0,
+                            org_time_zone: payload.metadata.org_time_zone,
                         },
                         'combined',
                         theme

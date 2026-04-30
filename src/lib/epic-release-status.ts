@@ -1,8 +1,11 @@
 /**
- * Epic release status is derived from dates (target_launch_date, scheduled_ga_dev_date)
- * and retro completion. Only "Cancelled" is stored as an override on the epic.
+ * Epic release status is derived from dates (effective Cohort 1 = off_schedule_release_date ?? target_launch_date,
+ * scheduled_ga_dev_date) and retro completion. Only "Cancelled" is stored as an override on the epic.
  * When scheduled_ga_dev_date is not set, GA date is computed as release date + 28 days.
  */
+
+import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
+import type { Epic } from '@/types/epics';
 
 export type EpicReleaseStatus =
   | 'Pre_Release'
@@ -18,7 +21,7 @@ const RELEASED_STATUSES: EpicReleaseStatus[] = [
 ];
 
 /** GA is 28 days after release when not set explicitly in Aha. */
-const GA_DAYS_AFTER_LAUNCH = 28;
+export const GA_DAYS_AFTER_LAUNCH = 28;
 
 export function isReleasedStatus(status: string): boolean {
   return RELEASED_STATUSES.includes(status as EpicReleaseStatus);
@@ -29,6 +32,7 @@ export interface EpicForStatus {
   status?: string | null;
   target_launch_date?: string | null;
   scheduled_ga_dev_date?: string | null;
+  aha_fields?: Record<string, any> | null;
 }
 
 export interface RetroForStatus {
@@ -61,9 +65,8 @@ export function computeEpicReleaseStatus(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const launchDate = epic.target_launch_date
-    ? new Date(epic.target_launch_date)
-    : null;
+  const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
+  const launchDate = cohortYmd ? new Date(cohortYmd + 'T12:00:00') : null;
 
   if (!launchDate || isNaN(launchDate.getTime())) {
     return 'Pre_Release';

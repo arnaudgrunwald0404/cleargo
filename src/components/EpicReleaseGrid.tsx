@@ -8,6 +8,7 @@ import { notifications } from '@mantine/notifications';
 import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { fetchStreamJSON } from '@/lib/fetch-stream';
 interface Release {
   id: number;
   release_name: string;
@@ -238,23 +239,15 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
                           const existingAhaIds = releaseEpics
                             .map((e) => e.aha_id)
                             .filter((id): id is string => Boolean(id));
-                          const res = await fetch(
+                          const result = await fetchStreamJSON(
                             `/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`,
                             {
                               method: 'POST',
                               credentials: 'include',
                               headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                releaseName: release.release_name,
-                                existingAhaIds,
-                              }),
+                              body: JSON.stringify({ releaseName: release.release_name, existingAhaIds }),
                             }
                           );
-                          if (!res.ok) {
-                            const err = await res.json();
-                            throw new Error(err.error || 'Failed to sync epics');
-                          }
-                          const result = await res.json();
                           notifications.show({
                             title: 'Sync Complete',
                             message: `Created: ${result.results?.created ?? 0}, Updated: ${result.results?.updated ?? 0}`,

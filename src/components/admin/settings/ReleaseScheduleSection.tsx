@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { Modal, Button, Stack, TextInput, Text, Group } from '@mantine/core';
 import { PurpleLoader } from '../../PurpleLoader';
+import { fetchStreamJSON } from '@/lib/fetch-stream';
 
 type LaunchRelease = { releaseName: string; launchDate: string | null };
 
@@ -184,19 +185,12 @@ export default function ReleaseScheduleSection(props: Props) {
     setSyncModalOpened(false);
     setSyncing(true);
     try {
-      const res = await fetch("/api/integrations/aha/sync-releases", {
+      const result = await fetchStreamJSON("/api/integrations/aha/sync-releases", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ start_date: startDate }),
       });
-      
-      if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || "Failed to sync releases");
-      }
-      
-      const result = await res.json();
       const withoutDatesMsg = result.releases_without_dates && result.releases_without_dates.length > 0
         ? `\nReleases without dates: ${result.releases_without_dates.length} (${result.releases_without_dates.map((r: any) => r.name).join(', ')})`
         : '';
@@ -441,25 +435,10 @@ export default function ReleaseScheduleSection(props: Props) {
                                 }, 30000); // Show warning after 30 seconds
                                 
                                 try {
-                                  // Create an AbortController for timeout handling
-                                  const controller = new AbortController();
-                                  const fetchTimeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout
-
-                                  const res = await fetch(`/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`, {
-                                    method: "POST",
-                                    credentials: "include",
-                                    headers: { "Content-Type": "application/json" },
-                                    signal: controller.signal,
-                                  });
-                                  
-                                  clearTimeout(fetchTimeoutId);
-                                  
-                                  if (!res.ok) {
-                                    const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
-                                    throw new Error(errorData.error || "Failed to sync epics");
-                                  }
-                                  
-                                  const result = await res.json();
+                                  const result = await fetchStreamJSON(
+                                    `/api/integrations/aha/sync?sync_all=true&release=${encodeURIComponent(release.release_name)}`,
+                                    { method: "POST", credentials: "include", headers: { "Content-Type": "application/json" } }
+                                  );
                                   const skipDetails = [];
                                   if (result.results.skipped_no_release > 0) {
                                     skipDetails.push(`${result.results.skipped_no_release} with no release`);
@@ -609,13 +588,13 @@ export default function ReleaseScheduleSection(props: Props) {
                               onClick={async () => {
                                 setSyncingReleaseId(release.id);
                                 try {
-                                  const res = await fetch(`/api/integrations/aha/sync?release_name=${encodeURIComponent(release.release_name)}`, {
+                                  const res = await fetch(`/api/integrations/aha/sync?release=${encodeURIComponent(release.release_name)}`, {
                                     method: "POST",
                                     credentials: "include",
                                   });
-                                  
+
                                   if (!res.ok) {
-                                    const errorData = await res.json();
+                                    const errorData = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
                                     throw new Error(errorData.error || "Failed to sync epics");
                                   }
                                   

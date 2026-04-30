@@ -121,7 +121,8 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
                     payload.metadata.recipientName || null,
                     payload.metadata.release_groups || [],
                     payload.metadata.total_criteria_count || 0,
-                    payload.metadata.appUrl || process.env.NEXT_PUBLIC_APP_URL || ''
+                    payload.metadata.appUrl || process.env.NEXT_PUBLIC_APP_URL || '',
+                    payload.metadata.org_time_zone
                 );
                 break;
             default:

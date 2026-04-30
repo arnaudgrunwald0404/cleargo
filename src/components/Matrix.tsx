@@ -897,12 +897,10 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
     
     Object.keys(grouped).forEach(cat => {
         const items = grouped[cat];
-        const overallItem = items.find(item => 
+        const overallItem = items.find(item =>
             item.criterion.label?.toLowerCase().startsWith('overall')
         );
-        const regularItems = items.filter(item => 
-            !item.criterion.label?.toLowerCase().startsWith('overall')
-        );
+        const regularItems = items.filter(item => item !== overallItem);
         
         categoryOverallItems[cat] = overallItem || null;
         categoryRegularItems[cat] = regularItems;
@@ -1503,7 +1501,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                             <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                                                 <tr>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
-                                                                    <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                                                    <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
@@ -1529,11 +1527,9 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                 </div>
                                                                                 {item.criterion.description && <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>}
                                                                             </td>
-                                                                            <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px' }}>
-                                                                                {item.notRequired ? <div className="text-xs font-medium text-gray-500 text-center">Not required</div> : (
-                                                                                    <div className="flex justify-center">
-                                                                                        <TrafficLight currentStatus={item.status} onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)} disabled={savingItems.has(item.id)} definitions={{ go: item.criterion.status_definition_go, conditional: item.criterion.status_definition_conditional, no_go: item.criterion.status_definition_no_go }} showNotApplicable={showNotApplicable && !item.criterion.gate} />
-                                                                                    </div>
+                                                                            <td className="px-4 py-3 whitespace-nowrap align-middle text-left" style={{ width: showNotApplicable ? '148px' : '120px' }}>
+                                                                                {item.notRequired ? <div className="text-xs font-medium text-gray-500">Not required</div> : (
+                                                                                    <TrafficLight currentStatus={item.status} onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)} disabled={savingItems.has(item.id)} definitions={{ go: item.criterion.status_definition_go, conditional: item.criterion.status_definition_conditional, no_go: item.criterion.status_definition_no_go }} showNotApplicable={showNotApplicable && !item.criterion.gate} />
                                                                                 )}
                                                                             </td>
                                                                             <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>
@@ -1708,7 +1704,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                 <thead style={{ backgroundColor: '#FFFFFF', borderBottom: '2px solid #E5E7EB' }}>
                                     <tr>
                                         <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
-                                        <th className="px-4 py-3 text-center font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
+                                        <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
@@ -1766,23 +1762,21 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 <div className="text-sm text-gray-500 mt-1">{item.criterion.description}</div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 whitespace-nowrap align-middle text-center" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
+                                        <td className="px-4 py-3 whitespace-nowrap align-middle text-left" style={{ width: showNotApplicable ? '148px' : '120px', paddingRight: showNotApplicable ? 16 : undefined }}>
                                             {item.notRequired ? (
-                                                <div className="text-xs font-medium text-gray-500 text-center">Not required</div>
+                                                <div className="text-xs font-medium text-gray-500">Not required</div>
                                             ) : (
-                                                <div className="flex justify-center">
-                                                    <TrafficLight
-                                                        currentStatus={item.status}
-                                                        onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
-                                                        disabled={savingItems.has(item.id)}
-                                                        definitions={{
-                                                            go: item.criterion.status_definition_go,
-                                                            conditional: item.criterion.status_definition_conditional,
-                                                            no_go: item.criterion.status_definition_no_go,
-                                                        }}
-                                                        showNotApplicable={showNotApplicable && !item.criterion.gate}
-                                                    />
-                                                </div>
+                                                <TrafficLight
+                                                    currentStatus={item.status}
+                                                    onStatusChange={(newStatus) => handleStatusChange(item.id, newStatus)}
+                                                    disabled={savingItems.has(item.id)}
+                                                    definitions={{
+                                                        go: item.criterion.status_definition_go,
+                                                        conditional: item.criterion.status_definition_conditional,
+                                                        no_go: item.criterion.status_definition_no_go,
+                                                    }}
+                                                    showNotApplicable={showNotApplicable && !item.criterion.gate}
+                                                />
                                             )}
                                         </td>
                                         <td className="px-4 py-3 text-sm text-gray-700 align-middle" style={{ width: '150px' }}>

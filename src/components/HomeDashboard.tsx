@@ -7,9 +7,14 @@ import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { CommentsModal } from "@/components/CommentsModal";
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
-import { computeStageEndDatesByStageId, type ReleaseTimelineStage } from '@/lib/releaseTimeline';
+import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
+import {
+    type CriterionDueDateStageRow,
+    computeCriterionDueDateYmd,
+    resolveAnchorLaunchDateFromReleaseSchedule,
+} from '@/lib/criterion-due-date';
 import { createClient } from '@/lib/supabase/client';
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from "next/link";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
@@ -30,10 +35,14 @@ type MyItem = {
     status: string;
     condition?: string;
     condition_due_date?: string;
+    /** Server-computed from release_schedule anchor + rating_timing (preferred over condition_due_date for display). */
+    due_date?: string | null;
+    data_source_values?: Record<string, string> | null;
     launch: {
         id: string;
         name: string;
         target_launch_date?: string;
+        aha_fields?: Record<string, any> | null;
         tier: string;
         pod?: string | null;
     };
@@ -46,6 +55,7 @@ type MyItem = {
         status_definition_conditional?: string | null;
         status_definition_no_go?: string | null;
         rating_timing?: number | null;
+        data_sources?: Array<{ type: string; value: string; label?: string }> | null;
     };
 };
 
@@ -435,9 +445,10 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null }>>([]);
   const [epicReleaseMap, setEpicReleaseMap] = useState<Map<string, string | null>>(new Map());
   const [showAllItems, setShowAllItems] = useState(false);
+  const [showOnlyAsap, setShowOnlyAsap] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
-  const [releaseStages, setReleaseStages] = useState<Array<{ id: number; sort_order: number; duration_days: number | null }>>([]);
+  const [releaseStagesFull, setReleaseStagesFull] = useState<CriterionDueDateStageRow[]>([]);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -627,8 +638,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       const res = await fetch('/api/release-stages', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
-        const stages = data.stages || [];
-        setReleaseStages(stages);
+        const stages = (data.stages || []) as CriterionDueDateStageRow[];
+        setReleaseStagesFull(stages);
       }
     } catch (error) {
       console.error('Failed to fetch release stages:', error);
@@ -950,31 +961,31 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     return releasesToShow;
   }, [items, releaseSchedule, epicReleaseMap, showAllItems, isLoadingReleaseNames]);
 
-  const getItemDueDate = useCallback(
-    (item: MyItem): string | null => {
-      if (item.condition_due_date && item.condition_due_date.trim() !== '') {
-        return item.condition_due_date;
-      }
-      if (releaseStages.length === 0) return null;
-      const targetDate = item.launch.target_launch_date;
-      if (!targetDate) return null;
-      const ratingTimingId = item.criterion?.rating_timing ?? releaseStages.find(s => s.sort_order === 1)?.id;
-      if (ratingTimingId == null) return null;
-      const targetStage = releaseStages.find((s: { id: number }) => s.id === ratingTimingId);
-      if (!targetStage) return null;
-      const scope = (targetStage as { scope?: string }).scope ?? 'release_schedule';
-      const scoped = releaseStages.filter(
-        (s: { scope?: string }) => (s.scope ?? 'release_schedule') === scope
-      );
-      const endMap = computeStageEndDatesByStageId(scoped as ReleaseTimelineStage[], targetDate, {
-        useBusinessDayTimeline: scope === 'ui_rollout',
-        uiLevel: null,
-        cohort2Date: null,
-      });
-      return endMap.get(ratingTimingId) ?? null;
-    },
-    [releaseStages]
-  );
+  const getItemDueDate = (item: MyItem): string | null => {
+    if (item.due_date && String(item.due_date).trim() !== '') {
+      return String(item.due_date).trim().split('T')[0];
+    }
+    const releaseName = epicReleaseMap.get(item.launch.id) ?? null;
+    const anchor = resolveAnchorLaunchDateFromReleaseSchedule(
+      releaseName,
+      releaseSchedule,
+      item.launch.target_launch_date ?? null
+    );
+    if (!anchor || releaseStagesFull.length === 0) return null;
+    const defaultStageId = releaseStagesFull.find((s) => s.sort_order === 1)?.id ?? releaseStagesFull[0]?.id ?? null;
+    const rawRt = item.criterion?.rating_timing;
+    let ratingTimingId: number | null = defaultStageId;
+    if (rawRt != null && rawRt !== undefined) {
+      const n = Number(rawRt);
+      if (!Number.isNaN(n)) ratingTimingId = n;
+    }
+    return computeCriterionDueDateYmd({
+      anchorYmd: anchor,
+      ratingTimingId,
+      allStages: releaseStagesFull,
+      uiLevel: undefined,
+    });
+  };
 
   const headingStats = useMemo(() => {
     const allItems = releaseGroups.flatMap(g => g.items);
@@ -998,11 +1009,29 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       total: totalCriteria,
       overdue: overdueCount
     };
-  }, [releaseGroups, getItemDueDate]);
+  }, [releaseGroups, releaseSchedule, epicReleaseMap, releaseStagesFull]);
 
   useEffect(() => {
     setCriteriaCount(headingStats.total);
   }, [headingStats.total]);
+
+  const displayedGroups = useMemo(() => {
+    if (!showOnlyAsap) return releaseGroups;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return releaseGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.filter((item) => {
+          const dueDateStr = getItemDueDate(item);
+          if (!dueDateStr) return false;
+          const dueDate = new Date(dueDateStr);
+          dueDate.setHours(0, 0, 0, 0);
+          return dueDate < today;
+        }),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [releaseGroups, showOnlyAsap, getItemDueDate]);
 
   const handleOpenDelegation = (item: MyItem) => {
     setSelectedItemForDelegation(item);
@@ -1017,6 +1046,12 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const handleOpenComments = (item: MyItem) => {
     setSelectedItemForComments(item);
     setCommentsModalInitialTab('comments');
+    setCommentsModalOpen(true);
+  };
+
+  const handleOpenDocs = (item: MyItem) => {
+    setSelectedItemForComments(item);
+    setCommentsModalInitialTab('content');
     setCommentsModalOpen(true);
   };
 
@@ -1145,10 +1180,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse" }}>
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
-                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Epic</th>
+                        <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "25%", width: "25%" }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Pod</th>
-                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "300px", width: "30%" }}>Criterion</th>
+                        <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "240px", width: "25%" }}>Criterion</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
                         <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
                       </tr>
@@ -1162,10 +1196,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           <td className="px-4 py-3 w-24">
                             <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
                           </td>
-                          <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
-                          </td>
-                          <td style={{ padding: "12px 20px", minWidth: "300px", width: "30%" }}>
+                          <td style={{ padding: "12px 20px", minWidth: "240px", width: "25%" }}>
                             <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
                             <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "50%" }} />
                           </td>
@@ -1251,7 +1282,26 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   </span>
                   {headingStats.total - headingStats.overdue > 0 && (
                     <span style={{ fontWeight: 400 }}> (plus, {headingStats.total - headingStats.overdue} to start thinking about)</span>
-                  )}.
+                  )}.{' '}
+                  {headingStats.overdue > 0 && (
+                    <button
+                      onClick={() => setShowOnlyAsap((v) => !v)}
+                      style={{
+                        fontFamily: 'var(--font-marcellus), serif',
+                        fontSize: 'var(--font-size-4xl)',
+                        fontWeight: 400,
+                        color: 'var(--table-steel, #697771)',
+                        background: 'none',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        textDecoration: 'underline',
+                        textUnderlineOffset: '3px',
+                      }}
+                    >
+                      {showOnlyAsap ? 'Show all' : `Show them ${headingStats.overdue}`}
+                    </button>
+                  )}
                 </Text>
               )}
             </div>
@@ -1540,7 +1590,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-6)' }}>
-              {releaseGroups.map((group, groupIndex) => (
+              {displayedGroups.map((group, groupIndex) => (
                 <div key={group.releaseName}>
                   <div style={{
                     marginBottom: 'var(--spacing-3)'
@@ -1578,12 +1628,14 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                         borderBottom: "2px solid #E5E7EB"
                       }}>
                       <tr>
-                        <th className="px-4 py-3 text-left" style={{ 
+                        <th className="px-4 py-3 text-left" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
-                          color: "#6B7280"
+                          color: "#6B7280",
+                          minWidth: "25%",
+                          width: "25%"
                         }}>Epic</th>
                         <th className="px-4 py-3 text-left w-24" style={{ 
                           fontSize: "12px",
@@ -1592,13 +1644,13 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           letterSpacing: "0.05em",
                           color: "#6B7280"
                         }}>Tier</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{ 
+                        <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
                           color: "#6B7280"
-                        }}>Pod</th>
+                        }}>Cohort 1</th>
                         <th style={{
                           padding: "12px 16px",
                           textAlign: "left",
@@ -1607,10 +1659,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
                           color: "#6B7280",
-                          minWidth: "300px",
-                          width: "30%"
+                          minWidth: "240px",
+                          width: "25%"
                         }}>Criterion</th>
-                        <th className="px-4 py-3 text-left w-24" style={{ 
+                        <th className="px-4 py-3 text-left" style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          textTransform: "uppercase",
+                          letterSpacing: "0.05em",
+                          color: "#6B7280",
+                          width: "80px"
+                        }}>Docs</th>
+                        <th className="px-4 py-3 text-left w-24" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1672,15 +1732,15 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               {item.launch.tier.replace('_', ' ')}
                             </span>
                           </td>
-                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                            {item.launch.pod || '-'}
+                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                            <Cohort1DateBadge epic={item.launch} dateOptions={{ month: 'short', day: 'numeric' }} />
                           </td>
                           <td style={{
                             padding: "12px 20px",
                             fontSize: "14px",
                             color: "#111827",
-                            minWidth: "300px",
-                            width: "30%"
+                            minWidth: "240px",
+                            width: "25%"
                           }}>
                             <div style={{
                               fontWeight: 500,
@@ -1692,6 +1752,83 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               color: "#6B7280",
                               marginTop: "4px"
                             }}>{item.criterion.category}</div>
+                          </td>
+                          <td
+                            className="px-4 py-3"
+                            style={{ padding: "12px 16px", width: "80px", cursor: "pointer" }}
+                            onClick={() => handleOpenDocs(item)}
+                          >
+                            {(() => {
+                              const sources = item.criterion.data_sources;
+                              if (!sources || sources.length === 0) return null;
+                              const ahaFields = item.launch.aha_fields as any;
+
+                              // Only render icons for sources that have visible content
+                              const dsv = item.data_source_values || {};
+                              const visibleSources = sources.filter((source, idx) => {
+                                if (source.type === 'aha_field' && source.value) {
+                                  const sf = ahaFields?.standard_fields || {};
+                                  const cf = ahaFields?.custom_fields || {};
+                                  const v = sf[source.value] ?? cf[source.value];
+                                  return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0);
+                                }
+                                if (source.type === 'aha_description_part') {
+                                  return !!(ahaFields?.standard_fields?.description);
+                                }
+                                if (source.type === 'url' || source.type === 'jira_jql') {
+                                  const saved = dsv[idx.toString()];
+                                  return !!(saved && typeof saved === 'string' && saved.trim() !== '');
+                                }
+                                // success_metrics_defined: always show if configured
+                                return true;
+                              });
+
+                              if (visibleSources.length === 0) return null;
+
+                              return (
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                  {visibleSources.map((source, idx) => {
+                                    const tooltipLabel = source.label || source.value || source.type;
+                                    return (
+                                      <Tooltip key={idx} label={tooltipLabel} position="top" withArrow>
+                                        <span style={{ display: "inline-flex", alignItems: "center", color: "#374151" }}>
+                                          {source.type === 'success_metrics_defined' ? (
+                                            <span style={{ fontSize: "14px" }}>📊</span>
+                                          ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
+                                            <img
+                                              src="https://www.google.com/s2/favicons?domain=aha.io&sz=12"
+                                              alt="Aha"
+                                              style={{ width: 12, height: 12, display: "block" }}
+                                              onError={(e) => {
+                                                const el = e.target as HTMLImageElement;
+                                                el.onerror = null;
+                                                el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                              }}
+                                            />
+                                          ) : source.type === 'jira_jql' ? (
+                                            <img
+                                              src="https://www.google.com/s2/favicons?domain=atlassian.com&sz=12"
+                                              alt="Jira"
+                                              style={{ width: 12, height: 12, display: "block" }}
+                                              onError={(e) => {
+                                                const el = e.target as HTMLImageElement;
+                                                el.onerror = null;
+                                                el.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="12" height="12"/%3E';
+                                              }}
+                                            />
+                                          ) : (
+                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                                              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                                            </svg>
+                                          )}
+                                        </span>
+                                      </Tooltip>
+                                    );
+                                  })}
+                                </div>
+                              );
+                            })()}
                           </td>
                           <td className="px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                             <StatusTrafficLight
@@ -1713,7 +1850,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
                               const dueDateStr = getItemDueDate(item);
-                              
+
                               if (!dueDateStr) {
                                 return (
                                   <span style={{
@@ -1723,7 +1860,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                   }}>-</span>
                                 );
                               }
-                              
+
                               try {
                                 const dueDate = new Date(dueDateStr);
                                 if (isNaN(dueDate.getTime())) {
@@ -1736,12 +1873,12 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                     }}>-</span>
                                   );
                                 }
-                                
+
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
                                 dueDate.setHours(0, 0, 0, 0);
                                 const isOverdue = dueDate < today;
-                                
+
                                 return (
                                   <span style={{
                                     fontSize: "14px",
@@ -1827,6 +1964,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               taskLabel={selectedItemForComments.criterion.label}
               currentUserEmail={currentUserEmail}
               initialTab={commentsModalInitialTab}
+              criterion={selectedItemForComments.criterion.data_sources ? { data_sources: selectedItemForComments.criterion.data_sources } : undefined}
+              epic={selectedItemForComments.launch.aha_fields ? { aha_fields: selectedItemForComments.launch.aha_fields } : undefined}
             />
           )}
         </div>

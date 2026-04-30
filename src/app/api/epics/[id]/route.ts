@@ -121,6 +121,17 @@ export async function PATCH(
 
         await updateEpic(id, updates);
 
+        const needsDueDateRecalc =
+            typeof body.target_launch_date !== 'undefined' || typeof body.aha_fields !== 'undefined';
+        if (needsDueDateRecalc) {
+            try {
+                const { recalculateDueDatesForEpic } = await import('@/lib/db/epics');
+                await recalculateDueDatesForEpic(id);
+            } catch (e) {
+                console.error(`Failed to recalculate criterion due dates after epic PATCH ${id}:`, e);
+            }
+        }
+
         // Auto-lock success config if readiness_status changed to GO
         if (typeof body.readiness_status !== 'undefined' && body.readiness_status === 'GO' && current.readiness_status !== 'GO') {
             try {

@@ -4,7 +4,7 @@ import { getAhaClient } from '@/lib/aha/client';
 import { getReleaseEpics, updateEpicCustomFields } from '@/lib/aha/client';
 import { resolveRole } from '@/lib/roles';
 import { mapEpicToEpic, shouldProcessEpic } from '@/lib/aha/mapping';
-import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser, instantiateReleaseCriteriaForEpic, clearAhaRecordNotFound, getEpicByAhaId, recalculateDueDatesForEpic } from '@/lib/db/epics';
+import { upsertEpicFromAha, getUserByEmail, getFallbackProductOpsUser, instantiateReleaseCriteriaForEpic, clearAhaRecordNotFound } from '@/lib/db/epics';
 import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
@@ -174,21 +174,11 @@ export async function POST(req: NextRequest) {
                         
                         // Map and upsert epic (this will sync all fields)
                         const epicData = await mapEpicToEpic(fullEpic, fieldsToLoad);
-                        const existingEpic = await getEpicByAhaId(epicData.aha_id);
                         const savedEpic = await upsertEpicFromAha(epicData, ownerId);
                         await clearAhaRecordNotFound(savedEpic.id);
 
                         // Instantiate criteria if needed
                         await instantiateReleaseCriteriaForEpic(savedEpic.id, epicData.tier ?? 'TIER_3');
-
-                        // Recalculate due dates for existing epics (target_launch_date may have changed)
-                        if (existingEpic) {
-                            try {
-                                await recalculateDueDatesForEpic(savedEpic.id);
-                            } catch (dueDateError) {
-                                console.error(`Failed to recalculate due dates for epic ${savedEpic.id}:`, dueDateError);
-                            }
-                        }
 
                         syncedEpics++;
                         console.log(`     ✅ Synced epic ${epic.reference_num || epic.id} from "${releaseName}"`);

@@ -11,6 +11,8 @@ import { useSearchParams } from 'next/navigation';
 export function OAuthCodeHandler() {
   const searchParams = useSearchParams();
   const code = searchParams.get('code');
+  /** App Router: `searchParams` identity can change every render; string is stable for a given URL. */
+  const searchQueryString = searchParams.toString();
 
   useEffect(() => {
     // Check for code in URL
@@ -24,7 +26,8 @@ export function OAuthCodeHandler() {
     
     // Debug: Log all search params to see what Supabase is sending
     const allParams: Record<string, string> = {};
-    searchParams.forEach((value, key) => {
+    const parsed = new URLSearchParams(searchQueryString);
+    parsed.forEach((value, key) => {
       allParams[key] = value;
     });
     if (Object.keys(allParams).length > 0) {
@@ -45,7 +48,7 @@ export function OAuthCodeHandler() {
         }
       }
     }
-  }, [code, searchParams]);
+  }, [code, searchQueryString]);
 
   return null; // This component doesn't render anything
 }

@@ -21,12 +21,14 @@ import {
   IconTag,
   IconClipboardList,
   IconListCheck,
+  IconRoute,
+  IconHistory,
 } from '@tabler/icons-react';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
-import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
+import { isEnabled, FEATURE_MEETINGS, FEATURE_ROADMAP_REWIND } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
@@ -107,7 +109,7 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
       }
     };
     fetchUserRoles();
-  }, []);
+  }, [featureFlags]);
 
   // Fetch unread comment count
   useEffect(() => {
@@ -152,6 +154,12 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   // Releases section (visible to all)
   const releaseTabs: NavItem[] = [
     { link: '/portfolio', label: 'Portfolio', icon: IconLayoutGrid },
+    ...(isEnabled(FEATURE_ROADMAP_REWIND, featureFlags)
+      ? [
+          { link: '/portfolio/snapshot', label: 'Roadmap Snapshot', icon: IconRoute },
+          { link: '/portfolio/rewind', label: 'Roadmap Rewind', icon: IconHistory },
+        ]
+      : []),
     { link: '/epics', label: 'Releases', icon: IconClipboardList },
     { link: '/releases/comments', label: 'Comments', icon: IconMessageCircle, badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
   ];

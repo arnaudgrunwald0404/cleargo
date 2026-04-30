@@ -11,6 +11,8 @@ import {
   getEpicOwners,
 } from '@/lib/services/scorecardAlertService';
 import { getEpic } from '@/lib/epics';
+import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
+import type { Epic } from '@/types/epics';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Allow up to 2 minutes for job execution
@@ -77,6 +79,8 @@ export async function GET(request: NextRequest) {
                   id: epic.id,
                   name: epic.name,
                   target_launch_date: epic.target_launch_date || '',
+                  aha_fields: epic.aha_fields ?? null,
+                  cohort1_display_date: getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>) || '',
                 },
                 scorecard: alert.scorecard,
                 alertType: alert.alertType,
@@ -114,6 +118,8 @@ export async function GET(request: NextRequest) {
                   id: epic.id,
                   name: epic.name,
                   target_launch_date: epic.target_launch_date || '',
+                  aha_fields: epic.aha_fields ?? null,
+                  cohort1_display_date: getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>) || '',
                 },
                 scorecard: alert.scorecard,
                 alertType: alert.alertType,

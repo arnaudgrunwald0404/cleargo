@@ -10,9 +10,17 @@ import { sendEmailNotification } from '@/lib/email/notifications';
 import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-groups';
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
+import { defaults } from '@/lib/settings';
+import {
+    addCalendarDaysToYmd,
+    diffCalendarDaysBetweenYmd,
+    getCalendarDateStringInTimeZone,
+    parseDateOnlyLocal,
+} from '@/lib/date-utils';
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
 import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
 import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
+import { normalizeStatus } from '@/lib/readiness-scoring';
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 
@@ -85,13 +93,16 @@ export async function GET(request: NextRequest) {
         const emailNotificationsEnabled = settings.email_notifications_enabled !== false;
         const emailCriteriaNudgeEnabled = settings.email_criteria_nudge !== false;
 
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const todayStr = today.toISOString().split('T')[0];
-
-        const oneWeekFromNow = new Date(today);
-        oneWeekFromNow.setDate(oneWeekFromNow.getDate() + 7);
-        const oneWeekFromNowStr = oneWeekFromNow.toISOString().split('T')[0];
+        const orgTimeZone = settings.timezone || defaults.timezone;
+        const todayStr = getCalendarDateStringInTimeZone(orgTimeZone);
+        const oneWeekFromNowStr = addCalendarDaysToYmd(todayStr, 7) ?? todayStr;
+        const today =
+            parseDateOnlyLocal(todayStr) ??
+            (() => {
+                const d = new Date();
+                d.setHours(0, 0, 0, 0);
+                return d;
+            })();
 
         // Build query conditions for criteria that need nudging
         const conditions: string[] = [];
@@ -507,6 +518,16 @@ export async function GET(request: NextRequest) {
                 }
             }
         }
+
+        const beforeNaExclude = allCriteria.length;
+        const naExcluded = allCriteria.filter((c: any) => normalizeStatus(c.status) !== 'NOT_APPLICABLE');
+        if (naExcluded.length < beforeNaExclude) {
+            console.log(
+                `[criteria-nudges] Excluded ${beforeNaExclude - naExcluded.length} N/A-rated criteria from nudges`
+            );
+        }
+        allCriteria.length = 0;
+        allCriteria.push(...naExcluded);
         
         // Suppress gate criteria nudges when sub-criteria are not yet all rated
         const gatePairs = allCriteria
@@ -787,11 +808,21 @@ export async function GET(request: NextRequest) {
                 
                 // Past release: only notify for Success Defined criterion that is still due (not GO)
                 if (willExclude) {
-                    return isSuccessDefinedCriterion(c) && c.status !== 'GO';
+                    return (
+                        isSuccessDefinedCriterion(c) &&
+                        c.status !== 'GO' &&
+                        normalizeStatus(c.status) !== 'NOT_APPLICABLE'
+                    );
                 }
                 
                 // Today or future: exclude items rated n/a (consistent with Home list)
-                return c.status !== 'NOT_APPLICABLE';
+                if (normalizeStatus(c.status) === 'NOT_APPLICABLE') return false;
+                // Suppress overdue criteria that have been past due longer than the days remaining until release.
+                // If you've missed it for longer than the release is away, daily nudges are unhelpful noise.
+                const daysUntilRelease = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                const dueDateDiff = diffCalendarDaysBetweenYmd(c.condition_due_date, todayStr); // negative = overdue
+                if (dueDateDiff !== null && dueDateDiff < 0 && -dueDateDiff > daysUntilRelease) return false;
+                return true;
             });
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
@@ -1118,19 +1149,8 @@ export async function GET(request: NextRequest) {
 
         // Helper function to calculate urgency score (lower = more urgent)
         const getUrgencyScore = (criterion: any): number => {
-            const dueDate = criterion.condition_due_date ? new Date(criterion.condition_due_date) : null;
-            if (!dueDate) return 999; // No due date = least urgent
-            
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const dueDateNormalized = new Date(dueDate);
-            dueDateNormalized.setHours(0, 0, 0, 0);
-            
-            const daysDiff = Math.ceil((dueDateNormalized.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-            
-            // Most overdue = most urgent (negative days, so -100 is more urgent than -1)
-            // Then due today (0)
-            // Then due in 1 week (7)
+            const daysDiff = diffCalendarDaysBetweenYmd(criterion.condition_due_date, todayStr);
+            if (daysDiff == null) return 999;
             return -daysDiff;
         };
 
@@ -1169,16 +1189,10 @@ export async function GET(request: NextRequest) {
             try {
                 // Determine overall priority based on most urgent criterion
                 const mostUrgent = criteria[0];
-                const mostUrgentDueDate = mostUrgent.condition_due_date ? new Date(mostUrgent.condition_due_date) : null;
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
                 let overallPriority: 'high' | 'medium' = 'medium';
-                if (mostUrgentDueDate) {
-                    const daysDiff = Math.ceil((mostUrgentDueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                    if (daysDiff < 0) {
-                        overallPriority = 'high'; // Overdue = high priority
-                    }
+                const urgentDiff = diffCalendarDaysBetweenYmd(mostUrgent.condition_due_date, todayStr);
+                if (urgentDiff != null && urgentDiff < 0) {
+                    overallPriority = 'high';
                 }
 
                 // Extract release names from epics and fetch release dates
@@ -1287,9 +1301,6 @@ export async function GET(request: NextRequest) {
                     
                     const dateAObj = new Date(dateA);
                     const dateBObj = new Date(dateB);
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    
                     // Future releases first (ascending by date)
                     // Then past releases (descending by date)
                     const isAFuture = dateAObj >= today;
@@ -1395,6 +1406,7 @@ export async function GET(request: NextRequest) {
                             nudge_type: c.nudgeType,
                         })),
                         nudge_type: 'combined', // Indicates this is a combined message
+                        org_time_zone: orgTimeZone,
                     },
                 });
 
@@ -1414,6 +1426,7 @@ export async function GET(request: NextRequest) {
                                     release_groups: releaseGroups, // Reuse same release groups
                                     total_criteria_count: emailCriteria.length,
                                     appUrl: process.env.NEXT_PUBLIC_APP_URL || '',
+                                    org_time_zone: orgTimeZone,
                                 },
                             });
                             console.log(`Sent email nudge to ${assigneeEmail} for ${emailCriteria.length} criteria`);
@@ -1544,9 +1557,6 @@ export async function GET(request: NextRequest) {
                         
                         const dateAObj = new Date(dateA);
                         const dateBObj = new Date(dateB);
-                        const today = new Date();
-                        today.setHours(0, 0, 0, 0);
-                        
                         const isAFuture = dateAObj >= today;
                         const isBFuture = dateBObj >= today;
                         
@@ -1631,6 +1641,7 @@ export async function GET(request: NextRequest) {
                             release_groups: emailReleaseGroups,
                             total_criteria_count: criteria.length,
                             appUrl: process.env.NEXT_PUBLIC_APP_URL || '',
+                            org_time_zone: orgTimeZone,
                         },
                     });
 

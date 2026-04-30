@@ -15,6 +15,7 @@ import {
 import { IconExternalLink } from '@tabler/icons-react';
 import type { EpicSuccessSummary } from '@/lib/services/successDashboardService';
 import type { ScorecardStatus } from '@/lib/success/types';
+import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 
 interface EpicSuccessListProps {
   epics: EpicSuccessSummary[];
@@ -103,7 +104,14 @@ export function EpicSuccessList({
                 </Table.Td>
                 <Table.Td>
                   <Text size="sm">
-                    {epic.launchDate ? new Date(epic.launchDate).toLocaleDateString() : '—'}
+                    <Cohort1DateBadge
+                      epic={{
+                        target_launch_date: epic.target_launch_date ?? undefined,
+                        aha_fields: epic.aha_fields ?? undefined,
+                      }}
+                      dateOptions={{ month: 'short', day: 'numeric', year: 'numeric' }}
+                      emptyLabel="—"
+                    />
                   </Text>
                 </Table.Td>
                 <Table.Td>

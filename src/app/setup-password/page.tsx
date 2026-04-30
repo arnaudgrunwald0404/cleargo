@@ -8,6 +8,7 @@ function SetupPasswordForm() {
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const sessionToken = searchParams.get("token");
   const [email, setEmail] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -18,8 +19,7 @@ function SetupPasswordForm() {
 
   useEffect(() => {
     async function validateToken() {
-      const token = searchParams.get("token");
-      if (!token) {
+      if (!sessionToken) {
         setError("Invalid or missing token");
         setIsValidating(false);
         return;
@@ -30,7 +30,7 @@ function SetupPasswordForm() {
         const response = await fetch("/api/auth/validate-session-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({ token: sessionToken }),
         });
 
         const result = await response.json();
@@ -50,7 +50,7 @@ function SetupPasswordForm() {
       }
     }
     validateToken();
-  }, [searchParams]);
+  }, [sessionToken]);
 
   async function handleSetupPassword(e: React.FormEvent) {
     e.preventDefault();

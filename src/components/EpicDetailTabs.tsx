@@ -6,17 +6,32 @@ interface EpicDetailTabsProps {
     activeTab: string;
     onTabChange: (tab: string) => void;
     hasTalkTrackVideo?: boolean;
+    /** When true, show Roadmap Rewind + Confidence (feature-flagged on parent). */
+    showRoadmapRewind?: boolean;
 }
 
-const tabs = [
+const baseTabs = [
     { value: 'readiness', label: 'Readiness' },
     { value: 'talktrack', label: 'Talk Track' },
     { value: 'adoption', label: 'Success Metrics' },
     { value: 'scorecard', label: 'Scorecard' },
     { value: 'retro', label: 'Retro' },
-];
+] as const;
 
-export function EpicDetailTabs({ activeTab, onTabChange, hasTalkTrackVideo }: EpicDetailTabsProps) {
+export function EpicDetailTabs({
+    activeTab,
+    onTabChange,
+    hasTalkTrackVideo,
+    showRoadmapRewind,
+}: EpicDetailTabsProps) {
+    const tabs = showRoadmapRewind
+        ? [
+              ...baseTabs,
+              { value: 'rewind', label: 'Rewind' } as const,
+              { value: 'confidence', label: 'Confidence' } as const,
+          ]
+        : [...baseTabs];
+
     return (
         <nav 
             style={{

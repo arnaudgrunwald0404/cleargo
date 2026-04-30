@@ -3,6 +3,9 @@
  * Part of Sprint 8: PM Monitoring Assignment + Reminders + Escalation
  */
 import { getClient } from '@/lib/db';
+import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
+import type { Epic } from '@/types/epics';
+import { calculateDaysSinceLaunch } from '@/lib/services/retroReminderService';
 
 export interface EpicReview {
   id: string;
@@ -15,7 +18,8 @@ export interface EpicReview {
 export interface EpicWithReviewStatus {
   epicId: string;
   epicName: string;
-  launchDate: string | null;
+  target_launch_date: string | null;
+  aha_fields: Record<string, any> | null;
   lastReviewDate: string | null;
   daysSinceLastReview: number | null;
   needsReview: boolean;
@@ -95,13 +99,12 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
       id,
       name,
       target_launch_date,
+      aha_fields,
       status
     `)
     .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
-    .lte('target_launch_date', today.toISOString().split('T')[0])
-    .gte('target_launch_date', ninetyDaysAgo.toISOString().split('T')[0])
-    .not('target_launch_date', 'is', null);
-  
+    .or('target_launch_date.not.is.null,off_schedule_release_date.not.is.null');
+
   if (epicsError) {
     console.error('Error fetching epics for review check:', epicsError);
     throw new Error(`Failed to fetch epics: ${epicsError.message}`);
@@ -153,7 +156,15 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
   
   const results: EpicWithReviewStatus[] = [];
   
+  const todayYmd = today.toISOString().split('T')[0];
+  const ninetyDaysAgoYmd = ninetyDaysAgo.toISOString().split('T')[0];
+
   for (const epic of epics) {
+    const effectiveLaunch = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
+    if (!effectiveLaunch || effectiveLaunch > todayYmd || effectiveLaunch < ninetyDaysAgoYmd) {
+      continue;
+    }
+
     const config = configMap.get(epic.id);
     if (!config) continue; // Skip epics without locked configs
     
@@ -175,7 +186,8 @@ export async function getEpicsNeedingReview(): Promise<EpicWithReviewStatus[]> {
       results.push({
         epicId: epic.id,
         epicName: epic.name,
-        launchDate: epic.target_launch_date,
+        target_launch_date: epic.target_launch_date ?? null,
+        aha_fields: (epic as any).aha_fields ?? null,
         lastReviewDate,
         daysSinceLastReview,
         needsReview: true,
@@ -233,12 +245,15 @@ export async function getEpicsNeedingEscalation(): Promise<Array<{
   }
   
   // Find epics with overdue retros (7+ days past due date)
+  const todayYmdEsc = today.toISOString().split('T')[0];
+
   const { data: epicsWithRetros } = await supabase
     .from('epic')
     .select(`
       id,
       name,
       target_launch_date,
+      aha_fields,
       epic_success_configs!inner(
         post_launch_owner,
         post_launch_owner_user:app_user!post_launch_owner(email, id)
@@ -249,16 +264,15 @@ export async function getEpicsNeedingEscalation(): Promise<Array<{
       )
     `)
     .in('status', ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'])
-    .lte('target_launch_date', today.toISOString().split('T')[0])
-    .not('target_launch_date', 'is', null)
+    .or('target_launch_date.not.is.null,off_schedule_release_date.not.is.null')
     .eq('epic_retros.status', 'PENDING');
   
   if (epicsWithRetros) {
     for (const epic of epicsWithRetros) {
-      if (!epic.target_launch_date) continue;
-      
-      const launchDate = new Date(epic.target_launch_date);
-      const daysSinceLaunch = Math.floor((today.getTime() - launchDate.getTime()) / (1000 * 60 * 60 * 24));
+      const effectiveYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
+      if (!effectiveYmd || effectiveYmd > todayYmdEsc) continue;
+
+      const daysSinceLaunch = calculateDaysSinceLaunch(effectiveYmd);
       
       const config = Array.isArray(epic.epic_success_configs) 
         ? epic.epic_success_configs[0] 

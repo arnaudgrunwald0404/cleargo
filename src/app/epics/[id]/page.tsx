@@ -18,15 +18,19 @@ import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
-import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
+import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE, FEATURE_ROADMAP_REWIND } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 import type { ReleaseStagesScope } from "@/lib/services/settingsService";
 import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal } from "@/lib/date-utils";
 import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
+import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
+import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
+import { EpicRoadmapRewindPanel } from "@/components/epic/EpicRoadmapRewindPanel";
+import { EpicRoadmapConfidencePanel } from "@/components/epic/EpicRoadmapConfidencePanel";
 // Lazy load tab components for code splitting
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
@@ -415,7 +419,7 @@ export default function EpicDetailPage() {
             if (extractedReleaseName) {
                 const { data: releaseSchedule, error: releaseError } = await supabase
                     .from('release_schedule')
-                    .select('launch_date')
+                    .select('launch_date, cohort2_date')
                     .eq('release_name', extractedReleaseName)
                     .maybeSingle();
 
@@ -423,6 +427,10 @@ export default function EpicDetailPage() {
                 if (releaseSchedule?.launch_date) {
                     fetchedReleaseDate = releaseSchedule.launch_date;
                     setReleaseDate(releaseSchedule.launch_date);
+                    if (releaseSchedule.cohort2_date) {
+                        cohort2DateFetched = releaseSchedule.cohort2_date;
+                        setCohort2Date(releaseSchedule.cohort2_date);
+                    }
                 } else {
                     // Automatically fetch release date from API if not in schedule
                     setFetchingReleaseDate(true);
@@ -437,8 +445,8 @@ export default function EpicDetailPage() {
                             console.log(`[Epic Detail] Found release date:`, found);
 
                             if (found && found.launchDate) {
-                                // Save to release_schedule
-                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate });
+                                // Save to release_schedule (including cohort2_date if available)
+                                console.log(`[Epic Detail] Saving release date to schedule:`, { release_name: extractedReleaseName, launch_date: found.launchDate, cohort2_date: found.cohort2Date });
                                 const saveRes = await fetch("/api/releases", {
                                     method: "POST",
                                     headers: { "Content-Type": "application/json" },
@@ -446,6 +454,7 @@ export default function EpicDetailPage() {
                                     body: JSON.stringify({
                                         release_name: extractedReleaseName,
                                         launch_date: found.launchDate,
+                                        ...(found.cohort2Date ? { cohort2_date: found.cohort2Date } : {}),
                                     }),
                                 });
 
@@ -454,6 +463,10 @@ export default function EpicDetailPage() {
                                     console.log(`[Epic Detail] Successfully saved release date:`, savedData);
                                     fetchedReleaseDate = found.launchDate;
                                     setReleaseDate(found.launchDate);
+                                    if (found.cohort2Date) {
+                                        cohort2DateFetched = found.cohort2Date;
+                                        setCohort2Date(found.cohort2Date);
+                                    }
                                 } else {
                                     const errorData = await saveRes.json().catch(() => ({}));
                                     console.error("[Epic Detail] Failed to save release date:", errorData);
@@ -477,18 +490,6 @@ export default function EpicDetailPage() {
                 }
             } else {
                 setReleaseDate(null);
-                setCohort2Date(null);
-            }
-
-            // Cohort 2 / GA = next release after epic's release (for UI Framework timeline)
-            if (fetchedReleaseDate && epicIsUiFramework) {
-                const dateOnly = toDateOnlyString(fetchedReleaseDate) ?? fetchedReleaseDate.split('T')[0] ?? fetchedReleaseDate;
-                const { data: nextDate } = await supabase.rpc('get_next_release_date', {
-                    after_date: dateOnly,
-                });
-                cohort2DateFetched = nextDate ?? addCalendarMonth(fetchedReleaseDate);
-                setCohort2Date(cohort2DateFetched);
-            } else {
                 setCohort2Date(null);
             }
 
@@ -729,8 +730,9 @@ export default function EpicDetailPage() {
                 }
             }
 
-            // Criterion due dates = end of each stage segment (same as ReleaseStagesChart)
-            const targetDate = fetchedReleaseDate || data.target_launch_date || null;
+            // Criterion due dates = end of each stage segment (same as ReleaseStagesChart).
+            // Anchor date is cohort1-aware (matches the rest of the app).
+            const targetDate = getEpicCohort1DisplayYmd(data as Epic, fetchedReleaseDate);
             const computedStageEndDates =
                 fetchedReleaseStages.length > 0 && targetDate
                     ? computeStageEndDatesByStageId(fetchedReleaseStages, targetDate, {
@@ -1486,12 +1488,21 @@ export default function EpicDetailPage() {
         }
     }
 
+    const showRoadmapRewind =
+        isEnabled(FEATURE_ROADMAP_REWIND, featureFlags) && Boolean(epic?.aha_id);
+
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
         { value: "talktrack", label: hasTalkTrackVideo ? "Talk Track \u25B6" : "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
+        ...(showRoadmapRewind
+            ? [
+                  { value: "rewind", label: "Rewind" },
+                  { value: "confidence", label: "Confidence" },
+              ]
+            : []),
     ];
 
     return (
@@ -1694,7 +1705,11 @@ export default function EpicDetailPage() {
                     <span>
                         <span style={{ color: 'var(--color-gray-500)' }}>Release </span>
                         <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
-                            {releaseDate ? formatDateOnlyForDisplay(releaseDate) : epic?.target_launch_date ? formatDateOnlyForDisplay(epic.target_launch_date) : 'Not set'}
+                            {epic ? (
+                                <Cohort1DateBadge epic={epic} scheduleReleaseDate={releaseDate} emptyLabel="Not set" />
+                            ) : (
+                                'Not set'
+                            )}
                         </span>
                     </span>
                     <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
@@ -1761,6 +1776,7 @@ export default function EpicDetailPage() {
                             activeTab={activeTab}
                             onTabChange={(value) => setActiveTab(value)}
                             hasTalkTrackVideo={hasTalkTrackVideo}
+                            showRoadmapRewind={showRoadmapRewind}
                         />
                     )}
                     {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
@@ -1842,6 +1858,8 @@ export default function EpicDetailPage() {
                         <Tabs.Tab value="adoption">Success Metrics</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
+                        {showRoadmapRewind && <Tabs.Tab value="rewind">Rewind</Tabs.Tab>}
+                        {showRoadmapRewind && <Tabs.Tab value="confidence">Confidence</Tabs.Tab>}
                     </Tabs.List>
 
                     <Tabs.Panel value="readiness" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
@@ -1855,7 +1873,7 @@ export default function EpicDetailPage() {
                             {releaseStages.length > 0 && (
                                 <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
                                     <ReleaseStagesChart
-                                        releaseDate={releaseDate || epic?.target_launch_date || null}
+                                        releaseDate={getEpicCohort1DisplayYmd(epic, releaseDate)}
                                         cohort2Date={cohort2Date}
                                         stages={releaseStages}
                                         showHeading={true}
@@ -1978,6 +1996,21 @@ export default function EpicDetailPage() {
                             </Suspense>
                         )}
                     </Tabs.Panel>
+
+                    {showRoadmapRewind && epic?.aha_id && (
+                        <Tabs.Panel value="rewind" pt="md" style={{ padding: 'var(--spacing-4)' }}>
+                            {activeTab === 'rewind' && (
+                                <EpicRoadmapRewindPanel ahaKey={epic.aha_id} />
+                            )}
+                        </Tabs.Panel>
+                    )}
+                    {showRoadmapRewind && epic?.aha_id && (
+                        <Tabs.Panel value="confidence" pt="md" style={{ padding: 'var(--spacing-4)' }}>
+                            {activeTab === 'confidence' && (
+                                <EpicRoadmapConfidencePanel ahaKey={epic.aha_id} />
+                            )}
+                        </Tabs.Panel>
+                    )}
                 </Tabs>
                 </div>
 
