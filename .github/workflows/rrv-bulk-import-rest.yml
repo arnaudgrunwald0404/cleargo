@@ -1,0 +1,143 @@
+name: RRV → ClearGo Bulk Import (REST / service-role)
+
+# Dispatch-only. Runs scripts/rrv-import/local-import.mjs against the production
+# (or any other) ClearGo Supabase project using service-role keys over HTTPS.
+#
+# Why a separate workflow from rrv-bulk-import.yml?
+#   The pg_dump-based workflow needs DB passwords, the Postgres pooler, and
+#   IPv4 connectivity — all of which have been brittle. This one uses the
+#   `@supabase/supabase-js` REST client + service-role JWTs, the same path
+#   that already works locally via `npm run rrv-import:local`.
+#
+# Required repo secrets:
+#   RRV_SUPABASE_SERVICE_ROLE_KEY      — service_role JWT for the RRV project
+#                                         (Supabase → vthulsgytvlwvstelmya → API → service_role)
+#   CLEARGO_SUPABASE_SERVICE_ROLE_KEY  — service_role JWT for the destination
+#                                         ClearGo project (the one whose ref you
+#                                         type into confirm_project_ref)
+#
+# Both URLs are derived from the JWTs' `ref` claim — no URL secrets needed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_project_ref:
+        description: 'Destination ClearGo project ref (e.g. znvdcdtdptvqtxdlztgz). Must match the `ref` claim inside CLEARGO_SUPABASE_SERVICE_ROLE_KEY.'
+        required: true
+        type: string
+      do_insert:
+        description: 'Perform the actual INSERT after dry-run? Choose false first, review the diagnostics, then re-run with true.'
+        required: true
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+concurrency:
+  # Never run two imports against the same project at the same time.
+  group: rrv-bulk-import-rest-${{ inputs.confirm_project_ref }}
+  cancel-in-progress: false
+
+jobs:
+  import:
+    name: ${{ inputs.do_insert == 'true' && 'Dry-run + INSERT' || 'Dry-run only' }} → ${{ inputs.confirm_project_ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install deps (just @supabase/supabase-js + dotenv)
+        # Full install isn't needed for the import script; this is fast.
+        run: npm ci --no-audit --no-fund --prefer-offline
+
+      - name: Verify CLEARGO key targets the expected project
+        env:
+          CLEARGO_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CLEARGO_SUPABASE_SERVICE_ROLE_KEY }}
+          RRV_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RRV_SUPABASE_SERVICE_ROLE_KEY }}
+          EXPECTED_REF: ${{ inputs.confirm_project_ref }}
+        run: |
+          if [ -z "${CLEARGO_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::CLEARGO_SUPABASE_SERVICE_ROLE_KEY secret is not set."
+            exit 1
+          fi
+          if [ -z "${RRV_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::RRV_SUPABASE_SERVICE_ROLE_KEY secret is not set."
+            exit 1
+          fi
+          if [ -z "${EXPECTED_REF:-}" ]; then
+            echo "::error::confirm_project_ref input is empty."
+            exit 1
+          fi
+
+          # Decode the JWT payload and pull out the `ref` claim. No signature
+          # check — we only need to know which project the key belongs to.
+          PAYLOAD_B64=$(echo "$CLEARGO_SUPABASE_SERVICE_ROLE_KEY" | cut -d'.' -f2)
+          # Pad base64url to a multiple of 4 and translate URL-safe chars
+          PAD=$(( 4 - ${#PAYLOAD_B64} % 4 ))
+          if [ $PAD -lt 4 ]; then PAYLOAD_B64="${PAYLOAD_B64}$(printf '=%.0s' $(seq 1 $PAD))"; fi
+          KEY_REF=$(echo "$PAYLOAD_B64" | tr '_-' '/+' | base64 -d 2>/dev/null \
+                    | python3 -c "import sys,json;print(json.load(sys.stdin).get('ref',''))" 2>/dev/null || true)
+
+          if [ -z "$KEY_REF" ]; then
+            echo "::error::Could not decode the project ref from CLEARGO_SUPABASE_SERVICE_ROLE_KEY. Is the secret a valid Supabase JWT?"
+            exit 1
+          fi
+          if [ "$KEY_REF" != "$EXPECTED_REF" ]; then
+            echo "::error::CLEARGO_SUPABASE_SERVICE_ROLE_KEY belongs to project '$KEY_REF', but you typed '$EXPECTED_REF'. Refusing to proceed."
+            exit 1
+          fi
+          echo "Destination project ref verified: $KEY_REF"
+
+      - name: Run import (dry-run only)
+        if: ${{ inputs.do_insert != 'true' }}
+        env:
+          RRV_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RRV_SUPABASE_SERVICE_ROLE_KEY }}
+          CLEARGO_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CLEARGO_SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          mkdir -p tmp/rrv-import
+          node scripts/rrv-import/local-import.mjs 2>&1 | tee tmp/rrv-import/import.log
+
+      - name: Run import (dry-run + INSERT)
+        if: ${{ inputs.do_insert == 'true' }}
+        env:
+          RRV_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RRV_SUPABASE_SERVICE_ROLE_KEY }}
+          CLEARGO_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CLEARGO_SUPABASE_SERVICE_ROLE_KEY }}
+          DO_INSERT: 'true'
+        run: |
+          mkdir -p tmp/rrv-import
+          node scripts/rrv-import/local-import.mjs --do-insert 2>&1 | tee tmp/rrv-import/import.log
+
+      - name: Upload import log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rrv-rest-import-${{ inputs.confirm_project_ref }}-${{ github.run_id }}
+          path: tmp/rrv-import/
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Step summary
+        if: always()
+        run: |
+          {
+            echo "## RRV → ClearGo import (${{ inputs.do_insert == 'true' && 'INSERT' || 'dry-run' }})"
+            echo
+            echo "**Destination project:** \`${{ inputs.confirm_project_ref }}\`"
+            echo "**Mode:** ${{ inputs.do_insert == 'true' && 'INSERT (writes to public.*)' || 'dry-run only (no writes)' }}"
+            echo
+            echo "### Last 80 lines of script output"
+            echo '```'
+            tail -n 80 tmp/rrv-import/import.log 2>/dev/null || echo "(no log file)"
+            echo '```'
+            if [ "${{ inputs.do_insert }}" != "true" ]; then
+              echo
+              echo "Dry-run only. Review the coverage %, unmatched-aha-keys list, and target row counts above."
+              echo "If the diagnostics look right, **re-run this workflow with \`do_insert = true\`** to perform the inserts."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
