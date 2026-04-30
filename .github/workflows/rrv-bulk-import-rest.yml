@@ -1,7 +1,8 @@
 name: RRV → ClearGo Bulk Import (REST / service-role)
 
-# Dispatch-only. Runs scripts/rrv-import/local-import.mjs against the production
-# (or any other) ClearGo Supabase project using service-role keys over HTTPS.
+# Dispatch-only. Runs scripts/rrv-import/local-import.mjs against the ClearGo
+# Supabase project that owns CLEARGO_SUPABASE_SERVICE_ROLE_KEY using
+# service-role keys over HTTPS.
 #
 # Why a separate workflow from rrv-bulk-import.yml?
 #   The pg_dump-based workflow needs DB passwords, the Postgres pooler, and
@@ -9,37 +10,33 @@ name: RRV → ClearGo Bulk Import (REST / service-role)
 #   `@supabase/supabase-js` REST client + service-role JWTs, the same path
 #   that already works locally via `npm run rrv-import:local`.
 #
-# Required repo secrets:
+# Required repo secrets (set once, never type at runtime):
 #   RRV_SUPABASE_SERVICE_ROLE_KEY      — service_role JWT for the RRV project
-#                                         (Supabase → vthulsgytvlwvstelmya → API → service_role)
 #   CLEARGO_SUPABASE_SERVICE_ROLE_KEY  — service_role JWT for the destination
-#                                         ClearGo project (the one whose ref you
-#                                         type into confirm_project_ref)
+#                                         ClearGo project
 #
-# Both URLs are derived from the JWTs' `ref` claim — no URL secrets needed.
+# Both Supabase URLs and project refs are derived from the JWTs' `ref` claim —
+# nothing to type, nothing to confirm. The decoded refs are printed in the
+# step summary so you can see exactly which projects each run touched.
 
 on:
   workflow_dispatch:
     inputs:
-      confirm_project_ref:
-        description: 'Destination ClearGo project ref (e.g. znvdcdtdptvqtxdlztgz). Must match the `ref` claim inside CLEARGO_SUPABASE_SERVICE_ROLE_KEY.'
-        required: true
-        type: string
       do_insert:
-        description: 'Perform the actual INSERT after dry-run? Choose false first, review the diagnostics, then re-run with true.'
+        description: 'Actually write to ClearGo? Leave as false for a dry-run. Re-run with true after reviewing the diagnostics.'
         required: true
         default: 'false'
         type: choice
         options: ['false', 'true']
 
 concurrency:
-  # Never run two imports against the same project at the same time.
-  group: rrv-bulk-import-rest-${{ inputs.confirm_project_ref }}
+  # Never run two imports at the same time.
+  group: rrv-bulk-import-rest
   cancel-in-progress: false
 
 jobs:
   import:
-    name: ${{ inputs.do_insert == 'true' && 'Dry-run + INSERT' || 'Dry-run only' }} → ${{ inputs.confirm_project_ref }}
+    name: ${{ inputs.do_insert == 'true' && 'Dry-run + INSERT' || 'Dry-run only' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -52,47 +49,49 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install deps (just @supabase/supabase-js + dotenv)
-        # Full install isn't needed for the import script; this is fast.
+      - name: Install deps
         run: npm ci --no-audit --no-fund --prefer-offline
 
-      - name: Verify CLEARGO key targets the expected project
+      - name: Verify both service-role keys are set + show project refs
         env:
-          CLEARGO_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CLEARGO_SUPABASE_SERVICE_ROLE_KEY }}
           RRV_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.RRV_SUPABASE_SERVICE_ROLE_KEY }}
-          EXPECTED_REF: ${{ inputs.confirm_project_ref }}
+          CLEARGO_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.CLEARGO_SUPABASE_SERVICE_ROLE_KEY }}
         run: |
-          if [ -z "${CLEARGO_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
-            echo "::error::CLEARGO_SUPABASE_SERVICE_ROLE_KEY secret is not set."
-            exit 1
-          fi
           if [ -z "${RRV_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
             echo "::error::RRV_SUPABASE_SERVICE_ROLE_KEY secret is not set."
             exit 1
           fi
-          if [ -z "${EXPECTED_REF:-}" ]; then
-            echo "::error::confirm_project_ref input is empty."
+          if [ -z "${CLEARGO_SUPABASE_SERVICE_ROLE_KEY:-}" ]; then
+            echo "::error::CLEARGO_SUPABASE_SERVICE_ROLE_KEY secret is not set."
             exit 1
           fi
 
-          # Decode the JWT payload and pull out the `ref` claim. No signature
-          # check — we only need to know which project the key belongs to.
-          PAYLOAD_B64=$(echo "$CLEARGO_SUPABASE_SERVICE_ROLE_KEY" | cut -d'.' -f2)
-          # Pad base64url to a multiple of 4 and translate URL-safe chars
-          PAD=$(( 4 - ${#PAYLOAD_B64} % 4 ))
-          if [ $PAD -lt 4 ]; then PAYLOAD_B64="${PAYLOAD_B64}$(printf '=%.0s' $(seq 1 $PAD))"; fi
-          KEY_REF=$(echo "$PAYLOAD_B64" | tr '_-' '/+' | base64 -d 2>/dev/null \
-                    | python3 -c "import sys,json;print(json.load(sys.stdin).get('ref',''))" 2>/dev/null || true)
+          # Decode `ref` claim from each JWT for visibility (no signature check).
+          decode_ref() {
+            local token="$1"
+            local payload=$(echo "$token" | cut -d'.' -f2)
+            local pad=$(( 4 - ${#payload} % 4 ))
+            if [ $pad -lt 4 ]; then payload="${payload}$(printf '=%.0s' $(seq 1 $pad))"; fi
+            echo "$payload" | tr '_-' '/+' | base64 -d 2>/dev/null \
+              | python3 -c "import sys,json;print(json.load(sys.stdin).get('ref',''))" 2>/dev/null
+          }
 
-          if [ -z "$KEY_REF" ]; then
-            echo "::error::Could not decode the project ref from CLEARGO_SUPABASE_SERVICE_ROLE_KEY. Is the secret a valid Supabase JWT?"
+          RRV_REF=$(decode_ref "$RRV_SUPABASE_SERVICE_ROLE_KEY")
+          CG_REF=$(decode_ref "$CLEARGO_SUPABASE_SERVICE_ROLE_KEY")
+
+          if [ -z "$RRV_REF" ]; then
+            echo "::error::Could not decode project ref from RRV_SUPABASE_SERVICE_ROLE_KEY. Is the secret a valid Supabase JWT?"
             exit 1
           fi
-          if [ "$KEY_REF" != "$EXPECTED_REF" ]; then
-            echo "::error::CLEARGO_SUPABASE_SERVICE_ROLE_KEY belongs to project '$KEY_REF', but you typed '$EXPECTED_REF'. Refusing to proceed."
+          if [ -z "$CG_REF" ]; then
+            echo "::error::Could not decode project ref from CLEARGO_SUPABASE_SERVICE_ROLE_KEY. Is the secret a valid Supabase JWT?"
             exit 1
           fi
-          echo "Destination project ref verified: $KEY_REF"
+
+          echo "Source (RRV):     $RRV_REF (https://$RRV_REF.supabase.co)"
+          echo "Target (ClearGo): $CG_REF (https://$CG_REF.supabase.co)"
+          echo "RRV_REF=$RRV_REF" >> "$GITHUB_ENV"
+          echo "CG_REF=$CG_REF" >> "$GITHUB_ENV"
 
       - name: Run import (dry-run only)
         if: ${{ inputs.do_insert != 'true' }}
@@ -117,7 +116,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rrv-rest-import-${{ inputs.confirm_project_ref }}-${{ github.run_id }}
+          name: rrv-rest-import-${{ env.CG_REF }}-${{ github.run_id }}
           path: tmp/rrv-import/
           retention-days: 30
           if-no-files-found: warn
@@ -128,7 +127,8 @@ jobs:
           {
             echo "## RRV → ClearGo import (${{ inputs.do_insert == 'true' && 'INSERT' || 'dry-run' }})"
             echo
-            echo "**Destination project:** \`${{ inputs.confirm_project_ref }}\`"
+            echo "**Source (RRV):** \`${RRV_REF}\`"
+            echo "**Target (ClearGo):** \`${CG_REF}\`"
             echo "**Mode:** ${{ inputs.do_insert == 'true' && 'INSERT (writes to public.*)' || 'dry-run only (no writes)' }}"
             echo
             echo "### Last 80 lines of script output"
@@ -137,7 +137,6 @@ jobs:
             echo '```'
             if [ "${{ inputs.do_insert }}" != "true" ]; then
               echo
-              echo "Dry-run only. Review the coverage %, unmatched-aha-keys list, and target row counts above."
-              echo "If the diagnostics look right, **re-run this workflow with \`do_insert = true\`** to perform the inserts."
+              echo "Dry-run only. If the diagnostics look right, **re-run with \`do_insert = true\`** to perform the inserts."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
