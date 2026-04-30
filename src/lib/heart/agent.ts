@@ -3,7 +3,7 @@
  * Uses AI to recommend HEART metrics based on epic context and Pendo data
  */
 
-import { anthropic } from '@ai-sdk/anthropic';
+import { createAnthropic } from '@ai-sdk/anthropic';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { buildAgentContext, findRelatedEntities, findRelatedEvents, type FullAgentContext } from './pendo-context';
@@ -17,8 +17,25 @@ import type {
   PendoDataConfidenceLevel,
 } from './types';
 
-// Use Claude Haiku 4.5 - fast and cost-effective ($1/MTok in, $5/MTok out)
-const model = anthropic('claude-haiku-4-5-20251001');
+const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
+
+/**
+ * Netlify (and some hosts) set ANTHROPIC_BASE_URL to a site-local AI path
+ * (e.g. .../.netlify/ai) that returns 404 unless that product is fully enabled.
+ * The default @ai-sdk/anthropic client follows that env, so we override in that
+ * case and use the real Anthropic Messages API.
+ */
+function getAnthropicBaseUrl(): string {
+  const fromEnv = process.env.ANTHROPIC_BASE_URL?.trim().replace(/\/$/, '');
+  if (fromEnv && (fromEnv.includes('/.netlify/ai') || fromEnv.includes('.netlify.app'))) {
+    return ANTHROPIC_API_V1;
+  }
+  if (fromEnv) return fromEnv;
+  return ANTHROPIC_API_V1;
+}
+
+// Claude Haiku 4.5 - fast and cost-effective ($1/MTok in, $5/MTok out)
+const model = createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
 
 // ============================================================================
 // Zod Schema for AI Output
