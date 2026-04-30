@@ -18,9 +18,13 @@ export interface AddEpicCommentArgs {
 
 /**
  * Creates a row in `epic_comment` (the renamed RRV `pm_notes` table),
- * resolving `aha_key → epic_id` automatically. RLS on `epic_comment`
- * gates writes to PM/PRODUCT_OPS/CPO/SUPERADMIN, so callers should hide
- * the entry-point UI for other roles.
+ * resolving `aha_key → epic_id` automatically.
+ *
+ * Authorization: the `epic_comment_insert_pm` RLS policy
+ * (migration 20260430120000) restricts INSERT to users with role
+ * PM, PRODUCT_OPS, CPO, or SUPERADMIN. Callers should also gate
+ * the entry-point UI with `canEditRoadmap()` for a clean UX —
+ * the RLS check is the authoritative gate.
  */
 export function useAddEpicComment(currentUserId: string | null | undefined) {
   const qc = useQueryClient();

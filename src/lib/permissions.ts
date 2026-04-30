@@ -292,7 +292,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.confidence.adjust": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.impactOverride.write": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.hiddenItem.write": [...ALL_ROLES],
-  "roadmap.movementNote.write": [...ALL_ROLES],
+  "roadmap.movementNote.write": ["PM", "PRODUCT_OPS", "CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

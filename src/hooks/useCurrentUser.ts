@@ -50,8 +50,19 @@ export function useCurrentUser() {
   });
 }
 
-/** Roles allowed to write product/PM data on roadmap entities. */
-const PRODUCT_WRITE_ROLES = new Set(['SUPERADMIN', 'PRODUCT_OPS', 'CPO', 'PM', 'PRODUCT']);
+/**
+ * Roles allowed to write PM-style roadmap data (movement notes, confidence
+ * adjustments, impact overrides, and the "hide for me" toggle on the
+ * Snapshot view). Mirrors the RLS policies on `epic_comment`,
+ * `confidence_rating`, `confidence_adjustment_history`, and
+ * `pm_impact_override`. SUPERADMIN is included so admins can author
+ * notes for testing / cleanup; PRODUCT is intentionally excluded — the
+ * DB policies don't allow PRODUCT to write either.
+ *
+ * Note: this is *UI* gating only (defense in depth). The authoritative
+ * gate is the RLS policy on each table.
+ */
+const PRODUCT_WRITE_ROLES = new Set(['SUPERADMIN', 'PRODUCT_OPS', 'CPO', 'PM']);
 
 export function canEditRoadmap(roles: string[] | undefined | null): boolean {
   if (!roles || roles.length === 0) return false;

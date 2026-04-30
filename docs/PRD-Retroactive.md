@@ -1283,7 +1283,7 @@ All gated behind `FEATURE_ROADMAP_REWIND`. RLS pattern is **universal SELECT for
 - **confidence_adjustment_history**: append-only audit log of PM confidence adjustments (`previous_adjustment`, `new_adjustment`, `adjustment_delta`, `previous_final_percentage`, `new_final_percentage`, `adjustment_note`, `author_email`).
 - **pm_impact_override**: PM impact-level overrides per `(aha_key, week_start)` (`original_impact`, `override_impact`, `override_note`). Optional FK to `epic.id`.
 - **roadmap_hidden_item**: per-user hidden roadmap items, keyed by `(app_user_id, aha_key)`. RLS allows insert/delete only for the owning user.
-- **epic_comment**: epic-level comments (separate from `criterion_comment`). Used for general epic discussion *and* movement notes (PM Notes from RRV) — `category` ∈ general | movement | risk | decision; movement rows additionally store `movement_cause` (Internal/External), `movement_date`, `from_release`, `to_release`, `related_snapshot_date`. RLS: read = all authenticated, write/update/delete = own rows only.
+- **epic_comment**: epic-level comments (separate from `criterion_comment`). Used for general epic discussion *and* movement notes (PM Notes from RRV) — `category` ∈ general | movement | risk | decision; movement rows additionally store `movement_cause` (Internal/External), `movement_date`, `from_release`, `to_release`, `related_snapshot_date`. RLS: read = all authenticated, insert = PM/PRODUCT_OPS/CPO/SUPERADMIN (matches `roadmap.movementNote.write`), update/delete = author of the row only.
 
 #### Roadmap RPCs (Supabase functions)
 All ported from RRV with ClearGo-aligned table names:
@@ -1622,7 +1622,7 @@ All ported from RRV with ClearGo-aligned table names:
 - `roadmap.confidence.adjust` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN)
 - `roadmap.impactOverride.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN)
 - `roadmap.hiddenItem.write` — all roles (per-user preference; RLS still scopes writes to the owner)
-- `roadmap.movementNote.write` — all roles (matches the existing comment-thread model)
+- `roadmap.movementNote.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN). Authoritative gate is the `epic_comment_insert_pm` RLS policy (migration 20260430120000); the UI helper `canEditRoadmap()` mirrors this for client-side affordances. Once a note is created, the author can still edit/delete their own row even if their role changes later.
 
 #### Permissions Matrix
 
@@ -1655,7 +1655,7 @@ All ported from RRV with ClearGo-aligned table names:
 - **confidence_adjustment_history**: All authenticated users can read; inserts restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN (append-only)
 - **pm_impact_override**: All authenticated users can read; insert/update/delete restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN
 - **roadmap_hidden_item**: All authenticated users can read; insert/delete only for the owning `app_user`
-- **epic_comment**: All authenticated users can read; insert allowed for any authenticated user; update/delete restricted to the row's `created_by`
+- **epic_comment**: All authenticated users can read; insert restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN (policy `epic_comment_insert_pm`, migration 20260430120000); update/delete restricted to the row's `created_by` (so authors can clean up their own past notes after a role change)
 
 ### Data Protection
 - **HTTPS**: All traffic encrypted
