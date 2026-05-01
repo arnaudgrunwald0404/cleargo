@@ -36,6 +36,8 @@ import { GoalBreakdownCard } from '@/components/roadmap/GoalBreakdownCard';
 import { SlideoutProvider, useSlideout } from '@/components/roadmap/slideout/SlideoutContext';
 import { SlideoutContainer } from '@/components/roadmap/slideout/SlideoutContainer';
 import { PeriodMovementsView } from '@/components/roadmap/slideout/PeriodMovementsView';
+import { VisitStatsButton } from '@/components/roadmap/VisitStatsButton';
+import { useTrackRoadmapVisit } from '@/hooks/useRoadmapVisits';
 import type { PeriodReleaseMovement, WeeklyMovement } from '@/types/roadmap';
 
 function normWeek(s: string) {
@@ -58,6 +60,14 @@ function RoadmapRewindInner() {
 
   const isViewingLatest =
     availableSnapshots.length > 0 && selectedDate === availableSnapshots[0].date;
+
+  // Record a visit only when viewing the latest snapshot — scrubbing
+  // through history shouldn't inflate counts on old snapshot dates.
+  useTrackRoadmapVisit(
+    isViewingLatest ? selectedDate : null,
+    'rewind',
+    isViewingLatest,
+  );
 
   const { data: yearlyMovements = [], isLoading: yLoading } = useYearlyMovements(selectedDate);
   const { data: impactCategorized = [], isLoading: impactLoading } =
@@ -234,10 +244,11 @@ function RoadmapRewindInner() {
                 Historical view
               </Badge>
             )}
+            <VisitStatsButton snapshotDate={selectedDate} page="rewind" />
           </Group>
           <Text size="sm" style={{ color: 'var(--color-gray-600)' }}>
-            How work shifted between releases over time (same metrics as RRV Performance Insights,
-            without visit tracking or AI). Click any tile or heatmap cell to drill in.
+            How work shifted between releases over time (same metrics as RRV Performance Insights).
+            Click any tile or heatmap cell to drill in.
           </Text>
         </div>
         <Group>

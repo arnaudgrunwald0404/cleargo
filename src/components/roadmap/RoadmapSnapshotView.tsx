@@ -47,6 +47,8 @@ import {
 import { SlideoutProvider, useSlideout } from '@/components/roadmap/slideout/SlideoutContext';
 import { SlideoutContainer } from '@/components/roadmap/slideout/SlideoutContainer';
 import { EpicHistoryView } from '@/components/roadmap/slideout/EpicHistoryView';
+import { VisitStatsButton } from '@/components/roadmap/VisitStatsButton';
+import { useTrackRoadmapVisit } from '@/hooks/useRoadmapVisits';
 import type { RoadmapComparison } from '@/types/roadmap';
 
 /** Natural sort for release names like "2025.7", "2025.8", "2025.10". */
@@ -92,6 +94,10 @@ function RoadmapSnapshotInner() {
   const isHistoricalMode = dateOverride != null && dateOverride !== latestSnapshotDate;
   const { data: historicalComparisons = [], isLoading: historicalLoading } =
     useHistoricalRoadmapComparison(isHistoricalMode ? dateOverride : null);
+
+  // Record a visit only when viewing the latest snapshot — scrubbing
+  // through history shouldn't inflate counts on old snapshot dates.
+  useTrackRoadmapVisit(latestSnapshotDate, 'snapshot', !isHistoricalMode);
 
   const { data: me } = useCurrentUser();
   const canEdit = canEditRoadmap(me?.roles);
@@ -360,6 +366,7 @@ function RoadmapSnapshotInner() {
                 Historical view
               </Badge>
             )}
+            <VisitStatsButton snapshotDate={effectiveDate} page="snapshot" />
           </Group>
           <Text size="sm" style={{ color: 'var(--color-gray-600)' }}>
             {isHistoricalMode

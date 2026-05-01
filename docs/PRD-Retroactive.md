@@ -814,6 +814,13 @@ RRV's `pm_notes` migrated into the new `epic_comment` table with `category='move
 #### 11.9 Per-user hidden items
 Each user can hide individual epics from their own roadmap views via `roadmap_hidden_item` (no special role required, gated by `roadmap.hiddenItem.write`).
 
+#### 11.10 Visit tracking
+Snapshot and Rewind both record visits in the `roadmap_visit` table — one row per `(app_user_id, snapshot_date, page)` so re-visits during the same snapshot week bump `visit_count` / `last_visited_at` rather than creating duplicates. Visits are only recorded when the user is viewing the **latest** snapshot (so scrubbing through history doesn't bloat counts on old snapshots).
+
+The page header surfaces a `[👁 N visitor(s)]` button that opens a slideout (`VisitStatsView`) with a by-role breakdown plus a "Recently" list of the last 5 visitors. Read access is universal; the write goes through `POST /api/roadmap/visits` (using the service-role admin client so it works for both Supabase Auth and magic-link/`lr_session` users — `auth.jwt()` would otherwise be NULL for magic-link users and the RLS insert policy would silently reject them).
+
+This is the ClearGo equivalent of RRV's `user_visits` feature, swapping IP-address + sessionStorage department for ClearGo's authenticated user identity and the `app_user.roles` array.
+
 ---
 
 ## Technical Architecture
@@ -1655,6 +1662,7 @@ All ported from RRV with ClearGo-aligned table names:
 - **confidence_adjustment_history**: All authenticated users can read; inserts restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN (append-only)
 - **pm_impact_override**: All authenticated users can read; insert/update/delete restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN
 - **roadmap_hidden_item**: All authenticated users can read; insert/delete only for the owning `app_user`
+- **roadmap_visit**: All authenticated users can read; insert/update gated to the visitor's own `app_user_id` via RLS (defense in depth) — the actual write goes through the service-role API route so it works for magic-link users too
 - **epic_comment**: All authenticated users can read; insert restricted to PM/PRODUCT_OPS/CPO/SUPERADMIN (policy `epic_comment_insert_pm`, migration 20260430120000); update/delete restricted to the row's `created_by` (so authors can clean up their own past notes after a role change)
 
 ### Data Protection
