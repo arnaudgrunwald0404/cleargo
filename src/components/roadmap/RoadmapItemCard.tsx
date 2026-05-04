@@ -85,6 +85,17 @@ export function RoadmapItemCard({
         <Group gap="xs" wrap="wrap" align="center">
           <StatusPill status={latest.aha_status} />
           <ConfidenceBadge ahaKey={latest.aha_key} ahaName={latest.aha_name || latest.aha_key} />
+          {latest.aha_csm_priority && latest.aha_csm_priority.trim() && (
+            <Tooltip
+              label={`CSM / New Business Priority: ${latest.aha_csm_priority}`}
+              withArrow
+              openDelay={250}
+            >
+              <Badge size="xs" variant="filled" color="violet">
+                CSM Priority
+              </Badge>
+            </Tooltip>
+          )}
         </Group>
 
         <InlineProgressBar

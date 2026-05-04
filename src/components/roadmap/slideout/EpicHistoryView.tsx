@@ -204,9 +204,6 @@ export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
                 )}
               </>
             )}
-            {current.aha_t_shirt_est && (
-              <FieldTile label="Effort" value={current.aha_t_shirt_est} accent="amber" />
-            )}
           </SimpleGrid>
         </Paper>
       )}

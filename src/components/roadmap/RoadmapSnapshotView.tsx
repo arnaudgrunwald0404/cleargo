@@ -29,6 +29,8 @@ import { format } from 'date-fns';
 import { useRoadmapData } from '@/hooks/useRoadmapData';
 import { useAvailableSnapshots } from '@/hooks/useAvailableSnapshots';
 import { useHistoricalRoadmapComparison } from '@/hooks/useHistoricalRoadmapComparison';
+import { useYearlyMovements } from '@/hooks/useYearlyMovements';
+import { usePeriodReleaseMovements } from '@/hooks/usePeriodReleaseMovements';
 import {
   useHiddenItems,
   useHideRoadmapItem,
@@ -48,8 +50,9 @@ import { SlideoutProvider, useSlideout } from '@/components/roadmap/slideout/Sli
 import { SlideoutContainer } from '@/components/roadmap/slideout/SlideoutContainer';
 import { EpicHistoryView } from '@/components/roadmap/slideout/EpicHistoryView';
 import { VisitStatsButton } from '@/components/roadmap/VisitStatsButton';
+import { UpcomingReleaseImpact } from '@/components/roadmap/UpcomingReleaseImpact';
 import { useTrackRoadmapVisit } from '@/hooks/useRoadmapVisits';
-import type { RoadmapComparison } from '@/types/roadmap';
+import type { RoadmapComparison, WeeklyMovement } from '@/types/roadmap';
 
 /** Natural sort for release names like "2025.7", "2025.8", "2025.10". */
 function naturalReleaseCompare(a: string, b: string) {
@@ -74,6 +77,20 @@ function fmtDate(value: string | null | undefined, fallback = 'TBD'): string {
 }
 
 const TIMELINE_FIELDS = new Set(['aha_start_date', 'aha_end_date', 'aha_release']);
+
+const FIELD_DISPLAY_NAMES: Record<string, string> = {
+  aha_start_date: 'Start date',
+  aha_end_date: 'End date',
+  aha_release: 'Release',
+  aha_status: 'Status',
+  aha_owner: 'Contact',
+  aha_pod: 'Pod',
+  aha_t_shirt_est: 'T-shirt size',
+};
+
+function fieldLabel(field: string): string {
+  return FIELD_DISPLAY_NAMES[field] ?? field;
+}
 
 export function RoadmapSnapshotView() {
   return (
@@ -111,6 +128,58 @@ function RoadmapSnapshotInner() {
 
   const liveComparisons: RoadmapComparison[] = data?.comparisons ?? [];
   const sourceComparisons = isHistoricalMode ? historicalComparisons : liveComparisons;
+
+  // Effective date for "as of" RPC calls — historical mode uses the
+  // selected snapshot date so the movement panel reflects what was true
+  // at that point in time.
+  const effectiveAsOfDate = isHistoricalMode ? dateOverride : latestSnapshotDate;
+
+  // Pull yearly per-week movement summary, then narrow to the week
+  // containing this snapshot. Mirrors `RoadmapRewindView`'s pattern.
+  const { data: yearlyMovements = [] } = useYearlyMovements(effectiveAsOfDate);
+  const mostRecentWeek = useMemo(() => {
+    if (yearlyMovements.length === 0) return null;
+    if (effectiveAsOfDate) {
+      // Prefer the week whose end-date covers the snapshot date.
+      const targetMs = new Date(`${effectiveAsOfDate}T12:00:00Z`).getTime();
+      const containing = yearlyMovements.find((m) => {
+        const start = new Date(`${m.weekStart}T00:00:00Z`).getTime();
+        const end = new Date(`${m.weekEnd}T23:59:59Z`).getTime();
+        return targetMs >= start && targetMs <= end;
+      });
+      if (containing) return containing;
+    }
+    // Fallback: most recent week by start date.
+    return [...yearlyMovements].sort(
+      (a, b) => new Date(b.weekStart).getTime() - new Date(a.weekStart).getTime(),
+    )[0];
+  }, [yearlyMovements, effectiveAsOfDate]);
+
+  const movementWeeks = useMemo<WeeklyMovement[]>(
+    () => (mostRecentWeek ? [mostRecentWeek] : []),
+    [mostRecentWeek],
+  );
+  const { data: weekMovements = [] } = usePeriodReleaseMovements(
+    movementWeeks,
+    effectiveAsOfDate,
+  );
+
+  // Decorate movements with `aha_progress` from the snapshot comparison
+  // set so the impact panel can render an inline progress bar without
+  // an extra round-trip.
+  const progressByKey = useMemo(() => {
+    const m = new Map<string, number | null | undefined>();
+    sourceComparisons.forEach((c) => m.set(c.latest.aha_key, c.latest.aha_progress));
+    return m;
+  }, [sourceComparisons]);
+  const movementsWithProgress = useMemo(
+    () =>
+      weekMovements.map((mv) => ({
+        ...mv,
+        aha_progress: progressByKey.get(mv.aha_key) ?? null,
+      })),
+    [weekMovements, progressByKey],
+  );
 
   // Build filter dimensions from the current source set + the
   // `allReleases` payload from `useRoadmapData` (which sees ALL releases,
@@ -378,6 +447,34 @@ function RoadmapSnapshotInner() {
         </div>
       </Group>
 
+      <UpcomingReleaseImpact
+        movements={movementsWithProgress}
+        upcomingReleases={next3Releases}
+        snapshotDate={effectiveAsOfDate}
+        isHistoricalMode={isHistoricalMode}
+        onItemClick={(ahaKey) => {
+          const c = sourceComparisons.find((sc) => sc.latest.aha_key === ahaKey);
+          push({
+            title: c?.latest.aha_name || ahaKey,
+            description: ahaKey,
+            render: () => (
+              <EpicHistoryView
+                ahaKey={ahaKey}
+                comparison={
+                  c
+                    ? {
+                        latest: c.latest,
+                        previous: c.previous,
+                        changes: c.changes,
+                      }
+                    : undefined
+                }
+              />
+            ),
+          });
+        }}
+      />
+
       <RoadmapFilters
         value={filters}
         onChange={setFilters}
@@ -451,9 +548,15 @@ function RoadmapSnapshotInner() {
                       {group.release}
                     </Text>
                     {group.releaseDate && (
-                      <Text size="sm" style={{ color: 'var(--color-gray-600)' }}>
-                        {format(new Date(group.releaseDate), 'MMM d, yyyy')}
-                      </Text>
+                      <Tooltip
+                        label="Release date is the Cohort 1 GA date — Cohort 2 typically lands ~2 weeks later."
+                        withArrow
+                        openDelay={300}
+                      >
+                        <Text size="sm" style={{ color: 'var(--color-gray-600)' }}>
+                          Cohort 1: {format(new Date(group.releaseDate), 'MMM d, yyyy')}
+                        </Text>
+                      </Tooltip>
                     )}
                     <div style={{ flex: 1 }} />
                     <Badge size="sm" variant="light" color="gray">
@@ -569,20 +672,26 @@ function SimpleGroupTable({
       <Table striped highlightOnHover layout="fixed">
         <Table.Thead>
           <Table.Tr>
-            <Table.Th style={{ width: '32%' }}>Item</Table.Th>
+            <Table.Th style={{ width: '40%' }}>Item</Table.Th>
             <Table.Th style={{ width: '12%' }}>Confidence</Table.Th>
             <Table.Th style={{ width: '14%' }}>Status</Table.Th>
-            <Table.Th style={{ width: '14%' }}>Contact</Table.Th>
-            <Table.Th style={{ width: '12%' }}>Timeline</Table.Th>
-            <Table.Th style={{ width: '12%' }}>Changes</Table.Th>
+            <Table.Th style={{ width: '16%' }}>Contact</Table.Th>
+            <Table.Th style={{ width: '14%' }}>Changes</Table.Th>
             {canEdit && <Table.Th style={{ width: '4%' }} />}
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
           {items.map((c) => {
             const isHidden = hiddenSet.has(c.latest.aha_key);
-            const hasTimelineChange = c.changes.changedFields.some((f) => TIMELINE_FIELDS.has(f));
-            const hasOtherChange = c.changes.changedFields.some((f) => !TIMELINE_FIELDS.has(f));
+            const timelineChangedFields = c.changes.changedFields.filter((f) =>
+              TIMELINE_FIELDS.has(f),
+            );
+            const otherChangedFields = c.changes.changedFields.filter(
+              (f) => !TIMELINE_FIELDS.has(f),
+            );
+            const hasTimelineChange = timelineChangedFields.length > 0;
+            const hasOtherChange = otherChangedFields.length > 0;
+            const csmPriority = (c.latest.aha_csm_priority ?? '').trim();
             return (
               <Table.Tr
                 key={c.latest.id}
@@ -594,14 +703,27 @@ function SimpleGroupTable({
               >
                 <Table.Td>
                   <Stack gap={4}>
-                    <Text
-                      size="sm"
-                      fw={500}
-                      lineClamp={2}
-                      style={{ color: 'var(--color-gray-900)' }}
-                    >
-                      {c.latest.aha_name || c.latest.aha_key}
-                    </Text>
+                    <Group gap={6} wrap="wrap" align="center">
+                      <Text
+                        size="sm"
+                        fw={500}
+                        lineClamp={2}
+                        style={{ color: 'var(--color-gray-900)', flex: '1 1 auto', minWidth: 0 }}
+                      >
+                        {c.latest.aha_name || c.latest.aha_key}
+                      </Text>
+                      {csmPriority && (
+                        <Tooltip
+                          label={`CSM / New Business Priority: ${csmPriority}`}
+                          withArrow
+                          openDelay={250}
+                        >
+                          <Badge size="xs" variant="filled" color="violet" style={{ flexShrink: 0 }}>
+                            CSM Priority
+                          </Badge>
+                        </Tooltip>
+                      )}
+                    </Group>
                     <InlineProgressBar
                       progress={c.latest.aha_progress}
                       ahaKey={c.latest.aha_key}
@@ -628,31 +750,52 @@ function SimpleGroupTable({
                   </Stack>
                 </Table.Td>
                 <Table.Td>
-                  <Text size="xs" style={{ color: 'var(--color-gray-700)' }}>
-                    {fmtDate(c.latest.aha_start_date)} → {fmtDate(c.latest.aha_end_date)}
-                  </Text>
-                </Table.Td>
-                <Table.Td>
                   <Group gap={4} wrap="wrap">
                     {c.changes.isNew && (
-                      <Badge size="xs" variant="light" color="teal">
-                        NEW
-                      </Badge>
+                      <Tooltip
+                        label="This epic appeared in the latest snapshot for the first time."
+                        withArrow
+                        openDelay={250}
+                      >
+                        <Badge size="xs" variant="light" color="teal">
+                          NEW
+                        </Badge>
+                      </Tooltip>
                     )}
                     {hasTimelineChange && !c.changes.isNew && (
-                      <Badge size="xs" variant="light" color="orange">
-                        Timeline
-                      </Badge>
+                      <Tooltip
+                        label={`Changed since last snapshot: ${timelineChangedFields.map(fieldLabel).join(', ')}`}
+                        withArrow
+                        openDelay={250}
+                      >
+                        <Badge size="xs" variant="light" color="orange">
+                          Timeline shifted
+                        </Badge>
+                      </Tooltip>
                     )}
                     {hasOtherChange && !c.changes.isNew && (
-                      <Badge size="xs" variant="light" color="blue">
-                        Details
-                      </Badge>
+                      <Tooltip
+                        label={`Changed since last snapshot: ${otherChangedFields.map(fieldLabel).join(', ')}`}
+                        withArrow
+                        openDelay={250}
+                      >
+                        <Badge size="xs" variant="light" color="blue">
+                          {otherChangedFields.length === 1
+                            ? `${fieldLabel(otherChangedFields[0])} changed`
+                            : `${otherChangedFields.length} fields changed`}
+                        </Badge>
+                      </Tooltip>
                     )}
                     {!c.changes.isNew && !hasTimelineChange && !hasOtherChange && (
-                      <Text size="xs" style={{ color: 'var(--color-gray-400)' }}>
-                        —
-                      </Text>
+                      <Tooltip
+                        label="This epic is unchanged since the previous snapshot."
+                        withArrow
+                        openDelay={250}
+                      >
+                        <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>
+                          No changes
+                        </Text>
+                      </Tooltip>
                     )}
                   </Group>
                 </Table.Td>

@@ -774,7 +774,11 @@ Time-series visibility into how the roadmap moves week over week. Merged in from
 
 #### 11.2 Roadmap Snapshot page (`/portfolio/snapshot`)
 - Latest weekly pivot snapshot with field-level "Changes vs prior week" badges (release, dates, status, owner, pod, t-shirt size)
+- **Upcoming Release Impact panel** (`UpcomingReleaseImpact.tsx`) — pinned above the accordion, this is the Mantine port of RRV's "Release Movements Impacting Upcoming Releases" summary. Pulls weekly movement data from `usePeriodReleaseMovements` (week-of effective snapshot date) and `useYearlyMovements` and categorizes each movement into accelerated / delayed / new for each upcoming release. Items where `to_release` is `NULL` (epic moved out of the visible report window) are classified as **delayed** and tagged `Moved {N}+ releases out` with a tooltip explaining the report-window cutoff. Each row is clickable and pushes `EpicHistoryView` into the slideout stack
+- Per-release accordion shows release date with a **`Cohort 1:` prefix** and a tooltip explaining Cohort 2 lands ~2 weeks after the date shown
 - Per-epic **Confidence** column rendered as a colored badge (very_low → very_high). PM/PRODUCT_OPS/CPO/SUPERADMIN see a click-to-edit affordance opening the `ConfidenceAdjustmentDialog` (slider + preview + audit-noted save)
+- **CSM Priority badge** surfaces inline in the simple grid Item cell and on the expanded `RoadmapItemCard` whenever `aha_csm_priority` is non-empty, with a tooltip carrying the actual priority value
+- **Changes column** uses field-aware labels — single non-timeline change → `"<Field> changed"`, multiple → `"N fields changed"`, timeline → `"Timeline shifted"`, unchanged → `"No changes"`. Each badge has a tooltip listing the specific changed fields (`FIELD_DISPLAY_NAMES` map)
 - **Snapshot date selector** — pin the table to any historical snapshot. Historical mode also computes a real diff against the snapshot immediately preceding the chosen date (`useHistoricalRoadmapComparison`), so the "Changes" column stays meaningful for past weeks
 - Click any row to push the **Epic History** view into a stack-based slideout drawer (see 11.4)
 - Universal read access for any authenticated user
@@ -791,7 +795,7 @@ Time-series visibility into how the roadmap moves week over week. Merged in from
 #### 11.4 Stack-based slideout drilldown (`SlideoutContext`)
 Mantine `Drawer` driven by a stack of view entries. Each push adds a back-arrow to the header so users can drill arbitrarily deep without losing context.
 - **`PeriodMovementsView`** (top-level from KPI/heatmap clicks): table of epics that moved release in the period, with from/to release, impact badge, and PM-override marker
-- **`EpicHistoryView`** (pushed from snapshot rows or from a `PeriodMovementsView` row): port of RRV's `ItemHistoryView` with a current-state card (status, release, dates, owner, pod, effort), Aha + Jira deep links, `ConfidenceBadge`, "What changed in the latest snapshot" red-strikethrough → green diff, and a unified Mantine `Timeline` of release movements + PM movement notes
+- **`EpicHistoryView`** (pushed from snapshot rows or from a `PeriodMovementsView` / `UpcomingReleaseImpact` row): port of RRV's `ItemHistoryView` with a current-state card (status, release, dates, owner, pod), Aha + Jira deep links, `ConfidenceBadge`, optional CSM-priority pill, "What changed in the latest snapshot" red-strikethrough → green diff, and a unified Mantine `Timeline` of release movements + PM movement notes. T-shirt size is intentionally excluded from the current-state card (it's eng-internal); it still appears in the change diff if it shifts between snapshots
 - PM-only **Add note** affordance on each timeline movement row (and a top-level "Add note about this epic" button) — opens an inline `AddEpicNoteForm` that writes to `epic_comment` with `category='movement'` and the prompted `movement_cause` (Internal/External), pre-populated with the relevant `movement_date` / `from_release` / `to_release` / `related_snapshot_date`
 
 #### 11.5 Epic-detail tabs
