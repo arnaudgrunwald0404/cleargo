@@ -549,7 +549,7 @@ function RoadmapSnapshotInner() {
                     </Text>
                     {group.releaseDate && (
                       <Tooltip
-                        label="Release date is the Cohort 1 GA date — Cohort 2 typically lands ~2 weeks later."
+                        label="Date shown is Cohort 1's GA. Cohort 2 typically lands ~4 weeks later (sometimes 5 — releases aim for mid-month)."
                         withArrow
                         openDelay={300}
                       >
