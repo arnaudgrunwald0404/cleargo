@@ -218,30 +218,41 @@ function RoadmapSnapshotInner() {
     return t;
   }, []);
 
+  // Single source of truth for "what's the planned date for release X?".
+  // We always prefer the LATEST snapshot's `aha_release_date` (carried on
+  // each comparison's `latest`), and only fall back to `data.allReleases`
+  // for releases that aren't represented in the current snapshot. This
+  // prevents stale historical dates from `useRoadmapData`'s release map
+  // from creeping in (e.g. classifying a future release as "past" because
+  // an older snapshot once had a different date for it).
+  const releaseDateByName = useMemo(() => {
+    const map = new Map<string, string | null>();
+    sourceComparisons.forEach((c) => {
+      const name = (c.latest.aha_release || '').trim();
+      if (!name) return;
+      const date = c.latest.aha_release_date || null;
+      if (!map.has(name) || (date && map.get(name) == null)) {
+        map.set(name, date);
+      }
+    });
+    (data?.allReleases ?? []).forEach(({ name, releaseDate }) => {
+      if (!map.has(name)) map.set(name, releaseDate);
+    });
+    return map;
+  }, [sourceComparisons, data?.allReleases]);
+
   const availableReleases = useMemo(() => {
-    const list = data?.allReleases ?? [];
-    if (list.length === 0) {
-      // Fall back to whatever is in the comparisons themselves
-      const set = new Map<string, string | null>();
-      sourceComparisons.forEach((c) => {
-        const name = c.latest.aha_release || 'Unassigned';
-        if (!set.has(name)) set.set(name, c.latest.aha_release_date || null);
-      });
-      return Array.from(set.entries())
-        .map(([name, releaseDate]) => ({
-          name,
-          isPast: releaseDate
-            ? (() => {
-                const d = new Date(releaseDate);
-                d.setHours(0, 0, 0, 0);
-                return d < today;
-              })()
-            : false,
-        }))
-        .sort((a, b) => naturalReleaseCompare(a.name, b.name));
-    }
-    return list
-      .map(({ name, releaseDate }) => {
+    const names = new Set<string>();
+    sourceComparisons.forEach((c) => {
+      const name = (c.latest.aha_release || '').trim();
+      if (name) names.add(name);
+    });
+    (data?.allReleases ?? []).forEach(({ name }) => {
+      if (name) names.add(name);
+    });
+    return Array.from(names)
+      .map((name) => {
+        const releaseDate = releaseDateByName.get(name) ?? null;
         let isPast = false;
         if (releaseDate) {
           const d = new Date(releaseDate);
@@ -251,14 +262,10 @@ function RoadmapSnapshotInner() {
         return { name, isPast };
       })
       .sort((a, b) => naturalReleaseCompare(a.name, b.name));
-  }, [data?.allReleases, sourceComparisons, today]);
+  }, [data?.allReleases, sourceComparisons, releaseDateByName, today]);
 
   // The next-3-upcoming releases by release date (falls back to natural order).
   const next3Releases = useMemo(() => {
-    const releaseDateByName = new Map<string, string | null>();
-    sourceComparisons.forEach((c) =>
-      releaseDateByName.set(c.latest.aha_release || '', c.latest.aha_release_date || null),
-    );
     return availableReleases
       .filter((r) => !r.isPast)
       .sort((a, b) => {
@@ -271,7 +278,7 @@ function RoadmapSnapshotInner() {
       })
       .slice(0, 3)
       .map((r) => r.name);
-  }, [availableReleases, sourceComparisons]);
+  }, [availableReleases, releaseDateByName]);
 
   // Filters state
   const [filters, setFilters] = useState<RoadmapFiltersValue>({

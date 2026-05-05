@@ -259,24 +259,32 @@ export function useRoadmapData() {
         items: (row.aha_keys as string[]) ?? [],
       }));
 
+      // Build release -> date map from the LATEST snapshot wins.
+      // The query is ORDER BY snapshot_date DESC, so the first row we see
+      // for a release name is from the most recent snapshot containing it.
+      // Previously this loop preferred the earliest historical date, which
+      // caused bugs like classifying "Release 2026.5" (currently scheduled
+      // May 14) as past because an older snapshot once had it on an earlier
+      // date — see https://github.com/arnaudgrunwald0404/cleargo (May 2026).
       const releaseMap = new Map<string, string | null>();
       if (allReleasesResult.data && !allReleasesResult.error) {
         (allReleasesResult.data as Record<string, unknown>[]).forEach((item) => {
           const releaseName = String(item.aha_release ?? '').trim();
-          if (releaseName) {
-            if (!releaseMap.has(releaseName)) {
-              releaseMap.set(releaseName, item.aha_release_date != null ? String(item.aha_release_date) : null);
-            } else {
-              const existingDate = releaseMap.get(releaseName);
-              const newDate = item.aha_release_date != null ? String(item.aha_release_date) : null;
-              if (newDate && (!existingDate || new Date(newDate) < new Date(existingDate))) {
-                releaseMap.set(releaseName, newDate);
-              }
-            }
+          if (!releaseName) return;
+          const itemDate = item.aha_release_date != null ? String(item.aha_release_date) : null;
+          // First (= most recent) snapshot wins; only override if we
+          // currently have null and now we found a non-null date.
+          if (!releaseMap.has(releaseName)) {
+            releaseMap.set(releaseName, itemDate);
+          } else if (itemDate && releaseMap.get(releaseName) == null) {
+            releaseMap.set(releaseName, itemDate);
           }
         });
       }
 
+      // Defensively merge in any release names from `comparisons` that the
+      // 50k-row pass missed (very recent / near the partition cap), and
+      // backfill dates for releases whose latest-snapshot row was null.
       comparisons.forEach((comp) => {
         const releaseName = (comp.latest.aha_release || '').trim();
         if (!releaseName) return;
@@ -285,8 +293,7 @@ export function useRoadmapData() {
           releaseMap.set(releaseName, newDate);
           return;
         }
-        const existingDate = releaseMap.get(releaseName);
-        if (newDate && (!existingDate || new Date(newDate) > new Date(existingDate))) {
+        if (newDate && releaseMap.get(releaseName) == null) {
           releaseMap.set(releaseName, newDate);
         }
       });
