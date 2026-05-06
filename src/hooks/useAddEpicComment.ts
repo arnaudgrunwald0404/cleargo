@@ -2,13 +2,15 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import type { PmNoteCauseNew } from '@/lib/roadmap/pmNoteCause';
 
 export interface AddEpicCommentArgs {
   /** Aha key — we resolve to epic_id internally. */
   ahaKey: string;
   commentText: string;
   category?: 'general' | 'movement' | 'risk' | 'decision' | null;
-  movementCause?: 'Internal' | 'External' | null;
+  /** Required for PM roadmap notes (general + movement); stored in `movement_cause`. */
+  movementCause: PmNoteCauseNew;
   /** ISO date or timestamptz for the movement we're annotating. */
   movementDate?: string | null;
   fromRelease?: string | null;
@@ -50,7 +52,7 @@ export function useAddEpicComment(currentUserId: string | null | undefined) {
         epic_id: (epicRow as { id: string }).id,
         comment_text: text,
         category: args.category ?? (args.movementDate ? 'movement' : 'general'),
-        movement_cause: args.movementCause ?? null,
+        movement_cause: args.movementCause,
         movement_date: args.movementDate ?? null,
         from_release: args.fromRelease ?? null,
         to_release: args.toRelease ?? null,

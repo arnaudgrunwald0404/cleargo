@@ -27,6 +27,8 @@ function parseGoals(html: string | null | undefined): string[] {
 interface GoalBreakdownCardProps {
   /** Optional override — if not provided, uses live `useRoadmapData()`. */
   comparisons?: RoadmapComparison[];
+  /** AI blurbs keyed by `aha_key` for epic drilldowns. */
+  descriptions?: Record<string, string>;
   /** How many top goals to show (default 5). */
   limit?: number;
 }
@@ -38,11 +40,14 @@ interface GoalBreakdownCardProps {
  * Insights page. Click a row to drill into the list of contributing
  * epics in the standard slideout.
  */
-export function GoalBreakdownCard({ comparisons, limit = 5 }: GoalBreakdownCardProps) {
+export function GoalBreakdownCard({ comparisons, descriptions, limit = 5 }: GoalBreakdownCardProps) {
   const { data } = useRoadmapData();
   const { push } = useSlideout();
 
-  const sourceComparisons = comparisons ?? data?.comparisons ?? [];
+  const sourceComparisons = useMemo(
+    () => comparisons ?? data?.comparisons ?? [],
+    [comparisons, data?.comparisons],
+  );
 
   const { topGoals, totalItems, totalGoals } = useMemo(() => {
     const counts = new Map<string, RoadmapComparison[]>();
@@ -107,7 +112,11 @@ export function GoalBreakdownCard({ comparisons, limit = 5 }: GoalBreakdownCardP
                     title: goal,
                     description: `${count} epic${count === 1 ? '' : 's'} aligned to this goal`,
                     render: () => (
-                      <PeriodMovementsView rows={rows} comparisons={sourceComparisons} />
+                      <PeriodMovementsView
+                        rows={rows}
+                        comparisons={sourceComparisons}
+                        descriptions={descriptions}
+                      />
                     ),
                   });
                 }}

@@ -10,6 +10,8 @@ import type { RoadmapComparison } from '@/types/roadmap';
 
 interface RoadmapItemCardProps {
   comparison: RoadmapComparison;
+  /** Cached AI blurb for this epic at the viewed snapshot. */
+  aiSummary?: string | null;
   isHidden?: boolean;
   canEdit?: boolean;
   onToggleHidden?: () => void;
@@ -32,6 +34,7 @@ function formatDateOrTbd(date: string | null | undefined): string {
  */
 export function RoadmapItemCard({
   comparison,
+  aiSummary,
   isHidden = false,
   canEdit = false,
   onToggleHidden,
@@ -64,6 +67,11 @@ export function RoadmapItemCard({
             <Text size="xs" mt={2} style={{ color: 'var(--color-gray-500)' }}>
               {latest.aha_key}
             </Text>
+            {aiSummary ? (
+              <Text size="xs" mt={6} lineClamp={3} style={{ fontStyle: 'italic', color: 'var(--mantine-color-dimmed)' }}>
+                {aiSummary}
+              </Text>
+            ) : null}
           </div>
           {canEdit && onToggleHidden && (
             <Tooltip label={isHidden ? 'Unhide' : 'Hide from non-Product users'} withArrow>

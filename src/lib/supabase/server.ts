@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
+import { createClient as createSupabaseJsClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
@@ -110,7 +111,13 @@ export function createClient(): SupabaseClient {
     );
 }
 
-// Create a client with service role key for admin operations (bypasses RLS)
+/**
+ * Service-role client for API routes / jobs. Uses `@supabase/supabase-js` directly
+ * (no cookies) so requests always authenticate as `service_role`. A cookie-aware
+ * `createServerClient(..., serviceRoleKey, { cookies })` can merge the user's
+ * session and hit RLS as `authenticated` — breaking INSERT/upsert on tables that
+ * only grant writes to `service_role`.
+ */
 export function createAdminClient(): SupabaseClient {
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SECRET_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -119,31 +126,13 @@ export function createAdminClient(): SupabaseClient {
         throw new Error('Missing Supabase admin credentials');
     }
 
-    // Use the regular createServerClient but with service role key
-    // This bypasses RLS for admin operations
-    return createServerClient(
-        supabaseUrl,
-        supabaseKey,
-        {
-            global: {
-                fetch: customFetch,
-            },
-            cookies: {
-                async getAll() {
-                    const cookieStore = await cookies();
-                    return cookieStore.getAll();
-                },
-                async setAll(cookiesToSet) {
-                    try {
-                        const cookieStore = await cookies();
-                        cookiesToSet.forEach(({ name, value, options }) => {
-                            cookieStore.set(name, value, options);
-                        });
-                    } catch {
-                        // Ignore in Server Components
-                    }
-                },
-            },
-        }
-    );
+    return createSupabaseJsClient(supabaseUrl, supabaseKey, {
+        auth: {
+            persistSession: false,
+            autoRefreshToken: false,
+        },
+        global: {
+            fetch: customFetch,
+        },
+    });
 }

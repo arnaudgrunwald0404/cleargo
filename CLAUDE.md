@@ -188,7 +188,7 @@ Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind 
 
 ### Integrations (optional per feature)
 
-`AHA_DOMAIN`, `AHA_API_TOKEN`, `AHA_ROADMAP_PIVOT_ID` (custom pivot ID for weekly Roadmap Snapshot cron — bookmarks/custom_pivots), `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `RESEND_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`, `PENDO_INTEGRATION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `ROVO_API_KEY`
+`AHA_DOMAIN`, `AHA_API_TOKEN`, `AHA_ROADMAP_PIVOT_ID` (custom pivot ID for weekly Roadmap Snapshot cron — bookmarks/custom_pivots), `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `RESEND_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`, `PENDO_INTEGRATION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `ROVO_API_KEY`, `CLAUDE_API_KEY` (optional — HEART agent + roadmap epic blurbs; `ANTHROPIC_API_KEY` also accepted), `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` (optional — checklist pruning and stale nudges only)
 
 ## Deployment
 

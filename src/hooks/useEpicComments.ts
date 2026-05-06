@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
+import type { PmNoteCause } from '@/lib/roadmap/pmNoteCause';
 
 /**
  * PM/movement comments for an epic, taken from `epic_comment` (the renamed
@@ -15,7 +16,7 @@ export interface EpicCommentRow {
   created_at: string;
   updated_at: string;
   category: 'general' | 'movement' | 'risk' | 'decision' | null;
-  movement_cause: 'Internal' | 'External' | null;
+  movement_cause: PmNoteCause;
   movement_date: string | null;
   from_release: string | null;
   to_release: string | null;
@@ -30,7 +31,7 @@ interface RawCommentRow {
   created_at: string;
   updated_at: string;
   category: 'general' | 'movement' | 'risk' | 'decision' | null;
-  movement_cause: 'Internal' | 'External' | null;
+  movement_cause: PmNoteCause;
   movement_date: string | null;
   from_release: string | null;
   to_release: string | null;

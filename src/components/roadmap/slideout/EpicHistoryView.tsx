@@ -30,11 +30,14 @@ import { useEpicComments } from '@/hooks/useEpicComments';
 import { canEditRoadmap, useCurrentUser } from '@/hooks/useCurrentUser';
 import { ConfidenceBadge } from '@/components/roadmap/ConfidenceBadge';
 import { AddEpicNoteForm } from '@/components/roadmap/slideout/AddEpicNoteForm';
+import { isExternalCause, type PmNoteCause } from '@/lib/roadmap/pmNoteCause';
 import type { RoadmapComparison, RoadmapItem } from '@/types/roadmap';
 
 interface EpicHistoryViewProps {
   ahaKey: string;
   comparison?: RoadmapComparison;
+  /** Cached Claude blurb for this epic at the viewed snapshot (Performance Insights). */
+  aiSummary?: string | null;
 }
 
 interface ReleaseMovementEvent {
@@ -49,7 +52,7 @@ interface NoteEvent {
   date: string;
   text: string;
   authorEmail: string | null;
-  movementCause: 'Internal' | 'External' | null;
+  movementCause: PmNoteCause;
   category: 'general' | 'movement' | 'risk' | 'decision' | null;
 }
 
@@ -103,7 +106,7 @@ function extractReleaseMovements(history: EpicSnapshotVersion[]): ReleaseMovemen
   return events;
 }
 
-export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
+export function EpicHistoryView({ ahaKey, comparison, aiSummary }: EpicHistoryViewProps) {
   const { data: history = [], isLoading: historyLoading } = useEpicSnapshotHistory(ahaKey);
   const { data: comments = [], isLoading: commentsLoading } = useEpicComments(ahaKey);
   const { data: me } = useCurrentUser();
@@ -205,6 +208,15 @@ export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
               </>
             )}
           </SimpleGrid>
+          {aiSummary ? (
+            <Text
+              size="sm"
+              mt="sm"
+              style={{ fontStyle: 'italic', color: 'var(--mantine-color-dimmed)' }}
+            >
+              {aiSummary}
+            </Text>
+          ) : null}
         </Paper>
       )}
 
@@ -371,7 +383,8 @@ export function EpicHistoryView({ ahaKey, comparison }: EpicHistoryViewProps) {
                         <Badge
                           size="xs"
                           variant="light"
-                          color={event.movementCause === 'External' ? 'red' : 'blue'}
+                          color={isExternalCause(event.movementCause) ? 'red' : 'blue'}
+                          styles={{ root: { textTransform: 'none', maxWidth: 280 } }}
                         >
                           {event.movementCause}
                         </Badge>

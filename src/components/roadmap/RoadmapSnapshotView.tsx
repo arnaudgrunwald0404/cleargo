@@ -29,6 +29,7 @@ import { format } from 'date-fns';
 import { useRoadmapData } from '@/hooks/useRoadmapData';
 import { useAvailableSnapshots } from '@/hooks/useAvailableSnapshots';
 import { useHistoricalRoadmapComparison } from '@/hooks/useHistoricalRoadmapComparison';
+import { useCardDescriptions } from '@/hooks/useCardDescriptions';
 import { useYearlyMovements } from '@/hooks/useYearlyMovements';
 import { usePeriodReleaseMovements } from '@/hooks/usePeriodReleaseMovements';
 import {
@@ -133,6 +134,13 @@ function RoadmapSnapshotInner() {
   // selected snapshot date so the movement panel reflects what was true
   // at that point in time.
   const effectiveAsOfDate = isHistoricalMode ? dateOverride : latestSnapshotDate;
+
+  const comparisonsSettled = isHistoricalMode ? !historicalLoading : !isLoading;
+  const { descriptions } = useCardDescriptions(
+    sourceComparisons,
+    effectiveAsOfDate,
+    comparisonsSettled && Boolean(effectiveAsOfDate) && sourceComparisons.length > 0,
+  );
 
   // Pull yearly per-week movement summary, then narrow to the week
   // containing this snapshot. Mirrors `RoadmapRewindView`'s pattern.
@@ -476,6 +484,7 @@ function RoadmapSnapshotInner() {
                       }
                     : undefined
                 }
+                aiSummary={descriptions[ahaKey]}
               />
             ),
           });
@@ -595,6 +604,7 @@ function RoadmapSnapshotInner() {
                                 previous: c.previous,
                                 changes: c.changes,
                               }}
+                              aiSummary={descriptions[c.latest.aha_key]}
                             />
                           ),
                         })
@@ -606,6 +616,7 @@ function RoadmapSnapshotInner() {
                         <RoadmapItemCard
                           key={c.latest.id}
                           comparison={c}
+                          aiSummary={descriptions[c.latest.aha_key]}
                           isHidden={hiddenSet.has(c.latest.aha_key)}
                           canEdit={canEdit}
                           onToggleHidden={() => toggleHidden(c.latest.aha_key)}
@@ -621,6 +632,7 @@ function RoadmapSnapshotInner() {
                                     previous: c.previous,
                                     changes: c.changes,
                                   }}
+                                  aiSummary={descriptions[c.latest.aha_key]}
                                 />
                               ),
                             })

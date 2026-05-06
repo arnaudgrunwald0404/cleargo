@@ -9,15 +9,18 @@ interface PeriodMovementsViewProps {
   rows: PeriodReleaseMovement[];
   /** Lookup so clicking a row can drill into the epic's full history. */
   comparisons?: RoadmapComparison[];
+  /** AI blurbs keyed by `aha_key` (same snapshot as comparisons). */
+  descriptions?: Record<string, string>;
 }
 
 const IMPACT_COLOR: Record<string, string> = {
   high: 'red',
   medium: 'yellow',
   low: 'gray',
+  positive: 'teal',
 };
 
-export function PeriodMovementsView({ rows, comparisons }: PeriodMovementsViewProps) {
+export function PeriodMovementsView({ rows, comparisons, descriptions }: PeriodMovementsViewProps) {
   const { push } = useSlideout();
 
   if (rows.length === 0) {
@@ -58,7 +61,13 @@ export function PeriodMovementsView({ rows, comparisons }: PeriodMovementsViewPr
                     push({
                       title: r.aha_name ?? r.aha_key,
                       description: r.aha_key,
-                      render: () => <EpicHistoryView ahaKey={r.aha_key} comparison={comparison} />,
+                      render: () => (
+                        <EpicHistoryView
+                          ahaKey={r.aha_key}
+                          comparison={comparison}
+                          aiSummary={descriptions?.[r.aha_key]}
+                        />
+                      ),
                     })
                   }
                 >

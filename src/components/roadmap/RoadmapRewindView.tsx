@@ -29,6 +29,8 @@ import { useYearlyMovements } from '@/hooks/useYearlyMovements';
 import { useImpactCategorizedMovements } from '@/hooks/useImpactCategorizedMovements';
 import { usePeriodReleaseMovements } from '@/hooks/usePeriodReleaseMovements';
 import { useRoadmapData } from '@/hooks/useRoadmapData';
+import { useHistoricalRoadmapComparison } from '@/hooks/useHistoricalRoadmapComparison';
+import { useCardDescriptions } from '@/hooks/useCardDescriptions';
 import { ReleaseMovementHeatmap } from '@/components/roadmap/ReleaseMovementHeatmap';
 import { ReleaseDeliveryMetricsCard } from '@/components/roadmap/ReleaseDeliveryMetricsCard';
 import { PriorityGoalsMetricsCard } from '@/components/roadmap/PriorityGoalsMetricsCard';
@@ -38,7 +40,7 @@ import { SlideoutContainer } from '@/components/roadmap/slideout/SlideoutContain
 import { PeriodMovementsView } from '@/components/roadmap/slideout/PeriodMovementsView';
 import { VisitStatsButton } from '@/components/roadmap/VisitStatsButton';
 import { useTrackRoadmapVisit } from '@/hooks/useRoadmapVisits';
-import type { PeriodReleaseMovement, WeeklyMovement } from '@/types/roadmap';
+import type { PeriodReleaseMovement, RoadmapComparison, WeeklyMovement } from '@/types/roadmap';
 
 function normWeek(s: string) {
   return s?.split('T')[0] ?? s;
@@ -73,8 +75,22 @@ function RoadmapRewindInner() {
   const { data: impactCategorized = [], isLoading: impactLoading } =
     useImpactCategorizedMovements(selectedDate);
 
-  // Used to enrich slideout drilldowns with `previous` snapshot diffs.
-  const { data: roadmapData } = useRoadmapData();
+  // Comparisons for the selected snapshot (live RPC when latest; historical diff otherwise).
+  const { data: roadmapData, isPending: roadmapPending } = useRoadmapData();
+  const historical = useHistoricalRoadmapComparison(
+    !isViewingLatest && selectedDate ? selectedDate : null,
+  );
+  const comparisons = useMemo<RoadmapComparison[]>(() => {
+    return isViewingLatest
+      ? (roadmapData?.comparisons ?? [])
+      : (historical.data ?? []);
+  }, [isViewingLatest, roadmapData?.comparisons, historical.data]);
+  const comparisonsSettled = isViewingLatest ? !roadmapPending : !historical.isPending;
+  const { descriptions } = useCardDescriptions(
+    comparisons,
+    selectedDate,
+    comparisonsSettled && comparisons.length > 0,
+  );
 
   const { push } = useSlideout();
 
@@ -172,13 +188,11 @@ function RoadmapRewindInner() {
   const actualQuarterCount = quarterlyPeriodMovements.length || quarterSummary.totalMovements;
   const actualYtdCount = ytdPeriodMovements.length || ytdSummary.totalMovements;
 
-  const totalEpicsTracked = roadmapData?.comparisons.length ?? 0;
+  const totalEpicsTracked = comparisons.length;
   const stableCount = useMemo(
     () =>
-      (roadmapData?.comparisons ?? []).filter(
-        (c) => !c.changes.isNew && c.changes.changedFields.length === 0,
-      ).length,
-    [roadmapData?.comparisons],
+      comparisons.filter((c) => !c.changes.isNew && c.changes.changedFields.length === 0).length,
+    [comparisons],
   );
   const stablePct =
     totalEpicsTracked > 0 ? Math.round((stableCount / totalEpicsTracked) * 100) : 0;
@@ -218,7 +232,7 @@ function RoadmapRewindInner() {
       title,
       description: `${rows.length} epic${rows.length === 1 ? '' : 's'}`,
       render: () => (
-        <PeriodMovementsView rows={rows} comparisons={roadmapData?.comparisons} />
+        <PeriodMovementsView rows={rows} comparisons={comparisons} descriptions={descriptions} />
       ),
     });
 
@@ -281,17 +295,23 @@ function RoadmapRewindInner() {
       </Group>
 
       {/* Summary stats row */}
-      <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
-        <SummaryTile label="Epics tracked" value={totalEpicsTracked} accent="cast-iron" />
-        <SummaryTile
-          label="Stable this week"
-          value={stableCount}
-          extra={`${stablePct}%`}
-          accent="green"
-        />
-        <SummaryTile label="Moved this week" value={actualWeekCount} accent="amber" />
-        <SummaryTile label="Moved YTD" value={actualYtdCount} accent="violet" />
-      </SimpleGrid>
+      {!comparisonsSettled ? (
+        <Group justify="center" py="md">
+          <Loader size="sm" />
+        </Group>
+      ) : (
+        <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="md">
+          <SummaryTile label="Epics tracked" value={totalEpicsTracked} accent="cast-iron" />
+          <SummaryTile
+            label="Stable this week"
+            value={stableCount}
+            extra={`${stablePct}%`}
+            accent="green"
+          />
+          <SummaryTile label="Moved this week" value={actualWeekCount} accent="amber" />
+          <SummaryTile label="Moved YTD" value={actualYtdCount} accent="violet" />
+        </SimpleGrid>
+      )}
 
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="md">
         <KPICard
@@ -371,7 +391,7 @@ function RoadmapRewindInner() {
       </SimpleGrid>
 
       {/* Goal breakdown — top strategic goals, with item counts and bars */}
-      <GoalBreakdownCard comparisons={roadmapData?.comparisons} />
+      <GoalBreakdownCard comparisons={comparisons} descriptions={descriptions} />
     </Stack>
   );
 }

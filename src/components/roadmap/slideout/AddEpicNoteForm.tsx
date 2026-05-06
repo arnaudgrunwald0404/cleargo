@@ -5,7 +5,7 @@ import {
   Alert,
   Button,
   Group,
-  SegmentedControl,
+  Select,
   Stack,
   Textarea,
   Text,
@@ -13,6 +13,11 @@ import {
 import { IconCheck } from '@tabler/icons-react';
 import { useAddEpicComment } from '@/hooks/useAddEpicComment';
 import { useCurrentUser } from '@/hooks/useCurrentUser';
+import {
+  PM_NOTE_CAUSE_OPTIONS,
+  PM_NOTE_CAUSE_VALUES,
+  type PmNoteCauseNew,
+} from '@/lib/roadmap/pmNoteCause';
 
 interface AddEpicNoteFormProps {
   ahaKey: string;
@@ -26,10 +31,14 @@ interface AddEpicNoteFormProps {
   onCancel?: () => void;
 }
 
+const CAUSE_SET = new Set<string>(PM_NOTE_CAUSE_VALUES);
+
 /**
  * Inline form for PMs to attach a note to a release-movement (or post a
  * general note). Uses `useAddEpicComment` which writes to `epic_comment`
  * (RLS gates writes to product roles).
+ *
+ * Every PM note requires a classification (internal/external subtype).
  */
 export function AddEpicNoteForm({
   ahaKey,
@@ -42,48 +51,46 @@ export function AddEpicNoteForm({
   const { data: me } = useCurrentUser();
   const addNote = useAddEpicComment(me?.id ?? null);
   const [text, setText] = useState('');
-  const [cause, setCause] = useState<'Internal' | 'External' | ''>('');
+  const [cause, setCause] = useState<PmNoteCauseNew | null>(null);
 
   const isMovement = Boolean(movementDate);
-  const canSubmit = text.trim().length > 0 && (!isMovement || cause !== '');
+  const canSubmit =
+    text.trim().length > 0 && cause !== null && CAUSE_SET.has(cause);
 
   const handleSubmit = async () => {
-    if (!canSubmit) return;
+    if (!canSubmit || cause === null) return;
     await addNote.mutateAsync({
       ahaKey,
       commentText: text,
       category: isMovement ? 'movement' : 'general',
-      movementCause: isMovement ? (cause as 'Internal' | 'External') : null,
+      movementCause: cause,
       movementDate: movementDate ?? null,
       fromRelease: fromRelease ?? null,
       toRelease: toRelease ?? null,
     });
     setText('');
-    setCause('');
+    setCause(null);
     onCreated?.();
   };
 
   return (
     <Stack gap="xs" p="xs" style={{ background: 'var(--color-cast-iron-bg)', borderRadius: 6 }}>
-      {isMovement && (
-        <div>
-          <Text size="xs" mb={4} style={{ color: 'var(--color-gray-700)' }}>
-            Was this movement caused by something internal or external?
-          </Text>
-          <SegmentedControl
-            size="xs"
-            fullWidth
-            value={cause || 'pending'}
-            onChange={(v) => setCause(v === 'pending' ? '' : (v as 'Internal' | 'External'))}
-            data={[
-              { label: '— select —', value: 'pending' },
-              { label: 'Internal', value: 'Internal' },
-              { label: 'External', value: 'External' },
-            ]}
-            color="violet"
-          />
-        </div>
-      )}
+      <div>
+        <Text size="xs" mb={4} style={{ color: 'var(--color-gray-700)' }}>
+          {isMovement
+            ? 'What best describes why this epic moved release?'
+            : 'What best describes the context for this note?'}
+        </Text>
+        <Select
+          size="xs"
+          placeholder="— Select —"
+          data={PM_NOTE_CAUSE_OPTIONS}
+          value={cause}
+          onChange={(v) => setCause((v as PmNoteCauseNew) ?? null)}
+          comboboxProps={{ withinPortal: true }}
+          styles={{ input: { background: 'var(--color-white)' } }}
+        />
+      </div>
       <Textarea
         placeholder={
           isMovement
