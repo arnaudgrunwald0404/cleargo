@@ -99,6 +99,8 @@ function RoadmapRewindInner() {
       impactCategorized.map((m) => ({
         aha_key: m.aha_key,
         aha_name: m.aha_name,
+        gtm_name: m.gtm_name ?? null,
+        gtm_module: m.gtm_module ?? null,
         from_release: m.from_release,
         to_release: m.to_release,
         week_start: normWeek(String(m.week_start)),

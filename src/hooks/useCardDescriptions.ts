@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { RoadmapComparison } from '@/types/roadmap';
 import { cleanEpicDescriptionForAi } from '@/lib/roadmap/aiCardDescriptions';
+import { getDisplayName } from '@/lib/roadmap/displayNames';
 
 export interface CardDescriptionsResult {
   descriptions: Record<string, string>;
@@ -33,7 +34,7 @@ export function useCardDescriptions(
       seen.add(k);
       items.push({
         ahaKey: k,
-        ahaName: c.latest.aha_name,
+        ahaName: getDisplayName(c.latest),
         ahaDescription: cleanEpicDescriptionForAi(c.latest.aha_description),
       });
     }

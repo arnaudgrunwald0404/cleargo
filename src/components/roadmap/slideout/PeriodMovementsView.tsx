@@ -4,6 +4,7 @@ import { Badge, Group, Paper, Stack, Table, Text, UnstyledButton } from '@mantin
 import { useSlideout } from './SlideoutContext';
 import { EpicHistoryView } from './EpicHistoryView';
 import type { PeriodReleaseMovement, RoadmapComparison } from '@/types/roadmap';
+import { getDisplayName } from '@/lib/roadmap/displayNames';
 
 interface PeriodMovementsViewProps {
   rows: PeriodReleaseMovement[];
@@ -53,13 +54,18 @@ export function PeriodMovementsView({ rows, comparisons, descriptions }: PeriodM
           <Table.Tbody>
             {rows.map((r) => {
               const comparison = compByKey.get(r.aha_key);
+              const displayTitle = getDisplayName({
+                gtm_name: r.gtm_name ?? '',
+                aha_name: r.aha_name,
+                aha_key: r.aha_key,
+              });
               return (
                 <Table.Tr
                   key={`${r.aha_key}-${r.week_start}`}
                   style={{ cursor: 'pointer' }}
                   onClick={() =>
                     push({
-                      title: r.aha_name ?? r.aha_key,
+                      title: displayTitle || r.aha_key,
                       description: r.aha_key,
                       render: () => (
                         <EpicHistoryView
@@ -79,7 +85,7 @@ export function PeriodMovementsView({ rows, comparisons, descriptions }: PeriodM
                         lineClamp={2}
                         style={{ color: 'var(--color-gray-900)' }}
                       >
-                        {r.aha_name}
+                        {displayTitle}
                       </Text>
                       <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>
                         {r.aha_key}

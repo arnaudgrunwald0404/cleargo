@@ -1,4 +1,16 @@
-import { normalizePivotApiResponse, pickValue, type AhaPivotCell } from "../pivotNormalizer";
+import {
+  normalizePivotApiResponse,
+  pickValue,
+  sanitizePivotCellString,
+  type AhaPivotCell,
+} from "../pivotNormalizer";
+
+describe("sanitizePivotCellString", () => {
+  it("strips Aha status-pill HTML and decodes entities", () => {
+    const html = `<span class="status-pill" style="background-color: #b1c59b;">Talent AI &amp; Agents</span>`;
+    expect(sanitizePivotCellString(html)).toBe("Talent AI & Agents");
+  });
+});
 
 describe("pickValue", () => {
   it("parses Epic progress bar from html_value", () => {
@@ -16,6 +28,13 @@ describe("pickValue", () => {
   it("returns null for Epic progress bar when no percent", () => {
     const cell: AhaPivotCell = { html_value: "<span>—</span>" };
     expect(pickValue(cell, "Epic progress bar")).toBeNull();
+  });
+
+  it("strips HTML from rich_value string (e.g. GTM Module status pill)", () => {
+    const cell: AhaPivotCell = {
+      rich_value: `<span class="status-pill">Talent AI &amp; Agents</span>`,
+    };
+    expect(pickValue(cell, "GTM Module")).toBe("Talent AI & Agents");
   });
 
   it("extracts Epic key from first column html link", () => {

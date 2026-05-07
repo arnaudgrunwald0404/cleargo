@@ -20,10 +20,16 @@ export interface RoadmapItem {
   aha_components: string;
   aha_cross_functional_deps: string;
   aha_pod: string;
+  /** GTM Module from pivot; preferred over `aha_pod` for display when set. */
+  gtm_module: string;
+  /** GTM Name from pivot; preferred over `aha_name` for display when set. */
+  gtm_name: string;
   jira_key: string;
   aha_csm_priority: string;
   /** % complete from Aha! (0-100). May be null/undefined when missing. */
   aha_progress?: number | null;
+  /** Ingested for future use; not shown in UI yet. */
+  aha_promoted_ideas_votes?: number | null;
 }
 
 export interface RoadmapComparison {
@@ -120,6 +126,10 @@ export type RoadmapImpactLevel = 'high' | 'positive' | 'medium' | 'low';
 export interface PeriodReleaseMovement {
   aha_key: string;
   aha_name: string;
+  /** Raw GTM name from snapshot/RPC when present (display via `getDisplayName`). */
+  gtm_name?: string | null;
+  /** Raw GTM module from snapshot/RPC when present (display via `getDisplayPod`). */
+  gtm_module?: string | null;
   from_release: string | null;
   to_release: string | null;
   week_start: string;
@@ -134,6 +144,8 @@ export interface ImpactCategorizedMovement {
   week_end: string;
   aha_key: string;
   aha_name: string;
+  gtm_name?: string | null;
+  gtm_module?: string | null;
   aha_csm_priority: string | null;
   from_release: string | null;
   to_release: string | null;

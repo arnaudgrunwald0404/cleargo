@@ -19,7 +19,7 @@ export function useHistoricalRoadmapData(snapshotDate: string | null | undefined
       const { data, error } = await supabase
         .from('roadmap_snapshot')
         .select(
-          'id, created_at, aha_key, aha_name, aha_description, aha_start_date, aha_end_date, aha_status, aha_t_shirt_est, aha_primary_goal, aha_calculated_devs, aha_owner, aha_initial_est, aha_release, aha_release_date, aha_pod, jira_key, aha_csm_priority, aha_progress',
+          'id, created_at, aha_key, aha_name, aha_description, aha_start_date, aha_end_date, aha_status, aha_t_shirt_est, aha_primary_goal, aha_calculated_devs, aha_owner, aha_initial_est, aha_release, aha_release_date, aha_pod, gtm_module, gtm_name, jira_key, aha_csm_priority, aha_progress, aha_promoted_ideas_votes',
         )
         .eq('snapshot_date', snapshotDate)
         .limit(10000);
@@ -45,8 +45,18 @@ export function useHistoricalRoadmapData(snapshotDate: string | null | undefined
         aha_components: '',
         aha_cross_functional_deps: '',
         aha_pod: String(row.aha_pod ?? ''),
+        gtm_module: String(row.gtm_module ?? ''),
+        gtm_name: String(row.gtm_name ?? ''),
         jira_key: String(row.jira_key ?? ''),
         aha_csm_priority: String(row.aha_csm_priority ?? ''),
+        aha_progress:
+          row.aha_progress != null && row.aha_progress !== ''
+            ? Number(row.aha_progress)
+            : null,
+        aha_promoted_ideas_votes:
+          row.aha_promoted_ideas_votes != null && row.aha_promoted_ideas_votes !== ''
+            ? Number(row.aha_promoted_ideas_votes)
+            : null,
       }));
     },
     enabled: Boolean(snapshotDate),

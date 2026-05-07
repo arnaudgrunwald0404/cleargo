@@ -32,6 +32,12 @@ import { ConfidenceBadge } from '@/components/roadmap/ConfidenceBadge';
 import { AddEpicNoteForm } from '@/components/roadmap/slideout/AddEpicNoteForm';
 import { isExternalCause, type PmNoteCause } from '@/lib/roadmap/pmNoteCause';
 import type { RoadmapComparison, RoadmapItem } from '@/types/roadmap';
+import {
+  formatSnapshotContactDisplay,
+  getDisplayName,
+  getDisplayPod,
+  sanitizeRoadmapHtmlCell,
+} from '@/lib/roadmap/displayNames';
 
 interface EpicHistoryViewProps {
   ahaKey: string;
@@ -65,6 +71,8 @@ const FIELD_LABELS: Record<string, string> = {
   aha_status: 'Status',
   aha_owner: 'Contact',
   aha_pod: 'Pod',
+  gtm_module: 'GTM module',
+  gtm_name: 'GTM name',
   aha_t_shirt_est: 'T-shirt Size',
 };
 
@@ -83,7 +91,15 @@ function formatValue(value: unknown, fieldKey: string): string {
     return formatDate(String(value));
   }
   if (fieldKey === 'aha_owner') {
-    return String(value).split('@')[0] || String(value);
+    return formatSnapshotContactDisplay(String(value)) || 'Not set';
+  }
+  if (
+    fieldKey === 'gtm_module' ||
+    fieldKey === 'gtm_name' ||
+    fieldKey === 'aha_pod' ||
+    fieldKey === 'aha_name'
+  ) {
+    return sanitizeRoadmapHtmlCell(String(value)) || 'Not set';
   }
   return String(value);
 }
@@ -174,7 +190,7 @@ export function EpicHistoryView({ ahaKey, comparison, aiSummary }: EpicHistoryVi
                   </Group>
                 </Anchor>
               )}
-              <ConfidenceBadge ahaKey={ahaKey} ahaName={current?.aha_name || ahaKey} />
+              <ConfidenceBadge ahaKey={ahaKey} ahaName={current ? getDisplayName(current) : ahaKey} />
             </Group>
             {current.aha_csm_priority && (
               <Badge size="sm" variant="filled" color="violet">
@@ -192,18 +208,18 @@ export function EpicHistoryView({ ahaKey, comparison, aiSummary }: EpicHistoryVi
                 <FieldTile label="End" value={formatDate(current.aha_end_date)} accent="blue" />
               </>
             )}
-            {(current.aha_owner || current.aha_pod) && (
+            {(current.aha_owner || getDisplayPod(current)) && (
               <>
                 {current.aha_owner && (
                   <FieldTile
                     label="Contact"
-                    value={current.aha_owner.split('@')[0] || current.aha_owner}
+                    value={formatSnapshotContactDisplay(current.aha_owner) || '—'}
                     accent="purple"
                     icon={<IconUsers size={12} />}
                   />
                 )}
-                {current.aha_pod && (
-                  <FieldTile label="Pod" value={current.aha_pod} accent="purple" />
+                {getDisplayPod(current) && (
+                  <FieldTile label="Pod" value={getDisplayPod(current)} accent="purple" />
                 )}
               </>
             )}

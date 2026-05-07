@@ -29,6 +29,8 @@ export function usePeriodReleaseMovements(
         .map((m) => ({
           aha_key: String(m.aha_key),
           aha_name: String(m.aha_name ?? m.aha_key),
+          gtm_name: (m.gtm_name as string | null | undefined) ?? null,
+          gtm_module: (m.gtm_module as string | null | undefined) ?? null,
           from_release: (m.from_release as string) ?? null,
           to_release: (m.to_release as string) ?? null,
           week_start: String(m.week_start),

@@ -7,6 +7,11 @@ import { ConfidenceBadge } from '@/components/roadmap/ConfidenceBadge';
 import { InlineProgressBar } from '@/components/roadmap/InlineProgressBar';
 import { StatusPill } from '@/components/roadmap/StatusPill';
 import type { RoadmapComparison } from '@/types/roadmap';
+import {
+  formatSnapshotContactDisplay,
+  getDisplayName,
+  getDisplayPod,
+} from '@/lib/roadmap/displayNames';
 
 interface RoadmapItemCardProps {
   comparison: RoadmapComparison;
@@ -62,7 +67,7 @@ export function RoadmapItemCard({
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <div style={{ minWidth: 0, flex: 1 }}>
             <Text size="sm" fw={600} lineClamp={2} style={{ color: 'var(--color-gray-900)' }}>
-              {latest.aha_name || latest.aha_key}
+              {getDisplayName(latest)}
             </Text>
             <Text size="xs" mt={2} style={{ color: 'var(--color-gray-500)' }}>
               {latest.aha_key}
@@ -92,7 +97,7 @@ export function RoadmapItemCard({
 
         <Group gap="xs" wrap="wrap" align="center">
           <StatusPill status={latest.aha_status} />
-          <ConfidenceBadge ahaKey={latest.aha_key} ahaName={latest.aha_name || latest.aha_key} />
+          <ConfidenceBadge ahaKey={latest.aha_key} ahaName={getDisplayName(latest)} />
           {latest.aha_csm_priority && latest.aha_csm_priority.trim() && (
             <Tooltip
               label={`CSM / New Business Priority: ${latest.aha_csm_priority}`}
@@ -122,8 +127,8 @@ export function RoadmapItemCard({
           <Group gap={4} wrap="nowrap">
             <IconUsers size={12} color="var(--color-gray-500)" />
             <Text size="xs" style={{ color: 'var(--color-gray-700)' }}>
-              {(latest.aha_owner || 'Unassigned').split('@')[0]}
-              {latest.aha_pod ? ` · ${latest.aha_pod}` : ''}
+              {formatSnapshotContactDisplay(latest.aha_owner) || 'Unassigned'}
+              {getDisplayPod(latest) ? ` · ${getDisplayPod(latest)}` : ''}
             </Text>
           </Group>
         </Group>

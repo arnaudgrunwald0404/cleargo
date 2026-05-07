@@ -160,11 +160,17 @@ export function useRoadmapData() {
           aha_components: '',
           aha_cross_functional_deps: '',
           aha_pod: String(item.aha_pod ?? ''),
+          gtm_module: String(item.gtm_module ?? ''),
+          gtm_name: String(item.gtm_name ?? ''),
           jira_key: String(item.jira_key ?? ''),
           aha_csm_priority: String(item.aha_csm_priority ?? ''),
           aha_progress:
             item.aha_progress != null && item.aha_progress !== ''
               ? Number(item.aha_progress)
+              : null,
+          aha_promoted_ideas_votes:
+            item.aha_promoted_ideas_votes != null && item.aha_promoted_ideas_votes !== ''
+              ? Number(item.aha_promoted_ideas_votes)
               : null,
         };
 
@@ -208,6 +214,8 @@ export function useRoadmapData() {
             'aha_status',
             'aha_owner',
             'aha_pod',
+            'gtm_module',
+            'gtm_name',
             'aha_t_shirt_est',
             'aha_release',
           ];

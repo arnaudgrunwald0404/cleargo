@@ -11,6 +11,7 @@ import {
 import { format } from 'date-fns';
 import { InlineProgressBar } from '@/components/roadmap/InlineProgressBar';
 import type { PeriodReleaseMovement } from '@/types/roadmap';
+import { getDisplayName } from '@/lib/roadmap/displayNames';
 
 /**
  * Top-of-page summary panel for the Roadmap Snapshot view: shows the
@@ -299,6 +300,11 @@ interface MovementRowProps {
 function MovementRow({ movement, direction, onClick, outOfWindowLabel }: MovementRowProps) {
   const meta = DIRECTION_META[direction];
   const impactColor = movement.impact_level ? IMPACT_COLOR[movement.impact_level] : null;
+  const displayName = getDisplayName({
+    gtm_name: movement.gtm_name ?? '',
+    aha_name: movement.aha_name,
+    aha_key: movement.aha_key,
+  });
 
   return (
     <Paper
@@ -334,9 +340,9 @@ function MovementRow({ movement, direction, onClick, outOfWindowLabel }: Movemen
             fw={500}
             lineClamp={1}
             style={{ color: 'var(--color-gray-900)' }}
-            title={movement.aha_name}
+            title={displayName}
           >
-            {movement.aha_name || movement.aha_key}
+            {displayName || movement.aha_key}
           </Text>
           <Group gap="xs" align="center">
             <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>

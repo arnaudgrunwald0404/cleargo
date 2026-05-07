@@ -54,6 +54,11 @@ import { VisitStatsButton } from '@/components/roadmap/VisitStatsButton';
 import { UpcomingReleaseImpact } from '@/components/roadmap/UpcomingReleaseImpact';
 import { useTrackRoadmapVisit } from '@/hooks/useRoadmapVisits';
 import type { RoadmapComparison, WeeklyMovement } from '@/types/roadmap';
+import {
+  formatSnapshotContactDisplay,
+  getDisplayName,
+  getDisplayPod,
+} from '@/lib/roadmap/displayNames';
 
 /** Natural sort for release names like "2025.7", "2025.8", "2025.10". */
 function naturalReleaseCompare(a: string, b: string) {
@@ -86,6 +91,8 @@ const FIELD_DISPLAY_NAMES: Record<string, string> = {
   aha_status: 'Status',
   aha_owner: 'Contact',
   aha_pod: 'Pod',
+  gtm_module: 'GTM module',
+  gtm_name: 'GTM name',
   aha_t_shirt_est: 'T-shirt size',
 };
 
@@ -199,8 +206,10 @@ function RoadmapSnapshotInner() {
     const pods = new Set<string>();
     sourceComparisons.forEach((c) => {
       if (c.latest.aha_status) statuses.add(c.latest.aha_status);
-      if (c.latest.aha_owner) owners.add(c.latest.aha_owner);
-      if (c.latest.aha_pod) pods.add(c.latest.aha_pod);
+      const ownerLabel = formatSnapshotContactDisplay(c.latest.aha_owner);
+      if (ownerLabel) owners.add(ownerLabel);
+      const podLabel = getDisplayPod(c.latest);
+      if (podLabel) pods.add(podLabel);
       // Goals can be HTML — keep raw text only
       if (c.latest.aha_primary_goal) {
         const text = c.latest.aha_primary_goal
@@ -323,14 +332,27 @@ function RoadmapSnapshotInner() {
     const needle = filters.search.trim().toLowerCase();
     return sourceComparisons.filter((c) => {
       const name = (c.latest.aha_name || '').toLowerCase();
+      const gtmName = (c.latest.gtm_name || '').toLowerCase();
       const key = (c.latest.aha_key || '').toLowerCase();
       const rel = (c.latest.aha_release || '').toLowerCase();
-      if (needle && !(name.includes(needle) || key.includes(needle) || rel.includes(needle))) {
+      if (
+        needle &&
+        !(
+          name.includes(needle) ||
+          gtmName.includes(needle) ||
+          key.includes(needle) ||
+          rel.includes(needle)
+        )
+      ) {
         return false;
       }
       if (filters.status && c.latest.aha_status !== filters.status) return false;
-      if (filters.owner && c.latest.aha_owner !== filters.owner) return false;
-      if (filters.pod && c.latest.aha_pod !== filters.pod) return false;
+      if (
+        filters.owner &&
+        formatSnapshotContactDisplay(c.latest.aha_owner) !== filters.owner
+      )
+        return false;
+      if (filters.pod && getDisplayPod(c.latest) !== filters.pod) return false;
       if (filters.goal) {
         const text = (c.latest.aha_primary_goal || '')
           .replace(/<\/li>/gi, '|')
@@ -470,7 +492,7 @@ function RoadmapSnapshotInner() {
         onItemClick={(ahaKey) => {
           const c = sourceComparisons.find((sc) => sc.latest.aha_key === ahaKey);
           push({
-            title: c?.latest.aha_name || ahaKey,
+            title: c ? getDisplayName(c.latest) : ahaKey,
             description: ahaKey,
             render: () => (
               <EpicHistoryView
@@ -594,7 +616,7 @@ function RoadmapSnapshotInner() {
                       onToggleHidden={toggleHidden}
                       onRowClick={(c) =>
                         push({
-                          title: c.latest.aha_name || c.latest.aha_key,
+                          title: getDisplayName(c.latest),
                           description: c.latest.aha_key,
                           render: () => (
                             <EpicHistoryView
@@ -622,7 +644,7 @@ function RoadmapSnapshotInner() {
                           onToggleHidden={() => toggleHidden(c.latest.aha_key)}
                           onClick={() =>
                             push({
-                              title: c.latest.aha_name || c.latest.aha_key,
+                              title: getDisplayName(c.latest),
                               description: c.latest.aha_key,
                               render: () => (
                                 <EpicHistoryView
@@ -729,7 +751,7 @@ function SimpleGroupTable({
                         lineClamp={2}
                         style={{ color: 'var(--color-gray-900)', flex: '1 1 auto', minWidth: 0 }}
                       >
-                        {c.latest.aha_name || c.latest.aha_key}
+                        {getDisplayName(c.latest)}
                       </Text>
                       {csmPriority && (
                         <Tooltip
@@ -752,7 +774,7 @@ function SimpleGroupTable({
                 <Table.Td onClick={(e) => e.stopPropagation()}>
                   <ConfidenceBadge
                     ahaKey={c.latest.aha_key}
-                    ahaName={c.latest.aha_name || c.latest.aha_key}
+                    ahaName={getDisplayName(c.latest)}
                   />
                 </Table.Td>
                 <Table.Td>
@@ -761,10 +783,10 @@ function SimpleGroupTable({
                 <Table.Td>
                   <Stack gap={0}>
                     <Text size="sm" style={{ color: 'var(--color-gray-800)' }}>
-                      {(c.latest.aha_owner || 'Unassigned').split('@')[0]}
+                      {formatSnapshotContactDisplay(c.latest.aha_owner) || 'Unassigned'}
                     </Text>
                     <Text size="xs" style={{ color: 'var(--color-gray-500)' }}>
-                      {c.latest.aha_pod || 'No pod'}
+                      {getDisplayPod(c.latest) || 'No pod'}
                     </Text>
                   </Stack>
                 </Table.Td>

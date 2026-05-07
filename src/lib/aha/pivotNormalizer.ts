@@ -31,6 +31,28 @@ function stripHtml(s: string): string | undefined {
   return typeof s === "string" ? s.replace(/<[^>]*>/g, "").trim() : undefined;
 }
 
+/** Decode minimal entities after tag strip (Aha status pills use &amp; etc.). */
+function decodeBasicHtmlEntities(s: string): string {
+  return s
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+/**
+ * Aha often returns status-pill HTML in rich_value/text for picklist columns (e.g. GTM Module).
+ * Strip tags, decode entities, normalize whitespace.
+ */
+export function sanitizePivotCellString(s: string): string {
+  const t = s.trim();
+  if (!t) return t;
+  const noTags = /<[^>]+>/.test(t) ? t.replace(/<[^>]*>/g, "").trim() : t;
+  return decodeBasicHtmlEntities(noTags).replace(/\s+/g, " ").trim();
+}
+
 function parseProgressBar(htmlString: string): number | null {
   const stripped = stripHtml(htmlString);
   if (!stripped) return null;
@@ -88,23 +110,27 @@ export function pickValue(cell: AhaPivotCell | undefined, columnTitle: string): 
           typeof x === "string" ? x.trim() : fromObject(x as Record<string, unknown>)
         )
         .filter(Boolean) as string[];
-      if (arr.length) return arr.join(", ");
+      if (arr.length) return sanitizePivotCellString(arr.join(", "));
     } else if (typeof rv === "object") {
       const v = fromObject(rv as Record<string, unknown>);
-      if (v) return v;
+      if (v) return sanitizePivotCellString(v);
     } else if (typeof rv === "string" && rv.trim() !== "") {
-      return rv.trim();
+      return sanitizePivotCellString(rv);
     }
   }
 
   if (typeof cell.text_value === "string" && cell.text_value.trim() !== "") {
-    return cell.text_value.trim();
+    return sanitizePivotCellString(cell.text_value);
   }
 
   const fromHtml = stripHtml(cell.html_value as string);
-  if (fromHtml) return fromHtml;
+  if (fromHtml) return sanitizePivotCellString(fromHtml);
 
-  if (cell.plain_value !== undefined) return cell.plain_value as string | number;
+  if (cell.plain_value !== undefined) {
+    const pv = cell.plain_value;
+    if (typeof pv === "string") return sanitizePivotCellString(pv);
+    return pv as number;
+  }
 
   return null;
 }
@@ -145,6 +171,7 @@ export function normalizePivotApiResponse(input: AhaPivotListResponse): Normaliz
         "[pivotNormalizer] columns:",
         columns.map((c) => c.title || `${c.table}.${c.field}`).join(" | ")
       );
+      console.log("[pivotNormalizer] row[0] normalized keys:", Object.keys(output).join(" | "));
     }
 
     return output;

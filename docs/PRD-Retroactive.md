@@ -767,13 +767,13 @@ Time-series visibility into how the roadmap moves week over week. Merged in from
 
 #### 11.1 Weekly Snapshot Job
 - **Cron**: GitHub Actions `roadmap-snapshot.yml` runs Mondays 08:00 UTC, hitting `/api/jobs/roadmap-snapshot` with the standard `CRON_SECRET` bearer auth
-- **Source**: Aha! custom-pivot REST endpoint (`AHA_ROADMAP_PIVOT_ID`), paginated and normalized in `src/lib/aha/pivotNormalizer.ts` and `src/lib/aha/pivotMapping.ts`
+- **Source**: Aha! custom-pivot REST endpoint (`AHA_ROADMAP_PIVOT_ID`), paginated and normalized in `src/lib/aha/pivotNormalizer.ts` and `src/lib/aha/pivotMapping.ts`. Pivot columns **GTM Module**, **GTM Name**, and **Epic promoted ideas vote count** are mapped into `gtm_module`, `gtm_name`, and `aha_promoted_ideas_votes` when present (titles must match exactly).
 - **Sink**: `roadmap_snapshot` table — partitioned by `snapshot_date` (monthly partitions), with `epic_id` populated via `aha_key ↔ epic.aha_id` lookup; unmatched keys are tracked but not blocked
 - **Maintenance**: monthly `/api/jobs/ensure-snapshot-partitions` cron keeps current+next-3-months partitions ahead of the calendar via `public.ensure_roadmap_snapshot_partitions()`
 - **Replaces**: a standalone n8n workflow that previously fed RRV's `roadmap` table
 
 #### 11.2 Roadmap Snapshot page (`/portfolio/snapshot`)
-- Latest weekly pivot snapshot with field-level "Changes vs prior week" badges (release, dates, status, owner, pod, t-shirt size)
+- Latest weekly pivot snapshot with field-level "Changes vs prior week" badges (release, dates, status, owner, pod / GTM module, GTM name, t-shirt size). **Display**: item titles and the Pod line prefer **GTM Name** / **GTM Module** when non-empty; otherwise **Epic name** / **Dev Backlog/Pod** (`getDisplayName` / `getDisplayPod` in `src/lib/roadmap/displayNames.ts`). **Promoted-ideas vote count** is stored only (not shown in UI yet).
 - **Upcoming Release Impact panel** (`UpcomingReleaseImpact.tsx`) — pinned above the accordion, this is the Mantine port of RRV's "Release Movements Impacting Upcoming Releases" summary. Pulls weekly movement data from `usePeriodReleaseMovements` (week-of effective snapshot date) and `useYearlyMovements` and categorizes each movement into accelerated / delayed / new for each upcoming release. Items where `to_release` is `NULL` (epic moved out of the visible report window) are classified as **delayed** and tagged `Moved {N}+ releases out` with a tooltip explaining the report-window cutoff. Each row is clickable and pushes `EpicHistoryView` into the slideout stack
 - Per-release accordion shows release date with a **`Cohort 1:` prefix** and a tooltip explaining the date is Cohort 1's GA and Cohort 2 typically lands ~4 weeks later (sometimes 5, since releases aim for mid-month)
 - Per-epic **Confidence** column rendered as a colored badge (very_low → very_high). PM/PRODUCT_OPS/CPO/SUPERADMIN see a click-to-edit affordance opening the `ConfidenceAdjustmentDialog` (slider + preview + audit-noted save)
@@ -1291,7 +1291,7 @@ This is the ClearGo equivalent of RRV's `user_visits` feature, swapping IP-addre
 
 #### Roadmap Snapshot & Rewind (RRV merge)
 All gated behind `FEATURE_ROADMAP_REWIND`. RLS pattern is **universal SELECT for authenticated users, role-gated writes**.
-- **roadmap_snapshot**: weekly Aha! pivot rows. Declared as `PARTITION BY RANGE (snapshot_date)` from day one with monthly child partitions (2023-01 → 2032-12 pre-created). Columns mirror RRV's `roadmap`: `epic_id` (FK → `epic.id`, `ON DELETE SET NULL`), `aha_key`, `snapshot_date`, plus 17 Aha! pivot columns (`aha_name`, `aha_release`, `aha_release_date`, `aha_status`, `aha_t_shirt_est`, `aha_primary_goal`, `aha_calculated_devs`, `aha_owner`, `aha_initial_est`, `aha_pod`, `jira_key`, `aha_csm_priority`, `aha_progress`, etc.). Insert-only (one row per epic per weekly snapshot). PK `(snapshot_date, id)`; unique `(snapshot_date, aha_key)`. Indexes on `(epic_id, snapshot_date DESC)`, `(aha_key, snapshot_date DESC)`, and `(snapshot_date)`.
+- **roadmap_snapshot**: weekly Aha! pivot rows. Declared as `PARTITION BY RANGE (snapshot_date)` from day one with monthly child partitions (2023-01 → 2032-12 pre-created). Columns mirror RRV's `roadmap`: `epic_id` (FK → `epic.id`, `ON DELETE SET NULL`), `aha_key`, `snapshot_date`, plus Aha! pivot columns including `aha_name`, `aha_release`, `aha_release_date`, `aha_status`, `aha_t_shirt_est`, `aha_primary_goal`, `aha_calculated_devs`, `aha_owner`, `aha_initial_est`, `aha_pod`, `gtm_module`, `gtm_name`, `jira_key`, `aha_csm_priority`, `aha_progress`, `aha_promoted_ideas_votes` (votes ingested for future use). Insert-only (one row per epic per weekly snapshot). PK `(snapshot_date, id)`; unique `(snapshot_date, aha_key)`. Indexes on `(epic_id, snapshot_date DESC)`, `(aha_key, snapshot_date DESC)`, and `(snapshot_date)`.
 - **ai_description_cache**: short Claude-generated summaries per epic per snapshot week (`snapshot_date`, `aha_key`, `description`, timestamps). Upserted by authenticated `POST /api/roadmap/card-descriptions` using the admin Supabase client; generation requires **`CLAUDE_API_KEY`** or **`ANTHROPIC_API_KEY`**. RLS: authenticated SELECT; inserts/updates only via service role through that route.
 - **roadmap_delay_history** (view): aggregates `roadmap_snapshot` to surface per-epic delay event counts and totals (lifetime + YTD).
 - **confidence_rating**: per `(aha_key, snapshot_date)` confidence rating from `confidenceCalculator`. Tracks `calculated_*` (algorithmic), `pm_adjustment` ([-20, 20]), `final_*` (clamped 0-100), `last_calculated_at`, `author_email`. Updates gated to PM/PRODUCT_OPS/CPO/SUPERADMIN via RLS.
@@ -1302,9 +1302,9 @@ All gated behind `FEATURE_ROADMAP_REWIND`. RLS pattern is **universal SELECT for
 
 #### Roadmap RPCs (Supabase functions)
 All ported from RRV with ClearGo-aligned table names:
-- `get_latest_and_previous_roadmap_versions()`
+- `get_latest_and_previous_roadmap_versions()` — returns `gtm_module`, `gtm_name`, `aha_promoted_ideas_votes` alongside legacy pivot columns for the live snapshot comparison path
 - `get_weekly_roadmap_changes(releases)`, `get_quarter_to_date_roadmap_changes(releases)`, `get_year_to_date_roadmap_changes(releases)`
-- `get_all_year_release_movements(as_of_date)`, `get_year_movements_with_impact(as_of_date)`, `get_year_movements_impact_summary(as_of_date)`
+- `get_all_year_release_movements(as_of_date)`, `get_year_movements_with_impact(as_of_date)` (also returns `gtm_name`, `gtm_module` for Rewind/drilldown display), `get_year_movements_impact_summary(as_of_date)`
 - `get_release_delivery_metrics(target_release)`, `get_period_release_delivery_metrics(period_type)`
 - `get_priority_goals_delivery_metrics(as_of_date)`, `get_strategic_items_detail(category, period, as_of_date)`
 - `ensure_roadmap_snapshot_partitions()` — `SECURITY DEFINER`, called from the monthly partition-maintenance cron

@@ -103,6 +103,8 @@ export function GoalBreakdownCard({ comparisons, descriptions, limit = 5 }: Goal
                   const rows: PeriodReleaseMovement[] = items.map((c) => ({
                     aha_key: c.latest.aha_key,
                     aha_name: c.latest.aha_name,
+                    gtm_name: c.latest.gtm_name || null,
+                    gtm_module: c.latest.gtm_module || null,
                     from_release: c.previous?.aha_release || null,
                     to_release: c.latest.aha_release || null,
                     week_start: '',

@@ -157,8 +157,8 @@ export function RoadmapFilters({
 
             <Select
               size="xs"
-              label="Pod"
-              placeholder="Any pod"
+              label="Pod / GTM module"
+              placeholder="Any pod or module"
               clearable
               searchable
               data={availablePods.map((s) => ({ value: s, label: s }))}
