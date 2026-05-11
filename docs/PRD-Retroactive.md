@@ -507,10 +507,13 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 ### 6A. Analytics Dashboard
 
-- **Route**: `/analytics` (dashboard analytics page)
+- **Route**: `/analytics` (dashboard analytics page). Uses a thin server `page.tsx` that wraps the client dashboard in `<Suspense>` (see `AnalyticsDashboardClient.tsx`) for `useSearchParams` compatibility.
 - **Access**: Gated by capability `analytics.read` (assigned via Admin > Settings > Permissions); SUPERADMIN, CPO, PRODUCT_OPS and other roles can be granted this capability
 - **Performance**: Tabbed interface with lazy loading - only loads data for the active tab to improve initial page load performance
-- **Tabs**:
+- **Sections** (top-level toggle):
+  - **Releases**: Existing adoption/compliance/timeliness/outcomes analytics (filters apply here only).
+  - **Roadmap**: Plan vs Actual reporting + optional Roadmap Rewind embed when `FEATURE_ROADMAP_REWIND` is enabled.
+- **Tabs** (within **Releases**):
   - **Launch Metrics**: Success plan completion, Retro completion, Launch hygiene
   - **Timeliness**: Criteria timeliness, PM timeliness
   - **Usage Analytics**: Adoption metrics, stickiness metrics, usage by role, activity trends
@@ -525,11 +528,21 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
     - **Stickiness**: DAU/MAU ratio, WAU/MAU ratio, daily/weekly/monthly active users
     - **Usage by Role**: Activity breakdown by role (PM, PMM, ADMIN, etc.)
     - **Activity Trends**: Time series of daily active users and logins
+- **Roadmap section — Plan vs Actual**:
+  - Compares snapshot rows via RPC `get_period_plan_vs_actual` for epics where **`cleargo_candidate` is “Yes” or “Yes - UI Framework”** (join `epic.aha_id` = `roadmap_snapshot.aha_key`). **Modes**: `quarter_baseline` (Quarter Plan — first Q snapshot only; end = start), `quarter_progress` (first Q snapshot vs last snapshot in the selected in-quarter month; keys cumulative from Q start through that month), `quarterly` (Quarter Results — full quarter). **End** columns use each epic’s **latest** row in the comparison end window (not only the global last pull). **`in_end`** means the epic appears on the global **`end_dt`** snapshot. **Status chips** (`derivePlanVsActualStatus`): **On Plan** (same train not shipped, or different train with ≤2 release slots and &lt;90d between `release_schedule` launches); **Delivered: On Time** / **Delivered: Delayed** / **Delivered: Added**; **Postponed** (not shipped, different train, &gt;2 slots or ≥90d slip, launch dates &lt;200d apart); **New Addition**; **Removed** (dropped without shipped heuristics, or ≥200d between launches, or unknown ordering with different trains). **Delivered** uses Aha workflow heuristics plus **`end_aha_progress` ≥ 100** when status lags. ClearGO **`epic`** is **not** used for chips.
+  - **Release scope**: After RPC, rows are filtered so the epic’s applicable **Aha release train** (`YYYY.M` / `YYYY.MM`) falls in the report window — **`quarterly`** allows trains for any month in that calendar quarter; **`quarter_baseline`** / **`quarter_progress`** use the **same quarter-wide train set** as the old monthly drill-down (all trains in the quarter that contains the anchor month). Uses **end snapshot release** when the epic is still on the roadmap at period end, and **start snapshot release** when it was removed mid-period. Rows with missing or non-parseable release trains are kept.
+  - **UI**: Quarter selector plus **Quarter Plan / one month in / two months in / Quarter Results**; table shows **GTM module** (from `gtm_module` only), latest **`epic_comment.movement_cause`** as Internal/External (with filter), optional **group by goal or GTM module** with sortable sub-tables, and ARR / status as before.
+  - **AI narrative** (optional): Claude structured output summarizes shifts using snapshot-derived rows plus `epic_comment` movement notes linked via `epic.aha_id`; prompts require **no speculation**. Results are **cached** in `roadmap_period_analysis` (unique per `period_type`, `period_start`; `period_type` includes `quarter_baseline`, `quarter_progress`, `quarterly`, and legacy `monthly` for old rows). Generation is gated by `roadmap.analysis.generate`. APIs: `GET /api/analytics/plan-vs-actual`, `POST /api/analytics/plan-vs-actual/analysis`.
+  - **Line-level narrative**: Summary and reasoning per `aha_key` open in a **right-hand drawer** (same slideout pattern as Roadmap Snapshot). The model is prompted with status, releases, snapshot progress, GTM module, and PM reason when present. Goal / GTM / feature cells use `sanitizePivotCellString` from Aha pivot fields.
+  - **Manual ARR / accounts**: Each row has a free-text **ARR / accounts** field. When period analysis is cached and the user can patch analysis, values persist in `roadmap_period_analysis.ai_analysis.itemInsights[].arrImpact`; otherwise they persist in **localStorage** for that period key until analysis exists. Full-period AI regeneration keeps non-empty manual ARR text per feature.
+  - **Automatic generation**: When a user with `roadmap.analysis.generate` opens a period that has snapshot rows but **no** cached analysis, the client triggers generation once (same as the Generate button). **Cron**: GitHub Actions `roadmap-period-analysis.yml` (1st of month, UTC) calls `GET /api/jobs/roadmap-period-analysis` with `CRON_SECRET` to warm **`quarter_progress`** for the **prior calendar month** and, on Jan/Apr/Jul/Oct, **`quarterly`** for the **prior completed quarter** (skips if already cached). **Note**: Existing cache rows built under legacy `monthly` semantics stay stale until **force regenerate** after deploy.
+- **Tabs** (within **Roadmap**): **Plan vs Actual** (always); **Roadmap Rewind** when the roadmap feature flag is on — same `RoadmapRewindView` as before.
 - **Views**: Snapshot (current period) vs trends (time-series over configurable months); filters apply to all cards
 - **APIs**: 
   - Launch Metrics: `GET /api/analytics/success-plan-completion`, `GET /api/analytics/retro-completion`, `GET /api/analytics/launch-hygiene` (optional query params: tier, pod, date_range_start, date_range_end, trends, months_back)
   - Timeliness: `GET /api/analytics/criteria-timeliness`, `GET /api/analytics/pm-timeliness` (optional query params: tier, pod, date_range_start, date_range_end)
   - Usage: `GET /api/analytics/usage?metric={adoption|stickiness|by-role|trends}` (optional query params: date_range_start, date_range_end, role, days_back)
+  - Plan vs Actual: `GET /api/analytics/plan-vs-actual?period_type={quarter_baseline|quarter_progress|quarterly}&period_date=yyyy-MM-dd` (`period_date` = quarter start for baseline/results; first day of in-quarter month for `quarter_progress`), `POST /api/analytics/plan-vs-actual/analysis` (JSON body: `period_type`, `period_date`, optional `force`), `PATCH /api/analytics/plan-vs-actual/analysis` (partial updates including optional `item_insight`: `aha_key`, `summary`, `likely_reasons`, optional `arr_impact`), `POST /api/analytics/plan-vs-actual/analysis/item` (JSON body: `period_type`, `period_date`, `aha_key`) to regenerate AI narrative for one row (requires existing cached period analysis)
 - **User Activity Tracking**: 
   - Tracks user logins and activity in `user_activity` table
   - Login activity tracked automatically via `/api/me` endpoint (throttled to once per hour per user)
@@ -784,7 +797,8 @@ Time-series visibility into how the roadmap moves week over week. Merged in from
 - Click any row to push the **Epic History** view into a stack-based slideout drawer (see 11.4)
 - Universal read access for any authenticated user
 
-#### 11.3 Roadmap Rewind page (`/portfolio/rewind`)
+#### 11.3 Roadmap Rewind page (`/portfolio/rewind` → `/analytics`)
+- **Navigation**: `/portfolio/rewind` redirects to `/analytics?section=roadmap&roadmapTab=rewind`. The sidebar portfolio link for Rewind was removed; use **Analytics → Roadmap → Roadmap Rewind**.
 - Top summary tiles: epics tracked, stable-this-week count + %, moved-this-week, moved-YTD
 - Three KPI cards (week / quarter-to-date / year-to-date) — clickable, push the period drilldown into the slideout stack
 - Movements-per-week bar chart + weekly heatmap (impact-categorized via SQL)
@@ -1308,6 +1322,7 @@ All ported from RRV with ClearGo-aligned table names:
 - `get_release_delivery_metrics(target_release)`, `get_period_release_delivery_metrics(period_type)`
 - `get_priority_goals_delivery_metrics(as_of_date)`, `get_strategic_items_detail(category, period, as_of_date)`
 - `ensure_roadmap_snapshot_partitions()` — `SECURITY DEFINER`, called from the monthly partition-maintenance cron
+- `apply_roadmap_snapshot_gtm_from_pivot(p_updates jsonb, p_force boolean)` — bulk-updates `gtm_module` / `gtm_name` per `aha_key` for backfill jobs (`service_role` only)
 
 ---
 
@@ -1454,6 +1469,7 @@ All ported from RRV with ClearGo-aligned table names:
   4. Resolve `epic_id` per row via batched `aha_id` lookup against `epic`
   5. Batch insert into `roadmap_snapshot` (chunks of 150)
   6. Return summary: `{ rows_inserted, unmatched_aha_keys, unmatched_sample[] }`
+- **GTM backfill (manual / one-off)**: `POST` or `GET` `/api/jobs/roadmap-snapshot-backfill-gtm` with the same `CRON_SECRET` bearer auth. Pulls the live pivot (same mapping as weekly intake) and updates **all** `roadmap_snapshot` rows per `aha_key` via `public.apply_roadmap_snapshot_gtm_from_pivot`. Default **merge** mode uses `COALESCE(pivot, existing)` so empty pivot cells do not erase stored values; `?force=true` mirrors pivot exactly (including NULL). **`dry_run=true`** returns pivot epic counts only. Labels are **current** pivot values applied to historical rows (not true point-in-time GTM history).
 - **Partition Maintenance**: monthly `/api/jobs/ensure-snapshot-partitions` calls `public.ensure_roadmap_snapshot_partitions()` to keep the calendar covered
 - **Replaces**: a standalone n8n workflow that previously fed RRV's `roadmap` table
 
@@ -1638,6 +1654,7 @@ All ported from RRV with ClearGo-aligned table names:
 - `roadmap.impactOverride.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN)
 - `roadmap.hiddenItem.write` — all roles (per-user preference; RLS still scopes writes to the owner)
 - `roadmap.movementNote.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN). Authoritative gate is the `epic_comment_insert_pm` RLS policy (migration 20260430120000); the UI helper `canEditRoadmap()` mirrors this for client-side affordances. Once a note is created, the author can still edit/delete their own row even if their role changes later.
+- `roadmap.analysis.generate` — CPO / PRODUCT_OPS (plus SUPERADMIN): generate or regenerate cached Plan vs Actual AI narrative (`POST /api/analytics/plan-vs-actual/analysis`). Viewing the report still requires `analytics.read`.
 
 #### Permissions Matrix
 
@@ -1809,7 +1826,7 @@ All ported from RRV with ClearGo-aligned table names:
 - Jira Epic Key: `docs/jira-epic-key-methodology.md`
 - HEART Framework: `src/lib/heart/` (types, service, agent, snapshot-calculator, happiness-automation, pendo-context, data-confidence)
 - Admin Impersonation: `src/lib/auth/impersonation.ts`, `src/components/ImpersonationBanner.tsx`, `src/app/api/admin/impersonate/`
-- Analytics: `src/app/(dashboard)/analytics/page.tsx`, `src/lib/services/analyticsService`, `src/app/api/analytics/`
+- Analytics: `src/app/(dashboard)/analytics/page.tsx`, `src/app/(dashboard)/analytics/AnalyticsDashboardClient.tsx`, `src/lib/services/analyticsService`, `src/lib/services/planVsActualService.ts`, `src/app/api/analytics/`
 
 ---
 

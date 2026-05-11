@@ -10,6 +10,17 @@ describe("sanitizePivotCellString", () => {
     const html = `<span class="status-pill" style="background-color: #b1c59b;">Talent AI &amp; Agents</span>`;
     expect(sanitizePivotCellString(html)).toBe("Talent AI & Agents");
   });
+
+  it("puts stacked block goals on separate lines instead of gluing text", () => {
+    const html = `<div>Delight Customers with Enhanced Features and User Experience</div><div>1. Reduce Churn - 2025/2026</div>`;
+    expect(sanitizePivotCellString(html)).toBe(
+      "Delight Customers with Enhanced Features and User Experience\n1. Reduce Churn - 2025/2026",
+    );
+  });
+
+  it("treats br as newline", () => {
+    expect(sanitizePivotCellString("Line one<br/>Line two")).toBe("Line one\nLine two");
+  });
 });
 
 describe("pickValue", () => {

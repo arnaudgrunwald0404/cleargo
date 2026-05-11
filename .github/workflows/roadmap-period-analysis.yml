@@ -1,0 +1,28 @@
+name: Roadmap period analysis (monthly)
+
+on:
+  schedule:
+    # First day of month 09:15 UTC — prior month Plan vs Actual AI cache
+    - cron: '15 9 1 * *'
+  workflow_dispatch: {}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger roadmap period analysis job
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          curl -sS -f -X GET "$BASE_URL/api/jobs/roadmap-period-analysis" \
+            -H "Authorization: Bearer $CRON_SECRET" \
+            -H "Accept: application/json"

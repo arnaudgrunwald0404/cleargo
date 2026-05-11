@@ -1164,10 +1164,19 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
     setPatch({ ...patch, data_sources: updated.length > 0 ? updated : null });
   };
 
-  const ahaFieldSelectData = ahaFields.map(field => ({
-    value: field.alias,
-    label: `${field.label} (${field.type === 'standard' ? 'Standard' : 'Custom'})`,
-  }));
+  const ahaFieldSelectData = (() => {
+    const seen = new Set<string>();
+    const out: { value: string; label: string }[] = [];
+    for (const field of ahaFields) {
+      if (!field?.alias || seen.has(field.alias)) continue;
+      seen.add(field.alias);
+      out.push({
+        value: field.alias,
+        label: `${field.label} (${field.type === 'standard' ? 'Standard' : 'Custom'})`,
+      });
+    }
+    return out;
+  })();
 
   return (
     <Drawer

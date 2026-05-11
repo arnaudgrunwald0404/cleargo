@@ -41,7 +41,8 @@ export type CapabilityId =
   | "roadmap.confidence.adjust"
   | "roadmap.impactOverride.write"
   | "roadmap.hiddenItem.write"
-  | "roadmap.movementNote.write";
+  | "roadmap.movementNote.write"
+  | "roadmap.analysis.generate";
 
 export type Capability = {
   id: CapabilityId;
@@ -250,6 +251,11 @@ export const CAPABILITIES: Capability[] = [
     label: "Add Roadmap Movement Notes",
     description: "Add epic-level movement notes (PM notes) on the Rewind timeline.",
   },
+  {
+    id: "roadmap.analysis.generate",
+    label: "Generate Roadmap Plan vs Actual Analysis",
+    description: "Run AI analysis for Plan vs Actual roadmap period reports (Analytics).",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -293,6 +299,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.impactOverride.write": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.hiddenItem.write": [...ALL_ROLES],
   "roadmap.movementNote.write": ["PM", "PRODUCT_OPS", "CPO"],
+  "roadmap.analysis.generate": ["CPO", "PRODUCT_OPS"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

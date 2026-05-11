@@ -125,6 +125,7 @@ Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind 
 - **Pages:** `/portfolio/snapshot` (current vs. previous week pivot) and `/portfolio/rewind` (movement analytics with weekly heatmap, recharts powered). Both are visible to every authenticated user.
 - **Epic detail tabs:** `/epics/[id]` adds Rewind + Confidence tabs (rendered by `EpicRoadmapRewindPanel` and `EpicRoadmapConfidencePanel` in `src/components/epic/`).
 - **Snapshot ingestion:** `src/app/api/jobs/roadmap-snapshot/route.ts` paginates an Aha! custom pivot, normalizes via `src/lib/aha/pivotNormalizer.ts`, maps via `src/lib/aha/pivotMapping.ts`, and inserts into `roadmap_snapshot`. Cron in `.github/workflows/roadmap-snapshot.yml` (Mondays 08:00 UTC).
+- **GTM backfill:** `src/app/api/jobs/roadmap-snapshot-backfill-gtm/route.ts` (same cron auth) stamps pivot `gtm_module` / `gtm_name` onto existing snapshot rows via RPC `apply_roadmap_snapshot_gtm_from_pivot`; optional `force`, `dry_run`.
 - **Partition maintenance:** monthly `/api/jobs/ensure-snapshot-partitions` calls `public.ensure_roadmap_snapshot_partitions()`.
 - **Confidence calculator:** pure TS at `src/lib/roadmap/confidenceCalculator.ts`. Bump `CONFIDENCE_FORMULA_VERSION` when changing the formula.
 - **Server APIs (rate-limited):** `src/app/api/roadmap/{snapshots,movements,delivery-metrics,strategic-items,confidence,impact-override}/route.ts`. Adjustment writes are capability-gated (`roadmap.confidence.adjust`, `roadmap.impactOverride.write`).

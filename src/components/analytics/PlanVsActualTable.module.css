@@ -1,0 +1,85 @@
+/* Hover/focus reveal for narrative edit control (inline styles alone lost to Mantine). */
+.narrativeWrap {
+  width: 100%;
+}
+
+.narrativeWrap:hover .rowActionIcon,
+.narrativeWrap:focus-within .rowActionIcon {
+  opacity: 1;
+}
+
+.rowActionIcon {
+  opacity: 0;
+  transition: opacity 140ms ease;
+  flex-shrink: 0;
+}
+
+.clickableRow {
+  cursor: pointer;
+}
+
+/* Align columns across multiple grouped tables (each section is its own <table>). */
+.pvaTable {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.pvaColFirst {
+  width: 17%;
+  vertical-align: middle;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.pvaColFirstPreline {
+  white-space: pre-line;
+}
+
+.pvaColFeature {
+  width: 36%;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.pvaFeatureInner {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.pvaColArr {
+  width: 200px;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.pvaColIndicator {
+  width: 11rem;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.pvaColStatus {
+  width: 22%;
+  min-width: 13rem;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.featureLink {
+  color: var(--mantine-color-blue-6);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.featureLink:hover {
+  color: var(--mantine-color-blue-7);
+}
+
+.pvaArrInput {
+  width: 100%;
+  min-width: 0;
+}

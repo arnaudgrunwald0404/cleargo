@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient as createSupabaseJsClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseFetchTimeoutMs } from '@/lib/supabase/supabaseFetchTimeout';
 
 // Custom fetch with better error handling, timeout, and retry for transient network errors
 const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
@@ -14,6 +15,7 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
 
     // Convert url to string for error messages
     const urlString = typeof url === 'string' ? url : url.toString();
+    const timeoutMs = supabaseFetchTimeoutMs(urlString);
 
     const MAX_RETRIES = 3;
     let lastError: any;
@@ -21,7 +23,7 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         // Create AbortController for timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
         try {
             const response = await fetch(url, {
@@ -35,7 +37,7 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
             lastError = error;
 
             if (error.name === 'AbortError') {
-                throw new Error(`Supabase request timed out after 30 seconds. URL: ${urlString}`);
+                throw new Error(`Supabase request timed out after ${timeoutMs / 1000} seconds. URL: ${urlString}`);
             }
 
             const isFetchFailed = error.message === 'fetch failed' || error.message?.includes('fetch failed');

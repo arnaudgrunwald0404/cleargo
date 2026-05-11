@@ -82,12 +82,26 @@ export async function GET(req: NextRequest) {
             key: field.key || null,
             type: 'custom',
         }));
-        
-        // Combine standard and custom fields
-        const fields = [...standardFields, ...customFields];
-        
-        console.log(`Returning ${standardFields.length} standard fields and ${customFields.length} custom fields`);
-        
+
+        // Dedupe by alias — a custom field with the same alias as a standard field
+        // would create duplicate <Select /> option values in the UI (Mantine 8 throws
+        // a hard error in that case). Standard fields win.
+        const standardAliases = new Set(standardFields.map((f) => f.alias));
+        const dedupedCustomFields = customFields.filter((f) => !standardAliases.has(f.alias));
+        const droppedCount = customFields.length - dedupedCustomFields.length;
+        if (droppedCount > 0) {
+            const dropped = customFields
+                .filter((f) => standardAliases.has(f.alias))
+                .map((f) => f.alias);
+            console.warn(
+                `Suppressing ${droppedCount} custom field(s) whose alias collides with a standard field: ${dropped.join(', ')}`
+            );
+        }
+
+        const fields = [...standardFields, ...dedupedCustomFields];
+
+        console.log(`Returning ${standardFields.length} standard fields and ${dedupedCustomFields.length} custom fields`);
+
         return NextResponse.json({ fields });
     } catch (error: any) {
         console.error('Error loading AHA fields config:', error);
@@ -168,6 +182,22 @@ export async function POST(req: NextRequest) {
             }
         }
 
+        // Aliases reserved by standard fields — never reuse these for custom field
+        // aliases, otherwise the combined dropdown ends up with duplicate option
+        // values, which Mantine 8 rejects with a hard error.
+        const reservedStandardAliases = new Set([
+            'id',
+            'reference_num',
+            'name',
+            'url',
+            'description',
+            'workflow_status',
+            'assigned_to_user',
+            'tags',
+            'release',
+            'integrations',
+        ]);
+
         // Add any Aha custom fields not yet in config (so "Refresh" surfaces all fields from Aha)
         const labelToAlias = new Map<string, string>();
         for (const [alias, fieldConfig] of Object.entries(config.fields)) {
@@ -179,10 +209,14 @@ export async function POST(req: NextRequest) {
             const name = ahaField.name;
             if (!name || typeof name !== 'string') continue;
             if (labelToAlias.has(name)) continue;
-            let alias = slugFromName(name);
+            const baseSlug = slugFromName(name);
+            let alias = baseSlug;
             let suffix = 0;
-            while ((config.fields as Record<string, unknown>)[alias]) {
-                alias = `${slugFromName(name)}_${++suffix}`;
+            while (
+                (config.fields as Record<string, unknown>)[alias] ||
+                reservedStandardAliases.has(alias)
+            ) {
+                alias = `${baseSlug}_${++suffix}`;
             }
             (config.fields as Record<string, { label: string; key: string }>)[alias] = {
                 label: name,
@@ -230,8 +264,14 @@ export async function POST(req: NextRequest) {
             key: field.key || null,
             type: 'custom',
         }));
-        
-        const fields = [...standardFields, ...customFields];
+
+        // Dedupe by alias against standard fields (see GET handler for rationale).
+        const standardAliasesPost = new Set(standardFields.map((f) => f.alias));
+        const dedupedCustomFieldsPost = customFields.filter(
+            (f) => !standardAliasesPost.has(f.alias)
+        );
+
+        const fields = [...standardFields, ...dedupedCustomFieldsPost];
 
         return NextResponse.json({
             fields,
@@ -239,7 +279,7 @@ export async function POST(req: NextRequest) {
                 updated: updatedCount,
                 updates,
                 notFound: notFound.length > 0 ? notFound : undefined,
-                totalCustomFields: customFields.length,
+                totalCustomFields: dedupedCustomFieldsPost.length,
             },
         });
     } catch (error: any) {

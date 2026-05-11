@@ -22,7 +22,6 @@ import {
   IconClipboardList,
   IconListCheck,
   IconRoute,
-  IconHistory,
 } from '@tabler/icons-react';
 import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
@@ -148,18 +147,15 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
     return null;
   }
 
-  // Top-level item (not in any section)
+  // Top-level items (not in any section)
   const homeItem: NavItem = { link: '/', label: 'Home', icon: IconHome };
+  const roadmapSnapshotItem: NavItem | null = isEnabled(FEATURE_ROADMAP_REWIND, featureFlags)
+    ? { link: '/portfolio/snapshot', label: 'Roadmap Snapshot', icon: IconRoute }
+    : null;
 
   // Releases section (visible to all)
   const releaseTabs: NavItem[] = [
     { link: '/portfolio', label: 'Portfolio', icon: IconLayoutGrid },
-    ...(isEnabled(FEATURE_ROADMAP_REWIND, featureFlags)
-      ? [
-          { link: '/portfolio/snapshot', label: 'Roadmap Snapshot', icon: IconRoute },
-          { link: '/portfolio/rewind', label: 'Roadmap Rewind', icon: IconHistory },
-        ]
-      : []),
     { link: '/epics', label: 'Releases', icon: IconClipboardList },
     { link: '/releases/comments', label: 'Comments', icon: IconMessageCircle, badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
   ];
@@ -581,12 +577,13 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
             })()
           )}
 
-          {/* Home (top-level, no section) */}
+          {/* Home + Roadmap Snapshot (top-level, no section) */}
           {renderNavItem(homeItem, isCollapsed)}
+          {roadmapSnapshotItem ? renderNavItem(roadmapSnapshotItem, isCollapsed) : null}
 
-          {/* Releases section */}
+          {/* GTM Releases (section) */}
           <div style={{ height: '10px' }} />
-          {renderSectionLabel('Releases', isCollapsed, IconTag)}
+          {renderSectionLabel('GTM Releases', isCollapsed, IconTag)}
           {releaseTabs.map((tab) => renderNavItem(tab, isCollapsed))}
 
           {/* Launches section (admins & PMMs only) */}

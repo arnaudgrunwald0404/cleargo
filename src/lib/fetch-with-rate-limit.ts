@@ -9,6 +9,8 @@ import { deduplicateRequest } from './request-deduplication';
 interface FetchWithRateLimitOptions extends RequestInit {
   maxRetries?: number;
   retryDelay?: number;
+  /** Defaults to `url`. Set when the same URL is used with different POST bodies so dedupe does not merge unrelated calls. */
+  dedupeKey?: string;
 }
 
 // Shared state to coordinate retries across parallel requests
@@ -66,8 +68,9 @@ export async function fetchWithRateLimit(
   url: string,
   options: FetchWithRateLimitOptions = {}
 ): Promise<Response> {
-  const { maxRetries = 1, retryDelay = 1000, ...fetchOptions } = options;
-  
+  const { maxRetries = 1, retryDelay = 1000, dedupeKey, ...fetchOptions } = options;
+  const dedupeId = dedupeKey ?? url;
+
   // Ensure credentials are included for authenticated requests
   const finalOptions: RequestInit = {
     credentials: 'include',
@@ -75,7 +78,7 @@ export async function fetchWithRateLimit(
   };
 
   // Use deduplication to prevent duplicate requests
-  const response = await deduplicateRequest(url, async () => {
+  const response = await deduplicateRequest(dedupeId, async () => {
     // Acquire a request slot (throttling)
     await acquireSlot();
     

@@ -31,6 +31,14 @@ function stripHtml(s: string): string | undefined {
   return typeof s === "string" ? s.replace(/<[^>]*>/g, "").trim() : undefined;
 }
 
+/** Turn common block / break markup into newlines before removing remaining tags (avoids glued goals). */
+function stripHtmlTagsPreservingBreaks(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|tr|td|th|li|h[1-6]|section|article|blockquote)>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+}
+
 /** Decode minimal entities after tag strip (Aha status pills use &amp; etc.). */
 function decodeBasicHtmlEntities(s: string): string {
   return s
@@ -44,13 +52,19 @@ function decodeBasicHtmlEntities(s: string): string {
 
 /**
  * Aha often returns status-pill HTML in rich_value/text for picklist columns (e.g. GTM Module).
- * Strip tags, decode entities, normalize whitespace.
+ * Strip tags, decode entities; preserve line breaks from `<br>` / block elements (e.g. stacked goals).
  */
 export function sanitizePivotCellString(s: string): string {
   const t = s.trim();
   if (!t) return t;
-  const noTags = /<[^>]+>/.test(t) ? t.replace(/<[^>]*>/g, "").trim() : t;
-  return decodeBasicHtmlEntities(noTags).replace(/\s+/g, " ").trim();
+  const raw = /<[^>]+>/.test(t) ? stripHtmlTagsPreservingBreaks(t) : t;
+  const decoded = decodeBasicHtmlEntities(raw);
+  return decoded
+    .split("\n")
+    .map((line) => line.replace(/[ \t\f\v]+/g, " ").trim())
+    .filter((line) => line.length > 0)
+    .join("\n")
+    .trim();
 }
 
 function parseProgressBar(htmlString: string): number | null {
@@ -123,8 +137,9 @@ export function pickValue(cell: AhaPivotCell | undefined, columnTitle: string): 
     return sanitizePivotCellString(cell.text_value);
   }
 
-  const fromHtml = stripHtml(cell.html_value as string);
-  if (fromHtml) return sanitizePivotCellString(fromHtml);
+  if (typeof cell.html_value === "string" && cell.html_value.trim() !== "") {
+    return sanitizePivotCellString(cell.html_value);
+  }
 
   if (cell.plain_value !== undefined) {
     const pv = cell.plain_value;

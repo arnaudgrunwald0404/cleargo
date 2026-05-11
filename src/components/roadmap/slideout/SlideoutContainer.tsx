@@ -37,12 +37,12 @@ export function SlideoutContainer() {
                 <IconArrowLeft size={16} />
               </ActionIcon>
             )}
-            <Stack gap={2}>
-              <Text fw={600} size="md" style={{ color: 'var(--color-gray-900)' }}>
+            <Stack gap={4}>
+              <Text fw={500} size="md" lh={1.35} c="gray.9">
                 {top.title}
               </Text>
               {top.description && (
-                <Text size="xs" style={{ color: 'var(--color-gray-600)' }}>
+                <Text size="xs" c="dimmed" lh={1.4}>
                   {top.description}
                 </Text>
               )}

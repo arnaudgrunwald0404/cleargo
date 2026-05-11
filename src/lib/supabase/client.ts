@@ -1,4 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
+import { supabaseFetchTimeoutMs } from '@/lib/supabase/supabaseFetchTimeout'
 
 // Custom fetch that ensures proper Accept header to avoid 406 errors
 const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promise<Response> => {
@@ -11,6 +12,7 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
 
     // Convert url to string for error messages
     const urlString = typeof url === 'string' ? url : url.toString();
+    const timeoutMs = supabaseFetchTimeoutMs(urlString);
 
     const headers = new Headers(options?.headers);
 
@@ -18,9 +20,9 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
     // PostgREST requires application/json or application/vnd.pgjson.object+json
     headers.set('Accept', 'application/json, application/vnd.pgjson.object+json');
 
-    // Create AbortController for timeout (30 seconds)
+    // Create AbortController for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
         const response = await fetch(url, {
@@ -61,7 +63,7 @@ const customFetch = async (url: RequestInfo | URL, options?: RequestInit): Promi
         
         // Provide more detailed error messages
         if (error.name === 'AbortError') {
-            throw new Error(`Supabase request timed out after 30 seconds. URL: ${urlString}`);
+            throw new Error(`Supabase request timed out after ${timeoutMs / 1000} seconds. URL: ${urlString}`);
         }
         
         if (error.message === 'Failed to fetch' || error.message?.includes('fetch failed') || error.message?.includes('Failed to fetch')) {
