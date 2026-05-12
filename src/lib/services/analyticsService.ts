@@ -513,28 +513,40 @@ function getRetroDueDateOffset(tier: Tier): number {
  * - submitted_at <= tier-specific due date (GA + tier offset)
  * - Only count retros that are past their due date (eligible epics)
  */
+type EpicRetroRow = {
+  status: string;
+  submitted_at: string | null;
+  day_marker: number;
+};
+
+type EpicWithRetros = {
+  id: string;
+  tier: string | null;
+  pod: string | null;
+  scheduled_ga_dev_date: string | null;
+  target_launch_date: string | null;
+  epic_retros: EpicRetroRow[];
+};
+
 export async function getRetroCompletionRate(
   filters?: AnalyticsFilters
 ): Promise<RetroCompletionRate> {
   const supabase = getClient();
 
-  // Build base query for epics with retros
+  // Fetch epics and retros separately: PostgREST may not expose an embed path from
+  // `epic` → `epic_retros` (PGRST200) even when `epic_retros.epic_id` references `epic.id`.
   let epicQuery = supabase
     .from('epic')
-    .select(`
+    .select(
+      `
       id,
       tier,
       pod,
       scheduled_ga_dev_date,
-      target_launch_date,
-      epic_retros!inner(
-        status,
-        submitted_at,
-        day_marker
-      )
-    `);
+      target_launch_date
+    `,
+    );
 
-  // Apply filters
   if (filters?.tier) {
     epicQuery = epicQuery.eq('tier', filters.tier);
   }
@@ -548,14 +560,62 @@ export async function getRetroCompletionRate(
     epicQuery = epicQuery.lte('target_launch_date', filters.dateRangeEnd);
   }
 
-  const { data: epics, error } = await epicQuery;
+  const { data: allEpics, error: epicError } = await epicQuery;
 
-  if (error) {
-    console.error('Error fetching epics for retro completion:', error);
-    throw new Error(`Failed to fetch epics: ${error.message}`);
+  if (epicError) {
+    console.error('Error fetching epics for retro completion:', epicError);
+    throw new Error(`Failed to fetch epics: ${epicError.message}`);
   }
 
-  if (!epics || epics.length === 0) {
+  if (!allEpics || allEpics.length === 0) {
+    return {
+      overall: 0,
+      byTier: { TIER_1: 0, TIER_2: 0, TIER_3: 0 },
+      byPod: {},
+      total: 0,
+      completed: 0,
+    };
+  }
+
+  const epicIds = allEpics.map((e) => e.id);
+  const retrosByEpicId = new Map<string, EpicRetroRow[]>();
+  const chunkSize = 500;
+  for (let i = 0; i < epicIds.length; i += chunkSize) {
+    const chunk = epicIds.slice(i, i + chunkSize);
+    const { data: retroRows, error: retroError } = await supabase
+      .from('epic_retros')
+      .select('epic_id, status, submitted_at, day_marker')
+      .in('epic_id', chunk);
+
+    if (retroError) {
+      console.error('Error fetching epic_retros for retro completion:', retroError);
+      throw new Error(`Failed to fetch retros: ${retroError.message}`);
+    }
+
+    for (const row of retroRows ?? []) {
+      const epicId = row.epic_id as string;
+      const list = retrosByEpicId.get(epicId) ?? [];
+      list.push({
+        status: row.status as string,
+        submitted_at: (row.submitted_at as string | null) ?? null,
+        day_marker: row.day_marker as number,
+      });
+      retrosByEpicId.set(epicId, list);
+    }
+  }
+
+  const epics: EpicWithRetros[] = allEpics
+    .filter((e) => retrosByEpicId.has(e.id))
+    .map((e) => ({
+      id: e.id,
+      tier: e.tier,
+      pod: e.pod,
+      scheduled_ga_dev_date: e.scheduled_ga_dev_date,
+      target_launch_date: e.target_launch_date,
+      epic_retros: retrosByEpicId.get(e.id)!,
+    }));
+
+  if (epics.length === 0) {
     return {
       overall: 0,
       byTier: { TIER_1: 0, TIER_2: 0, TIER_3: 0 },
@@ -601,7 +661,7 @@ export async function getRetroCompletionRate(
       continue;
     }
 
-    const retros = Array.isArray(epic.epic_retros) ? epic.epic_retros : [epic.epic_retros];
+    const retros = epic.epic_retros;
     
     // Check if retro is submitted on time
     let hasOnTimeRetro = false;

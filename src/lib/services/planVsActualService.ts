@@ -13,6 +13,7 @@ import {
   derivePlanVsActualStatus,
   includePlanVsActualItemForReport,
 } from '@/lib/roadmap/planVsActualStatus';
+import { clampPlanVsActualPeriodDate } from '@/lib/roadmap/planVsActualPeriodUi';
 import {
   generatePeriodShiftAnalysis,
   generateSingleItemNarrative,
@@ -43,6 +44,7 @@ export interface RpcPlanVsActualRow {
   end_aha_end_date: string | null;
   start_aha_progress: number | null;
   end_aha_progress: number | null;
+  first_scan_aha_release: string | null;
 }
 
 export function getPeriodBounds(
@@ -131,6 +133,7 @@ export function mapRowToPlanVsActualItem(
   releaseOrderIndex: Map<string, number>,
   pmNoteCause: string | null = null,
   launchDateByKey?: ReadonlyMap<string, Date>,
+  periodEndIso?: string,
 ): PlanVsActualItem {
   const { category, label } = derivePlanVsActualStatus(
     {
@@ -141,6 +144,8 @@ export function mapRowToPlanVsActualItem(
       startStatus: row.start_aha_status,
       endStatus: row.end_aha_status,
       endProgress: row.end_aha_progress ?? null,
+      firstScanRelease: row.first_scan_aha_release ?? null,
+      periodEndIso: periodEndIso ?? null,
     },
     releaseOrderIndex,
     launchDateByKey,
@@ -162,6 +167,7 @@ export function mapRowToPlanVsActualItem(
     endProgress: row.end_aha_progress ?? null,
     startStatus: row.start_aha_status,
     endStatus: row.end_aha_status,
+    firstScanRelease: row.first_scan_aha_release ?? null,
     statusCategory: category,
     statusLabel: label,
   };
@@ -293,7 +299,8 @@ export async function patchRoadmapPeriodAnalysis(
     throw new Error('No updates provided');
   }
 
-  const { periodStart } = getPeriodBounds(periodType, periodDateIso);
+  const periodDateClamped = clampPlanVsActualPeriodDate(periodType, periodDateIso);
+  const { periodStart } = getPeriodBounds(periodType, periodDateClamped);
   const cached = await loadCachedPeriodAnalysis(supabase, periodType, periodStart);
   if (!cached.analysis) {
     throw new Error('No saved analysis for this period. Generate analysis first.');
@@ -360,11 +367,12 @@ export async function getPlanVsActualReport(
   periodType: PlanVsActualPeriodType,
   periodDateIso: string,
 ): Promise<PlanVsActualReportPayload> {
-  const { periodStart, periodEnd } = getPeriodBounds(periodType, periodDateIso);
+  const periodDateClamped = clampPlanVsActualPeriodDate(periodType, periodDateIso);
+  const { periodStart, periodEnd } = getPeriodBounds(periodType, periodDateClamped);
 
   const { data: rpcRows, error: rpcErr } = await supabase.rpc('get_period_plan_vs_actual', {
     p_period_type: periodType,
-    p_period_date: periodType === 'quarter_progress' ? periodDateIso : periodStart,
+    p_period_date: periodType === 'quarter_progress' ? periodDateClamped : periodStart,
   });
 
   if (rpcErr) {
@@ -385,7 +393,13 @@ export async function getPlanVsActualReport(
 
   const items = rows
     .map((r) =>
-      mapRowToPlanVsActualItem(r, releaseOrderIndex, pmCauses.get(r.aha_key) ?? null, launchDateByKey),
+      mapRowToPlanVsActualItem(
+        r,
+        releaseOrderIndex,
+        pmCauses.get(r.aha_key) ?? null,
+        launchDateByKey,
+        periodEnd,
+      ),
     )
     .filter((item) => includePlanVsActualItemForReport(item, reportingScope));
 

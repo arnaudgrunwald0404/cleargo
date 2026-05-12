@@ -3,6 +3,7 @@ import {
   allowedTrainMonthKeysForPlanVsActualReport,
   calendarDaysBetweenReleaseTrains,
   calendarMonthKeysForPeriod,
+  deliveryKnowableByTrainSchedule,
   derivePlanVsActualStatus,
   includePlanVsActualItemForReport,
   looksDeliveredStatus,
@@ -43,6 +44,18 @@ describe('calendarDaysBetweenReleaseTrains', () => {
       ['2025.4', '2025-10-01'],
     ]);
     expect(calendarDaysBetweenReleaseTrains('2025.1', '2025.4', m)).toBe(273);
+  });
+});
+
+describe('deliveryKnowableByTrainSchedule', () => {
+  it('is false when the end release train launches after the report period end', () => {
+    const m = launchMap([['2026.2', '2026-02-01']]);
+    expect(deliveryKnowableByTrainSchedule('Release 2026.2', '2026-01-31', m)).toBe(false);
+  });
+
+  it('is true when train launch is on or before period end', () => {
+    const m = launchMap([['2026.2', '2026-01-15']]);
+    expect(deliveryKnowableByTrainSchedule('2026.2', '2026-01-31', m)).toBe(true);
   });
 });
 
@@ -142,7 +155,7 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).toBe('On Plan');
   });
 
-  it('marks On Plan for minor release slip (≤2 slots and <90d between trains)', () => {
+  it('marks Delayed for minor release slip (≤2 slots and <90d between trains)', () => {
     const r = derivePlanVsActualStatus(
       {
         inStart: true,
@@ -155,11 +168,51 @@ describe('derivePlanVsActualStatus', () => {
       order,
       launch,
     );
-    expect(r.category).toBe('green');
-    expect(r.label).toBe('On Plan');
+    expect(r.category).toBe('yellow');
+    expect(r.label).toBe('Delayed');
   });
 
-  it('marks Postponed when more than two release slots while still in flight', () => {
+  it('marks Postponed when more than two release slots and 90+ days between trains', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2025.1',
+        endRelease: '2025.4',
+        startStatus: 'In development',
+        endStatus: 'In development',
+      },
+      order,
+      launchMap([
+        ['2025.1', '2025-01-01'],
+        ['2025.4', '2025-04-15'],
+      ]),
+    );
+    expect(r.category).toBe('yellow');
+    expect(r.label).toBe('Postponed');
+  });
+
+  it('marks Delayed when 1 slot slip but 90+ days between launch dates (within 2 trains OR <90d)', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2025.2',
+        endRelease: '2025.3',
+        startStatus: 'In development',
+        endStatus: 'In development',
+      },
+      order,
+      launchMap([
+        ['2025.2', '2025-01-01'],
+        ['2025.3', '2025-06-01'],
+      ]),
+    );
+    expect(r.category).toBe('yellow');
+    expect(r.label).toBe('Delayed');
+  });
+
+  it('marks Delayed when 3+ slot slip but under 90 days between trains', () => {
     const r = derivePlanVsActualStatus(
       {
         inStart: true,
@@ -176,7 +229,7 @@ describe('derivePlanVsActualStatus', () => {
       ]),
     );
     expect(r.category).toBe('yellow');
-    expect(r.label).toBe('Postponed');
+    expect(r.label).toBe('Delayed');
   });
 
   it('marks Removed when unreleased slip is 200+ days on the schedule', () => {
@@ -194,6 +247,65 @@ describe('derivePlanVsActualStatus', () => {
     );
     expect(r.category).toBe('red');
     expect(r.label).toBe('Removed');
+  });
+
+  it('marks New Addition when pivot looks shipped but target train has not launched by period end', () => {
+    const m = launchMap([['2026.2', '2026-02-01']]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: false,
+        inEnd: true,
+        startRelease: null,
+        endRelease: 'Release 2026.2',
+        startStatus: null,
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-01-31',
+        firstScanRelease: 'Release 2026.2',
+      },
+      order,
+      m,
+    );
+    expect(r.label).toBe('New Addition');
+    expect(r.category).toBe('neutral');
+  });
+
+  it('marks Delivered: On Time when net-new, shipped, train launched by period end, same train since first scan', () => {
+    const m = launchMap([['2026.2', '2026-01-20']]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: false,
+        inEnd: true,
+        startRelease: null,
+        endRelease: '2026.2',
+        startStatus: null,
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-01-31',
+        firstScanRelease: '2026.2',
+      },
+      order,
+      m,
+    );
+    expect(r.label).toBe('Delivered: On Time');
+    expect(r.category).toBe('green');
+  });
+
+  it('marks Delivered: Added for net-new shipped when first-scan train differs from end train', () => {
+    const m = launchMap([['2026.2', '2026-01-20']]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: false,
+        inEnd: true,
+        startRelease: null,
+        endRelease: '2026.2',
+        startStatus: null,
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-01-31',
+        firstScanRelease: '2026.1',
+      },
+      order,
+      m,
+    );
+    expect(r.label).toBe('Delivered: Added');
   });
 
   it('marks New Addition when epic appears only at end and not delivered', () => {
@@ -244,7 +356,7 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).toBe('Delivered: Delayed');
   });
 
-  it('marks Delivered: On Time when shipped on an earlier train', () => {
+  it('marks Delivered: Early when shipped on an earlier train than period start', () => {
     const r = derivePlanVsActualStatus(
       {
         inStart: true,
@@ -257,7 +369,44 @@ describe('derivePlanVsActualStatus', () => {
       order,
     );
     expect(r.category).toBe('green');
-    expect(r.label).toBe('Delivered: On Time');
+    expect(r.label).toBe('Delivered: Early');
+  });
+
+  it('marks Delivered: Early when absent from end snapshot but last in-period row shows earlier train and shipped', () => {
+    const order26 = idxMap([
+      ['2026.1', 0],
+      ['2026.2', 1],
+      ['2026.3', 2],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: false,
+        startRelease: 'Release 2026.3',
+        endRelease: 'Release 2026.2',
+        startStatus: 'In development',
+        endStatus: 'Released to GTM Team',
+      },
+      order26,
+    );
+    expect(r.category).toBe('green');
+    expect(r.label).toBe('Delivered: Early');
+  });
+
+  it('marks Ahead of Plan when target train moved earlier and not shipped', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2025.3',
+        endRelease: '2025.2',
+        startStatus: 'In development',
+        endStatus: 'In development',
+      },
+      order,
+    );
+    expect(r.category).toBe('green');
+    expect(r.label).toBe('Ahead of Plan');
   });
 });
 

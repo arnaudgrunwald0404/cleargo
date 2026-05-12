@@ -186,6 +186,8 @@ export interface PlanVsActualItem {
   endProgress: number | null;
   startStatus: string | null;
   endStatus: string | null;
+  /** Earliest `aha_release` in the RPC scan window (same window as end snapshot pick); net-new train intent. */
+  firstScanRelease: string | null;
   statusCategory: PlanVsActualStatusCategory;
   statusLabel: string;
 }

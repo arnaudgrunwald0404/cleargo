@@ -12,9 +12,11 @@ import {
 } from '@/hooks/usePlanVsActual';
 import { canRolesPerform } from '@/lib/permissions';
 import {
+  clampQuarterStartToPlanVsActualMin,
   defaultQuarterProgressWindowForQuarter,
   getInitialPlanVsActualPeriodState,
   planVsActualApiParams,
+  quarterSelectOptions,
   type QuarterProgressWindow,
 } from '@/lib/roadmap/planVsActualPeriodUi';
 import { PlanVsActualTable } from './PlanVsActualTable';
@@ -22,6 +24,18 @@ import { ShiftAnalysisPanel } from './ShiftAnalysisPanel';
 
 export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
   const [{ quarterStartDate, quarterProgressWindow }, setPeriod] = useState(getInitialPlanVsActualPeriodState);
+  const quarterOptions = useMemo(() => quarterSelectOptions(), []);
+
+  useEffect(() => {
+    const ok = quarterOptions.some((o) => o.value === quarterStartDate);
+    if (!ok && quarterOptions[0]) {
+      const q = quarterOptions[0].value;
+      setPeriod({
+        quarterStartDate: q,
+        quarterProgressWindow: defaultQuarterProgressWindowForQuarter(q),
+      });
+    }
+  }, [quarterStartDate, quarterOptions]);
 
   const { periodType, periodDate } = useMemo(
     () => planVsActualApiParams(quarterStartDate, quarterProgressWindow),
@@ -113,12 +127,13 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
           periodStorageKey={periodStorageKey}
           quarterStartDate={quarterStartDate}
           quarterProgressWindow={quarterProgressWindow}
-          onQuarterStartDateChange={(iso) =>
+          onQuarterStartDateChange={(iso) => {
+            const q = clampQuarterStartToPlanVsActualMin(iso);
             setPeriod({
-              quarterStartDate: iso,
-              quarterProgressWindow: defaultQuarterProgressWindowForQuarter(iso),
-            })
-          }
+              quarterStartDate: q,
+              quarterProgressWindow: defaultQuarterProgressWindowForQuarter(q),
+            });
+          }}
           onQuarterProgressWindowChange={(v: QuarterProgressWindow) =>
             setPeriod((p) => ({ ...p, quarterProgressWindow: v }))
           }

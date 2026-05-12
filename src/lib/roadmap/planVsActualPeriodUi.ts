@@ -1,6 +1,7 @@
 import {
   endOfQuarter,
   format,
+  max,
   parseISO,
   startOfMonth,
   startOfQuarter,
@@ -9,14 +10,47 @@ import {
 } from 'date-fns';
 import type { PlanVsActualPeriodType } from '@/types/roadmap';
 
+/** Earliest quarter available in Plan vs Actual (snapshot coverage is reliable from here). */
+export const PLAN_VS_ACTUAL_EARLIEST_QUARTER_START = '2026-01-01';
+
 /** Start of the previous calendar month (local). */
 export function previousCalendarMonthStart(): Date {
   return startOfMonth(subMonths(new Date(), 1));
 }
 
-/** Default: quarter that contains the previous calendar month. */
+/** Default: quarter that contains the previous calendar month, not before {@link PLAN_VS_ACTUAL_EARLIEST_QUARTER_START}. */
 export function defaultQuarterStartDate(): string {
-  return format(startOfQuarter(previousCalendarMonthStart()), 'yyyy-MM-dd');
+  const q = startOfQuarter(previousCalendarMonthStart());
+  const minQ = parseISO(PLAN_VS_ACTUAL_EARLIEST_QUARTER_START);
+  return format(max([q, minQ]), 'yyyy-MM-dd');
+}
+
+/** Quarter selector value must be a quarter start on/after Q1 2026. */
+export function clampQuarterStartToPlanVsActualMin(quarterStartIso: string): string {
+  const raw = quarterStartIso.trim().slice(0, 10);
+  const d = parseISO(raw.length === 7 ? `${raw}-01` : raw);
+  if (Number.isNaN(d.getTime())) return PLAN_VS_ACTUAL_EARLIEST_QUARTER_START;
+  const minQ = parseISO(PLAN_VS_ACTUAL_EARLIEST_QUARTER_START);
+  return format(max([startOfQuarter(d), minQ]), 'yyyy-MM-dd');
+}
+
+/**
+ * Clamps API `period_date` so report windows never start before Q1 2026.
+ * Normalizes to first day of month (progress/monthly) or quarter start (baseline/quarterly).
+ */
+export function clampPlanVsActualPeriodDate(
+  periodType: PlanVsActualPeriodType,
+  periodDateIso: string,
+): string {
+  const min = parseISO(PLAN_VS_ACTUAL_EARLIEST_QUARTER_START);
+  const raw = periodDateIso.trim();
+  const d = parseISO(raw.length === 7 ? `${raw}-01` : raw.slice(0, 10));
+  if (Number.isNaN(d.getTime())) return PLAN_VS_ACTUAL_EARLIEST_QUARTER_START;
+
+  if (periodType === 'quarterly' || periodType === 'quarter_baseline') {
+    return format(max([startOfQuarter(d), min]), 'yyyy-MM-dd');
+  }
+  return format(max([startOfMonth(d), min]), 'yyyy-MM-dd');
 }
 
 /**
@@ -32,16 +66,17 @@ export function planVsActualApiParams(
   quarterStartDate: string,
   window: QuarterProgressWindow,
 ): { periodType: PlanVsActualPeriodType; periodDate: string } {
-  const months = monthsInQuarterOptions(quarterStartDate);
+  const q = clampQuarterStartToPlanVsActualMin(quarterStartDate);
+  const months = monthsInQuarterOptions(q);
   switch (window) {
     case 'quarter-plan':
-      return { periodType: 'quarter_baseline', periodDate: quarterStartDate };
+      return { periodType: 'quarter_baseline', periodDate: q };
     case 'quarter-progress-1':
       return { periodType: 'quarter_progress', periodDate: months[0].value };
     case 'quarter-progress-2':
       return { periodType: 'quarter_progress', periodDate: months[1].value };
     case 'quarter-results':
-      return { periodType: 'quarterly', periodDate: quarterStartDate };
+      return { periodType: 'quarterly', periodDate: q };
   }
 }
 
@@ -80,7 +115,9 @@ export function quarterSelectOptions(): { value: string; label: string }[] {
       label: `Q${q} ${y}`,
     });
   }
-  return out;
+  const filtered = out.filter((o) => o.value >= PLAN_VS_ACTUAL_EARLIEST_QUARTER_START);
+  if (filtered.length > 0) return filtered;
+  return [{ value: PLAN_VS_ACTUAL_EARLIEST_QUARTER_START, label: 'Q1 2026' }];
 }
 
 /** First day of each month inside the quarter (3 entries). */

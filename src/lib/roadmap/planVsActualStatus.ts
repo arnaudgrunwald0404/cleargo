@@ -4,6 +4,7 @@ import {
   endOfQuarter,
   format,
   parseISO,
+  startOfDay,
   startOfMonth,
   startOfQuarter,
 } from 'date-fns';
@@ -58,6 +59,10 @@ export interface DeriveStatusInput {
   endStatus: string | null;
   /** Latest in-period snapshot progress % (RPC `end_aha_progress`); used when Aha status lags behind 100% work. */
   endProgress?: number | null;
+  /** Earliest `aha_release` in the RPC scan window; used for net-new Delivered: Added vs On Time. */
+  firstScanRelease?: string | null;
+  /** Report period end (`yyyy-MM-dd`); gates “delivered” net-new chips vs `release_schedule` train launch. */
+  periodEndIso?: string | null;
 }
 
 /**
@@ -158,6 +163,46 @@ export function calendarDaysBetweenReleaseTrains(
   return differenceInCalendarDays(de, ds);
 }
 
+/** `release_schedule` launch date for a pivot-style release string (tries raw key and `release ` prefix variant). */
+function launchDateForReleaseTrain(
+  release: string | null | undefined,
+  launchDateByKey: ReadonlyMap<string, Date>,
+): Date | undefined {
+  const k = normalizeReleaseKey(release);
+  if (!k) return undefined;
+  const direct = launchDateByKey.get(k);
+  if (direct) return direct;
+  const trainOnly = k.replace(/^release\s+/, '').trim();
+  if (trainOnly) return launchDateByKey.get(trainOnly);
+  return undefined;
+}
+
+/** Canonical train token for comparing Aha release labels (e.g. `2026.2` vs `Release 2026.2`). */
+function releaseTrainIdentityKey(release: string | null | undefined): string | null {
+  const k = normalizeReleaseKey(release);
+  if (!k) return null;
+  const t = k.replace(/^release\s+/, '').trim();
+  return t || null;
+}
+
+/**
+ * True when the epic's **end** release train has a scheduled launch on or before the report period end,
+ * so a “shipped” Aha status can be attributed to that period. Missing schedule → true (no gate).
+ */
+export function deliveryKnowableByTrainSchedule(
+  endRelease: string | null | undefined,
+  periodEndIso: string | null | undefined,
+  launchDateByKey?: ReadonlyMap<string, Date>,
+): boolean {
+  if (!periodEndIso?.trim() || !launchDateByKey?.size) return true;
+  const ld = launchDateForReleaseTrain(endRelease, launchDateByKey);
+  if (!ld) return true;
+  const raw = periodEndIso.trim();
+  const pe = parseISO(raw.length >= 10 ? raw.slice(0, 10) : `${raw}-01`);
+  if (Number.isNaN(pe.getTime())) return true;
+  return differenceInCalendarDays(startOfDay(ld), startOfDay(pe)) <= 0;
+}
+
 function slotDeltaBetween(
   sr: string,
   er: string,
@@ -168,6 +213,26 @@ function slotDeltaBetween(
   const ei = releaseOrderIndex.get(er);
   if (si === undefined || ei === undefined) return null;
   return ei - si;
+}
+
+/**
+ * True when **end** release train is strictly **before** **start** (period-start plan train).
+ * Uses `release_schedule` order when both trains are indexed; otherwise compares parsed `YYYY.M` months.
+ */
+export function endTrainEarlierThanStartTrain(
+  startRelease: string | null | undefined,
+  endRelease: string | null | undefined,
+  releaseOrderIndex: Map<string, number>,
+): boolean {
+  const sr = normalizeReleaseKey(startRelease);
+  const er = normalizeReleaseKey(endRelease);
+  if (!sr || !er) return false;
+  const slots = slotDeltaBetween(sr, er, releaseOrderIndex);
+  if (slots !== null) return slots < 0;
+  const a = parseReleaseTrainYearMonth(startRelease);
+  const b = parseReleaseTrainYearMonth(endRelease);
+  if (!a || !b) return false;
+  return b.year * 12 + b.month < a.year * 12 + a.month;
 }
 
 function isReleasedForPlanVsActual(row: DeriveStatusInput): boolean {
@@ -183,7 +248,9 @@ function isReleasedForPlanVsActual(row: DeriveStatusInput): boolean {
  * `release_schedule` **launch order** (slot deltas) and optional **launch dates** (day gaps), delivered heuristics
  * (`looksDeliveredStatus`), and **`end_aha_progress` ≥ 100** when workflow text lags. No ClearGO `epic` table for chips.
  *
- * Labels: **On Plan**, **Delivered: On Time**, **Delivered: Delayed**, **Postponed**, **New Addition**, **Delivered: Added**, **Removed**.
+ * Labels: **On Plan**, **Ahead of Plan** (in flight, target train moved earlier vs period start), **Delivered: On Time**,
+ * **Delivered: Early** (shipped on a train **earlier** than period-start plan), **Delivered: Delayed**, **Delayed**,
+ * **Postponed**, **New Addition**, **Delivered: Added**, **Removed**.
  */
 export function derivePlanVsActualStatus(
   row: DeriveStatusInput,
@@ -199,13 +266,32 @@ export function derivePlanVsActualStatus(
 
   // Net-new this period
   if (!row.inStart && row.inEnd) {
-    if (released) return { category: 'green', label: 'Delivered: Added' };
-    return { category: 'neutral', label: 'New Addition' };
+    const rawReleased = isReleasedForPlanVsActual(row);
+    const knowable = deliveryKnowableByTrainSchedule(
+      row.endRelease,
+      row.periodEndIso ?? null,
+      launchDateByKey,
+    );
+    const netNewDelivered = rawReleased && knowable;
+    if (!netNewDelivered) {
+      return { category: 'neutral', label: 'New Addition' };
+    }
+    const fr = releaseTrainIdentityKey(row.firstScanRelease);
+    const erId = releaseTrainIdentityKey(row.endRelease);
+    if (fr && erId && fr === erId) {
+      return { category: 'green', label: 'Delivered: On Time' };
+    }
+    return { category: 'green', label: 'Delivered: Added' };
   }
 
   // Dropped from final snapshot (pivot row missing at end)
   if (row.inStart && !row.inEnd) {
-    if (released) return { category: 'green', label: 'Delivered: On Time' };
+    if (released) {
+      if (endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)) {
+        return { category: 'green', label: 'Delivered: Early' };
+      }
+      return { category: 'green', label: 'Delivered: On Time' };
+    }
     return { category: 'red', label: 'Removed' };
   }
 
@@ -218,9 +304,8 @@ export function derivePlanVsActualStatus(
       if (sameTrain) {
         return { category: 'green', label: 'Delivered: On Time' };
       }
-      // Earlier train is still "on time" delivery; later train is delayed delivery
-      if (slots !== null && slots < 0) {
-        return { category: 'green', label: 'Delivered: On Time' };
+      if (endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)) {
+        return { category: 'green', label: 'Delivered: Early' };
       }
       return { category: 'yellow', label: 'Delivered: Delayed' };
     }
@@ -238,18 +323,26 @@ export function derivePlanVsActualStatus(
       return { category: 'red', label: 'Removed' };
     }
 
-    // Postponed: slipped beyond two release slots OR 90+ calendar days (alternate rule), still <200d
-    const isPostponed =
-      (slots !== null && slots > 2) ||
-      (dayGap !== null && dayGap >= 90) ||
-      (slots === null && dayGap === null);
+    // Target moved earlier than quarter-start plan — not a slip
+    if (endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)) {
+      return { category: 'green', label: 'Ahead of Plan' };
+    }
 
-    if (isPostponed) {
+    // Postponed: different target vs period start, still in flight, not Removed — cannot measure slip, or
+    // neither "within 2 release slots" nor "<90d" on the launch schedule (user-facing OR rule for Delayed).
+    const withinTwoReleaseSlots = slots !== null && slots > 0 && slots <= 2;
+    const underNinetyDaySlip = dayGap !== null && dayGap < 90;
+    const isDelayedSlip = withinTwoReleaseSlots || underNinetyDaySlip;
+
+    if (slots === null && dayGap === null) {
       return { category: 'yellow', label: 'Postponed' };
     }
 
-    // Minor reschedule: ≤2 slots and <90d (or unknown days with ≤2 slots) — treat like on-plan execution risk
-    return { category: 'green', label: 'On Plan' };
+    if (isDelayedSlip) {
+      return { category: 'yellow', label: 'Delayed' };
+    }
+
+    return { category: 'yellow', label: 'Postponed' };
   }
 
   return { category: 'neutral', label: 'New Addition' };

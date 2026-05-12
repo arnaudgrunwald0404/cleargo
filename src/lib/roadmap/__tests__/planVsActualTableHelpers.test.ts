@@ -18,6 +18,7 @@ function baseItem(partial: Partial<PlanVsActualItem>): PlanVsActualItem {
     endProgress: null,
     startStatus: null,
     endStatus: null,
+    firstScanRelease: null,
     statusCategory: 'green',
     statusLabel: 'On track',
     ...partial,

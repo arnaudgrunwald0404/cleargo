@@ -1,10 +1,12 @@
 import {
+  clampPlanVsActualPeriodDate,
   defaultQuarterProgressWindowForQuarter,
   defaultQuarterStartDate,
   defaultSnapshotWindowForQuarter,
   isMonthInQuarter,
   monthsInQuarterOptions,
   planVsActualApiParams,
+  quarterSelectOptions,
 } from '@/lib/roadmap/planVsActualPeriodUi';
 
 describe('planVsActualPeriodUi', () => {
@@ -71,5 +73,33 @@ describe('planVsActualPeriodUi', () => {
     jest.setSystemTime(new Date('2026-05-07T12:00:00'));
     expect(defaultQuarterStartDate()).toBe('2026-04-01');
     jest.useRealTimers();
+  });
+
+  it('defaultQuarterStartDate clamps to Q1 2026 when prior month is in Q4 2025', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-01-10T12:00:00'));
+    expect(defaultQuarterStartDate()).toBe('2026-01-01');
+    jest.useRealTimers();
+  });
+
+  it('quarterSelectOptions never lists a quarter before Q1 2026', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2027-06-15T12:00:00'));
+    const opts = quarterSelectOptions();
+    expect(opts.length).toBeGreaterThan(0);
+    expect(opts.every((o) => o.value >= '2026-01-01')).toBe(true);
+    expect(opts[opts.length - 1].value).toBe('2026-01-01');
+    jest.useRealTimers();
+  });
+
+  it('clampPlanVsActualPeriodDate bumps quarterly anchors before Q1 2026', () => {
+    expect(clampPlanVsActualPeriodDate('quarterly', '2025-10-15')).toBe('2026-01-01');
+  });
+
+  it('planVsActualApiParams clamps quarter start before Q1 2026', () => {
+    expect(planVsActualApiParams('2025-10-01', 'quarter-plan')).toEqual({
+      periodType: 'quarter_baseline',
+      periodDate: '2026-01-01',
+    });
   });
 });
