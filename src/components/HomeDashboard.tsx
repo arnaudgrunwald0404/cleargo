@@ -1242,7 +1242,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                 style={{
                   fontFamily: 'var(--font-marcellus), serif',
                   color: 'var(--color-gray-900)',
-                  fontSize: 'var(--font-size-4xl)',
+                  fontSize: 'clamp(24px, 6vw, var(--font-size-4xl))',
+                  lineHeight: 1.15,
                   fontWeight: 'var(--font-weight-bold)'
                 }}
               >
@@ -1273,7 +1274,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                   style={{
                     fontFamily: 'var(--font-marcellus), serif',
                     color: 'var(--color-gray-900)',
-                    fontSize: 'var(--font-size-4xl)',
+                    fontSize: 'clamp(20px, 5.5vw, var(--font-size-4xl))',
+                    lineHeight: 1.25,
                     paddingTop: 'var(--spacing-4)'
                   }}
                 >
@@ -1288,7 +1290,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                       onClick={() => setShowOnlyAsap((v) => !v)}
                       style={{
                         fontFamily: 'var(--font-marcellus), serif',
-                        fontSize: 'var(--font-size-4xl)',
+                        fontSize: 'inherit',
                         fontWeight: 400,
                         color: 'var(--table-steel, #697771)',
                         background: 'none',
@@ -1617,12 +1619,12 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                     </h2>
                   </div>
 
-                  <div className="rounded-lg overflow-hidden" style={{ 
+                  <div className="rounded-lg overflow-x-auto md:overflow-hidden" style={{
                     border: "1px solid #E5E7EB",
                     backgroundColor: "#FFFFFF",
                     boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                   }}>
-                    <table className="min-w-full table-fixed" style={{ borderCollapse: 'collapse' }}>
+                    <table className="min-w-full md:table-fixed" style={{ borderCollapse: 'collapse' }}>
                       <thead style={{ 
                         backgroundColor: "#F9FAFB",
                         borderBottom: "2px solid #E5E7EB"
@@ -1637,14 +1639,14 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           minWidth: "25%",
                           width: "25%"
                         }}>Epic</th>
-                        <th className="px-4 py-3 text-left w-24" style={{ 
+                        <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
                           color: "#6B7280"
                         }}>Tier</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ 
+                        <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1658,11 +1660,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           fontWeight: 600,
                           textTransform: "uppercase",
                           letterSpacing: "0.05em",
-                          color: "#6B7280",
-                          minWidth: "240px",
-                          width: "25%"
+                          color: "#6B7280"
                         }}>Criterion</th>
-                        <th className="px-4 py-3 text-left" style={{
+                        <th className="hidden md:table-cell px-4 py-3 text-left" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1677,7 +1677,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           letterSpacing: "0.05em",
                           color: "#6B7280"
                         }}>Go/No-Go Score</th>
-                        <th className="px-4 py-3 text-left w-32" style={{ 
+                        <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1685,7 +1685,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           color: "#6B7280"
                         }}>Due on</th>
                         {!readOnly && (
-                        <th className="px-4 py-3 text-right w-24" style={{ 
+                        <th className="hidden md:table-cell px-4 py-3 text-right w-24" style={{
                           fontSize: "12px",
                           fontWeight: 600,
                           textTransform: "uppercase",
@@ -1724,7 +1724,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               {item.launch.name}
                             </Link>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap w-24">
+                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24">
                             <span className={`px-2 py-1 rounded text-xs font-medium ${item.launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
                               item.launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
                                 'bg-gray-100 text-gray-800'
@@ -1736,11 +1736,9 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             <Cohort1DateBadge epic={item.launch} dateOptions={{ month: 'short', day: 'numeric' }} />
                           </td>
                           <td style={{
-                            padding: "12px 20px",
+                            padding: "12px 16px",
                             fontSize: "14px",
                             color: "#111827",
-                            minWidth: "240px",
-                            width: "25%"
                           }}>
                             <div style={{
                               fontWeight: 500,
@@ -1752,9 +1750,41 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               color: "#6B7280",
                               marginTop: "4px"
                             }}>{item.criterion.category}</div>
+                            {/* Mobile-only metadata strip: tier + due date (hidden ≥md, where columns show) */}
+                            <div className="md:hidden" style={{
+                              marginTop: 6,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 8,
+                              flexWrap: 'wrap',
+                              fontSize: 12,
+                              color: '#6B7280',
+                            }}>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
+                                item.launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                {item.launch.tier.replace('_', ' ')}
+                              </span>
+                              {(() => {
+                                const dueDateStr = getItemDueDate(item);
+                                if (!dueDateStr) return null;
+                                const d = new Date(dueDateStr);
+                                if (isNaN(d.getTime())) return null;
+                                const today = new Date();
+                                today.setHours(0, 0, 0, 0);
+                                d.setHours(0, 0, 0, 0);
+                                const isOverdue = d < today;
+                                return (
+                                  <span style={{ color: isOverdue ? '#DC2626' : '#6B7280', fontWeight: isOverdue ? 500 : 400 }}>
+                                    Due {d.toLocaleDateString()}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                           </td>
                           <td
-                            className="px-4 py-3"
+                            className="hidden md:table-cell px-4 py-3"
                             style={{ padding: "12px 16px", width: "80px", cursor: "pointer" }}
                             onClick={() => handleOpenDocs(item)}
                           >
@@ -1847,7 +1877,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               }}
                             />
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-32" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             {(() => {
                               const dueDateStr = getItemDueDate(item);
 
@@ -1901,7 +1931,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             })()}
                           </td>
                           {!readOnly && (
-                          <td className="px-4 py-3 text-right whitespace-nowrap" style={{ padding: "12px 16px" }}>
+                          <td className="hidden md:table-cell px-4 py-3 text-right whitespace-nowrap" style={{ padding: "12px 16px" }}>
                             <Group gap="xs" justify="flex-end">
                               <Tooltip label="Delegate this task" position="top" withArrow>
                                 <ActionIcon
