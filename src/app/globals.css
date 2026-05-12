@@ -551,10 +551,14 @@ body.has-sidebar .mantine-Modal-inner {
   padding-top: 20px !important;
 }
 
-/* Mobile: no sidebar offset */
+/* Mobile: no left sidebar offset, but reserve space for the fixed mobile top bar */
 @media (max-width: 768px) {
-  .sidebar-content-area {
+  :root {
+    --mobile-topbar-height: 56px;
+  }
+  body.has-sidebar .sidebar-content-area {
     padding-left: 0 !important;
+    padding-top: var(--mobile-topbar-height, 56px);
   }
 }
 
