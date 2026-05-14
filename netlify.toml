@@ -1,13 +1,14 @@
 [build]
-  # Clear stale .netlify (e.g. edge-functions) so plugin doesn't fail on webpack-runtime.js.
-  # NEXT_DISABLE_NETLIFY_EDGE avoids Edge middleware; clean avoids cached Edge artifacts.
-  command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}; require('child_process').execSync('npm run build', {stdio:'inherit', env:process.env})\""
+  # 1. Clear stale .netlify artifacts (edge-functions cache etc.).
+  # 2. Run next build.
+  # 3. Strip Sharp / @img from NFT trace files — the app never uses next/image,
+  #    but Next.js unconditionally traces Sharp into next-server.js.nft.json.
+  #    On Linux builders @img/sharp-libvips-linux-x64 is ~35 MB, which pushes
+  #    the server handler past Netlify's 250 MB unzipped function size limit.
+  command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}; require('child_process').execSync('npm run build', {stdio:'inherit', env:process.env}); require('child_process').execSync('node scripts/strip-sharp-from-traces.js', {stdio:'inherit', env:process.env})\""
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
-  # Split the monolithic server handler into per-route functions so each one
-  # stays under Netlify's 250 MB function size limit.
-  NETLIFY_NEXT_PLUGIN_ENABLE_EXPERIMENTAL_LAMBDA_SPLITTING = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
