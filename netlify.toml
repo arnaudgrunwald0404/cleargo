@@ -5,6 +5,9 @@
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
+  # Split the monolithic server handler into per-route functions so each one
+  # stays under Netlify's 250 MB function size limit.
+  NETLIFY_NEXT_PLUGIN_ENABLE_EXPERIMENTAL_LAMBDA_SPLITTING = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
