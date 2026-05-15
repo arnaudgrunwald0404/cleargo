@@ -1,20 +1,11 @@
 [build]
-  # 1. Clear stale .netlify artifacts (edge-functions cache etc.).
-  # 2. Run next build.
-  # Sharp / @img binaries are trimmed from the assembled handler by the local
-  # netlify-plugin-slim-handler (runs onPostBuild, after @netlify/plugin-nextjs).
-  command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}\" && npm run build"
+  command = "npm run build"
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
-
-# Local plugin: runs AFTER @netlify/plugin-nextjs to trim Sharp/libvips binaries
-# from the assembled server handler (keeps it under Netlify's 250 MB limit).
-[[plugins]]
-  package = "./netlify-plugin-slim-handler"
 
 # Function timeout: set in Netlify UI (Site settings > Functions) or contact support.
 # Max is 26s for sync functions. HEART AI setup uses a background function (netlify/functions/heart-setup-background.ts) for 15 min limit.

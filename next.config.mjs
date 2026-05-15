@@ -6,13 +6,15 @@ const __dirname = dirname(__filename);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Standalone output: Next.js traces only files that are actually imported and
+  // produces a self-contained .next/standalone server. Because the image
+  // optimizer is disabled (images.unoptimized: true), Sharp is never called and
+  // never appears in the trace — eliminating the need for post-build stripping
+  // scripts to stay under Netlify's 250 MB unzipped function size limit.
+  output: 'standalone',
   turbopack: {
     root: __dirname,
   },
-  // The app does not use next/image. Disabling the image optimizer stops Next.js
-  // from bundling Sharp (the @img/sharp-libvips-linux-x64 binary is ~40 MB on
-  // Netlify's build environment, which is what pushes the server handler over
-  // the 250 MB unzipped function size limit).
   images: {
     unoptimized: true,
   },
