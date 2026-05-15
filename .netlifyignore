@@ -1,0 +1,13 @@
+# Files to exclude from Netlify deployments
+# Secrets — env files must never be uploaded to Netlify
+.env
+.env.local
+.env.*.local
+
+# Editor config
+.cursor/
+.idea/
+.vscode/
+
+# Local dev artifacts
+*.log
