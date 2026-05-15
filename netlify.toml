@@ -1,4 +1,7 @@
 [build]
+  # Next + OpenNext: publish dir must be explicit in repo so builds do not depend on Netlify UI
+  # ("Build settings → Publish directory"). Matches Netlify’s Next starter; overrides dashboard-only values.
+  publish = ".next"
   # Clear stale .netlify (e.g. edge-functions) so plugin doesn't fail on webpack-runtime.js.
   # NEXT_DISABLE_NETLIFY_EDGE avoids Edge middleware; clean avoids cached Edge artifacts.
   command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}; require('child_process').execSync('npm run build', {stdio:'inherit', env:process.env})\""

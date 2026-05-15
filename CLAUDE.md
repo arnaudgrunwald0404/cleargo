@@ -197,6 +197,18 @@ Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind 
 - **Build:** `node scripts/netlify-build.js` (clears cache, runs `next build`)
 - **Edge middleware disabled:** `NEXT_DISABLE_NETLIFY_EDGE=true`
 - **Cron jobs:** GitHub Actions workflows (`.github/workflows/`) calling `/api/jobs/*`
+- **Netlify without the dashboard (CLI + API):** Use the same token Netlify gives for automation.
+  - **Auth:** `npx netlify login` once, or set `NETLIFY_AUTH_TOKEN` for scripts/CI.
+  - **Link this repo to the site (one-time):** `npx netlify link` (pick site) or `npx netlify link --id <site-uuid>`.
+  - **Who am I / which site:** `npx netlify status` (prints `site id`, URLs, account).
+  - **Site + build settings (JSON):** `npx netlify api getSite --data "{\"site_id\":\"<SITE_ID>\"}"` — inspect `build_settings` (e.g. `cmd`, `dir`, `repo_branch`). File-based `netlify.toml` overrides many UI build fields; this repo sets `publish = ".next"` explicitly.
+  - **Recent deploys:** `npx netlify api listSiteDeploys --data "{\"site_id\":\"<SITE_ID>\"}"` — use the latest object’s `id` and `build_id`.
+  - **Deploy failure summary:** `npx netlify api getDeploy --data "{\"deploy_id\":\"<DEPLOY_ID>\"}"` — check `state`, `error_message`.
+  - **Build record:** `npx netlify api getSiteBuild --data "{\"build_id\":\"<BUILD_ID>\"}"` (from the deploy).
+  - **Env vars:** `npx netlify env:list` / `npx netlify env:set KEY value --context production` (scopes as needed).
+  - **Wait for a deploy to finish:** `npx netlify watch`.
+  - **Full local Netlify pipeline (optional):** `npx netlify build` (Linux/macOS closer to CI than Windows); `npm run build` is the supported app compile check.
+  - **UI-only integrations (e.g. Lighthouse app):** They still merge into builds until uninstalled. Without the Apps UI, use the API: `npx netlify api listServiceInstancesForSite --data "{\"site_id\":\"<SITE_ID>\"}"`, then remove an instance with `deleteServiceInstance` (path parameters `site_id`, `addon`, `instance_id` — see `npx netlify api --list` and https://open-api.netlify.com/).
 
 ## PRD Maintenance
 
