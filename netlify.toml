@@ -10,6 +10,7 @@
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
+  AWS_LAMBDA_JS_RUNTIME = "nodejs20.x"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
