@@ -9,10 +9,18 @@ import { getEffectiveUserEmail, getImpersonatedEmail, IMPERSONATE_COOKIE_NAME } 
 import { trackLogin } from "@/lib/services/userActivityService";
 import { getUser } from "@/lib/auth/getUser";
 
+const notificationChannelSchema = z.enum(['email', 'slack', 'both', 'none']);
+
 const updateProfileSchema = z.object({
     first_name: z.string().optional(),
     last_name: z.string().optional(),
     avatar_url: z.string().optional(),
+    notification_preferences: z.object({
+        gate_signoff_ready: notificationChannelSchema.optional(),
+        criteria_nudge: notificationChannelSchema.optional(),
+        criteria_assignment: notificationChannelSchema.optional(),
+        weekly_digest: notificationChannelSchema.optional(),
+    }).optional(),
 });
 
 export async function PATCH(req: NextRequest) {

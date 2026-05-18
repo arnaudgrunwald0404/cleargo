@@ -1,9 +1,9 @@
 import { resend, EMAIL_SENDER } from './client';
-import { getLaunchStatusChangeEmail, getRiskAlertEmail, getCriteriaNudgeEmail } from './templates';
+import { getLaunchStatusChangeEmail, getRiskAlertEmail, getCriteriaNudgeEmail, getGateSignoffReadyEmail } from './templates';
 import { logNotification } from '../slack/notifications';
 import { createAdminClient } from '@/lib/supabase/server';
 
-export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert' | 'criteria_nudge';
+export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert' | 'criteria_nudge' | 'gate_signoff_ready';
 
 export interface EmailNotificationPayload {
     type: EmailNotificationType;
@@ -124,6 +124,16 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
                     payload.metadata.appUrl || process.env.NEXT_PUBLIC_APP_URL || '',
                     payload.metadata.org_time_zone
                 );
+                break;
+            case 'gate_signoff_ready':
+                emailContent = getGateSignoffReadyEmail({
+                    recipientName: payload.metadata.recipient_name || '',
+                    epicName: payload.metadata.epic_name || '',
+                    epicId: payload.metadata.epic_id || '',
+                    categoryLabel: payload.metadata.category_label || '',
+                    gateCriterionLabel: payload.metadata.gate_criterion_label || '',
+                    completedCount: payload.metadata.completed_count || 0,
+                });
                 break;
             default:
                 throw new Error(`Unknown email type: ${payload.type}`);
