@@ -64,6 +64,12 @@ export type QuarterProgressWindow =
   | 'quarter-progress-2'
   | 'quarter-results';
 
+export type QuarterProgressWindowOption = {
+  value: QuarterProgressWindow;
+  label: string;
+  disabled?: boolean;
+};
+
 export function planVsActualApiParams(
   quarterStartDate: string,
   window: QuarterProgressWindow,
@@ -169,18 +175,20 @@ export function isQuarterResultsWindowAvailable(
 export function quarterProgressWindowOptions(
   quarterStartIso: string,
   lastQuarterReleaseLaunchIso?: string | null,
-): {
-  value: QuarterProgressWindow;
-  label: string;
-  disabled?: boolean;
-}[] {
+): QuarterProgressWindowOption[] {
   const months = monthsInQuarterOptions(quarterStartIso);
   const resultsAvailable = isQuarterResultsWindowAvailable(
     quarterStartIso,
     new Date(),
     lastQuarterReleaseLaunchIso,
   );
-  return [
+  const resultsLabel = resultsAvailable
+    ? 'Quarter Results'
+    : lastQuarterReleaseLaunchIso
+      ? 'Quarter Results (after final quarter release)'
+      : 'Quarter Results (after quarter ends)';
+
+  const options: QuarterProgressWindowOption[] = [
     { value: 'quarter-plan', label: 'Quarter Plan (first snapshot)' },
     {
       value: 'quarter-progress-1',
@@ -192,19 +200,11 @@ export function quarterProgressWindowOptions(
     },
     {
       value: 'quarter-results',
-      label: 'Quarter Results',
+      label: resultsLabel,
       disabled: !resultsAvailable,
     },
-  ].map((o) =>
-    o.value === 'quarter-results' && o.disabled
-      ? {
-          ...o,
-          label: lastQuarterReleaseLaunchIso
-            ? 'Quarter Results (after final quarter release)'
-            : 'Quarter Results (after quarter ends)',
-        }
-      : o,
-  );
+  ];
+  return options;
 }
 
 /** Latest selectable progress window for a quarter (never returns disabled quarter-results). */
