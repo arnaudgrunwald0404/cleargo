@@ -393,6 +393,46 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).toBe('Delivered: Early');
   });
 
+  it('forces On Plan for quarter_baseline even when snapshot status looks shipped', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        periodType: 'quarter_baseline',
+        inStart: true,
+        inEnd: true,
+        startRelease: '2025.2',
+        endRelease: '2025.2',
+        startStatus: 'Released to GTM Team',
+        endStatus: 'Released to GTM Team',
+      },
+      order,
+    );
+    expect(r.category).toBe('green');
+    expect(r.label).toBe('On Plan');
+  });
+
+  it('marks Delayed (not Delivered: Delayed) when shipped in Aha but end train launches after period end', () => {
+    const order26 = idxMap([
+      ['2026.5', 0],
+      ['2026.6', 1],
+    ]);
+    const m = launchMap([['2026.6', '2026-07-15']]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2026.5',
+        endRelease: '2026.6',
+        startStatus: 'In development',
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-06-30',
+      },
+      order26,
+      m,
+    );
+    expect(r.category).toBe('yellow');
+    expect(r.label).toBe('Delayed');
+  });
+
   it('marks Ahead of Plan when target train moved earlier and not shipped', () => {
     const r = derivePlanVsActualStatus(
       {

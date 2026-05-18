@@ -10,6 +10,28 @@ import {
 } from 'date-fns';
 import type { PlanVsActualPeriodType, PlanVsActualStatusCategory } from '@/types/roadmap';
 
+/** Status labels where PM Internal/External cause is not shown in the table. */
+export const PLAN_VS_ACTUAL_PM_CAUSE_HIDDEN_LABELS = new Set([
+  'On Plan',
+  'Delivered: On Time',
+  'Delivered: Added',
+  'Delivered: Early',
+]);
+
+export function shouldShowPlanVsActualPmCause(statusLabel: string): boolean {
+  return !PLAN_VS_ACTUAL_PM_CAUSE_HIDDEN_LABELS.has(statusLabel);
+}
+
+/** Short release train for status column (e.g. `2026.5`). */
+export function formatPlanVsActualReleaseLabel(release: string | null | undefined): string | null {
+  const raw = (release ?? '').trim();
+  if (!raw) return null;
+  const parsed = parseReleaseTrainYearMonth(raw);
+  if (parsed) return `${parsed.year}.${parsed.month}`;
+  const stripped = raw.replace(/^release\s+/i, '').trim();
+  return stripped || null;
+}
+
 function normalize(s: string | null | undefined): string {
   return (s ?? '').trim().toLowerCase();
 }
@@ -63,6 +85,8 @@ export interface DeriveStatusInput {
   firstScanRelease?: string | null;
   /** Report period end (`yyyy-MM-dd`); gates “delivered” net-new chips vs `release_schedule` train launch. */
   periodEndIso?: string | null;
+  /** Quarter Plan uses the first Q snapshot only — show planning baseline, not shipped chips. */
+  periodType?: PlanVsActualPeriodType;
 }
 
 /**
@@ -235,12 +259,29 @@ export function endTrainEarlierThanStartTrain(
   return b.year * 12 + b.month < a.year * 12 + a.month;
 }
 
-function isReleasedForPlanVsActual(row: DeriveStatusInput): boolean {
+function looksReleasedBySnapshotSignals(row: DeriveStatusInput): boolean {
   if (looksDeliveredStatus(row.endStatus)) return true;
   const ep = row.endProgress;
   if (typeof ep === 'number' && !Number.isNaN(ep) && ep >= 100) return true;
   if (row.inStart && !row.inEnd && looksDeliveredStatus(row.startStatus)) return true;
   return false;
+}
+
+/**
+ * Shipped/delivered for status chips: Aha wording or 100% progress, and the end release train
+ * must have launched on or before the report period end when schedule data exists.
+ */
+function isReleasedForPlanVsActual(
+  row: DeriveStatusInput,
+  launchDateByKey?: ReadonlyMap<string, Date>,
+): boolean {
+  if (!looksReleasedBySnapshotSignals(row)) return false;
+  const releaseForGate = row.inStart && !row.inEnd ? row.startRelease : row.endRelease;
+  return deliveryKnowableByTrainSchedule(
+    releaseForGate,
+    row.periodEndIso ?? null,
+    launchDateByKey,
+  );
 }
 
 /**
@@ -257,7 +298,11 @@ export function derivePlanVsActualStatus(
   releaseOrderIndex: Map<string, number>,
   launchDateByKey?: ReadonlyMap<string, Date>,
 ): { category: PlanVsActualStatusCategory; label: string } {
-  const released = isReleasedForPlanVsActual(row);
+  if (row.periodType === 'quarter_baseline' && row.inStart && row.inEnd) {
+    return { category: 'green', label: 'On Plan' };
+  }
+
+  const released = isReleasedForPlanVsActual(row, launchDateByKey);
   const sr = normalizeReleaseKey(row.startRelease);
   const er = normalizeReleaseKey(row.endRelease);
   const sameTrain = sr === er;
@@ -266,7 +311,7 @@ export function derivePlanVsActualStatus(
 
   // Net-new this period
   if (!row.inStart && row.inEnd) {
-    const rawReleased = isReleasedForPlanVsActual(row);
+    const rawReleased = looksReleasedBySnapshotSignals(row);
     const knowable = deliveryKnowableByTrainSchedule(
       row.endRelease,
       row.periodEndIso ?? null,

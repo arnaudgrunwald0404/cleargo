@@ -5,6 +5,7 @@ import { canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { toDateOnlyString } from '@/lib/date-utils';
 import { cascadeReleaseDateToEpics } from '@/lib/db/epics';
+import { upsertReleaseScheduleRow } from '@/lib/release-schedule';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -128,12 +129,23 @@ export async function POST(req: NextRequest) {
                         }
 
                         const normalizedLaunchDate = toDateOnlyString(launchDate) ?? launchDate;
-                        const { error } = await adminClient
-                            .from('release_schedule')
-                            .upsert(
-                                { release_name: release.name, launch_date: normalizedLaunchDate, updated_at: new Date().toISOString() },
-                                { onConflict: 'release_name' }
-                            );
+                        let cohort2Date: string | null = null;
+                        if (release.cohort2_date) {
+                            cohort2Date = toDateOnlyString(release.cohort2_date) ?? release.cohort2_date;
+                        } else if (Array.isArray(release.release_phases)) {
+                            const cohort2Phase = release.release_phases.find((p: { name?: string }) => {
+                                const n = (p.name || '').toLowerCase();
+                                return n.includes('cohort 2') || n.includes('ga cohort');
+                            });
+                            const raw = cohort2Phase?.end_on || cohort2Phase?.start_on;
+                            if (raw) cohort2Date = toDateOnlyString(raw) ?? raw;
+                        }
+
+                        const { error } = await upsertReleaseScheduleRow(adminClient, {
+                            release_name: release.name,
+                            launch_date: normalizedLaunchDate,
+                            ...(cohort2Date ? { cohort2_date: cohort2Date } : {}),
+                        });
 
                         if (error) {
                             console.error(`Error syncing release ${release.name}:`, error);

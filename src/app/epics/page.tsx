@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getEpics } from '@/lib/epics';
+import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
 import EpicsClient from './EpicsClient';
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,10 @@ export default async function EpicsPage() {
             redirect('/');
         }
 
-        const epics = await getEpics();
+        const [epics, initialReleaseSchedule] = await Promise.all([
+            getEpics(),
+            getActiveReleaseScheduleRows(),
+        ]);
 
         return (
             <Suspense fallback={
@@ -70,7 +74,7 @@ export default async function EpicsPage() {
                     </div>
                 </div>
             }>
-                <EpicsClient initialEpics={epics || []} />
+                <EpicsClient initialEpics={epics || []} initialReleaseSchedule={initialReleaseSchedule} />
             </Suspense>
         );
     } catch (error: any) {

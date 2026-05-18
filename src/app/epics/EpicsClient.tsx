@@ -16,10 +16,13 @@ import { fetchStreamJSON } from '@/lib/fetch-stream';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
 import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
+import type { ReleaseScheduleRow } from '@/lib/release-schedule';
 import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
+import { addCalendarDaysToYmd } from '@/lib/date-utils';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
+    initialReleaseSchedule?: ReleaseScheduleRow[];
 }
 
 type DbReleaseStageRow = {
@@ -82,7 +85,7 @@ function getDaysUntilCohort1(releaseDate: string): number | null {
     return days > 0 ? days : null;
 }
 
-function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
+function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     /** Stable for effect deps — `searchParams` object identity can change every render in App Router. */
@@ -90,7 +93,14 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
-    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>([]);
+    const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>(
+        () => initialReleaseSchedule.map(({ release_name, launch_date, archived, aha_epic_count }) => ({
+            release_name,
+            launch_date,
+            archived,
+            aha_epic_count,
+        }))
+    );
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [currentUserRoles, setCurrentUserRoles] = useState<string[]>([]);
@@ -105,7 +115,17 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
     const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
-    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; cohort2_date?: string | null; archived: boolean; aha_epic_count?: number | null }>>([]);
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; cohort2_date?: string | null; archived: boolean; aha_epic_count?: number | null }>>(
+        () =>
+            initialReleaseSchedule.map((r) => ({
+                id: r.id ?? 0,
+                release_name: r.release_name,
+                launch_date: r.launch_date,
+                cohort2_date: r.cohort2_date ?? null,
+                archived: r.archived ?? false,
+                aha_epic_count: r.aha_epic_count ?? null,
+            }))
+    );
     // Only show skeleton if we don't have initial data - if we have epics, we can show them immediately
     const [isDeterminingOrder, setIsDeterminingOrder] = useState(initialEpics.length === 0);
     const [podOrder, setPodOrder] = useState<string[]>([]);
@@ -586,9 +606,13 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
         const past = displayedReleaseGroups.filter(
             g => g.releaseDate && g.releaseDate < todayString
         );
-        const upcoming = displayedReleaseGroups.filter(
-            g => !g.releaseDate || g.releaseDate >= todayString
-        );
+        // Upcoming: future trains plus the active cohort (recent past launch still in Cohort 1 window)
+        const upcoming = displayedReleaseGroups.filter((g) => {
+            if (!g.releaseDate) return true;
+            if (g.releaseDate >= todayString) return true;
+            const cohort1End = addCalendarDaysToYmd(g.releaseDate, 28);
+            return cohort1End != null && todayString <= cohort1End;
+        });
         const recentFour = past.slice(-4);
         if (releasesView === 'upcoming') return upcoming;
         if (releasesView === 'recent') return recentFour;
@@ -2412,7 +2436,9 @@ function EpicsClient({ initialEpics = [] }: EpicsClientProps) {
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
-                                                            const ymd = getEpicGaDateYmd(epic);
+                                                            const ymd = getEpicGaDateYmd(epic, {
+                                                                releaseSchedule: releaseScheduleWithIds,
+                                                            });
                                                             return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
                                                         })()}
                                                     </td>

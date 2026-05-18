@@ -77,11 +77,13 @@ function buildUserPrompt(
         ? `progress=${i.startProgress ?? '—'}%→${i.endProgress ?? '—'}%`
         : 'progress=(n/a)';
     const pm = i.pmNoteCause?.trim() ? ` pmReason=${i.pmNoteCause}` : '';
-    return `- ${i.ahaKey} | ${i.featureName} | goal=${i.goal ?? ''} | gtmModule=${i.productArea ?? ''}${pm} | ${prog} | start=${i.startRelease ?? '—'} end=${i.endRelease ?? '—'} | ${i.statusLabel} (${i.statusCategory})`;
+    return `- ${i.featureName} (${i.ahaKey}) | goal=${i.goal ?? ''} | gtmModule=${i.productArea ?? ''}${pm} | ${prog} | start=${i.startRelease ?? '—'} end=${i.endRelease ?? '—'} | ${i.statusLabel} (${i.statusCategory})`;
   });
 
   const noteLines = notes.map((n) => {
-    return `- ${n.ahaKey} | ${n.createdAt} | ${n.category ?? ''} | ${n.movementCause ?? ''} | ${n.fromRelease ?? ''}→${n.toRelease ?? ''} | ${n.commentText.replace(/\s+/g, ' ').slice(0, 500)}`;
+    const item = report.items.find((i) => i.ahaKey === n.ahaKey);
+    const title = item?.featureName?.trim() || n.ahaKey;
+    return `- ${title} (${n.ahaKey}) | ${n.createdAt} | ${n.category ?? ''} | ${n.movementCause ?? ''} | ${n.fromRelease ?? ''}→${n.toRelease ?? ''} | ${n.commentText.replace(/\s+/g, ' ').slice(0, 500)}`;
   });
 
   return `You are helping product leadership explain roadmap execution for a fixed reporting period.
@@ -102,7 +104,8 @@ Instructions:
 - **Evidence rule**: Say **what the snapshot row shows** (status label, release change, removal vs add). For **why**, use **only** PM/movement notes when they give a reason; otherwise write plainly that the cause is **not documented** (e.g. "No movement notes explain this; snapshot shows X.").
 - **Status labels** are driven by **release train movement** between snapshots and shipped wording — not by progress %. Use **progress %** only for execution reality; do not contradict the status label.
 - **itemInsights**: Include **exactly one object for every line** in the Items list (same ahaKey values). Stable rows: short summary; likelyReasons may say facts only ("Same release in start vs end snapshot.") or cite notes.
-- **overview** / **themes**: Observable patterns from the items only — not inferred motives.
+- **overview** / **themes**: When referencing epics, use **Feature name (Aha key)** — e.g. "Payments uplift (APP-E-123)" — not the key alone.
+- **itemInsights** summaries: Lead with the feature name; include the Aha key in parentheses when helpful.
 - Do not invent financial metrics (ARR). If notes conflict with snapshot data, note the mismatch briefly.
 - Keep each likelyReasons to at most 3 short sentences.
 
@@ -131,10 +134,10 @@ function buildSingleItemPrompt(
       ? `progress=${i.startProgress ?? '—'}%→${i.endProgress ?? '—'}%`
       : 'progress=(n/a)';
   const pm = i.pmNoteCause?.trim() ? ` pmReason=${i.pmNoteCause}` : '';
-  const line = `- ${i.ahaKey} | ${i.featureName} | goal=${i.goal ?? ''} | gtmModule=${i.productArea ?? ''}${pm} | ${prog} | start=${i.startRelease ?? '—'} end=${i.endRelease ?? '—'} | ${i.statusLabel} (${i.statusCategory})`;
+  const line = `- ${i.featureName} (${i.ahaKey}) | goal=${i.goal ?? ''} | gtmModule=${i.productArea ?? ''}${pm} | ${prog} | start=${i.startRelease ?? '—'} end=${i.endRelease ?? '—'} | ${i.statusLabel} (${i.statusCategory})`;
 
   const noteLines = notesForKey.map((n) => {
-    return `- ${n.ahaKey} | ${n.createdAt} | ${n.category ?? ''} | ${n.movementCause ?? ''} | ${n.fromRelease ?? ''}→${n.toRelease ?? ''} | ${n.commentText.replace(/\s+/g, ' ').slice(0, 500)}`;
+    return `- ${i.featureName} (${n.ahaKey}) | ${n.createdAt} | ${n.category ?? ''} | ${n.movementCause ?? ''} | ${n.fromRelease ?? ''}→${n.toRelease ?? ''} | ${n.commentText.replace(/\s+/g, ' ').slice(0, 500)}`;
   });
 
   return `You are helping product leadership explain roadmap execution for one roadmap item in a fixed reporting period.
@@ -150,7 +153,7 @@ PM / movement notes for this item only (may be empty):
 ${noteLines.length ? noteLines.join('\n') : '(none supplied)'}
 
 Instructions:
-- Write summary + likelyReasons only for this item.
+- Write summary + likelyReasons only for this item. Lead with the feature name; include the Aha key in parentheses when helpful.
 - **No speculation.** Do not invent why something shifted unless PM/movement notes state it. Describe snapshot facts; if cause unknown, say so.
 - **Status label** is driven by release train movement between snapshots — not progress %. Use progress % only for execution reality; do not contradict the status label.
 - Keep likelyReasons to at most 3 short sentences.

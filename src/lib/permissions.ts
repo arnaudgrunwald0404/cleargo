@@ -42,7 +42,9 @@ export type CapabilityId =
   | "roadmap.impactOverride.write"
   | "roadmap.hiddenItem.write"
   | "roadmap.movementNote.write"
-  | "roadmap.analysis.generate";
+  | "roadmap.analysis.generate"
+  | "roadmap.planVsActual.arr.write"
+  | "roadmap.planVsActual.gtm.write";
 
 export type Capability = {
   id: CapabilityId;
@@ -256,6 +258,16 @@ export const CAPABILITIES: Capability[] = [
     label: "Generate Roadmap Plan vs Actual Analysis",
     description: "Run AI analysis for Plan vs Actual roadmap period reports (Analytics).",
   },
+  {
+    id: "roadmap.planVsActual.arr.write",
+    label: "Save Plan vs Actual ARR / accounts",
+    description: "Persist ARR or account impact text on Plan vs Actual rows (shared per period).",
+  },
+  {
+    id: "roadmap.planVsActual.gtm.write",
+    label: "Edit Plan vs Actual GTM module",
+    description: "Set GTM module/name on roadmap snapshot rows when missing from Aha pivot sync.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -300,6 +312,8 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.hiddenItem.write": [...ALL_ROLES],
   "roadmap.movementNote.write": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.analysis.generate": ["CPO", "PRODUCT_OPS"],
+  "roadmap.planVsActual.arr.write": ["CPO", "PRODUCT_OPS", "PM"],
+  "roadmap.planVsActual.gtm.write": ["CPO", "PRODUCT_OPS", "PM"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

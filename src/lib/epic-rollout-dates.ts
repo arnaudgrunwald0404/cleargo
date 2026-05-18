@@ -7,8 +7,13 @@ import {
   addCalendarDaysToYmd,
 } from '@/lib/date-utils';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
-import { GA_DAYS_AFTER_LAUNCH } from '@/lib/epic-release-status';
 import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
+import {
+  resolveEpicGaDateYmd,
+  type ReleaseScheduleDateRow,
+} from '@/lib/epic-ga-date';
+
+export type { ReleaseScheduleDateRow };
 
 export type EpicRolloutStageRow = {
   id: number;
@@ -163,13 +168,10 @@ export function getEpicCohort1DateYmd(epic: Pick<Epic, 'target_launch_date' | 'a
   return getEffectiveCohort1DateYmd(epic);
 }
 
-/** GA date: scheduled GA from Aha, else effective Cohort 1 + 28 calendar days. */
+/** GA date: Aha scheduled GA, else release-train Cohort 2, else Cohort 1 + 28 calendar days. */
 export function getEpicGaDateYmd(
-  epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>
+  epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>,
+  options?: { releaseSchedule?: ReleaseScheduleDateRow[] }
 ): string | null {
-  const scheduled = parseDateOnlyLocal(epic.scheduled_ga_dev_date);
-  if (scheduled) return dateToLocalDateString(scheduled);
-  const cohort = getEffectiveCohort1DateYmd(epic);
-  if (!cohort) return null;
-  return addCalendarDaysToYmd(cohort, GA_DAYS_AFTER_LAUNCH);
+  return resolveEpicGaDateYmd(epic, options);
 }

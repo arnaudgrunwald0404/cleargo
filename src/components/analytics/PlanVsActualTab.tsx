@@ -8,6 +8,8 @@ import {
   usePlanVsActual,
   useGeneratePlanVsActualAnalysis,
   usePatchPlanVsActualAnalysis,
+  usePatchPlanVsActualArr,
+  usePatchPlanVsActualGtm,
   useRegeneratePlanVsActualItemNarrative,
 } from '@/hooks/usePlanVsActual';
 import { canRolesPerform } from '@/lib/permissions';
@@ -46,6 +48,8 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
 
   const gen = useGeneratePlanVsActualAnalysis();
   const patch = usePatchPlanVsActualAnalysis();
+  const patchArr = usePatchPlanVsActualArr();
+  const patchGtm = usePatchPlanVsActualGtm();
   const regenItem = useRegeneratePlanVsActualItemNarrative();
 
   useEffect(() => {
@@ -59,6 +63,14 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
   const { data, isPending, error } = usePlanVsActual(periodType, periodDate);
 
   const canGenerate = useMemo(() => canRolesPerform(userRoles, 'roadmap.analysis.generate'), [userRoles]);
+  const canSaveArr = useMemo(
+    () => canRolesPerform(userRoles, 'roadmap.planVsActual.arr.write'),
+    [userRoles],
+  );
+  const canEditGtm = useMemo(
+    () => canRolesPerform(userRoles, 'roadmap.planVsActual.gtm.write'),
+    [userRoles],
+  );
 
   const insightsByKey = useMemo(() => {
     const list = data?.cachedAnalysis?.itemInsights;
@@ -97,6 +109,12 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
   const regenItemError =
     regenItem.error instanceof Error ? regenItem.error.message : regenItem.error ? String(regenItem.error) : null;
 
+  const arrSaveError =
+    patchArr.error instanceof Error ? patchArr.error.message : patchArr.error ? String(patchArr.error) : null;
+
+  const gtmSaveError =
+    patchGtm.error instanceof Error ? patchGtm.error.message : patchGtm.error ? String(patchGtm.error) : null;
+
   const savingPeriodNarrative =
     patch.isPending &&
     (patch.variables?.overview !== undefined || patch.variables?.themes !== undefined);
@@ -120,6 +138,16 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
             {regenItemError}
           </Text>
         ) : null}
+        {arrSaveError ? (
+          <Text c="red" size="sm">
+            {arrSaveError}
+          </Text>
+        ) : null}
+        {gtmSaveError ? (
+          <Text c="red" size="sm">
+            {gtmSaveError}
+          </Text>
+        ) : null}
         <PlanVsActualTable
           items={data?.items ?? []}
           loading={isPending && !data}
@@ -127,6 +155,7 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
           periodStorageKey={periodStorageKey}
           quarterStartDate={quarterStartDate}
           quarterProgressWindow={quarterProgressWindow}
+          lastQuarterReleaseLaunchDate={data?.quarterContext?.lastQuarterReleaseLaunchDate ?? null}
           onQuarterStartDateChange={(iso) => {
             const q = clampQuarterStartToPlanVsActualMin(iso);
             setPeriod({
@@ -137,6 +166,18 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
           onQuarterProgressWindowChange={(v: QuarterProgressWindow) =>
             setPeriod((p) => ({ ...p, quarterProgressWindow: v }))
           }
+          canSaveArr={canSaveArr}
+          onSaveArr={async (ahaKey, arrImpact) => {
+            await patchArr.mutateAsync({ periodType, periodDate, ahaKey, arrImpact });
+          }}
+          arrSavePending={patchArr.isPending}
+          savingArrAhaKey={patchArr.variables?.ahaKey ?? null}
+          canEditGtm={canEditGtm}
+          onSaveGtm={async (ahaKey, gtmModule, gtmName) => {
+            await patchGtm.mutateAsync({ ahaKey, gtmModule, gtmName });
+          }}
+          gtmSavePending={patchGtm.isPending}
+          savingGtmAhaKey={patchGtm.variables?.ahaKey ?? null}
           canEditShift={canEditAnalysis}
           onSaveShiftInsight={async (payload): Promise<void> => {
             await patch.mutateAsync({
@@ -157,6 +198,7 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
           key={`${periodType}-${periodDate}-${data?.analysisGeneratedAt ?? 'none'}-${data?.cachedAnalysis ? 'cache' : 'nocache'}`}
           analysis={data?.cachedAnalysis ?? null}
           generatedAt={data?.analysisGeneratedAt ?? null}
+          reportItems={data?.items ?? []}
           canGenerate={canGenerate}
           canEditPeriodNarrative={canEditAnalysis}
           generating={gen.isPending}

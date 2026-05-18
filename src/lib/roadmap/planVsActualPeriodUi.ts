@@ -1,8 +1,10 @@
 import {
   endOfQuarter,
   format,
+  isAfter,
   max,
   parseISO,
+  startOfDay,
   startOfMonth,
   startOfQuarter,
   subMonths,
@@ -91,7 +93,9 @@ export function defaultQuarterProgressWindowForQuarter(quarterStartDate: string)
     const ix = months.findIndex((m) => m.value === prevStr);
     if (ix === 0) return 'quarter-progress-1';
     if (ix === 1) return 'quarter-progress-2';
-    if (ix === 2) return 'quarter-results';
+    if (ix === 2 && isQuarterResultsWindowAvailable(quarterStartDate)) {
+      return 'quarter-results';
+    }
   }
   return 'quarter-progress-1';
 }
@@ -141,11 +145,41 @@ export function formatQuarterHeading(quarterStartIso: string): string {
   return `Q${qn} ${qs.getFullYear()} (${format(qs, 'MMM d')} – ${format(qe, 'MMM d, yyyy')})`;
 }
 
-export function quarterProgressWindowOptions(quarterStartIso: string): {
+/**
+ * Quarter Results unlocks after the calendar quarter ends and (when known) after the
+ * last in-quarter `release_schedule` launch date.
+ */
+export function isQuarterResultsWindowAvailable(
+  quarterStartIso: string,
+  asOf: Date = new Date(),
+  lastQuarterReleaseLaunchIso?: string | null,
+): boolean {
+  const qs = parseISO(quarterStartIso);
+  if (Number.isNaN(qs.getTime())) return false;
+
+  const gates: Date[] = [endOfQuarter(qs)];
+  if (lastQuarterReleaseLaunchIso?.trim()) {
+    const ld = parseISO(lastQuarterReleaseLaunchIso.trim().slice(0, 10));
+    if (!Number.isNaN(ld.getTime())) gates.push(ld);
+  }
+  const unlockOn = startOfDay(max(gates));
+  return isAfter(startOfDay(asOf), unlockOn);
+}
+
+export function quarterProgressWindowOptions(
+  quarterStartIso: string,
+  lastQuarterReleaseLaunchIso?: string | null,
+): {
   value: QuarterProgressWindow;
   label: string;
+  disabled?: boolean;
 }[] {
   const months = monthsInQuarterOptions(quarterStartIso);
+  const resultsAvailable = isQuarterResultsWindowAvailable(
+    quarterStartIso,
+    new Date(),
+    lastQuarterReleaseLaunchIso,
+  );
   return [
     { value: 'quarter-plan', label: 'Quarter Plan (first snapshot)' },
     {
@@ -156,8 +190,32 @@ export function quarterProgressWindowOptions(quarterStartIso: string): {
       value: 'quarter-progress-2',
       label: `Quarter two months in (${months[1].label})`,
     },
-    { value: 'quarter-results', label: 'Quarter Results' },
-  ];
+    {
+      value: 'quarter-results',
+      label: 'Quarter Results',
+      disabled: !resultsAvailable,
+    },
+  ].map((o) =>
+    o.value === 'quarter-results' && o.disabled
+      ? {
+          ...o,
+          label: lastQuarterReleaseLaunchIso
+            ? 'Quarter Results (after final quarter release)'
+            : 'Quarter Results (after quarter ends)',
+        }
+      : o,
+  );
+}
+
+/** Latest selectable progress window for a quarter (never returns disabled quarter-results). */
+export function latestAvailableQuarterProgressWindow(
+  quarterStartIso: string,
+  lastQuarterReleaseLaunchIso?: string | null,
+): QuarterProgressWindow {
+  if (isQuarterResultsWindowAvailable(quarterStartIso, new Date(), lastQuarterReleaseLaunchIso)) {
+    return 'quarter-results';
+  }
+  return 'quarter-progress-2';
 }
 
 export function getInitialPlanVsActualPeriodState(): {

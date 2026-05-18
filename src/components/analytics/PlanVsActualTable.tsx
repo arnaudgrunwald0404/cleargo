@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionIcon,
+  Alert,
+  Anchor,
   Card,
   Group,
   MultiSelect,
@@ -11,10 +13,10 @@ import {
   Table,
   Text,
   TextInput,
-  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
 import { IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
+import { ahaEpicUrl } from '@/lib/aha/epicUrl';
 import type { PlanVsActualItem, PlanVsActualStatusCategory } from '@/types/roadmap';
 import {
   quarterProgressWindowOptions,
@@ -28,12 +30,26 @@ import {
 } from '@/lib/roadmap/planVsActualArrLocal';
 import {
   comparePlanVsActualItems,
+  EMPTY_GTM,
+  EMPTY_GOAL,
+  EMPTY_RELEASE,
   goalKey,
   gtmModuleKey,
   internalExternalLabel,
+  releaseKey,
+  releaseKeyLabel,
   type PlanVsActualGroupBy,
   type PlanVsActualSortKey,
 } from '@/lib/roadmap/planVsActualTableHelpers';
+import {
+  formatPlanVsActualReleaseLabel,
+  shouldShowPlanVsActualPmCause,
+} from '@/lib/roadmap/planVsActualStatus';
+import { PlanVsActualPmCauseHint } from '@/components/analytics/PlanVsActualPmCauseHint';
+import {
+  isQuarterResultsWindowAvailable,
+  latestAvailableQuarterProgressWindow,
+} from '@/lib/roadmap/planVsActualPeriodUi';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { StatusIndicator } from './StatusIndicator';
 import {
@@ -50,8 +66,6 @@ const STATUS_OPTIONS: { value: PlanVsActualStatusCategory; label: string }[] = [
   { value: 'neutral', label: 'New addition' },
 ];
 
-const EMPTY_GOAL = '__none_goal__';
-const EMPTY_GTM = '__none_gtm__';
 const EMPTY_PM = '__none_pm__';
 
 const FILTER_MULTISELECT_STYLES = {
@@ -115,9 +129,18 @@ export function PlanVsActualTable({
   insightsByKey,
   quarterStartDate,
   quarterProgressWindow,
+  lastQuarterReleaseLaunchDate,
   periodStorageKey,
   onQuarterStartDateChange,
   onQuarterProgressWindowChange,
+  canSaveArr,
+  onSaveArr,
+  arrSavePending,
+  savingArrAhaKey,
+  canEditGtm,
+  onSaveGtm,
+  gtmSavePending,
+  savingGtmAhaKey,
   canEditShift,
   onSaveShiftInsight,
   onRegenerateItemNarrative,
@@ -131,9 +154,18 @@ export function PlanVsActualTable({
   insightsByKey?: Record<string, PlanVsActualRowInsight>;
   quarterStartDate: string;
   quarterProgressWindow: QuarterProgressWindow;
+  lastQuarterReleaseLaunchDate?: string | null;
   periodStorageKey: string;
   onQuarterStartDateChange: (iso: string) => void;
   onQuarterProgressWindowChange: (v: QuarterProgressWindow) => void;
+  canSaveArr?: boolean;
+  onSaveArr?: (ahaKey: string, arrImpact: string) => void | Promise<void>;
+  arrSavePending?: boolean;
+  savingArrAhaKey?: string | null;
+  canEditGtm?: boolean;
+  onSaveGtm?: (ahaKey: string, gtmModule: string, gtmName?: string | null) => void | Promise<void>;
+  gtmSavePending?: boolean;
+  savingGtmAhaKey?: string | null;
   canEditShift?: boolean;
   onSaveShiftInsight?: (args: {
     ahaKey: string;
@@ -152,12 +184,14 @@ export function PlanVsActualTable({
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [goalFilter, setGoalFilter] = useState<string[]>([]);
   const [gtmFilter, setGtmFilter] = useState<string[]>([]);
+  const [releaseFilter, setReleaseFilter] = useState<string[]>([]);
   const [pmCauseFilter, setPmCauseFilter] = useState<string[]>([]);
   const [groupBy, setGroupBy] = useState<PlanVsActualGroupBy>('goal');
   const [sortKey, setSortKey] = useState<PlanVsActualSortKey>('feature');
   const [sortDir, setSortDir] = useState<1 | -1>(1);
   const [localArrMap, setLocalArrMap] = useState<Record<string, string>>({});
   const [arrTyping, setArrTyping] = useState<Record<string, string | undefined>>({});
+  const [gtmTyping, setGtmTyping] = useState<Record<string, string | undefined>>({});
 
   useEffect(() => {
     setLocalArrMap(loadLocalPlanVsActualArrMap(periodStorageKey));
@@ -196,6 +230,22 @@ export function PlanVsActualTable({
       return next;
     });
 
+    if (canSaveArr && onSaveArr) {
+      try {
+        await onSaveArr(ahaKey, trimmed);
+        clearLocalPlanVsActualArrKey(periodStorageKey, ahaKey);
+        setLocalArrMap((prev) => {
+          const next = { ...prev };
+          delete next[ahaKey];
+          return next;
+        });
+        return;
+      } catch {
+        /* parent surfaces error */
+        return;
+      }
+    }
+
     if (!canEditShift || !onSaveShiftInsight) return;
 
     const insight = insightsByKey?.[ahaKey];
@@ -217,12 +267,32 @@ export function PlanVsActualTable({
     }
   };
 
+  const persistGtm = async (row: PlanVsActualItem, raw: string) => {
+    const trimmed = raw.trim();
+    if (!canEditGtm || !onSaveGtm || !trimmed) return;
+    try {
+      await onSaveGtm(row.ahaKey, trimmed, row.featureName);
+    } catch {
+      /* parent surfaces error */
+    }
+  };
+
   const openDetail = (row: PlanVsActualItem) => {
     const insight = insightsByKey?.[row.ahaKey];
     push({
       id: `pva-${row.ahaKey}`,
       title: row.featureName,
-      description: row.ahaKey,
+      description: (
+        <Anchor
+          href={ahaEpicUrl(row.ahaKey)}
+          target="_blank"
+          rel="noopener noreferrer"
+          size="xs"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {row.ahaKey}
+        </Anchor>
+      ),
       render: () => (
         <PlanVsActualItemDetail
           row={row}
@@ -276,6 +346,22 @@ export function PlanVsActualTable({
       .map(([value, label]) => ({ value, label }));
   }, [items]);
 
+  const releaseOptions = useMemo(() => {
+    const labels = new Map<string, string>();
+    items.forEach((i) => {
+      const k = releaseKey(i);
+      labels.set(k, releaseKeyLabel(k));
+    });
+    return [...labels.entries()]
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .map(([value, label]) => ({ value, label }));
+  }, [items]);
+
+  const missingGtmCount = useMemo(
+    () => items.filter((i) => gtmModuleKey(i) === EMPTY_GTM).length,
+    [items],
+  );
+
   const pmCauseOptions = useMemo(() => {
     const labels = new Map<string, string>();
     items.forEach((i) => {
@@ -298,6 +384,9 @@ export function PlanVsActualTable({
     if (gtmFilter.length > 0) {
       out = out.filter((i) => gtmFilter.includes(gtmModuleKey(i)));
     }
+    if (releaseFilter.length > 0) {
+      out = out.filter((i) => releaseFilter.includes(releaseKey(i)));
+    }
     if (pmCauseFilter.length > 0) {
       out = out.filter((i) => pmCauseFilter.includes(pmCauseFilterKey(i)));
     }
@@ -312,11 +401,13 @@ export function PlanVsActualTable({
           i.featureName.toLowerCase().includes(q) ||
           i.ahaKey.toLowerCase().includes(q) ||
           i.statusLabel.toLowerCase().includes(q) ||
+          releaseKey(i).toLowerCase().includes(q) ||
+          (i.endRelease ?? '').toLowerCase().includes(q) ||
           arrDisplayValue(i.ahaKey).toLowerCase().includes(q),
       );
     }
     return out;
-  }, [items, search, statusFilter, goalFilter, gtmFilter, pmCauseFilter, arrDisplayValue]);
+  }, [items, search, statusFilter, goalFilter, gtmFilter, releaseFilter, pmCauseFilter, arrDisplayValue]);
 
   const sortedItems = useMemo(() => {
     const copy = [...filteredItems];
@@ -329,14 +420,21 @@ export function PlanVsActualTable({
   const groupedSections = useMemo(() => {
     const m = new Map<string, PlanVsActualItem[]>();
     for (const row of sortedItems) {
-      const key = groupBy === 'goal' ? goalKey(row) : gtmModuleKey(row);
+      const key =
+        groupBy === 'goal'
+          ? goalKey(row)
+          : groupBy === 'gtm'
+            ? gtmModuleKey(row)
+            : releaseKey(row);
       const list = m.get(key) ?? [];
       list.push(row);
       m.set(key, list);
     }
     const entries = [...m.entries()].sort((a, b) => {
-      const la = a[0] === EMPTY_GOAL || a[0] === EMPTY_GTM ? '\uffff' : a[0];
-      const lb = b[0] === EMPTY_GOAL || b[0] === EMPTY_GTM ? '\uffff' : b[0];
+      const la =
+        a[0] === EMPTY_GOAL || a[0] === EMPTY_GTM || a[0] === EMPTY_RELEASE ? '\uffff' : a[0];
+      const lb =
+        b[0] === EMPTY_GOAL || b[0] === EMPTY_GTM || b[0] === EMPTY_RELEASE ? '\uffff' : b[0];
       return la.localeCompare(lb, undefined, { sensitivity: 'base' });
     });
     return entries.map(([headerKey, rows]) => ({
@@ -345,16 +443,42 @@ export function PlanVsActualTable({
           ? '(No goal)'
           : headerKey === EMPTY_GTM
             ? '(No GTM module)'
-            : headerKey,
+            : headerKey === EMPTY_RELEASE
+              ? '(No release)'
+              : groupBy === 'release'
+                ? releaseKeyLabel(headerKey)
+                : headerKey,
       rows,
     }));
   }, [sortedItems, groupBy]);
 
   const quarterOptions = quarterSelectOptions();
-  const progressOptions = quarterProgressWindowOptions(quarterStartDate);
-  const progressValue = progressOptions.some((o) => o.value === quarterProgressWindow)
-    ? quarterProgressWindow
-    : progressOptions[0].value;
+  const progressOptions = quarterProgressWindowOptions(
+    quarterStartDate,
+    lastQuarterReleaseLaunchDate,
+  );
+  const progressValue = (() => {
+    const selected = progressOptions.find((o) => o.value === quarterProgressWindow);
+    if (selected && !selected.disabled) return quarterProgressWindow;
+    const firstEnabled = progressOptions.find((o) => !o.disabled);
+    return firstEnabled?.value ?? progressOptions[0].value;
+  })();
+
+  useEffect(() => {
+    if (
+      quarterProgressWindow === 'quarter-results' &&
+      !isQuarterResultsWindowAvailable(quarterStartDate, new Date(), lastQuarterReleaseLaunchDate)
+    ) {
+      onQuarterProgressWindowChange(
+        latestAvailableQuarterProgressWindow(quarterStartDate, lastQuarterReleaseLaunchDate),
+      );
+    }
+  }, [
+    quarterProgressWindow,
+    quarterStartDate,
+    lastQuarterReleaseLaunchDate,
+    onQuarterProgressWindowChange,
+  ]);
 
   const periodControls = (
     <Group align="flex-end" gap="sm" wrap="nowrap">
@@ -374,6 +498,7 @@ export function PlanVsActualTable({
         onChange={(v) => v && onQuarterProgressWindowChange(v as QuarterProgressWindow)}
         allowDeselect={false}
         style={{ width: 380 }}
+        comboboxProps={{ withinPortal: true }}
       />
     </Group>
   );
@@ -383,23 +508,46 @@ export function PlanVsActualTable({
     statusFilter.length > 0 ||
     goalFilter.length > 0 ||
     gtmFilter.length > 0 ||
+    releaseFilter.length > 0 ||
     pmCauseFilter.length > 0;
 
-  const renderIndicator = (row: PlanVsActualItem) => {
-    const label = internalExternalLabel(row.pmNoteCause);
-    const full = row.pmNoteCause?.trim();
-    if (!full) return <Text size="sm">—</Text>;
+  const renderGtmCell = (row: PlanVsActualItem) => {
+    const display = row.productArea ?? '';
+    const rowSaving = Boolean(gtmSavePending && savingGtmAhaKey === row.ahaKey);
+    if (!canEditGtm) {
+      return <Table.Td className={classes.pvaColFirst}>{display || '—'}</Table.Td>;
+    }
+    const value = gtmTyping[row.ahaKey] !== undefined ? gtmTyping[row.ahaKey]! : display;
     return (
-      <Tooltip label={full} withArrow position="top">
-        <Text size="sm" style={{ cursor: 'default' }}>
-          {label}
-        </Text>
-      </Tooltip>
+      <Table.Td className={classes.pvaColFirst} onClick={(e) => e.stopPropagation()}>
+        <TextInput
+          aria-label={`GTM module for ${row.featureName}`}
+          placeholder="GTM module"
+          size="xs"
+          value={value}
+          onChange={(e) =>
+            setGtmTyping((prev) => ({ ...prev, [row.ahaKey]: e.currentTarget.value }))
+          }
+          onBlur={() => {
+            const v = gtmTyping[row.ahaKey] ?? display;
+            setGtmTyping((prev) => {
+              const next = { ...prev };
+              delete next[row.ahaKey];
+              return next;
+            });
+            if (v.trim() && v.trim() !== display) void persistGtm(row, v);
+          }}
+          disabled={rowSaving}
+        />
+      </Table.Td>
     );
   };
 
   const renderArrCell = (row: PlanVsActualItem) => {
-    const rowSaving = Boolean(patchPending && patchingAhaKey === row.ahaKey);
+    const rowSaving = Boolean(
+      (arrSavePending && savingArrAhaKey === row.ahaKey) ||
+        (patchPending && patchingAhaKey === row.ahaKey),
+    );
     const rowRegenerating = Boolean(regeneratePending && regeneratingAhaKey === row.ahaKey);
     return (
       <Table.Td className={classes.pvaColArr} onClick={(e) => e.stopPropagation()}>
@@ -427,10 +575,22 @@ export function PlanVsActualTable({
     );
   };
 
+  const renderReleaseCell = (row: PlanVsActualItem) => {
+    const label = formatPlanVsActualReleaseLabel(row.endRelease ?? row.startRelease);
+    return (
+      <Table.Td className={classes.pvaColRelease}>
+        <Text size="sm">{label ?? '—'}</Text>
+      </Table.Td>
+    );
+  };
+
   const renderStatusCell = (row: PlanVsActualItem) => (
     <Table.Td className={classes.pvaColStatus}>
-      <Group gap="xs" wrap="nowrap" align="center">
+      <Group gap={4} wrap="nowrap" align="center">
         <StatusIndicator category={row.statusCategory} label={row.statusLabel} />
+        {shouldShowPlanVsActualPmCause(row.statusLabel) ? (
+          <PlanVsActualPmCauseHint pmNoteCause={row.pmNoteCause} statusLabel={row.statusLabel} />
+        ) : null}
         <ActionIcon
           variant="subtle"
           color="gray"
@@ -461,6 +621,15 @@ export function PlanVsActualTable({
       >
         {row.featureName}
       </UnstyledButton>
+      <Anchor
+        href={ahaEpicUrl(row.ahaKey)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={classes.pvaAhaKeyLink}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {row.ahaKey}
+      </Anchor>
     </Table.Td>
   );
 
@@ -491,20 +660,20 @@ export function PlanVsActualTable({
                   thClassName={classes.pvaColFeature}
                 />
                 <SortHeader
+                  label="Release"
+                  sortKey="release"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColRelease}
+                />
+                <SortHeader
                   label="ARR / accounts"
                   sortKey="arr"
                   activeKey={sortKey}
                   dir={sortDir}
                   onSort={onSortColumn}
                   thClassName={classes.pvaColArr}
-                />
-                <SortHeader
-                  label="Internal / External"
-                  sortKey="indicator"
-                  activeKey={sortKey}
-                  dir={sortDir}
-                  onSort={onSortColumn}
-                  thClassName={classes.pvaColIndicator}
                 />
                 <SortHeader
                   label="Status (end of period)"
@@ -527,8 +696,8 @@ export function PlanVsActualTable({
                     {row.goal ?? '—'}
                   </Table.Td>
                   {renderFeatureCell(row)}
+                  {renderReleaseCell(row)}
                   {renderArrCell(row)}
-                  <Table.Td className={classes.pvaColIndicator}>{renderIndicator(row)}</Table.Td>
                   {renderStatusCell(row)}
                 </Table.Tr>
               ))}
@@ -566,20 +735,20 @@ export function PlanVsActualTable({
                   thClassName={classes.pvaColFeature}
                 />
                 <SortHeader
+                  label="Release"
+                  sortKey="release"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColRelease}
+                />
+                <SortHeader
                   label="ARR / accounts"
                   sortKey="arr"
                   activeKey={sortKey}
                   dir={sortDir}
                   onSort={onSortColumn}
                   thClassName={classes.pvaColArr}
-                />
-                <SortHeader
-                  label="Internal / External"
-                  sortKey="indicator"
-                  activeKey={sortKey}
-                  dir={sortDir}
-                  onSort={onSortColumn}
-                  thClassName={classes.pvaColIndicator}
                 />
                 <SortHeader
                   label="Status (end of period)"
@@ -598,10 +767,85 @@ export function PlanVsActualTable({
                   className={classes.clickableRow}
                   onClick={() => openDetail(row)}
                 >
-                  <Table.Td className={classes.pvaColFirst}>{row.productArea ?? '—'}</Table.Td>
+                  {renderGtmCell(row)}
+                  {renderFeatureCell(row)}
+                  {renderReleaseCell(row)}
+                  {renderArrCell(row)}
+                  {renderStatusCell(row)}
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Stack>
+      ))}
+    </Stack>
+  );
+
+  const tableByRelease = (
+    <Stack gap="lg">
+      {groupedSections.map((section) => (
+        <Stack key={section.header} gap="xs">
+          <Text fw={600} size="sm">
+            {section.header}
+          </Text>
+          <Table striped highlightOnHover withTableBorder className={classes.pvaTable}>
+            <Table.Thead>
+              <Table.Tr>
+                <SortHeader
+                  label="Goal"
+                  sortKey="goal"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColFirst}
+                />
+                <SortHeader
+                  label="GTM module"
+                  sortKey="gtmModule"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColFirst}
+                />
+                <SortHeader
+                  label="Feature"
+                  sortKey="feature"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColFeature}
+                />
+                <SortHeader
+                  label="ARR / accounts"
+                  sortKey="arr"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColArr}
+                />
+                <SortHeader
+                  label="Status (end of period)"
+                  sortKey="status"
+                  activeKey={sortKey}
+                  dir={sortDir}
+                  onSort={onSortColumn}
+                  thClassName={classes.pvaColStatus}
+                />
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {section.rows.map((row) => (
+                <Table.Tr
+                  key={row.ahaKey}
+                  className={classes.clickableRow}
+                  onClick={() => openDetail(row)}
+                >
+                  <Table.Td className={`${classes.pvaColFirst} ${classes.pvaColFirstPreline}`}>
+                    {row.goal ?? '—'}
+                  </Table.Td>
+                  {renderGtmCell(row)}
                   {renderFeatureCell(row)}
                   {renderArrCell(row)}
-                  <Table.Td className={classes.pvaColIndicator}>{renderIndicator(row)}</Table.Td>
                   {renderStatusCell(row)}
                 </Table.Tr>
               ))}
@@ -647,6 +891,17 @@ export function PlanVsActualTable({
               styles={FILTER_MULTISELECT_STYLES}
             />
             <MultiSelect
+              placeholder={releaseFilter.length > 0 ? '' : 'All releases'}
+              data={releaseOptions}
+              value={releaseFilter}
+              onChange={setReleaseFilter}
+              clearable
+              searchable
+              disabled={items.length === 0}
+              style={{ flex: '0 1 180px', minWidth: 140 }}
+              styles={FILTER_MULTISELECT_STYLES}
+            />
+            <MultiSelect
               placeholder={pmCauseFilter.length > 0 ? '' : 'All PM reasons'}
               data={pmCauseOptions}
               value={pmCauseFilter}
@@ -672,6 +927,7 @@ export function PlanVsActualTable({
               data={[
                 { value: 'goal', label: 'By goal' },
                 { value: 'gtm', label: 'By GTM module' },
+                { value: 'release', label: 'By release' },
               ]}
               value={groupBy}
               onChange={(v) => v && setGroupBy(v as PlanVsActualGroupBy)}
@@ -693,13 +949,35 @@ export function PlanVsActualTable({
           </Text>
         ) : (
           <>
+            {missingGtmCount > 0 && missingGtmCount >= Math.ceil(items.length * 0.2) ? (
+              <Alert color="blue" variant="light" title="GTM module missing on many rows">
+                {missingGtmCount} of {items.length} rows have no GTM module in snapshot data. Values sync
+                from the Aha roadmap pivot (weekly snapshot + Sunday GTM backfill). Ask Product Ops to run a
+                one-time backfill if modules exist in Aha but not here.
+              </Alert>
+            ) : null}
+            <Text size="xs" c="dimmed">
+              {canSaveArr
+                ? 'ARR / accounts saves for this period when you leave the field (shared for your team).'
+                : 'ARR / accounts is stored in this browser only — you need save permission to persist for the team.'}
+              {' '}
+              {canEditGtm
+                ? 'Click a GTM module cell to set it on all snapshot rows for that epic.'
+                : null}
+              {' '}
+              For slips and removals, use the info icon beside status for Internal / External PM reason.
+            </Text>
             {hasActiveFilter && (
               <Text size="xs" c="dimmed">
                 Showing {filteredItems.length} of {items.length} rows
               </Text>
             )}
 
-            {groupBy === 'goal' ? tableByGoal : tableByGtm}
+            {groupBy === 'goal'
+              ? tableByGoal
+              : groupBy === 'gtm'
+                ? tableByGtm
+                : tableByRelease}
 
             {filteredItems.length === 0 ? (
               <Text size="sm" c="dimmed">

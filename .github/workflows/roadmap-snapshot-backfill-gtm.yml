@@ -1,0 +1,61 @@
+name: Roadmap GTM Backfill
+
+on:
+  schedule:
+    # Sundays 06:00 UTC — after Saturday roadmap snapshot (05:00 UTC).
+    - cron: '0 6 * * 0'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Mirror pivot exactly (including empty GTM cells)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      dry_run:
+        description: 'Count pivot epics only (no DB writes)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  backfill-gtm:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger GTM backfill from Aha pivot
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          FORCE: ${{ github.event.inputs.force || 'false' }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          QUERY=""
+          if [ "$FORCE" = "true" ]; then QUERY="${QUERY}force=true&"; fi
+          if [ "$DRY_RUN" = "true" ]; then QUERY="${QUERY}dry_run=true&"; fi
+          URL="${BASE_URL}/api/jobs/roadmap-snapshot-backfill-gtm"
+          if [ -n "$QUERY" ]; then URL="${URL}?${QUERY%&}"; fi
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -X POST \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$URL") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            echo "Retry $i..."; sleep 15
+          done
+          echo "Failed after retries" >&2
+          exit 1

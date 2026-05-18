@@ -1,12 +1,21 @@
-import { endOfMonth, endOfQuarter, format, parseISO, startOfMonth, startOfQuarter } from 'date-fns';
+import {
+  endOfMonth,
+  endOfQuarter,
+  format,
+  parseISO,
+  startOfMonth,
+  startOfQuarter,
+} from 'date-fns';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   EpicMovementNoteForAnalysis,
   PeriodShiftAnalysis,
   PlanVsActualItem,
   PlanVsActualPeriodType,
+  PlanVsActualQuarterContext,
   PlanVsActualReportPayload,
 } from '@/types/roadmap';
+import { isQuarterResultsWindowAvailable } from '@/lib/roadmap/planVsActualPeriodUi';
 import { sanitizePivotCellString } from '@/lib/aha/pivotNormalizer';
 import {
   allowedTrainMonthKeysForPlanVsActualReport,
@@ -104,6 +113,47 @@ export async function buildReleaseScheduleMaps(supabase: SupabaseClient): Promis
   return { orderIndex, launchDateByKey };
 }
 
+/** Latest non-archived launch in [periodStart, periodEnd] (inclusive). */
+export async function getLastReleaseLaunchInPeriod(
+  supabase: SupabaseClient,
+  periodStartIso: string,
+  periodEndIso: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('release_schedule')
+    .select('launch_date')
+    .eq('archived', false)
+    .gte('launch_date', periodStartIso)
+    .lte('launch_date', periodEndIso)
+    .order('launch_date', { ascending: false })
+    .limit(1);
+
+  if (error || !data?.length) return null;
+  const raw = data[0].launch_date;
+  if (raw == null) return null;
+  return format(parseISO(String(raw).slice(0, 10)), 'yyyy-MM-dd');
+}
+
+export async function buildQuarterContext(
+  supabase: SupabaseClient,
+  quarterStartIso: string,
+): Promise<PlanVsActualQuarterContext> {
+  const qs = startOfQuarter(parseISO(quarterStartIso));
+  const qe = endOfQuarter(qs);
+  const qStart = format(qs, 'yyyy-MM-dd');
+  const qEnd = format(qe, 'yyyy-MM-dd');
+  const lastQuarterReleaseLaunchDate = await getLastReleaseLaunchInPeriod(supabase, qStart, qEnd);
+  return {
+    quarterStart: qStart,
+    lastQuarterReleaseLaunchDate,
+    quarterResultsAvailable: isQuarterResultsWindowAvailable(
+      qStart,
+      new Date(),
+      lastQuarterReleaseLaunchDate,
+    ),
+  };
+}
+
 function displayFeatureName(row: RpcPlanVsActualRow): string {
   const raw =
     row.end_gtm_name?.trim() ||
@@ -134,6 +184,7 @@ export function mapRowToPlanVsActualItem(
   pmNoteCause: string | null = null,
   launchDateByKey?: ReadonlyMap<string, Date>,
   periodEndIso?: string,
+  periodType?: PlanVsActualPeriodType,
 ): PlanVsActualItem {
   const { category, label } = derivePlanVsActualStatus(
     {
@@ -146,6 +197,7 @@ export function mapRowToPlanVsActualItem(
       endProgress: row.end_aha_progress ?? null,
       firstScanRelease: row.first_scan_aha_release ?? null,
       periodEndIso: periodEndIso ?? null,
+      periodType,
     },
     releaseOrderIndex,
     launchDateByKey,
@@ -362,6 +414,60 @@ export async function patchRoadmapPeriodAnalysis(
   return { analysis, generatedAt: cached.generatedAt };
 }
 
+/** Persist ARR/accounts for one row without requiring a full AI analysis run. */
+export async function upsertPlanVsActualItemArr(
+  supabase: SupabaseClient,
+  periodType: PlanVsActualPeriodType,
+  periodDateIso: string,
+  ahaKey: string,
+  arrImpact: string,
+): Promise<{ analysis: PeriodShiftAnalysis; generatedAt: string | null }> {
+  const periodDateClamped = clampPlanVsActualPeriodDate(periodType, periodDateIso);
+  const { periodStart, periodEnd } = getPeriodBounds(periodType, periodDateClamped);
+  const report = await getPlanVsActualReport(supabase, periodType, periodDateIso);
+  const item = report.items.find((i) => i.ahaKey === ahaKey);
+  if (!item) {
+    throw new Error('This epic is not in the current Plan vs Actual period.');
+  }
+
+  const cached = await loadCachedPeriodAnalysis(supabase, periodType, periodStart);
+  const base: PeriodShiftAnalysis = cached.analysis ?? {
+    overview: '',
+    themes: [],
+    itemInsights: [],
+    modelVersion: 'arr_only',
+  };
+
+  const itemInsights = [...(base.itemInsights ?? [])];
+  const ix = itemInsights.findIndex((i) => i.ahaKey === ahaKey);
+  const prev = ix >= 0 ? itemInsights[ix] : undefined;
+  const trimmed = arrImpact.trim();
+  const row = {
+    ahaKey,
+    summary: prev?.summary ?? '',
+    likelyReasons: prev?.likelyReasons ?? '',
+    ...(trimmed ? { arrImpact: trimmed } : {}),
+  };
+  if (ix >= 0) itemInsights[ix] = row;
+  else itemInsights.push(row);
+
+  const analysis: PeriodShiftAnalysis = { ...base, itemInsights };
+  const generatedAt = cached.generatedAt ?? new Date().toISOString();
+
+  await upsertRoadmapPeriodAnalysis(supabase, {
+    periodType,
+    periodStart,
+    periodEnd,
+    startSnapshotDate: report.startSnapshotDate,
+    endSnapshotDate: report.endSnapshotDate,
+    items: report.items,
+    analysis,
+    aiModelVersion: analysis.modelVersion ?? 'arr_only',
+  });
+
+  return { analysis, generatedAt };
+}
+
 export async function getPlanVsActualReport(
   supabase: SupabaseClient,
   periodType: PlanVsActualPeriodType,
@@ -399,6 +505,7 @@ export async function getPlanVsActualReport(
         pmCauses.get(r.aha_key) ?? null,
         launchDateByKey,
         periodEnd,
+        periodType,
       ),
     )
     .filter((item) => includePlanVsActualItemForReport(item, reportingScope));
@@ -412,6 +519,9 @@ export async function getPlanVsActualReport(
 
   const cached = await loadCachedPeriodAnalysis(supabase, periodType, periodStart);
 
+  const quarterAnchor = format(startOfQuarter(parseISO(periodStart)), 'yyyy-MM-dd');
+  const quarterContext = await buildQuarterContext(supabase, quarterAnchor);
+
   return {
     periodType,
     periodStart,
@@ -421,6 +531,7 @@ export async function getPlanVsActualReport(
     items,
     cachedAnalysis: cached.analysis,
     analysisGeneratedAt: cached.generatedAt,
+    quarterContext,
   };
 }
 

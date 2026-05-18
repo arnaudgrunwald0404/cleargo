@@ -192,6 +192,15 @@ export interface PlanVsActualItem {
   statusLabel: string;
 }
 
+export interface PlanVsActualQuarterContext {
+  /** Calendar quarter start (yyyy-MM-dd) for the selector quarter. */
+  quarterStart: string;
+  /** Latest `release_schedule.launch_date` in that quarter, if any. */
+  lastQuarterReleaseLaunchDate: string | null;
+  /** When Quarter Results mode is allowed (after calendar quarter end and last in-quarter release). */
+  quarterResultsAvailable: boolean;
+}
+
 export interface PlanVsActualReportPayload {
   periodType: PlanVsActualPeriodType;
   periodStart: string;
@@ -201,6 +210,7 @@ export interface PlanVsActualReportPayload {
   items: PlanVsActualItem[];
   cachedAnalysis: PeriodShiftAnalysis | null;
   analysisGeneratedAt: string | null;
+  quarterContext: PlanVsActualQuarterContext;
 }
 
 export interface PeriodShiftAnalysis {

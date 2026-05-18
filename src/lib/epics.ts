@@ -5,6 +5,7 @@ import {
     type EpicForStatus,
     type RetroForStatus,
 } from '@/lib/epic-release-status';
+import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
 
 export async function instantiateEpicMatrix(epicId: string, tier: string) {
     const supabase = createClient();
@@ -90,10 +91,14 @@ async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
     try {
         const supabase = createClient();
         const ids = epics.map((e) => e.id);
-        const { data: retros } = await supabase
-            .from('epic_retros')
-            .select('epic_id, day_marker, status')
-            .in('epic_id', ids);
+        const [retrosResult, releaseSchedule] = await Promise.all([
+            supabase
+                .from('epic_retros')
+                .select('epic_id, day_marker, status')
+                .in('epic_id', ids),
+            getActiveReleaseScheduleRows(),
+        ]);
+        const { data: retros } = retrosResult;
         const byEpic = new Map<string, RetroForStatus[]>();
         for (const r of retros || []) {
             const list = byEpic.get(r.epic_id) ?? [];
@@ -109,7 +114,9 @@ async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
                 scheduled_ga_dev_date: epic.scheduled_ga_dev_date,
                 aha_fields: epic.aha_fields,
             };
-            const status = computeEpicReleaseStatus(epicForStatus, retrosForStatus);
+            const status = computeEpicReleaseStatus(epicForStatus, retrosForStatus, {
+                releaseSchedule,
+            });
             return { ...epic, status };
         });
     } catch {
@@ -428,13 +435,18 @@ export async function getEpic(id: string) {
         day_marker: r.day_marker,
         status: r.status ?? 'PENDING',
     }));
+    const releaseSchedule = await getActiveReleaseScheduleRows();
+
     const epicForStatus: EpicForStatus = {
         id: data.id,
         status: data.status,
         target_launch_date: data.target_launch_date,
         scheduled_ga_dev_date: data.scheduled_ga_dev_date,
+        aha_fields: data.aha_fields,
     };
-    const computedStatus = computeEpicReleaseStatus(epicForStatus, retrosForStatus);
+    const computedStatus = computeEpicReleaseStatus(epicForStatus, retrosForStatus, {
+        releaseSchedule: releaseSchedule ?? [],
+    });
     return { ...data, status: computedStatus };
 }
 

@@ -4,8 +4,10 @@ import {
   defaultQuarterStartDate,
   defaultSnapshotWindowForQuarter,
   isMonthInQuarter,
+  isQuarterResultsWindowAvailable,
   monthsInQuarterOptions,
   planVsActualApiParams,
+  quarterProgressWindowOptions,
   quarterSelectOptions,
 } from '@/lib/roadmap/planVsActualPeriodUi';
 
@@ -101,5 +103,32 @@ describe('planVsActualPeriodUi', () => {
       periodType: 'quarter_baseline',
       periodDate: '2026-01-01',
     });
+  });
+
+  it('isQuarterResultsWindowAvailable is false before quarter end', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-15T12:00:00'));
+    expect(isQuarterResultsWindowAvailable('2026-04-01')).toBe(false);
+    jest.setSystemTime(new Date('2026-07-02T12:00:00'));
+    expect(isQuarterResultsWindowAvailable('2026-04-01')).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('waits for last in-quarter release when it is after calendar quarter end', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-07-05T12:00:00'));
+    expect(isQuarterResultsWindowAvailable('2026-04-01', new Date(), '2026-07-15')).toBe(false);
+    jest.setSystemTime(new Date('2026-07-20T12:00:00'));
+    expect(isQuarterResultsWindowAvailable('2026-04-01', new Date(), '2026-07-15')).toBe(true);
+    jest.useRealTimers();
+  });
+
+  it('quarterProgressWindowOptions disables Quarter Results until quarter ends', () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date('2026-05-15T12:00:00'));
+    const opts = quarterProgressWindowOptions('2026-04-01');
+    const results = opts.find((o) => o.value === 'quarter-results');
+    expect(results?.disabled).toBe(true);
+    jest.useRealTimers();
   });
 });

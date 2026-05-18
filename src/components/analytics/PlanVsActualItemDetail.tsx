@@ -1,10 +1,16 @@
 'use client';
 
 import { useState } from 'react';
-import { Box, Button, Divider, Group, Stack, Text, Textarea } from '@mantine/core';
-import { IconPencil, IconRefresh } from '@tabler/icons-react';
+import { Anchor, Box, Button, Divider, Group, Stack, Text, Textarea } from '@mantine/core';
+import { IconExternalLink, IconPencil, IconRefresh } from '@tabler/icons-react';
 import type { PlanVsActualItem } from '@/types/roadmap';
+import { ahaEpicUrl } from '@/lib/aha/epicUrl';
 import { internalExternalLabel } from '@/lib/roadmap/planVsActualTableHelpers';
+import { formatPlanVsActualReleaseLabel } from '@/lib/roadmap/planVsActualStatus';
+import {
+  PlanVsActualNarrativeText,
+  buildAhaKeyNameMap,
+} from '@/components/analytics/PlanVsActualNarrativeText';
 import { StatusIndicator } from './StatusIndicator';
 
 export type PlanVsActualRowInsight = {
@@ -88,12 +94,30 @@ export function PlanVsActualItemDetail({
     return ie + (full !== ie ? ` · ${full}` : '');
   })();
 
+  const ahaUrl = ahaEpicUrl(row.ahaKey);
+  const endReleaseLabel = formatPlanVsActualReleaseLabel(row.endRelease ?? row.startRelease);
+
   return (
     <Stack gap="lg">
       <Box component="dl" style={metaGrid}>
+        <DetailLabel>Aha epic</DetailLabel>
+        <DetailValue>
+          <Anchor href={ahaUrl} target="_blank" rel="noopener noreferrer" size="sm" fw={500}>
+            {row.ahaKey}
+            <IconExternalLink size={14} style={{ marginLeft: 4, verticalAlign: 'middle' }} />
+          </Anchor>
+        </DetailValue>
+
         <DetailLabel>Status (end of period)</DetailLabel>
         <DetailValue>
-          <StatusIndicator category={row.statusCategory} label={row.statusLabel} />
+          <Group gap="xs" wrap="wrap">
+            <StatusIndicator category={row.statusCategory} label={row.statusLabel} />
+            {endReleaseLabel ? (
+              <Text size="sm" c="dimmed">
+                Release {endReleaseLabel}
+              </Text>
+            ) : null}
+          </Group>
         </DetailValue>
 
         <DetailLabel>PM reason (latest)</DetailLabel>
@@ -209,12 +233,14 @@ export function PlanVsActualItemDetail({
           </Stack>
         ) : insight ? (
           <Stack gap="sm">
-            <Text size="sm" lh={1.6}>
-              {insight.summary}
-            </Text>
-            <Text size="sm" c="dimmed" lh={1.6}>
-              {insight.likelyReasons}
-            </Text>
+            <PlanVsActualNarrativeText
+              text={insight.summary}
+              nameByKey={buildAhaKeyNameMap([{ ahaKey: row.ahaKey, featureName: row.featureName }])}
+            />
+            <PlanVsActualNarrativeText
+              text={insight.likelyReasons}
+              nameByKey={buildAhaKeyNameMap([{ ahaKey: row.ahaKey, featureName: row.featureName }])}
+            />
           </Stack>
         ) : (
           <Text size="sm" c="dimmed" lh={1.6}>

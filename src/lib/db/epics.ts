@@ -13,6 +13,7 @@ import {
     getReleaseNameFromAhaFields,
     getUiFrameworkDueDateOptions,
 } from '../criterion-due-date';
+import { upsertReleaseScheduleRow } from '../release-schedule';
 
 // Use new secret key, fallback to legacy service_role key for backward compatibility
 const supabaseServiceKey = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -1074,19 +1075,10 @@ export async function fetchAndUpsertReleaseFromAha(releaseName: string): Promise
                 // Extract launch_date from end_date or start_date
                 const launchDate = matchedRelease.end_date || matchedRelease.start_date || null;
 
-                // Upsert into release_schedule table
-                const { error } = await supabase
-                    .from('release_schedule')
-                    .upsert(
-                        {
-                            release_name: matchedRelease.name,
-                            launch_date: launchDate,
-                            updated_at: new Date().toISOString(),
-                        },
-                        {
-                            onConflict: 'release_name',
-                        }
-                    );
+                const { error } = await upsertReleaseScheduleRow(supabase, {
+                    release_name: matchedRelease.name,
+                    launch_date: launchDate,
+                });
 
                 if (error) {
                     console.error(`Error upserting release ${matchedRelease.name}:`, error);

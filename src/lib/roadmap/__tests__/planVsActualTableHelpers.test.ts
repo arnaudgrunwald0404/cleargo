@@ -1,4 +1,10 @@
-import { internalExternalLabel, comparePlanVsActualItems } from '../planVsActualTableHelpers';
+import {
+  internalExternalLabel,
+  comparePlanVsActualItems,
+  releaseKey,
+  releaseKeyLabel,
+  EMPTY_RELEASE,
+} from '../planVsActualTableHelpers';
 import type { PlanVsActualItem } from '@/types/roadmap';
 
 function baseItem(partial: Partial<PlanVsActualItem>): PlanVsActualItem {
@@ -34,6 +40,14 @@ describe('internalExternalLabel', () => {
 
   it('returns em dash when missing', () => {
     expect(internalExternalLabel(null)).toBe('—');
+  });
+});
+
+describe('releaseKey', () => {
+  it('uses end release train label', () => {
+    const item = baseItem({ endRelease: 'Release 2026.5', startRelease: '2026.4' });
+    expect(releaseKey(item)).toBe('2026.5');
+    expect(releaseKeyLabel(EMPTY_RELEASE)).toBe('(No release)');
   });
 });
 

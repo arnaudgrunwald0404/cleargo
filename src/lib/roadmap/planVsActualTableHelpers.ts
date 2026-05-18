@@ -1,18 +1,20 @@
 import type { PlanVsActualItem, PlanVsActualStatusCategory } from '@/types/roadmap';
 import { isExternalCause } from '@/lib/roadmap/pmNoteCause';
+import { formatPlanVsActualReleaseLabel } from '@/lib/roadmap/planVsActualStatus';
 
-export type PlanVsActualGroupBy = 'goal' | 'gtm';
+export type PlanVsActualGroupBy = 'goal' | 'gtm' | 'release';
 
 export type PlanVsActualSortKey =
   | 'goal'
   | 'gtmModule'
+  | 'release'
   | 'feature'
   | 'arr'
-  | 'indicator'
   | 'status';
 
-const EMPTY_GOAL = '__none_goal__';
-const EMPTY_GTM = '__none_gtm__';
+export const EMPTY_GOAL = '__none_goal__';
+export const EMPTY_GTM = '__none_gtm__';
+export const EMPTY_RELEASE = '__none_release__';
 
 export function goalKey(item: PlanVsActualItem): string {
   const g = item.goal?.trim();
@@ -22,6 +24,17 @@ export function goalKey(item: PlanVsActualItem): string {
 export function gtmModuleKey(item: PlanVsActualItem): string {
   const a = item.productArea?.trim();
   return a ? a : EMPTY_GTM;
+}
+
+/** End-of-period release train for filter/group (short label when parseable). */
+export function releaseKey(item: PlanVsActualItem): string {
+  const label = formatPlanVsActualReleaseLabel(item.endRelease ?? item.startRelease);
+  return label ?? EMPTY_RELEASE;
+}
+
+export function releaseKeyLabel(key: string): string {
+  if (key === EMPTY_RELEASE) return '(No release)';
+  return key.startsWith('Release ') ? key : `Release ${key}`;
 }
 
 export function internalExternalLabel(pmNoteCause: string | null | undefined): string {
@@ -52,17 +65,14 @@ export function comparePlanVsActualItems(
     case 'gtmModule':
       primary = cmp(gtmModuleKey(a), gtmModuleKey(b));
       break;
+    case 'release':
+      primary = cmp(releaseKey(a), releaseKey(b));
+      break;
     case 'feature':
       primary = cmp(a.featureName, b.featureName);
       break;
     case 'arr':
       primary = cmp(arrA.trim(), arrB.trim());
-      break;
-    case 'indicator':
-      primary = cmp(
-        internalExternalLabel(a.pmNoteCause),
-        internalExternalLabel(b.pmNoteCause),
-      );
       break;
     case 'status':
       primary =

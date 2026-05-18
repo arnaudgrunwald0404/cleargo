@@ -2,11 +2,16 @@
 
 import { useMemo, useState } from 'react';
 import { Alert, Button, Card, Group, List, Modal, Stack, Text, Textarea, Title } from '@mantine/core';
-import type { PeriodShiftAnalysis } from '@/types/roadmap';
+import type { PeriodShiftAnalysis, PlanVsActualItem } from '@/types/roadmap';
+import {
+  PlanVsActualNarrativeText,
+  buildAhaKeyNameMap,
+} from '@/components/analytics/PlanVsActualNarrativeText';
 
 export function ShiftAnalysisPanel({
   analysis,
   generatedAt,
+  reportItems = [],
   canGenerate,
   canEditPeriodNarrative,
   generating,
@@ -20,6 +25,8 @@ export function ShiftAnalysisPanel({
 }: {
   analysis: PeriodShiftAnalysis | null | undefined;
   generatedAt: string | null;
+  /** Rows for the active period — used to link Aha keys in overview/themes. */
+  reportItems?: PlanVsActualItem[];
   canGenerate: boolean;
   /** Overview + themes editing (requires cached analysis) */
   canEditPeriodNarrative: boolean;
@@ -59,6 +66,8 @@ export function ShiftAnalysisPanel({
   const regenNeedsExtraWarning = hasPersistedUserEdits || periodDirty;
 
   const [regenerateModalOpen, setRegenerateModalOpen] = useState(false);
+
+  const ahaNameByKey = useMemo(() => buildAhaKeyNameMap(reportItems), [reportItems]);
 
   const confirmRegenerate = () => {
     setRegenerateModalOpen(false);
@@ -161,7 +170,7 @@ export function ShiftAnalysisPanel({
           </Stack>
         ) : (
           <Stack gap="sm">
-            <Text size="sm">{analysis.overview}</Text>
+            <PlanVsActualNarrativeText text={analysis.overview} nameByKey={ahaNameByKey} />
             {analysis.themes?.length ? (
               <div>
                 <Text fw={600} size="sm" mb={4}>
@@ -169,7 +178,9 @@ export function ShiftAnalysisPanel({
                 </Text>
                 <List size="sm" spacing="xs">
                   {analysis.themes.map((t) => (
-                    <List.Item key={t}>{t}</List.Item>
+                    <List.Item key={t}>
+                      <PlanVsActualNarrativeText text={t} nameByKey={ahaNameByKey} />
+                    </List.Item>
                   ))}
                 </List>
               </div>

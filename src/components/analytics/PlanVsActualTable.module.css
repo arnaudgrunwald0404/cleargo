@@ -36,9 +36,28 @@
 }
 
 .pvaColFeature {
-  width: 36%;
+  width: 28%;
   vertical-align: middle;
   overflow: hidden;
+}
+
+.pvaColRelease {
+  width: 6rem;
+  vertical-align: middle;
+  overflow: hidden;
+}
+
+.pvaAhaKeyLink {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--mantine-font-size-xs);
+  color: var(--mantine-color-dimmed);
+  text-decoration: none;
+}
+
+.pvaAhaKeyLink:hover {
+  color: var(--mantine-color-blue-6);
+  text-decoration: underline;
 }
 
 .pvaFeatureInner {
@@ -56,15 +75,9 @@
   overflow: hidden;
 }
 
-.pvaColIndicator {
-  width: 11rem;
-  vertical-align: middle;
-  overflow: hidden;
-}
-
 .pvaColStatus {
-  width: 22%;
-  min-width: 13rem;
+  width: 24%;
+  min-width: 12rem;
   vertical-align: middle;
   overflow: hidden;
 }

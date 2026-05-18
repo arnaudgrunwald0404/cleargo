@@ -129,6 +129,74 @@ export function useRegeneratePlanVsActualItemNarrative() {
   });
 }
 
+export function usePatchPlanVsActualArr() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (args: {
+      periodType: PlanVsActualPeriodType;
+      periodDate: string;
+      ahaKey: string;
+      arrImpact: string;
+    }) => {
+      const body = JSON.stringify({
+        period_type: args.periodType,
+        period_date: args.periodDate,
+        aha_key: args.ahaKey,
+        arr_impact: args.arrImpact,
+      });
+      const res = await fetchWithRateLimit('/api/analytics/plan-vs-actual/arr', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        maxRetries: 1,
+        dedupeKey: `PATCH /api/analytics/plan-vs-actual/arr ${body}`,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { details?: string }).details || (err as { error?: string }).error || res.statusText);
+      }
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      void qc.invalidateQueries({
+        queryKey: ['plan-vs-actual', variables.periodType, variables.periodDate],
+      });
+    },
+  });
+}
+
+export function usePatchPlanVsActualGtm() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (args: { ahaKey: string; gtmModule: string; gtmName?: string | null }) => {
+      const body = JSON.stringify({
+        aha_key: args.ahaKey,
+        gtm_module: args.gtmModule,
+        gtm_name: args.gtmName ?? null,
+      });
+      const res = await fetchWithRateLimit('/api/analytics/plan-vs-actual/gtm', {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        maxRetries: 1,
+        dedupeKey: `PATCH /api/analytics/plan-vs-actual/gtm ${body}`,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err as { details?: string }).details || (err as { error?: string }).error || res.statusText);
+      }
+      return res.json() as Promise<{ ok: boolean; rows_updated: number }>;
+    },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['plan-vs-actual'] });
+    },
+  });
+}
+
 export function usePatchPlanVsActualAnalysis() {
   const qc = useQueryClient();
 
