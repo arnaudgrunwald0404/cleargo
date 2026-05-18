@@ -17,6 +17,9 @@ import {
     canReceiveSlackNotification,
     syncUserSlackHandle,
 } from '@/lib/slack/notifications';
+import { sendEmailNotification } from '@/lib/email/notifications';
+
+type NotificationChannel = 'email' | 'slack' | 'both' | 'none';
 
 const CATEGORY_LABELS: Record<string, string> = {
     PRODUCT_TECH: 'Product & Tech',
@@ -70,7 +73,7 @@ export async function maybeNotifyGateOwnerForCategory(
                 id,
                 status,
                 criterion:criterion_id ( label, gate, is_active ),
-                decision_owner:decision_owner_id ( id, email, first_name, last_name, slack_handle )
+                decision_owner:decision_owner_id ( id, email, first_name, last_name, slack_handle, notification_preferences )
             `)
             .eq('epic_id', epicId)
             .eq('criterion.category', category);
@@ -130,41 +133,63 @@ export async function maybeNotifyGateOwnerForCategory(
                 continue;
             }
 
-            // 8. Ensure Slack handle
-            if (!owner.slack_handle) {
-                const synced = await syncUserSlackHandle(owner.email);
-                if (synced) owner.slack_handle = synced;
-            }
+            // 8. Resolve channel preference (user setting → system default of 'slack')
+            const channelPref: NotificationChannel =
+                (owner as any).notification_preferences?.gate_signoff_ready ?? 'slack';
 
-            // 9. Check notification preference
-            if (!(await canReceiveSlackNotification(owner.email))) {
-                console.log(`[gateSignoffService] User ${owner.email} has Slack notifications disabled; skipping`);
+            if (channelPref === 'none') {
+                console.log(`[gateSignoffService] User ${owner.email} opted out of gate_signoff_ready notifications; skipping`);
                 continue;
             }
 
             const ownerName = [owner.first_name, owner.last_name].filter(Boolean).join(' ') || owner.email;
+            const gateCriterionLabel = (gate as any).criterion?.label ?? 'Sign-off';
+            const notifMetadata = {
+                epic_name: epicName,
+                epic_id: epicId,
+                category_label: categoryLabel,
+                gate_criterion_label: gateCriterionLabel,
+                gate_criterion_status_id: gate.id,
+                completed_count: nonGateCriteria.length,
+                recipient_name: ownerName,
+            };
 
-            await sendSlackNotification({
-                type: 'gate_signoff_ready',
-                priority: 'high',
-                recipient: {
-                    id: owner.id,
-                    email: owner.email,
-                    slack_handle: owner.slack_handle ?? undefined,
-                    name: ownerName,
-                },
-                launch_id: epicId,
-                metadata: {
-                    epic_name: epicName,
-                    epic_id: epicId,
-                    category_label: categoryLabel,
-                    gate_criterion_label: (gate as any).criterion?.label ?? 'Sign-off',
-                    gate_criterion_status_id: gate.id,
-                    completed_count: nonGateCriteria.length,
-                },
-            });
+            // 9. Send via Slack (if preference includes slack)
+            if (channelPref === 'slack' || channelPref === 'both') {
+                if (!owner.slack_handle) {
+                    const synced = await syncUserSlackHandle(owner.email);
+                    if (synced) owner.slack_handle = synced;
+                }
+                if (await canReceiveSlackNotification(owner.email)) {
+                    await sendSlackNotification({
+                        type: 'gate_signoff_ready',
+                        priority: 'high',
+                        recipient: {
+                            id: owner.id,
+                            email: owner.email,
+                            slack_handle: owner.slack_handle ?? undefined,
+                            name: ownerName,
+                        },
+                        launch_id: epicId,
+                        metadata: notifMetadata,
+                    });
+                } else {
+                    console.log(`[gateSignoffService] Slack disabled for ${owner.email}; skipping Slack leg`);
+                }
+            }
 
-            console.log(`[gateSignoffService] Sent gate_signoff_ready to ${owner.email} for epic ${epicId}, gate lcs ${gate.id}`);
+            // 10. Send via Email (if preference includes email)
+            if (channelPref === 'email' || channelPref === 'both') {
+                await sendEmailNotification({
+                    type: 'gate_signoff_ready',
+                    recipientEmail: owner.email,
+                    userId: owner.id,
+                    epicId,
+                    metadata: notifMetadata,
+                });
+            }
+
+            console.log(`[gateSignoffService] Sent gate_signoff_ready (channel: ${channelPref}) to ${owner.email} for epic ${epicId}, gate lcs ${gate.id}`);
         }
     } catch (err: any) {
         // Non-fatal: log but don't fail the parent request

@@ -173,8 +173,10 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
     ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings', icon: IconCalendarEvent }] : []),
   ];
 
-  const settingsItem: NavItem | null = hasSettingsAccess
-    ? { link: '/admin/settings', label: 'Settings', icon: IconSettings }
+  // "My Settings" is shown to all users; admins additionally see Admin Settings
+  const mySettingsItem: NavItem = { link: '/settings', label: 'My Settings', icon: IconSettings };
+  const adminSettingsItem: NavItem | null = hasSettingsAccess
+    ? { link: '/admin/settings', label: 'Admin Settings', icon: IconTool }
     : null;
 
   const isActive = (path: string) => {
@@ -598,7 +600,7 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
           {/* Tools section */}
           <div style={{ height: '10px' }} />
           {renderSectionLabel('Tools', isCollapsed, IconTool)}
-          {[...commonTabs, ...(settingsItem ? [settingsItem] : [])].map((tab) => renderNavItem(tab, isCollapsed))}
+          {[...commonTabs, mySettingsItem, ...(adminSettingsItem ? [adminSettingsItem] : [])].map((tab) => renderNavItem(tab, isCollapsed))}
 
         </nav>
 

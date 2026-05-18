@@ -412,3 +412,67 @@ export function getCriteriaNudgeEmail(
 
     return { subject, html };
 }
+
+export function getGateSignoffReadyEmail(params: {
+    recipientName: string;
+    epicName: string;
+    epicId: string;
+    categoryLabel: string;
+    gateCriterionLabel: string;
+    completedCount: number;
+    appBaseUrl?: string;
+}) {
+    const {
+        recipientName,
+        epicName,
+        epicId,
+        categoryLabel,
+        gateCriterionLabel,
+        completedCount,
+        appBaseUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://app.cleargo.io',
+    } = params;
+
+    const epicUrl = `${appBaseUrl}/epics/${epicId}`;
+    const greeting = recipientName ? `Hi ${recipientName},` : 'Hello,';
+
+    const subject = `[ClearGO] Your Go/No-Go decision is needed — ${epicName}`;
+
+    const html = `
+        <div style="font-family: 'Public Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="border-bottom: 3px solid #4f46e5; padding-bottom: 16px; margin-bottom: 24px;">
+                <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #4f46e5;">ClearGO · Launch Readiness</span>
+            </div>
+
+            <h2 style="font-family: serif; color: #111827; font-size: 22px; font-weight: 700; margin: 0 0 8px;">${greeting}</h2>
+
+            <p style="color: #374151; font-size: 15px; line-height: 1.6; margin: 0 0 20px;">
+                All <strong>${completedCount} ${completedCount === 1 ? 'criterion' : 'criteria'}</strong> in the
+                <strong>${categoryLabel}</strong> section of <strong>${epicName}</strong> have been completed.
+            </p>
+
+            <div style="background-color: #eef2ff; border-left: 4px solid #4f46e5; border-radius: 4px; padding: 16px; margin: 0 0 24px;">
+                <p style="margin: 0 0 6px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #4f46e5;">Your decision is needed</p>
+                <p style="margin: 0; color: #1e1b4b; font-size: 15px; font-weight: 600;">${gateCriterionLabel}</p>
+            </div>
+
+            <p style="color: #4b5563; font-size: 15px; line-height: 1.6; margin: 0 0 28px;">
+                Please review the criteria and submit your <strong>Go / No-Go / Conditional</strong> decision so the team can proceed.
+            </p>
+
+            <div style="text-align: center; margin: 0 0 32px;">
+                <a href="${epicUrl}"
+                   style="display: inline-block; background-color: #4f46e5; color: white; padding: 13px 28px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 15px;">
+                    Review &amp; Give Decision
+                </a>
+            </div>
+
+            <p style="color: #9ca3af; font-size: 13px; line-height: 1.6; border-top: 1px solid #f3f4f6; padding-top: 16px; margin: 0;">
+                You received this because you are the decision owner for the <em>${categoryLabel}</em> gate on <em>${epicName}</em>.
+                Manage your notification preferences in
+                <a href="${appBaseUrl}/settings" style="color: #4f46e5; text-decoration: none;">My Settings</a>.
+            </p>
+        </div>
+    `;
+
+    return { subject, html };
+}
