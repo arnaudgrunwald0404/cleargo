@@ -4,13 +4,19 @@
   publish = ".next"
   # Clear stale .netlify (e.g. edge-functions) so plugin doesn't fail on webpack-runtime.js.
   # NEXT_DISABLE_NETLIFY_EDGE avoids Edge middleware; clean avoids cached Edge artifacts.
-  command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}; require('child_process').execSync('npm run build', {stdio:'inherit', env:process.env})\""
+  # strip-sharp-from-traces.js removes Sharp/@img from NFT traces (Next still traces them despite
+  # images.unoptimized); netlify-plugin-slim-handler trims the assembled handler on Linux (~40 MB).
+  command = "node -e \"try{require('fs').rmSync('.netlify',{recursive:true,force:true})}catch(e){}; require('child_process').execSync('npm run build', {stdio:'inherit', env:process.env}); require('child_process').execSync('node scripts/strip-sharp-from-traces.js', {stdio:'inherit', env:process.env})\""
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
+
+# Runs after @netlify/plugin-nextjs to remove Sharp/libvips from the assembled handler.
+[[plugins]]
+  package = "./netlify-plugin-slim-handler"
 
 # Function timeout: set in Netlify UI (Site settings > Functions) or contact support.
 # Max is 26s for sync functions. HEART AI setup uses a background function (netlify/functions/heart-setup-background.ts) for 15 min limit.

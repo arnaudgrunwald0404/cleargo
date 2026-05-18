@@ -6,12 +6,12 @@ const __dirname = dirname(__filename);
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Standalone output: Next.js traces only files that are actually imported and
-  // produces a self-contained .next/standalone server. Because the image
-  // optimizer is disabled (images.unoptimized: true), Sharp is never called and
-  // never appears in the trace — eliminating the need for post-build stripping
-  // scripts to stay under Netlify's 250 MB unzipped function size limit.
+  // Standalone output shrinks the server trace; Sharp is still traced unless excluded.
+  // Netlify build strips Sharp via scripts/strip-sharp-from-traces.js + netlify-plugin-slim-handler.
   output: 'standalone',
+  outputFileTracingExcludes: {
+    '*': ['node_modules/sharp/**', 'node_modules/@img/**'],
+  },
   turbopack: {
     root: __dirname,
   },

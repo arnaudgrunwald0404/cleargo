@@ -21,21 +21,29 @@
 
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const nextDir = path.join(process.cwd(), '.next');
+
+/** Recursively collect all *.nft.json files (cross-platform; no shell find). */
+function findNftFiles(dir, results = []) {
+  if (!fs.existsSync(dir)) return results;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      findNftFiles(full, results);
+    } else if (entry.isFile() && entry.name.endsWith('.nft.json')) {
+      results.push(full);
+    }
+  }
+  return results;
+}
 
 if (!fs.existsSync(nextDir)) {
   console.error('[strip-sharp] .next directory not found — skipping');
   process.exit(0);
 }
 
-// Find all *.nft.json files under .next/
-const nftFiles = execSync(`find ${nextDir} -name "*.nft.json"`, { encoding: 'utf-8' })
-  .trim()
-  .split('\n')
-  .filter(Boolean);
-
+const nftFiles = findNftFiles(nextDir);
 let totalRemoved = 0;
 
 for (const filePath of nftFiles) {
@@ -61,4 +69,4 @@ for (const filePath of nftFiles) {
   }
 }
 
-console.log(`[strip-sharp] Done. Total entries removed: ${totalRemoved}`);
+console.log(`[strip-sharp] Done. Processed ${nftFiles.length} trace file(s). Removed ${totalRemoved} entries.`);
