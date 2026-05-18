@@ -1,6 +1,6 @@
 // AUTH DISABLED: Helper functions to check if user is superadmin and bypass all checks
 
-const SUPERADMIN_EMAIL = 'agrunwald@clearcompany.com';
+const SUPERADMIN_EMAIL = process.env.SUPERADMIN_EMAIL || 'agrunwald@clearcompany.com';
 
 export function isSuperAdmin(email: string | null | undefined): boolean {
     if (!email) return false;

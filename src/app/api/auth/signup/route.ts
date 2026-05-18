@@ -2,20 +2,20 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { syncUserSlackHandle } from '@/lib/slack/notifications';
 
-const ALLOWED_DOMAIN = 'clearcompany.com';
+const ALLOWED_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || 'clearcompany.com';
 
 // Default app settings from insert-settings.js
 const DEFAULT_SETTINGS = {
     id: 1,
-    fallback_user_email: 'agrunwald@clearcompany.com',
-    email_sender: 'noreply@tacticalsync.com',
+    fallback_user_email: process.env.FALLBACK_USER_EMAIL || 'agrunwald@clearcompany.com',
+    email_sender: process.env.EMAIL_SENDER || 'noreply@tacticalsync.com',
     threshold_tier1: 0.9,
     threshold_tier2: 0.8,
     threshold_tier3: 0.7,
     staleness_days: 14,
     digest_schedule: 'MON_09_00',
     timezone: 'America/New_York',
-    allowlisted_domains: ['clearcompany.com'],
+    allowlisted_domains: [ALLOWED_DOMAIN],
 };
 
 function validateEmail(email: string): { valid: boolean; error?: string } {

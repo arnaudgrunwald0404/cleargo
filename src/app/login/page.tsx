@@ -9,7 +9,7 @@ import { TimelineVisualization } from "@/components/auth/TimelineVisualization";
 import { SSOButton } from "@/components/auth/SSOButton";
 import { Container, Title, Text, Stack, Group } from "@mantine/core";
 
-const ALLOWED_DOMAIN = "clearcompany.com";
+const ALLOWED_DOMAIN = process.env.NEXT_PUBLIC_ALLOWED_EMAIL_DOMAIN || "clearcompany.com";
 
 function validateEmail(email: string): { valid: boolean; error?: string } {
   if (!email) {

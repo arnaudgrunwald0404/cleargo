@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
         // Get email from query params
         const { searchParams } = new URL(request.url);
-        const email = searchParams.get('email') || 'agrunwald@clearcompany.com';
+        const email = searchParams.get('email') || process.env.FALLBACK_USER_EMAIL || 'agrunwald@clearcompany.com';
         const sendTestMessage = searchParams.get('sendTest') === 'true';
         
         // Use production code path to lookup Slack user

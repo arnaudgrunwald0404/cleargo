@@ -7,11 +7,10 @@ import { sendMagicLinkEmail } from "@/lib/sendEmail";
 
 const emailSchema = z.string().email();
 
-const CLEARCOMPANY_DOMAIN = "clearcompany.com";
+const DEFAULT_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "clearcompany.com";
 
 function isAllowed(email: string) {
-  const fromEnv = (process.env.ALLOWLIST_DOMAINS || CLEARCOMPANY_DOMAIN).split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-  const allow = Array.from(new Set([CLEARCOMPANY_DOMAIN, ...fromEnv]));
+  const allow = (process.env.ALLOWLIST_DOMAINS || DEFAULT_DOMAIN).split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
   const domain = email.split("@")[1]?.toLowerCase();
   return domain && allow.includes(domain);
 }
