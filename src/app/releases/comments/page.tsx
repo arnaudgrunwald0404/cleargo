@@ -14,7 +14,7 @@ import {
   Badge,
   SegmentedControl,
 } from '@mantine/core';
-import { IconRefresh } from '@tabler/icons-react';
+import { IconRefresh, IconChecks } from '@tabler/icons-react';
 import { CommentsList } from '@/components/CommentsList';
 import { CommentsThreadList } from '@/components/CommentsThreadList';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -37,6 +37,7 @@ interface Comment {
   };
   is_read: boolean;
   read_at?: string | null;
+  mentioned_user_ids?: string[];
   epic: {
     id: string;
     name: string;
@@ -70,16 +71,17 @@ export default function CommentsPage() {
     taskLabel: string;
   } | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
+  const [currentUserId, setCurrentUserId] = useState<string>('');
   const [viewMode, setViewMode] = useState<'table' | 'threads'>('threads');
+  const [threadFilter, setThreadFilter] = useState<'all' | 'mine'>('all');
 
   // Fetch current user email
   useEffect(() => {
     fetch('/api/me', { credentials: 'include' })
       .then((res) => res.json())
       .then((data) => {
-        if (data.user?.email) {
-          setCurrentUserEmail(data.user.email);
-        }
+        if (data.user?.email) setCurrentUserEmail(data.user.email);
+        if (data.user?.id) setCurrentUserId(data.user.id);
       })
       .catch((err) => console.error('Failed to fetch user email:', err));
   }, []);
@@ -229,8 +231,28 @@ export default function CommentsPage() {
     if (selectedStatus) {
       result = result.filter((c) => c.status_at_comment === selectedStatus);
     }
+    if (threadFilter === 'mine' && currentUserId) {
+      const byLcs = new Map<string, Comment[]>();
+      for (const c of result) {
+        const list = byLcs.get(c.launch_criterion_status_id) ?? [];
+        list.push(c);
+        byLcs.set(c.launch_criterion_status_id, list);
+      }
+      const myLcsIds = new Set<string>();
+      for (const [lcsId, threadComments] of byLcs) {
+        const sorted = [...threadComments].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+        );
+        const iStarted = sorted[0]?.created_by?.id === currentUserId;
+        const isMentioned = threadComments.some(
+          (c) => c.mentioned_user_ids?.includes(currentUserId)
+        );
+        if (iStarted || isMentioned) myLcsIds.add(lcsId);
+      }
+      result = result.filter((c) => myLcsIds.has(c.launch_criterion_status_id));
+    }
     return result;
-  }, [comments, activeTab, selectedStatus]);
+  }, [comments, activeTab, selectedStatus, threadFilter, currentUserId]);
 
   const STATUS_OPTIONS = [
     { value: 'GO', label: 'GO' },
@@ -420,19 +442,52 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
-                <Group mb="md">
-                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                    View:
-                  </Text>
-                  <SegmentedControl
-                    value={viewMode}
-                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
-                    data={[
-                      { label: 'Table', value: 'table' },
-                      { label: 'Threads', value: 'threads' },
-                    ]}
-                    size="xs"
-                  />
+                <Group mb="md" justify="space-between">
+                  <Group gap="md">
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        View:
+                      </Text>
+                      <SegmentedControl
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                        data={[
+                          { label: 'Table', value: 'table' },
+                          { label: 'Threads', value: 'threads' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        Show:
+                      </Text>
+                      <SegmentedControl
+                        value={threadFilter}
+                        onChange={(v) => setThreadFilter(v as 'all' | 'mine')}
+                        data={[
+                          { label: 'All', value: 'all' },
+                          { label: 'My threads', value: 'mine' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                  </Group>
+                  {filteredComments.some((c) => !c.is_read) && (
+                    <Button
+                      size="xs"
+                      variant="filled"
+                      color="blue"
+                      leftSection={<IconChecks size={14} />}
+                      onClick={() =>
+                        handleMarkRead(
+                          filteredComments.filter((c) => !c.is_read).map((c) => c.id)
+                        )
+                      }
+                    >
+                      Mark all as read
+                    </Button>
+                  )}
                 </Group>
 
                 {/* Comments List */}
@@ -557,19 +612,52 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
-                <Group mb="md">
-                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                    View:
-                  </Text>
-                  <SegmentedControl
-                    value={viewMode}
-                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
-                    data={[
-                      { label: 'Table', value: 'table' },
-                      { label: 'Threads', value: 'threads' },
-                    ]}
-                    size="xs"
-                  />
+                <Group mb="md" justify="space-between">
+                  <Group gap="md">
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        View:
+                      </Text>
+                      <SegmentedControl
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                        data={[
+                          { label: 'Table', value: 'table' },
+                          { label: 'Threads', value: 'threads' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        Show:
+                      </Text>
+                      <SegmentedControl
+                        value={threadFilter}
+                        onChange={(v) => setThreadFilter(v as 'all' | 'mine')}
+                        data={[
+                          { label: 'All', value: 'all' },
+                          { label: 'My threads', value: 'mine' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                  </Group>
+                  {filteredComments.some((c) => !c.is_read) && (
+                    <Button
+                      size="xs"
+                      variant="filled"
+                      color="blue"
+                      leftSection={<IconChecks size={14} />}
+                      onClick={() =>
+                        handleMarkRead(
+                          filteredComments.filter((c) => !c.is_read).map((c) => c.id)
+                        )
+                      }
+                    >
+                      Mark all as read
+                    </Button>
+                  )}
                 </Group>
 
                 {/* Comments List */}
@@ -677,19 +765,52 @@ export default function CommentsPage() {
                   </Box>
                 </Group>
 
-                <Group mb="md">
-                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
-                    View:
-                  </Text>
-                  <SegmentedControl
-                    value={viewMode}
-                    onChange={(v) => setViewMode(v as 'table' | 'threads')}
-                    data={[
-                      { label: 'Table', value: 'table' },
-                      { label: 'Threads', value: 'threads' },
-                    ]}
-                    size="xs"
-                  />
+                <Group mb="md" justify="space-between">
+                  <Group gap="md">
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        View:
+                      </Text>
+                      <SegmentedControl
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                        data={[
+                          { label: 'Table', value: 'table' },
+                          { label: 'Threads', value: 'threads' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        Show:
+                      </Text>
+                      <SegmentedControl
+                        value={threadFilter}
+                        onChange={(v) => setThreadFilter(v as 'all' | 'mine')}
+                        data={[
+                          { label: 'All', value: 'all' },
+                          { label: 'My threads', value: 'mine' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                  </Group>
+                  {filteredComments.some((c) => !c.is_read) && (
+                    <Button
+                      size="xs"
+                      variant="filled"
+                      color="blue"
+                      leftSection={<IconChecks size={14} />}
+                      onClick={() =>
+                        handleMarkRead(
+                          filteredComments.filter((c) => !c.is_read).map((c) => c.id)
+                        )
+                      }
+                    >
+                      Mark all as read
+                    </Button>
+                  )}
                 </Group>
 
                 {/* Comments List */}
