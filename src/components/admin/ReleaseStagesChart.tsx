@@ -686,25 +686,34 @@ function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHea
     return (
         <div style={{ fontFamily: 'var(--font-body)' }}>
             {showHeading && (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-gray-900)' }} role="heading" aria-level={2}>
-                        Release Timeline
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                        <span style={{ fontSize: 12, color: 'var(--color-gray-500)', fontWeight: 500 }}>
+                <>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                        <div style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-gray-900)' }} role="heading" aria-level={2}>
+                            Release Timeline
+                        </div>
+                        <span style={{ fontSize: 12, color: 'var(--color-gray-500)', fontWeight: 500, whiteSpace: 'nowrap' }}>
                             Today: {formatShortDate(today)}
                         </span>
-                        {gateMarkers.length > 0 && (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-                                {gateMarkers.map((gate, idx) => (
-                                    <span key={idx} style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
-                                        Go/No-Go (end of {gate.stageName}): {formatShortDate(gate.date)}
-                                    </span>
-                                ))}
-                            </div>
-                        )}
                     </div>
-                </div>
+                    {gateMarkers.length > 0 && (
+                        <div style={{
+                            marginBottom: 8,
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                            border: '1px solid rgba(220, 38, 38, 0.18)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: 2,
+                        }}>
+                            {gateMarkers.map((gate, idx) => (
+                                <span key={idx} style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
+                                    Go/No-Go (end of {gate.stageName}): {formatShortDate(gate.date)}
+                                </span>
+                            ))}
+                        </div>
+                    )}
+                </>
             )}
 
             {nextNode && nextDays != null && (

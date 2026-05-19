@@ -187,37 +187,85 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
 
   const sidebarWidth = collapsed ? 68 : 240;
 
-  // Mobile: hamburger button + overlay sidebar
+  // Mobile: thin top bar (brand + hamburger) + overlay sidebar
   if (isMobile) {
     return (
       <>
-        {/* Mobile hamburger */}
-        <button
-          onClick={() => setMobileOpen(true)}
+        {/* Mobile top bar */}
+        <div
           style={{
             position: 'fixed',
-            top: 12,
-            left: 12,
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 'var(--mobile-topbar-height, 56px)',
             zIndex: 1001,
-            width: 40,
-            height: 40,
-            borderRadius: 'var(--radius-md)',
             backgroundColor: 'var(--color-cast-iron)',
-            border: 'none',
-            cursor: 'pointer',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
+            padding: '0 12px',
+            gap: 12,
+            boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
           }}
-          aria-label="Open navigation"
         >
-          <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <line x1="3" y1="5" x2="17" y2="5" />
-            <line x1="3" y1="10" x2="17" y2="10" />
-            <line x1="3" y1="15" x2="17" y2="15" />
-          </svg>
-        </button>
+          <button
+            onClick={() => setMobileOpen(true)}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 'var(--radius-md)',
+              backgroundColor: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: 'white',
+              flexShrink: 0,
+            }}
+            aria-label="Open navigation"
+          >
+            <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <line x1="3" y1="5" x2="17" y2="5" />
+              <line x1="3" y1="10" x2="17" y2="10" />
+              <line x1="3" y1="15" x2="17" y2="15" />
+            </svg>
+          </button>
+          <Link
+            href="/"
+            prefetch={false}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              textDecoration: 'none',
+              color: 'white',
+            }}
+          >
+            <div style={{
+              width: 28,
+              height: 28,
+              borderRadius: 'var(--radius-sm, 4px)',
+              backgroundColor: 'var(--color-copper)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <span style={{
+              fontFamily: 'var(--font-marcellus, serif)',
+              fontSize: 18,
+              fontWeight: 700,
+              letterSpacing: '0.01em',
+            }}>
+              ClearGO
+            </span>
+          </Link>
+        </div>
 
         {/* Overlay */}
         {mobileOpen && (
