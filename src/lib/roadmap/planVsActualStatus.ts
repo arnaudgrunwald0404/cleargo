@@ -390,8 +390,8 @@ export function derivePlanVsActualStatus(
   const dayGap = calendarDaysBetweenReleaseTrains(planTrain, row.endRelease, launchDateByKey);
   const slots = slotDeltaBetween(planTrain, row.endRelease, releaseOrderIndex);
 
-  // Net-new this period (not on quarter Plan snapshot)
-  if (!onQuarterPlan && row.inEnd) {
+  // Net-new this period: absent from period-start snapshot (`in_start` false) but on end pivot.
+  if (!row.inStart && row.inEnd) {
     const rawReleased = looksReleasedBySnapshotSignals(row);
     const knowable = deliveryKnowableByTrainSchedule(
       row.endRelease,
@@ -402,11 +402,7 @@ export function derivePlanVsActualStatus(
     if (!netNewDelivered) {
       return { category: 'neutral', label: 'New Addition' };
     }
-    const fr = releaseTrainIdentityKey(row.firstScanRelease);
-    const erId = releaseTrainIdentityKey(row.endRelease);
-    if (fr && erId && fr === erId) {
-      return { category: 'green', label: 'Delivered: On Time' };
-    }
+    // Mid-quarter adds (e.g. May beta) always "Delivered: Added" — not quarter Plan commitments.
     return { category: 'green', label: 'Delivered: Added' };
   }
 

@@ -301,23 +301,23 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.category).toBe('neutral');
   });
 
-  it('marks Delivered: On Time when net-new, shipped, train launched by period end, same train since first scan', () => {
-    const m = launchMap([['2026.2', '2026-01-20']]);
+  it('marks Delivered: Added when net-new mid-period shipped on same train since first scan (APP-E-1210 pattern)', () => {
+    const m = launchMap([['2026.5', '2026-05-15']]);
     const r = derivePlanVsActualStatus(
       {
         inStart: false,
         inEnd: true,
         startRelease: null,
-        endRelease: '2026.2',
+        endRelease: '2026.5',
         startStatus: null,
         endStatus: 'Released to GTM Team',
-        periodEndIso: '2026-01-31',
-        firstScanRelease: '2026.2',
+        periodEndIso: '2026-05-31',
+        firstScanRelease: '2026.5',
       },
       order,
       m,
     );
-    expect(r.label).toBe('Delivered: On Time');
+    expect(r.label).toBe('Delivered: Added');
     expect(r.category).toBe('green');
   });
 
@@ -524,12 +524,12 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).toBe('Delayed');
   });
 
-  it('marks Delivered: Added for net-new beta not on quarter Plan', () => {
+  it('marks Delivered: Added for net-new beta not on quarter Plan (May add, in_start false)', () => {
     const order26 = idxMap([['2026.5', 0]]);
     const m = launchMap([['2026.5', '2026-05-15']]);
     const r = derivePlanVsActualStatus(
       {
-        inStart: true,
+        inStart: false,
         inEnd: true,
         onQuarterPlan: false,
         startRelease: null,
@@ -537,6 +537,7 @@ describe('derivePlanVsActualStatus', () => {
         startStatus: null,
         endStatus: 'Released to GTM Team',
         periodEndIso: '2026-05-31',
+        firstScanRelease: '2026.5',
       },
       order26,
       m,
