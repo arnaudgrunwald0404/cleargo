@@ -37,8 +37,13 @@ export function gtmModuleKey(item: PlanVsActualItem): string {
  * - Removed from pivot → quarter-start plan train
  * - Otherwise → current end train (e.g. 2026.5 → 2026.6 shows under 2026.6)
  */
-export function releaseKey(item: PlanVsActualItem, scope?: ReportingReleaseScope): string {
-  if (scope && isDelayedBeyondQuarter(item, scope)) {
+export function releaseKey(
+  item: PlanVsActualItem,
+  scope?: ReportingReleaseScope,
+  options?: { bucketDelayedBeyondQuarter?: boolean },
+): string {
+  const bucketDelayedBeyond = options?.bucketDelayedBeyondQuarter ?? true;
+  if (bucketDelayedBeyond && scope && isDelayedBeyondQuarter(item, scope)) {
     return DELAYED_BEYOND_QUARTER_KEY;
   }
   const raw =

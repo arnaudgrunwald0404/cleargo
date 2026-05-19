@@ -128,7 +128,7 @@ export interface DeriveStatusInput {
  * - **Removed mid-period** (`inStart && !inEnd`): compare **startRelease** (train at first snapshot).
  */
 export function includePlanVsActualItemForReport(
-  item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease'>,
+  item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease' | 'planRelease'>,
   scope: ReportingReleaseScope,
 ): boolean {
   if (item.inStart && !item.inEnd) {
@@ -257,14 +257,48 @@ function resolveReleaseOrderIndex(
   return undefined;
 }
 
-function compareReleaseTrainMonths(
-  startRelease: string | null | undefined,
+/** Calendar months from plan train to end train (positive = slipped later). */
+export function compareReleaseTrainMonths(
+  planTrain: string | null | undefined,
   endRelease: string | null | undefined,
 ): number | null {
-  const a = parseReleaseTrainYearMonth(startRelease);
+  const a = parseReleaseTrainYearMonth(planTrain);
   const b = parseReleaseTrainYearMonth(endRelease);
   if (!a || !b) return null;
   return b.year * 12 + b.month - (a.year * 12 + a.month);
+}
+
+export type InFlightSlipSeverity = 'delayed' | 'postponed' | 'removed';
+
+/**
+ * Delayed vs Postponed for in-flight slips vs quarter Plan.
+ * Uses month delta from plan (primary when schedule index missing), then release slots, then launch-day gap.
+ */
+export function classifyInFlightSlipFromPlan(
+  planTrain: string | null | undefined,
+  endRelease: string | null | undefined,
+  releaseOrderIndex: Map<string, number>,
+  launchDateByKey?: ReadonlyMap<string, Date>,
+): InFlightSlipSeverity | null {
+  if (!endTrainLaterThanStartTrain(planTrain, endRelease, releaseOrderIndex)) {
+    return null;
+  }
+
+  const dayGap = calendarDaysBetweenReleaseTrains(planTrain, endRelease, launchDateByKey);
+  if (dayGap !== null && dayGap >= 200) {
+    return 'removed';
+  }
+
+  const monthDelta = compareReleaseTrainMonths(planTrain, endRelease);
+  const slots = slotDeltaBetween(planTrain, endRelease, releaseOrderIndex);
+  const monthDelayed = monthDelta !== null && monthDelta > 0 && monthDelta <= 2;
+  const slotDelayed = slots !== null && slots > 0 && slots <= 2;
+  const dayDelayed = dayGap !== null && dayGap >= 0 && dayGap < 90;
+
+  if (monthDelayed || slotDelayed || dayDelayed) {
+    return 'delayed';
+  }
+  return 'postponed';
 }
 
 /**
@@ -387,8 +421,6 @@ export function derivePlanVsActualStatus(
   const planId = releaseTrainIdentityKey(planTrain);
   const endId = releaseTrainIdentityKey(row.endRelease);
   const sameTrain = planId !== null && endId !== null && planId === endId;
-  const dayGap = calendarDaysBetweenReleaseTrains(planTrain, row.endRelease, launchDateByKey);
-  const slots = slotDeltaBetween(planTrain, row.endRelease, releaseOrderIndex);
 
   // Net-new this period: absent from period-start snapshot (`in_start` false) but on end pivot.
   if (!row.inStart && row.inEnd) {
@@ -440,29 +472,27 @@ export function derivePlanVsActualStatus(
       return { category: 'green', label: 'On Plan' };
     }
 
-    // Different train, still in flight — vs quarter Plan (baseline), not first weekly snapshot in quarter
-    if (dayGap !== null && dayGap >= 200) {
-      return { category: 'red', label: 'Removed' };
-    }
-
-    if (endTrainLaterThanStartTrain(planTrain, row.endRelease, releaseOrderIndex)) {
-      const withinTwoReleaseSlots = slots !== null && slots > 0 && slots <= 2;
-      const underNinetyDaySlip = dayGap !== null && dayGap < 90;
-      const isDelayedSlip = withinTwoReleaseSlots || underNinetyDaySlip;
-      if (slots === null && dayGap === null) {
-        return { category: 'yellow', label: 'Postponed' };
-      }
-      if (isDelayedSlip) {
-        return { category: 'yellow', label: 'Delayed' };
-      }
-      return { category: 'yellow', label: 'Postponed' };
-    }
-
     if (endTrainEarlierThanStartTrain(planTrain, row.endRelease, releaseOrderIndex)) {
       return { category: 'green', label: 'Ahead of Plan' };
     }
 
-    return { category: 'yellow', label: 'Postponed' };
+    const slip = classifyInFlightSlipFromPlan(
+      planTrain,
+      row.endRelease,
+      releaseOrderIndex,
+      launchDateByKey,
+    );
+    if (slip === 'removed') {
+      return { category: 'red', label: 'Removed' };
+    }
+    if (slip === 'delayed') {
+      return { category: 'yellow', label: 'Delayed' };
+    }
+    if (slip === 'postponed') {
+      return { category: 'yellow', label: 'Postponed' };
+    }
+
+    return { category: 'green', label: 'On Plan' };
   }
 
   return { category: 'neutral', label: 'New Addition' };

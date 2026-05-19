@@ -3,6 +3,7 @@ import {
   allowedTrainMonthKeysForPlanVsActualReport,
   calendarDaysBetweenReleaseTrains,
   calendarMonthKeysForPeriod,
+  classifyInFlightSlipFromPlan,
   deliveryKnowableByTrainSchedule,
   derivePlanVsActualStatus,
   includePlanVsActualItemForReport,
@@ -565,6 +566,56 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).not.toBe('Ahead of Plan');
     expect(['Delayed', 'Postponed']).toContain(r.label);
   });
+
+  it('marks Delayed for beyond-quarter slip within two plan months when schedule index is missing', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        planRelease: '2026.5',
+        startRelease: '2026.5',
+        endRelease: '2026.7',
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-05-31',
+      },
+      new Map(),
+      new Map(),
+    );
+    expect(r.label).toBe('Delayed');
+  });
+
+  it('marks Postponed for beyond-quarter slip three or more plan months out', () => {
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        planRelease: '2026.5',
+        startRelease: '2026.5',
+        endRelease: '2026.9',
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-05-31',
+      },
+      new Map(),
+      new Map(),
+    );
+    expect(r.label).toBe('Postponed');
+  });
+});
+
+describe('classifyInFlightSlipFromPlan', () => {
+  it('returns delayed for two-month slip without release_schedule rows', () => {
+    expect(
+      classifyInFlightSlipFromPlan('2026.5', '2026.7', new Map(), new Map()),
+    ).toBe('delayed');
+  });
+
+  it('returns postponed for four-month slip without release_schedule rows', () => {
+    expect(
+      classifyInFlightSlipFromPlan('2026.5', '2026.9', new Map(), new Map()),
+    ).toBe('postponed');
+  });
 });
 
 describe('allowedTrainMonthKeysForPlanVsActualReport', () => {
@@ -653,7 +704,7 @@ describe('includePlanVsActualItemForReport', () => {
     ).toBe(true);
   });
 
-  it('marks Postponed when start train was in quarter and end train slipped past quarter', () => {
+  it('marks Delayed when start train was in quarter and end train slipped past quarter within two months', () => {
     const order26 = idxMap([
       ['2026.4', 0],
       ['2026.5', 1],

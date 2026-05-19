@@ -355,6 +355,11 @@ export function PlanVsActualTable({
     () => delayedBeyondQuarterSectionLabel(quarterStartDate),
     [quarterStartDate],
   );
+  const bucketDelayedBeyondQuarter = periodType !== 'quarter_baseline';
+  const releaseKeyOpts = useMemo(
+    () => ({ bucketDelayedBeyondQuarter }),
+    [bucketDelayedBeyondQuarter],
+  );
 
   const goalOptions = useMemo(() => {
     const labels = new Map<string, string>();
@@ -381,7 +386,7 @@ export function PlanVsActualTable({
   const releaseOptions = useMemo(() => {
     const labels = new Map<string, string>();
     items.forEach((i) => {
-      const k = releaseKey(i, reportingScope);
+      const k = releaseKey(i, reportingScope, releaseKeyOpts);
       labels.set(k, releaseKeyLabel(k, delayedBeyondLabel));
     });
     return [...labels.entries()]
@@ -417,7 +422,7 @@ export function PlanVsActualTable({
       out = out.filter((i) => gtmFilter.includes(gtmModuleKey(i)));
     }
     if (releaseFilter.length > 0) {
-      out = out.filter((i) => releaseFilter.includes(releaseKey(i, reportingScope)));
+      out = out.filter((i) => releaseFilter.includes(releaseKey(i, reportingScope, releaseKeyOpts)));
     }
     if (pmCauseFilter.length > 0) {
       out = out.filter((i) => pmCauseFilter.includes(pmCauseFilterKey(i)));
@@ -433,7 +438,7 @@ export function PlanVsActualTable({
           i.featureName.toLowerCase().includes(q) ||
           i.ahaKey.toLowerCase().includes(q) ||
           i.statusLabel.toLowerCase().includes(q) ||
-          releaseKey(i, reportingScope).toLowerCase().includes(q) ||
+          releaseKey(i, reportingScope, releaseKeyOpts).toLowerCase().includes(q) ||
           delayedBeyondLabel.toLowerCase().includes(q) ||
           (i.endRelease ?? '').toLowerCase().includes(q) ||
           arrDisplayValue(i.ahaKey).toLowerCase().includes(q),
@@ -461,7 +466,7 @@ export function PlanVsActualTable({
           ? goalKey(row)
           : groupBy === 'gtm'
             ? gtmModuleKey(row)
-            : releaseKey(row, reportingScope);
+            : releaseKey(row, reportingScope, releaseKeyOpts);
       const list = m.get(key) ?? [];
       list.push(row);
       m.set(key, list);
@@ -503,7 +508,7 @@ export function PlanVsActualTable({
         rows: ordered,
       };
     });
-  }, [filteredItems, groupBy, reportingScope, delayedBeyondLabel, arrDisplayValue]);
+  }, [filteredItems, groupBy, reportingScope, releaseKeyOpts, delayedBeyondLabel, arrDisplayValue]);
 
   const quarterOptions = quarterSelectOptions();
   const progressOptions = quarterProgressWindowOptions(

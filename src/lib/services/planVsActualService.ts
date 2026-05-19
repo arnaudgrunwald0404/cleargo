@@ -519,7 +519,9 @@ export async function getPlanVsActualReport(
   }
 
   const liveEpics = await fetchCleargoCandidateEpicsForSupplement(supabase);
-  rows = overlayRpcRowsWithCleargoEpicNames(rows, liveEpics);
+  rows = overlayRpcRowsWithCleargoEpicNames(rows, liveEpics, {
+    overlayRelease: periodType !== 'quarter_baseline',
+  });
   if (periodType !== 'quarter_baseline') {
     rows = supplementRpcRowsWithCleargoEpics(
       rows,

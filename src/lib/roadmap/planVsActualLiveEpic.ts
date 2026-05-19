@@ -60,17 +60,24 @@ export function parseEpicWorkflowStatus(ahaFields: unknown): string | null {
   return null;
 }
 
-/** Merge live ClearGO epic title + release; never replace a distinct pivot Epic name with GTM. */
+export type OverlayCleargoEpicOptions = {
+  /** When false, keep snapshot release (Quarter Plan / first snapshot must not pick up live train). */
+  overlayRelease?: boolean;
+};
+
+/** Merge live ClearGO epic title + optional release; never replace a distinct pivot Epic name with GTM. */
 export function overlayRpcRowsWithCleargoEpicNames(
   rows: RpcPlanVsActualRow[],
   epics: CleargoEpicLiveRow[],
+  options?: OverlayCleargoEpicOptions,
 ): RpcPlanVsActualRow[] {
+  const overlayRelease = options?.overlayRelease ?? true;
   const byKey = new Map(epics.map((e) => [e.aha_id.trim(), e]));
   return rows.map((row) => {
     const epic = byKey.get(row.aha_key);
     if (!epic) return row;
     const liveTitle = cleargoEpicDisplayTitle(epic);
-    const liveRelease = getReleaseNameFromAhaFields(epic.aha_fields);
+    const liveRelease = overlayRelease ? getReleaseNameFromAhaFields(epic.aha_fields) : null;
     const name = liveTitle ? getPlanVsActualFeatureName(row, liveTitle) : undefined;
     return {
       ...row,
