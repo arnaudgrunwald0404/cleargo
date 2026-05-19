@@ -32,16 +32,19 @@ export function gtmModuleKey(item: PlanVsActualItem): string {
 }
 
 /**
- * Release bucket for filter/group. Slips past the quarter use {@link DELAYED_BEYOND_QUARTER_KEY};
- * other plan rows stay under `startRelease` so removals remain in the planned release section.
+ * Release bucket for filter/group.
+ * - Slips past the quarter → {@link DELAYED_BEYOND_QUARTER_KEY}
+ * - Removed from pivot → quarter-start plan train
+ * - Otherwise → current end train (e.g. 2026.5 → 2026.6 shows under 2026.6)
  */
 export function releaseKey(item: PlanVsActualItem, scope?: ReportingReleaseScope): string {
   if (scope && isDelayedBeyondQuarter(item, scope)) {
     return DELAYED_BEYOND_QUARTER_KEY;
   }
-  const raw = item.inStart
-    ? (item.startRelease ?? item.endRelease)
-    : (item.endRelease ?? item.startRelease);
+  const raw =
+    item.inStart && !item.inEnd
+      ? (item.startRelease ?? item.endRelease)
+      : (item.endRelease ?? item.startRelease);
   const label = formatPlanVsActualReleaseLabel(raw);
   return label ?? EMPTY_RELEASE;
 }

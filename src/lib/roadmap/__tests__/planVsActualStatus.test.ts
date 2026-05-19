@@ -480,6 +480,48 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.category).toBe('green');
     expect(r.label).toBe('Ahead of Plan');
   });
+
+  it('marks Delayed (not Ahead of Plan) when slipped to a later train with mixed Release prefixes', () => {
+    const order26 = idxMap([
+      ['release 2026.5', 0],
+      ['2026.6', 1],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: 'Release 2026.5',
+        endRelease: '2026.6',
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-06-30',
+      },
+      order26,
+    );
+    expect(r.label).toBe('Delayed');
+    expect(r.label).not.toBe('Ahead of Plan');
+  });
+
+  it('does not mark Ahead of Plan when release_order_index keys are misaligned but months show a slip', () => {
+    const badOrder = idxMap([
+      ['2026.5', 5],
+      ['release 2026.6', 0],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2026.5',
+        endRelease: 'Release 2026.6',
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-06-30',
+      },
+      badOrder,
+    );
+    expect(r.label).not.toBe('Ahead of Plan');
+    expect(['Delayed', 'Postponed']).toContain(r.label);
+  });
 });
 
 describe('allowedTrainMonthKeysForPlanVsActualReport', () => {

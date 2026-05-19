@@ -1,4 +1,5 @@
 import { getReleaseNameFromAhaFields } from '@/lib/criterion-due-date';
+import { getPlanVsActualFeatureName } from '@/lib/roadmap/displayNames';
 import type { RpcPlanVsActualRow } from '@/lib/services/planVsActualService';
 import type { PlanVsActualPeriodType } from '@/types/roadmap';
 import {
@@ -25,6 +26,25 @@ export function isCleargoCandidateEpicRecord(epic: {
   return raw === 'Yes' || raw === 'Yes - UI Framework' || raw === true;
 }
 
+/** Aha epic title from synced `aha_fields` (may be newer than `epic.name`). */
+export function parseEpicTitleFromAhaFields(ahaFields: unknown): string | null {
+  if (!ahaFields || typeof ahaFields !== 'object') return null;
+  const sf = (ahaFields as Record<string, unknown>).standard_fields as
+    | Record<string, unknown>
+    | undefined;
+  if (!sf) return null;
+  const n = sf.name;
+  return typeof n === 'string' && n.trim() ? n.trim() : null;
+}
+
+export function cleargoEpicDisplayTitle(epic: CleargoEpicLiveRow): string | null {
+  return (
+    parseEpicTitleFromAhaFields(epic.aha_fields)?.trim() ||
+    epic.name?.trim() ||
+    null
+  );
+}
+
 export function parseEpicWorkflowStatus(ahaFields: unknown): string | null {
   if (!ahaFields || typeof ahaFields !== 'object') return null;
   const sf = (ahaFields as Record<string, unknown>).standard_fields as
@@ -38,6 +58,23 @@ export function parseEpicWorkflowStatus(ahaFields: unknown): string | null {
     if (typeof n === 'string' && n.trim()) return n.trim();
   }
   return null;
+}
+
+/** Merge live ClearGO epic titles; never replace a distinct pivot Epic name with GTM. */
+export function overlayRpcRowsWithCleargoEpicNames(
+  rows: RpcPlanVsActualRow[],
+  epics: CleargoEpicLiveRow[],
+): RpcPlanVsActualRow[] {
+  const byKey = new Map(epics.map((e) => [e.aha_id.trim(), cleargoEpicDisplayTitle(e)]));
+  return rows.map((row) => {
+    const live = byKey.get(row.aha_key);
+    if (!live) return row;
+    const name = getPlanVsActualFeatureName(row, live);
+    return {
+      ...row,
+      end_aha_name: name,
+    };
+  });
 }
 
 /**

@@ -81,7 +81,7 @@ describe('releaseKey', () => {
     );
   });
 
-  it('keeps quarter-start plan train for in-quarter rows', () => {
+  it('uses end train when item slipped within the quarter', () => {
     const scope = {
       allowedTrainMonthKeys: allowedTrainMonthKeysForPlanVsActualReport(
         'quarter_progress',
@@ -92,10 +92,20 @@ describe('releaseKey', () => {
     const item = baseItem({
       inStart: true,
       inEnd: true,
-      startRelease: '2026.6',
+      startRelease: 'Release 2026.5',
       endRelease: '2026.6',
     });
     expect(releaseKey(item, scope)).toBe('2026.6');
+  });
+
+  it('uses start train for removed rows', () => {
+    const item = baseItem({
+      inStart: true,
+      inEnd: false,
+      startRelease: 'Release 2026.5',
+      endRelease: null,
+    });
+    expect(releaseKey(item)).toBe('2026.5');
   });
 });
 

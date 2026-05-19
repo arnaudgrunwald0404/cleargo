@@ -1,5 +1,8 @@
 import { allowedTrainMonthKeysForPlanVsActualReport } from '../planVsActualStatus';
-import { supplementRpcRowsWithCleargoEpics } from '../planVsActualLiveEpic';
+import {
+  overlayRpcRowsWithCleargoEpicNames,
+  supplementRpcRowsWithCleargoEpics,
+} from '../planVsActualLiveEpic';
 import type { RpcPlanVsActualRow } from '@/lib/services/planVsActualService';
 
 describe('supplementRpcRowsWithCleargoEpics', () => {
@@ -80,5 +83,75 @@ describe('supplementRpcRowsWithCleargoEpics', () => {
       '2026-04-01',
     );
     expect(out).toHaveLength(0);
+  });
+});
+
+describe('overlayRpcRowsWithCleargoEpicNames', () => {
+  it('replaces stale snapshot end_aha_name with live epic title when GTM duplicate', () => {
+    const rows: RpcPlanVsActualRow[] = [
+      {
+        aha_key: 'APP-E-1210',
+        in_start: true,
+        in_end: true,
+        start_release: '2026.5',
+        end_release: '2026.5',
+        start_aha_name: 'AI Sourcing Max',
+        end_aha_name: 'AI Sourcing Max',
+        start_gtm_name: 'AI Sourcing Max',
+        end_gtm_name: 'AI Sourcing Max',
+        start_status: null,
+        end_status: null,
+        start_goal: null,
+        end_goal: null,
+        start_gtm_module: null,
+        end_gtm_module: null,
+        start_snapshot_date: null,
+        end_snapshot_date: null,
+        arr_accounts: null,
+        pm_note_cause: null,
+      },
+    ];
+    const out = overlayRpcRowsWithCleargoEpicNames(rows, [
+      {
+        aha_id: 'APP-E-1210',
+        name: 'AI Sourcing Max (Beta Launch)',
+        aha_fields: {},
+      },
+    ]);
+    expect(out[0].end_aha_name).toBe('AI Sourcing Max (Beta Launch)');
+  });
+
+  it('keeps pivot Epic name when it already differs from GTM', () => {
+    const rows: RpcPlanVsActualRow[] = [
+      {
+        aha_key: 'APP-E-1208',
+        in_start: true,
+        in_end: true,
+        start_release: '2026.5',
+        end_release: '2026.5',
+        start_aha_name: 'AI Social Media Sourcing (Reelist) - Beta',
+        end_aha_name: 'AI Social Media Sourcing (Reelist) - Beta',
+        start_gtm_name: 'Social Media Sourcing',
+        end_gtm_name: 'Social Media Sourcing',
+        start_status: null,
+        end_status: null,
+        start_goal: null,
+        end_goal: null,
+        start_gtm_module: null,
+        end_gtm_module: null,
+        start_snapshot_date: null,
+        end_snapshot_date: null,
+        arr_accounts: null,
+        pm_note_cause: null,
+      },
+    ];
+    const out = overlayRpcRowsWithCleargoEpicNames(rows, [
+      {
+        aha_id: 'APP-E-1208',
+        name: 'Social Media Sourcing',
+        aha_fields: { standard_fields: { name: 'Social Media Sourcing' } },
+      },
+    ]);
+    expect(out[0].end_aha_name).toBe('AI Social Media Sourcing (Reelist) - Beta');
   });
 });

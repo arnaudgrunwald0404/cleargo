@@ -10,6 +10,7 @@ import type {
 } from '@/types/roadmap';
 import { isQuarterResultsWindowAvailable } from '@/lib/roadmap/planVsActualPeriodUi';
 import { sanitizePivotCellString } from '@/lib/aha/pivotNormalizer';
+import { getPlanVsActualFeatureName } from '@/lib/roadmap/displayNames';
 import {
   allowedTrainMonthKeysForPlanVsActualReport,
   derivePlanVsActualStatus,
@@ -20,6 +21,7 @@ import { clampPlanVsActualPeriodDate, getPeriodBounds } from '@/lib/roadmap/plan
 export { getPeriodBounds } from '@/lib/roadmap/planVsActualPeriodUi';
 import {
   isCleargoCandidateEpicRecord,
+  overlayRpcRowsWithCleargoEpicNames,
   supplementRpcRowsWithCleargoEpics,
   type CleargoEpicLiveRow,
 } from '@/lib/roadmap/planVsActualLiveEpic';
@@ -135,14 +137,7 @@ export async function buildQuarterContext(
 }
 
 function displayFeatureName(row: RpcPlanVsActualRow): string {
-  const raw =
-    row.end_gtm_name?.trim() ||
-    row.end_aha_name?.trim() ||
-    row.start_gtm_name?.trim() ||
-    row.start_aha_name?.trim() ||
-    '';
-  const cleaned = raw ? sanitizePivotCellString(raw) : '';
-  return cleaned || row.aha_key;
+  return getPlanVsActualFeatureName(row);
 }
 
 /** GTM module from snapshot only (not pod / dev backlog). */
@@ -498,8 +493,9 @@ export async function getPlanVsActualReport(
     endSnapshotDate = rows[0].end_snapshot_date;
   }
 
+  const liveEpics = await fetchCleargoCandidateEpicsForSupplement(supabase);
+  rows = overlayRpcRowsWithCleargoEpicNames(rows, liveEpics);
   if (periodType !== 'quarter_baseline') {
-    const liveEpics = await fetchCleargoCandidateEpicsForSupplement(supabase);
     rows = supplementRpcRowsWithCleargoEpics(
       rows,
       liveEpics,

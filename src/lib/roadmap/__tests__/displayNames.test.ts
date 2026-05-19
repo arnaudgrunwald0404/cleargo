@@ -2,6 +2,7 @@ import {
   formatSnapshotContactDisplay,
   getDisplayName,
   getDisplayPod,
+  getPlanVsActualFeatureName,
 } from '../displayNames';
 
 describe('formatSnapshotContactDisplay', () => {
@@ -39,5 +40,43 @@ describe('getDisplayName / getDisplayPod', () => {
     expect(getDisplayName({ gtm_name: '', aha_name: pill, aha_key: 'X-2' })).toBe(
       'Candidate Attraction',
     );
+  });
+});
+
+describe('getPlanVsActualFeatureName', () => {
+  it('prefers distinct pivot Epic name over GTM name', () => {
+    expect(
+      getPlanVsActualFeatureName({
+        aha_key: 'APP-E-1210',
+        end_aha_name: 'AI Sourcing Max (NinjaHire) - Beta Program',
+        end_gtm_name: 'AI Sourcing Max',
+      }),
+    ).toBe('AI Sourcing Max (NinjaHire) - Beta Program');
+  });
+
+  it('uses live epic title when snapshot only has GTM label', () => {
+    expect(
+      getPlanVsActualFeatureName(
+        {
+          aha_key: 'APP-E-1210',
+          end_aha_name: 'AI Sourcing Max',
+          end_gtm_name: 'AI Sourcing Max',
+        },
+        'AI Sourcing Max (Beta Launch)',
+      ),
+    ).toBe('AI Sourcing Max (Beta Launch)');
+  });
+
+  it('does not replace distinct Epic name with shorter live title', () => {
+    expect(
+      getPlanVsActualFeatureName(
+        {
+          aha_key: 'APP-E-1208',
+          end_aha_name: 'AI Social Media Sourcing (Reelist) - Beta Pr',
+          end_gtm_name: 'Social Media Sourcing',
+        },
+        'Social Media Sourcing',
+      ),
+    ).toBe('AI Social Media Sourcing (Reelist) - Beta Pr');
   });
 });

@@ -230,11 +230,36 @@ function launchDateForReleaseTrain(
 }
 
 /** Canonical train token for comparing Aha release labels (e.g. `2026.2` vs `Release 2026.2`). */
-function releaseTrainIdentityKey(release: string | null | undefined): string | null {
+export function releaseTrainIdentityKey(release: string | null | undefined): string | null {
   const k = normalizeReleaseKey(release);
   if (!k) return null;
   const t = k.replace(/^release\s+/, '').trim();
   return t || null;
+}
+
+function resolveReleaseOrderIndex(
+  release: string | null | undefined,
+  releaseOrderIndex: Map<string, number>,
+): number | undefined {
+  const id = releaseTrainIdentityKey(release);
+  if (!id) return undefined;
+  const candidates = [id, `release ${id}`, normalizeReleaseKey(release) ?? ''];
+  for (const c of candidates) {
+    if (!c) continue;
+    const hit = releaseOrderIndex.get(c);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
+}
+
+function compareReleaseTrainMonths(
+  startRelease: string | null | undefined,
+  endRelease: string | null | undefined,
+): number | null {
+  const a = parseReleaseTrainYearMonth(startRelease);
+  const b = parseReleaseTrainYearMonth(endRelease);
+  if (!a || !b) return null;
+  return b.year * 12 + b.month - (a.year * 12 + a.month);
 }
 
 /**
@@ -269,35 +294,43 @@ export function deliveryKnowableByTrainSchedule(
 }
 
 function slotDeltaBetween(
-  sr: string,
-  er: string,
+  startRelease: string | null | undefined,
+  endRelease: string | null | undefined,
   releaseOrderIndex: Map<string, number>,
 ): number | null {
-  if (!sr || !er) return null;
-  const si = releaseOrderIndex.get(sr);
-  const ei = releaseOrderIndex.get(er);
+  const si = resolveReleaseOrderIndex(startRelease, releaseOrderIndex);
+  const ei = resolveReleaseOrderIndex(endRelease, releaseOrderIndex);
   if (si === undefined || ei === undefined) return null;
   return ei - si;
 }
 
 /**
  * True when **end** release train is strictly **before** **start** (period-start plan train).
- * Uses `release_schedule` order when both trains are indexed; otherwise compares parsed `YYYY.M` months.
+ * Prefers parsed `YYYY.M` months so `Release 2026.5` vs `2026.5` does not mis-compare.
  */
 export function endTrainEarlierThanStartTrain(
   startRelease: string | null | undefined,
   endRelease: string | null | undefined,
   releaseOrderIndex: Map<string, number>,
 ): boolean {
-  const sr = normalizeReleaseKey(startRelease);
-  const er = normalizeReleaseKey(endRelease);
-  if (!sr || !er) return false;
-  const slots = slotDeltaBetween(sr, er, releaseOrderIndex);
+  const monthDelta = compareReleaseTrainMonths(startRelease, endRelease);
+  if (monthDelta !== null) return monthDelta < 0;
+  const slots = slotDeltaBetween(startRelease, endRelease, releaseOrderIndex);
   if (slots !== null) return slots < 0;
-  const a = parseReleaseTrainYearMonth(startRelease);
-  const b = parseReleaseTrainYearMonth(endRelease);
-  if (!a || !b) return false;
-  return b.year * 12 + b.month < a.year * 12 + a.month;
+  return false;
+}
+
+/** True when end train is strictly after start train (slipped later). */
+export function endTrainLaterThanStartTrain(
+  startRelease: string | null | undefined,
+  endRelease: string | null | undefined,
+  releaseOrderIndex: Map<string, number>,
+): boolean {
+  const monthDelta = compareReleaseTrainMonths(startRelease, endRelease);
+  if (monthDelta !== null) return monthDelta > 0;
+  const slots = slotDeltaBetween(startRelease, endRelease, releaseOrderIndex);
+  if (slots !== null) return slots > 0;
+  return false;
 }
 
 function looksReleasedBySnapshotSignals(row: DeriveStatusInput): boolean {
@@ -344,11 +377,11 @@ export function derivePlanVsActualStatus(
   }
 
   const released = isReleasedForPlanVsActual(row, launchDateByKey);
-  const sr = normalizeReleaseKey(row.startRelease);
-  const er = normalizeReleaseKey(row.endRelease);
-  const sameTrain = sr === er;
+  const startId = releaseTrainIdentityKey(row.startRelease);
+  const endId = releaseTrainIdentityKey(row.endRelease);
+  const sameTrain = startId !== null && endId !== null && startId === endId;
   const dayGap = calendarDaysBetweenReleaseTrains(row.startRelease, row.endRelease, launchDateByKey);
-  const slots = slotDeltaBetween(sr, er, releaseOrderIndex);
+  const slots = slotDeltaBetween(row.startRelease, row.endRelease, releaseOrderIndex);
 
   // Net-new this period
   if (!row.inStart && row.inEnd) {
@@ -384,7 +417,7 @@ export function derivePlanVsActualStatus(
   // Compared in both snapshots
   if (row.inStart && row.inEnd) {
     if (released) {
-      if (!sr && !er) {
+      if (!startId && !endId) {
         return { category: 'green', label: 'Delivered: On Time' };
       }
       if (sameTrain) {
@@ -397,7 +430,7 @@ export function derivePlanVsActualStatus(
     }
 
     // Not released
-    if (!sr && !er) {
+    if (!startId && !endId) {
       return { category: 'green', label: 'On Plan' };
     }
     if (sameTrain) {
@@ -409,8 +442,11 @@ export function derivePlanVsActualStatus(
       return { category: 'red', label: 'Removed' };
     }
 
-    // Target moved earlier than quarter-start plan — not a slip
-    if (endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)) {
+    // Target moved earlier than quarter-start plan — not a slip (never when end month is later)
+    if (
+      !endTrainLaterThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex) &&
+      endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)
+    ) {
       return { category: 'green', label: 'Ahead of Plan' };
     }
 

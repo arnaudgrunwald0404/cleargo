@@ -22,6 +22,44 @@ export function getDisplayName(item: DisplayNameFields): string {
   return sanitizeRoadmapHtmlCell(item.aha_key);
 }
 
+export type PlanVsActualNameFields = {
+  aha_key: string;
+  end_aha_name?: string | null;
+  start_aha_name?: string | null;
+  end_gtm_name?: string | null;
+  start_gtm_name?: string | null;
+};
+
+function displayNamesEquivalent(a: string, b: string): boolean {
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * Plan vs Actual **Feature** column: always prefer the Aha **Epic name** (pivot `aha_name` /
+ * ClearGO epic title), not the marketing **GTM name**. GTM name is often shared across beta copies;
+ * Epic name distinguishes APP-E-1210 vs APP-E-785.
+ *
+ * (Roadmap Rewind uses {@link getDisplayName}, which prefers GTM — intentional difference.)
+ */
+export function getPlanVsActualFeatureName(
+  row: PlanVsActualNameFields,
+  liveEpicTitle?: string | null,
+): string {
+  const aha =
+    sanitizeRoadmapHtmlCell(row.end_aha_name) || sanitizeRoadmapHtmlCell(row.start_aha_name);
+  const gtm =
+    sanitizeRoadmapHtmlCell(row.end_gtm_name) || sanitizeRoadmapHtmlCell(row.start_gtm_name);
+  const live = liveEpicTitle ? sanitizeRoadmapHtmlCell(liveEpicTitle) : '';
+
+  if (aha && (!gtm || !displayNamesEquivalent(aha, gtm))) {
+    return aha;
+  }
+  if (live && (!gtm || !displayNamesEquivalent(live, gtm) || !aha)) {
+    return live;
+  }
+  return aha || live || gtm || sanitizeRoadmapHtmlCell(row.aha_key);
+}
+
 /** Fields sufficient to resolve pod line (GTM module vs Dev backlog pod). */
 export type DisplayPodFields = Pick<RoadmapItem, 'gtm_module' | 'aha_pod'>;
 
