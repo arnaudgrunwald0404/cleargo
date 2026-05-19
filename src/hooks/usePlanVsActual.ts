@@ -159,10 +159,18 @@ export function usePatchPlanVsActualArr() {
       }
       return res.json();
     },
-    onSuccess: (_data, variables) => {
-      void qc.invalidateQueries({
-        queryKey: ['plan-vs-actual', variables.periodType, variables.periodDate],
-      });
+    onSuccess: (data, variables) => {
+      qc.setQueryData<PlanVsActualReportPayload>(
+        ['plan-vs-actual', variables.periodType, variables.periodDate],
+        (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            cachedAnalysis: data.analysis,
+            analysisGeneratedAt: data.generatedAt,
+          };
+        },
+      );
     },
   });
 }

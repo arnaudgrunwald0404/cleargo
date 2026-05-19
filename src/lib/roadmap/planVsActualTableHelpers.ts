@@ -1,6 +1,11 @@
 import type { PlanVsActualItem, PlanVsActualStatusCategory } from '@/types/roadmap';
 import { isExternalCause } from '@/lib/roadmap/pmNoteCause';
-import { formatPlanVsActualReleaseLabel } from '@/lib/roadmap/planVsActualStatus';
+import {
+  DELAYED_BEYOND_QUARTER_KEY,
+  formatPlanVsActualReleaseLabel,
+  isDelayedBeyondQuarter,
+  type ReportingReleaseScope,
+} from '@/lib/roadmap/planVsActualStatus';
 
 export type PlanVsActualGroupBy = 'goal' | 'gtm' | 'release';
 
@@ -26,13 +31,25 @@ export function gtmModuleKey(item: PlanVsActualItem): string {
   return a ? a : EMPTY_GTM;
 }
 
-/** End-of-period release train for filter/group (short label when parseable). */
-export function releaseKey(item: PlanVsActualItem): string {
-  const label = formatPlanVsActualReleaseLabel(item.endRelease ?? item.startRelease);
+/**
+ * Release bucket for filter/group. Slips past the quarter use {@link DELAYED_BEYOND_QUARTER_KEY};
+ * other plan rows stay under `startRelease` so removals remain in the planned release section.
+ */
+export function releaseKey(item: PlanVsActualItem, scope?: ReportingReleaseScope): string {
+  if (scope && isDelayedBeyondQuarter(item, scope)) {
+    return DELAYED_BEYOND_QUARTER_KEY;
+  }
+  const raw = item.inStart
+    ? (item.startRelease ?? item.endRelease)
+    : (item.endRelease ?? item.startRelease);
+  const label = formatPlanVsActualReleaseLabel(raw);
   return label ?? EMPTY_RELEASE;
 }
 
-export function releaseKeyLabel(key: string): string {
+export function releaseKeyLabel(key: string, delayedBeyondSectionLabel?: string): string {
+  if (key === DELAYED_BEYOND_QUARTER_KEY) {
+    return delayedBeyondSectionLabel ?? 'Delayed beyond quarter';
+  }
   if (key === EMPTY_RELEASE) return '(No release)';
   return key.startsWith('Release ') ? key : `Release ${key}`;
 }
@@ -47,6 +64,65 @@ function statusOrder(cat: PlanVsActualStatusCategory): number {
   return order.indexOf(cat);
 }
 
+function compareBySortKey(
+  a: PlanVsActualItem,
+  b: PlanVsActualItem,
+  arrA: string,
+  arrB: string,
+  key: PlanVsActualSortKey,
+  scope?: ReportingReleaseScope,
+): number {
+  const cmp = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
+
+  switch (key) {
+    case 'goal':
+      return cmp(goalKey(a), goalKey(b));
+    case 'gtmModule':
+      return cmp(gtmModuleKey(a), gtmModuleKey(b));
+    case 'release':
+      return cmp(releaseKey(a, scope), releaseKey(b, scope));
+    case 'feature':
+      return cmp(a.featureName, b.featureName);
+    case 'arr':
+      return cmp(arrA.trim(), arrB.trim());
+    case 'status':
+      return (
+        statusOrder(a.statusCategory) - statusOrder(b.statusCategory) ||
+        cmp(a.statusLabel, b.statusLabel)
+      );
+    default:
+      return 0;
+  }
+}
+
+/** Row order inside a grouped section (ascending). */
+export function groupSortKeysForPlanVsActual(groupBy: PlanVsActualGroupBy): PlanVsActualSortKey[] {
+  switch (groupBy) {
+    case 'goal':
+      return ['release', 'gtmModule', 'feature'];
+    case 'gtm':
+      return ['release', 'goal', 'feature'];
+    case 'release':
+      return ['gtmModule', 'goal', 'feature'];
+  }
+}
+
+export function comparePlanVsActualItemsInGroup(
+  groupBy: PlanVsActualGroupBy,
+  a: PlanVsActualItem,
+  b: PlanVsActualItem,
+  arrA: string,
+  arrB: string,
+  scope?: ReportingReleaseScope,
+): number {
+  const cmp = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
+  for (const key of groupSortKeysForPlanVsActual(groupBy)) {
+    const c = compareBySortKey(a, b, arrA, arrB, key, scope);
+    if (c !== 0) return c;
+  }
+  return cmp(a.ahaKey, b.ahaKey);
+}
+
 export function comparePlanVsActualItems(
   a: PlanVsActualItem,
   b: PlanVsActualItem,
@@ -54,34 +130,10 @@ export function comparePlanVsActualItems(
   arrB: string,
   key: PlanVsActualSortKey,
   dir: 1 | -1,
+  scope?: ReportingReleaseScope,
 ): number {
   const cmp = (x: string, y: string) => x.localeCompare(y, undefined, { sensitivity: 'base' });
-
-  let primary = 0;
-  switch (key) {
-    case 'goal':
-      primary = cmp(goalKey(a), goalKey(b));
-      break;
-    case 'gtmModule':
-      primary = cmp(gtmModuleKey(a), gtmModuleKey(b));
-      break;
-    case 'release':
-      primary = cmp(releaseKey(a), releaseKey(b));
-      break;
-    case 'feature':
-      primary = cmp(a.featureName, b.featureName);
-      break;
-    case 'arr':
-      primary = cmp(arrA.trim(), arrB.trim());
-      break;
-    case 'status':
-      primary =
-        statusOrder(a.statusCategory) - statusOrder(b.statusCategory) ||
-        cmp(a.statusLabel, b.statusLabel);
-      break;
-    default:
-      primary = 0;
-  }
+  const primary = compareBySortKey(a, b, arrA, arrB, key, scope);
   if (primary !== 0) return primary * dir;
   return cmp(a.ahaKey, b.ahaKey) * dir;
 }

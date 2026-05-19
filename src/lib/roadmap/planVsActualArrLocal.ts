@@ -4,10 +4,10 @@ export function planVsActualArrStorageKey(periodType: string, periodDate: string
   return `${STORAGE_PREFIX}:${periodType}:${periodDate}`;
 }
 
-export function loadLocalPlanVsActualArrMap(periodKey: string): Record<string, string> {
+function readArrMapFromStorageKey(storageKey: string): Record<string, string> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = window.localStorage.getItem(periodKey);
+    const raw = window.localStorage.getItem(storageKey);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
@@ -19,6 +19,25 @@ export function loadLocalPlanVsActualArrMap(periodKey: string): Record<string, s
   } catch {
     return {};
   }
+}
+
+export function loadLocalPlanVsActualArrMap(periodKey: string): Record<string, string> {
+  const current = readArrMapFromStorageKey(periodKey);
+  if (Object.keys(current).length > 0) return current;
+
+  // Migrate legacy keys (`quarter_progress:2026-04-01`) to prefixed v1 keys.
+  const prefix = `${STORAGE_PREFIX}:`;
+  if (!periodKey.startsWith(prefix)) return {};
+  const legacyKey = periodKey.slice(prefix.length);
+  const legacy = readArrMapFromStorageKey(legacyKey);
+  if (Object.keys(legacy).length === 0) return {};
+  try {
+    window.localStorage.setItem(periodKey, JSON.stringify(legacy));
+    window.localStorage.removeItem(legacyKey);
+  } catch {
+    /* ignore quota / private mode */
+  }
+  return legacy;
 }
 
 export function saveLocalPlanVsActualArr(periodKey: string, ahaKey: string, value: string): void {

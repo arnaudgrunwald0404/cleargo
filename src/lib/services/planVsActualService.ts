@@ -1,11 +1,4 @@
-import {
-  endOfMonth,
-  endOfQuarter,
-  format,
-  parseISO,
-  startOfMonth,
-  startOfQuarter,
-} from 'date-fns';
+import { endOfQuarter, format, parseISO, startOfMonth, startOfQuarter } from 'date-fns';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   EpicMovementNoteForAnalysis,
@@ -22,7 +15,14 @@ import {
   derivePlanVsActualStatus,
   includePlanVsActualItemForReport,
 } from '@/lib/roadmap/planVsActualStatus';
-import { clampPlanVsActualPeriodDate } from '@/lib/roadmap/planVsActualPeriodUi';
+import { clampPlanVsActualPeriodDate, getPeriodBounds } from '@/lib/roadmap/planVsActualPeriodUi';
+
+export { getPeriodBounds } from '@/lib/roadmap/planVsActualPeriodUi';
+import {
+  isCleargoCandidateEpicRecord,
+  supplementRpcRowsWithCleargoEpics,
+  type CleargoEpicLiveRow,
+} from '@/lib/roadmap/planVsActualLiveEpic';
 import {
   generatePeriodShiftAnalysis,
   generateSingleItemNarrative,
@@ -54,26 +54,6 @@ export interface RpcPlanVsActualRow {
   start_aha_progress: number | null;
   end_aha_progress: number | null;
   first_scan_aha_release: string | null;
-}
-
-export function getPeriodBounds(
-  periodType: PlanVsActualPeriodType,
-  periodDateIso: string,
-): { periodStart: string; periodEnd: string } {
-  const d = parseISO(periodDateIso.length === 7 ? `${periodDateIso}-01` : periodDateIso);
-  if (periodType === 'quarterly' || periodType === 'quarter_baseline') {
-    const ps = startOfQuarter(d);
-    const pe = endOfQuarter(d);
-    return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
-  }
-  if (periodType === 'quarter_progress') {
-    const ps = startOfMonth(d);
-    const pe = endOfMonth(d);
-    return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
-  }
-  const ps = startOfMonth(d);
-  const pe = endOfMonth(d);
-  return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
 }
 
 export type ReleaseScheduleMaps = {
@@ -223,6 +203,22 @@ export function mapRowToPlanVsActualItem(
     statusCategory: category,
     statusLabel: label,
   };
+}
+
+/** Live ClearGO epics (cleargo candidate) for net-new rows not yet on a weekly snapshot. */
+async function fetchCleargoCandidateEpicsForSupplement(
+  supabase: SupabaseClient,
+): Promise<CleargoEpicLiveRow[]> {
+  const { data, error } = await supabase
+    .from('epic')
+    .select('aha_id, name, aha_fields')
+    .not('aha_id', 'is', null)
+    .eq('archived', false);
+
+  if (error || !data?.length) return [];
+  return data.filter(
+    (e) => e.aha_id && isCleargoCandidateEpicRecord(e),
+  ) as CleargoEpicLiveRow[];
 }
 
 export async function fetchMovementNotesForAhaKeys(
@@ -485,7 +481,7 @@ export async function getPlanVsActualReport(
     throw new Error(rpcErr.message);
   }
 
-  const rows = (rpcRows || []) as RpcPlanVsActualRow[];
+  let rows = (rpcRows || []) as RpcPlanVsActualRow[];
   const { orderIndex: releaseOrderIndex, launchDateByKey } = await buildReleaseScheduleMaps(supabase);
 
   const allowedTrainMonthKeys = allowedTrainMonthKeysForPlanVsActualReport(
@@ -494,6 +490,24 @@ export async function getPlanVsActualReport(
     periodEnd,
   );
   const reportingScope = { allowedTrainMonthKeys };
+
+  let startSnapshotDate: string | null = null;
+  let endSnapshotDate: string | null = null;
+  if (rows.length > 0) {
+    startSnapshotDate = rows[0].start_snapshot_date;
+    endSnapshotDate = rows[0].end_snapshot_date;
+  }
+
+  if (periodType !== 'quarter_baseline') {
+    const liveEpics = await fetchCleargoCandidateEpicsForSupplement(supabase);
+    rows = supplementRpcRowsWithCleargoEpics(
+      rows,
+      liveEpics,
+      periodType,
+      reportingScope,
+      endSnapshotDate,
+    );
+  }
   const ahaKeys = rows.map((r) => r.aha_key);
   const pmCauses = await fetchLatestPmNoteCauseByAhaKeys(supabase, ahaKeys);
 
@@ -509,13 +523,6 @@ export async function getPlanVsActualReport(
       ),
     )
     .filter((item) => includePlanVsActualItemForReport(item, reportingScope));
-
-  let startSnapshotDate: string | null = null;
-  let endSnapshotDate: string | null = null;
-  if (rows.length > 0) {
-    startSnapshotDate = rows[0].start_snapshot_date;
-    endSnapshotDate = rows[0].end_snapshot_date;
-  }
 
   const cached = await loadCachedPeriodAnalysis(supabase, periodType, periodStart);
 

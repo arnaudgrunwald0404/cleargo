@@ -1,4 +1,5 @@
 import {
+  endOfMonth,
   endOfQuarter,
   format,
   isAfter,
@@ -69,6 +70,26 @@ export type QuarterProgressWindowOption = {
   label: string;
   disabled?: boolean;
 };
+
+export function getPeriodBounds(
+  periodType: PlanVsActualPeriodType,
+  periodDateIso: string,
+): { periodStart: string; periodEnd: string } {
+  const d = parseISO(periodDateIso.length === 7 ? `${periodDateIso}-01` : periodDateIso);
+  if (periodType === 'quarterly' || periodType === 'quarter_baseline') {
+    const ps = startOfQuarter(d);
+    const pe = endOfQuarter(d);
+    return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
+  }
+  if (periodType === 'quarter_progress') {
+    const ps = startOfMonth(d);
+    const pe = endOfMonth(d);
+    return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
+  }
+  const ps = startOfMonth(d);
+  const pe = endOfMonth(d);
+  return { periodStart: format(ps, 'yyyy-MM-dd'), periodEnd: format(pe, 'yyyy-MM-dd') };
+}
 
 export function planVsActualApiParams(
   quarterStartDate: string,

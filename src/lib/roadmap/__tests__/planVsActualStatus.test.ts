@@ -6,6 +6,7 @@ import {
   deliveryKnowableByTrainSchedule,
   derivePlanVsActualStatus,
   includePlanVsActualItemForReport,
+  isDelayedBeyondQuarter,
   looksDeliveredStatus,
 } from '../planVsActualStatus';
 
@@ -56,6 +57,15 @@ describe('deliveryKnowableByTrainSchedule', () => {
   it('is true when train launch is on or before period end', () => {
     const m = launchMap([['2026.2', '2026-01-15']]);
     expect(deliveryKnowableByTrainSchedule('2026.2', '2026-01-31', m)).toBe(true);
+  });
+
+  it('is false for a later train month when release_schedule has no launch date', () => {
+    expect(deliveryKnowableByTrainSchedule('2026.5', '2026-04-30', new Map())).toBe(false);
+    expect(deliveryKnowableByTrainSchedule('Release 2026.5', '2026-04-30')).toBe(false);
+  });
+
+  it('is true for same-month train when launch date is missing', () => {
+    expect(deliveryKnowableByTrainSchedule('2026.4', '2026-04-30', new Map())).toBe(true);
   });
 });
 
@@ -150,6 +160,28 @@ describe('derivePlanVsActualStatus', () => {
         endStatus: 'In development',
       },
       order,
+    );
+    expect(r.category).toBe('green');
+    expect(r.label).toBe('On Plan');
+  });
+
+  it('marks On Plan (not Delivered) when May train looks shipped in April progress view', () => {
+    const order26 = idxMap([
+      ['2026.4', 0],
+      ['2026.5', 1],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2026.5',
+        endRelease: '2026.5',
+        startStatus: 'In development',
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-04-30',
+      },
+      order26,
+      new Map(),
     );
     expect(r.category).toBe('green');
     expect(r.label).toBe('On Plan');
@@ -515,19 +547,54 @@ describe('includePlanVsActualItemForReport', () => {
     ).toBe(true);
   });
 
-  it('drops steady-state / slips when end train is outside the report window', () => {
+  it('keeps in-quarter plan rows that slipped to a train outside the report window', () => {
+    expect(
+      includePlanVsActualItemForReport(
+        { inStart: true, inEnd: true, startRelease: '2026.6', endRelease: '2026.9' },
+        aprilMonthQuarterScope,
+      ),
+    ).toBe(true);
     expect(
       includePlanVsActualItemForReport(
         { inStart: true, inEnd: true, startRelease: '2026.4', endRelease: '2026.9' },
         aprilMonthQuarterScope,
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       includePlanVsActualItemForReport(
         { inStart: true, inEnd: true, startRelease: '2026.4', endRelease: '2026.4' },
         aprilMonthQuarterScope,
       ),
     ).toBe(true);
+  });
+
+  it('marks Postponed when start train was in quarter and end train slipped past quarter', () => {
+    const order26 = idxMap([
+      ['2026.4', 0],
+      ['2026.5', 1],
+      ['2026.6', 2],
+      ['2026.7', 3],
+      ['2026.9', 4],
+    ]);
+    const launch26 = launchMap([
+      ['2026.6', '2026-06-01'],
+      ['2026.9', '2026-10-01'],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2026.6',
+        endRelease: '2026.9',
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-04-30',
+      },
+      order26,
+      launch26,
+    );
+    expect(r.category).toBe('yellow');
+    expect(r.label).toBe('Delayed');
   });
 
   it('drops removed rows when start train is outside the report window', () => {
@@ -545,19 +612,40 @@ describe('includePlanVsActualItemForReport', () => {
     ).toBe(true);
   });
 
-  it('keeps net-new rows when release is missing or not YYYY.MM', () => {
+  it('drops net-new rows when release is missing, unparseable, or outside the quarter', () => {
     expect(
       includePlanVsActualItemForReport(
         { inStart: false, inEnd: true, endRelease: null },
         aprilMonthQuarterScope,
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       includePlanVsActualItemForReport(
         { inStart: false, inEnd: true, endRelease: 'Hotfix lane' },
         aprilMonthQuarterScope,
       ),
+    ).toBe(false);
+    expect(
+      includePlanVsActualItemForReport(
+        { inStart: false, inEnd: true, endRelease: '2026.9' },
+        aprilMonthQuarterScope,
+      ),
+    ).toBe(false);
+  });
+
+  it('identifies delayed-beyond-quarter slips', () => {
+    expect(
+      isDelayedBeyondQuarter(
+        { inStart: true, inEnd: true, startRelease: '2026.6', endRelease: '2026.9' },
+        aprilMonthQuarterScope,
+      ),
     ).toBe(true);
+    expect(
+      isDelayedBeyondQuarter(
+        { inStart: false, inEnd: true, startRelease: null, endRelease: '2026.9' },
+        aprilMonthQuarterScope,
+      ),
+    ).toBe(false);
   });
 
   it('quarterly window keeps adds for any of the three monthly trains', () => {

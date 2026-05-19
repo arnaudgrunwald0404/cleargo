@@ -72,6 +72,31 @@ export interface ReportingReleaseScope {
   allowedTrainMonthKeys: ReadonlySet<number>;
 }
 
+/** Group-by-release bucket for epics planned in-quarter but slipped to a later train. */
+export const DELAYED_BEYOND_QUARTER_KEY = '__delayed_beyond_quarter__';
+
+export function quarterShortLabel(quarterStartIso: string): string {
+  const raw = quarterStartIso.trim().slice(0, 10);
+  const d = parseISO(raw.length === 7 ? `${raw}-01` : raw);
+  if (Number.isNaN(d.getTime())) return 'Q?';
+  return `Q${Math.floor(d.getMonth() / 3) + 1}`;
+}
+
+export function delayedBeyondQuarterSectionLabel(quarterStartIso: string): string {
+  return `Delayed Beyond ${quarterShortLabel(quarterStartIso)}`;
+}
+
+/** Planned in-quarter at period start, still on roadmap, but end train is past the report quarter. */
+export function isDelayedBeyondQuarter(
+  item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease'>,
+  scope: ReportingReleaseScope,
+): boolean {
+  if (!item.inStart || !item.inEnd) return false;
+  const startIn = releaseTrainMatchesReportingScope(item.startRelease, scope);
+  const endIn = releaseTrainMatchesReportingScope(item.endRelease, scope);
+  return startIn === true && endIn === false;
+}
+
 export interface DeriveStatusInput {
   inStart: boolean;
   inEnd: boolean;
@@ -93,9 +118,9 @@ export interface DeriveStatusInput {
  * Keeps rows whose **release train** matches the report’s calendar scope (`allowedTrainMonthKeys`).
  * Trains parse as `YYYY.M` / `YYYY.MM` from Aha-style names.
  *
- * - **Still on roadmap at period end** (`inEnd`): compare **endRelease** (planned train at last snapshot).
+ * - **Net-new** (`!inStart && inEnd`): end train must be in-quarter; future-release adds are excluded.
+ * - **Delayed beyond quarter** (`inStart && inEnd`, start in-quarter, end out): kept for “Delayed Beyond Q#”.
  * - **Removed mid-period** (`inStart && !inEnd`): compare **startRelease** (train at first snapshot).
- * - **Unparseable or missing** release for that check: row is kept (not excluded).
  */
 export function includePlanVsActualItemForReport(
   item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease'>,
@@ -106,10 +131,13 @@ export function includePlanVsActualItemForReport(
     return m !== false;
   }
   if (item.inEnd) {
-    const m = releaseTrainMatchesReportingScope(item.endRelease, scope);
-    return m !== false;
+    const endInScope = releaseTrainMatchesReportingScope(item.endRelease, scope);
+    if (endInScope === true) return true;
+    if (isDelayedBeyondQuarter(item, scope)) return true;
+    if (!item.inStart) return false;
+    return false;
   }
-  return true;
+  return false;
 }
 
 /**
@@ -218,13 +246,26 @@ export function deliveryKnowableByTrainSchedule(
   periodEndIso: string | null | undefined,
   launchDateByKey?: ReadonlyMap<string, Date>,
 ): boolean {
-  if (!periodEndIso?.trim() || !launchDateByKey?.size) return true;
-  const ld = launchDateForReleaseTrain(endRelease, launchDateByKey);
-  if (!ld) return true;
+  if (!periodEndIso?.trim()) return true;
   const raw = periodEndIso.trim();
   const pe = parseISO(raw.length >= 10 ? raw.slice(0, 10) : `${raw}-01`);
   if (Number.isNaN(pe.getTime())) return true;
-  return differenceInCalendarDays(startOfDay(ld), startOfDay(pe)) <= 0;
+
+  const ld =
+    launchDateByKey && launchDateByKey.size > 0
+      ? launchDateForReleaseTrain(endRelease, launchDateByKey)
+      : undefined;
+  if (ld) {
+    return differenceInCalendarDays(startOfDay(ld), startOfDay(pe)) <= 0;
+  }
+
+  // No schedule row: compare train month to period-end month so May trains are not
+  // "delivered" in an April progress view when Aha status is ahead of the train.
+  const parsed = parseReleaseTrainYearMonth(endRelease);
+  if (!parsed) return true;
+  const trainKey = parsed.year * 100 + parsed.month;
+  const periodKey = pe.getFullYear() * 100 + (pe.getMonth() + 1);
+  return trainKey <= periodKey;
 }
 
 function slotDeltaBetween(

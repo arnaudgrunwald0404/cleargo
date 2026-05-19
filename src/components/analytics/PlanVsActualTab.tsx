@@ -21,6 +21,7 @@ import {
   quarterSelectOptions,
   type QuarterProgressWindow,
 } from '@/lib/roadmap/planVsActualPeriodUi';
+import { planVsActualArrStorageKey } from '@/lib/roadmap/planVsActualArrLocal';
 import { PlanVsActualTable } from './PlanVsActualTable';
 import { ShiftAnalysisPanel } from './ShiftAnalysisPanel';
 
@@ -60,7 +61,7 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- gen/patch are stable mutation helpers
   }, [periodType, periodDate]);
 
-  const { data, isPending, error } = usePlanVsActual(periodType, periodDate);
+  const { data, isPending, error, isFetching, refetch } = usePlanVsActual(periodType, periodDate);
 
   const canGenerate = useMemo(() => canRolesPerform(userRoles, 'roadmap.analysis.generate'), [userRoles]);
   const canSaveArr = useMemo(
@@ -83,7 +84,7 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
     );
   }, [data?.cachedAnalysis?.itemInsights]);
 
-  const periodStorageKey = `${periodType}:${periodDate}`;
+  const periodStorageKey = planVsActualArrStorageKey(periodType, periodDate);
 
   const attemptKey = `${periodType}:${periodDate}`;
 
@@ -151,6 +152,8 @@ export function PlanVsActualTab({ userRoles }: { userRoles: string[] }) {
         <PlanVsActualTable
           items={data?.items ?? []}
           loading={isPending && !data}
+          onRefreshReport={() => void refetch()}
+          refreshReportPending={isFetching}
           insightsByKey={insightsByKey}
           periodStorageKey={periodStorageKey}
           quarterStartDate={quarterStartDate}

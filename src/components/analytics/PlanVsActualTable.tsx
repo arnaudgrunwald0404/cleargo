@@ -5,6 +5,7 @@ import {
   ActionIcon,
   Alert,
   Anchor,
+  Button,
   Card,
   Group,
   MultiSelect,
@@ -13,23 +14,31 @@ import {
   Table,
   Text,
   TextInput,
+  Tooltip,
   UnstyledButton,
 } from '@mantine/core';
-import { IconChevronDown, IconChevronRight, IconChevronUp } from '@tabler/icons-react';
+import { IconChevronDown, IconChevronRight, IconChevronUp, IconRefresh } from '@tabler/icons-react';
 import { ahaEpicUrl } from '@/lib/aha/epicUrl';
 import type { PlanVsActualItem, PlanVsActualStatusCategory } from '@/types/roadmap';
 import {
+  getPeriodBounds,
+  planVsActualApiParams,
   quarterProgressWindowOptions,
   quarterSelectOptions,
   type QuarterProgressWindow,
 } from '@/lib/roadmap/planVsActualPeriodUi';
 import {
-  clearLocalPlanVsActualArrKey,
+  allowedTrainMonthKeysForPlanVsActualReport,
+  delayedBeyondQuarterSectionLabel,
+  DELAYED_BEYOND_QUARTER_KEY,
+} from '@/lib/roadmap/planVsActualStatus';
+import {
   loadLocalPlanVsActualArrMap,
   saveLocalPlanVsActualArr,
 } from '@/lib/roadmap/planVsActualArrLocal';
 import {
   comparePlanVsActualItems,
+  comparePlanVsActualItemsInGroup,
   EMPTY_GTM,
   EMPTY_GOAL,
   EMPTY_RELEASE,
@@ -148,9 +157,13 @@ export function PlanVsActualTable({
   patchingAhaKey,
   regeneratePending,
   regeneratingAhaKey,
+  onRefreshReport,
+  refreshReportPending,
 }: {
   items: PlanVsActualItem[];
   loading?: boolean;
+  onRefreshReport?: () => void;
+  refreshReportPending?: boolean;
   insightsByKey?: Record<string, PlanVsActualRowInsight>;
   quarterStartDate: string;
   quarterProgressWindow: QuarterProgressWindow;
@@ -233,12 +246,6 @@ export function PlanVsActualTable({
     if (canSaveArr && onSaveArr) {
       try {
         await onSaveArr(ahaKey, trimmed);
-        clearLocalPlanVsActualArrKey(periodStorageKey, ahaKey);
-        setLocalArrMap((prev) => {
-          const next = { ...prev };
-          delete next[ahaKey];
-          return next;
-        });
         return;
       } catch {
         /* parent surfaces error */
@@ -256,15 +263,21 @@ export function PlanVsActualTable({
         likelyReasons: insight?.likelyReasons ?? '',
         arrImpact: trimmed,
       });
-      clearLocalPlanVsActualArrKey(periodStorageKey, ahaKey);
-      setLocalArrMap((prev) => {
-        const next = { ...prev };
-        delete next[ahaKey];
-        return next;
-      });
     } catch {
       /* parent surfaces error */
     }
+  };
+
+  const stageArrDraft = (ahaKey: string, raw: string) => {
+    setArrTyping((prev) => ({ ...prev, [ahaKey]: raw }));
+    setLocalArrMap((prev) => {
+      const next = { ...prev };
+      const trimmed = raw.trim();
+      if (!trimmed) delete next[ahaKey];
+      else next[ahaKey] = trimmed;
+      return next;
+    });
+    saveLocalPlanVsActualArr(periodStorageKey, ahaKey, raw);
   };
 
   const persistGtm = async (row: PlanVsActualItem, raw: string) => {
@@ -324,6 +337,25 @@ export function PlanVsActualTable({
     }
   };
 
+  const { periodType, periodDate } = useMemo(
+    () => planVsActualApiParams(quarterStartDate, quarterProgressWindow),
+    [quarterStartDate, quarterProgressWindow],
+  );
+  const reportingScope = useMemo(() => {
+    const { periodStart, periodEnd } = getPeriodBounds(periodType, periodDate);
+    return {
+      allowedTrainMonthKeys: allowedTrainMonthKeysForPlanVsActualReport(
+        periodType,
+        periodStart,
+        periodEnd,
+      ),
+    };
+  }, [periodType, periodDate]);
+  const delayedBeyondLabel = useMemo(
+    () => delayedBeyondQuarterSectionLabel(quarterStartDate),
+    [quarterStartDate],
+  );
+
   const goalOptions = useMemo(() => {
     const labels = new Map<string, string>();
     items.forEach((i) => {
@@ -349,8 +381,8 @@ export function PlanVsActualTable({
   const releaseOptions = useMemo(() => {
     const labels = new Map<string, string>();
     items.forEach((i) => {
-      const k = releaseKey(i);
-      labels.set(k, releaseKeyLabel(k));
+      const k = releaseKey(i, reportingScope);
+      labels.set(k, releaseKeyLabel(k, delayedBeyondLabel));
     });
     return [...labels.entries()]
       .sort((a, b) => a[1].localeCompare(b[1]))
@@ -385,7 +417,7 @@ export function PlanVsActualTable({
       out = out.filter((i) => gtmFilter.includes(gtmModuleKey(i)));
     }
     if (releaseFilter.length > 0) {
-      out = out.filter((i) => releaseFilter.includes(releaseKey(i)));
+      out = out.filter((i) => releaseFilter.includes(releaseKey(i, reportingScope)));
     }
     if (pmCauseFilter.length > 0) {
       out = out.filter((i) => pmCauseFilter.includes(pmCauseFilterKey(i)));
@@ -401,56 +433,77 @@ export function PlanVsActualTable({
           i.featureName.toLowerCase().includes(q) ||
           i.ahaKey.toLowerCase().includes(q) ||
           i.statusLabel.toLowerCase().includes(q) ||
-          releaseKey(i).toLowerCase().includes(q) ||
+          releaseKey(i, reportingScope).toLowerCase().includes(q) ||
+          delayedBeyondLabel.toLowerCase().includes(q) ||
           (i.endRelease ?? '').toLowerCase().includes(q) ||
           arrDisplayValue(i.ahaKey).toLowerCase().includes(q),
       );
     }
     return out;
-  }, [items, search, statusFilter, goalFilter, gtmFilter, releaseFilter, pmCauseFilter, arrDisplayValue]);
-
-  const sortedItems = useMemo(() => {
-    const copy = [...filteredItems];
-    copy.sort((a, b) =>
-      comparePlanVsActualItems(a, b, arrDisplayValue(a.ahaKey), arrDisplayValue(b.ahaKey), sortKey, sortDir),
-    );
-    return copy;
-  }, [filteredItems, sortKey, sortDir, arrDisplayValue]);
+  }, [
+    items,
+    search,
+    statusFilter,
+    goalFilter,
+    gtmFilter,
+    releaseFilter,
+    pmCauseFilter,
+    arrDisplayValue,
+    reportingScope,
+    delayedBeyondLabel,
+  ]);
 
   const groupedSections = useMemo(() => {
     const m = new Map<string, PlanVsActualItem[]>();
-    for (const row of sortedItems) {
+    for (const row of filteredItems) {
       const key =
         groupBy === 'goal'
           ? goalKey(row)
           : groupBy === 'gtm'
             ? gtmModuleKey(row)
-            : releaseKey(row);
+            : releaseKey(row, reportingScope);
       const list = m.get(key) ?? [];
       list.push(row);
       m.set(key, list);
     }
     const entries = [...m.entries()].sort((a, b) => {
-      const la =
-        a[0] === EMPTY_GOAL || a[0] === EMPTY_GTM || a[0] === EMPTY_RELEASE ? '\uffff' : a[0];
-      const lb =
-        b[0] === EMPTY_GOAL || b[0] === EMPTY_GTM || b[0] === EMPTY_RELEASE ? '\uffff' : b[0];
+      const tail = (k: string) =>
+        k === EMPTY_GOAL ||
+        k === EMPTY_GTM ||
+        k === EMPTY_RELEASE ||
+        k === DELAYED_BEYOND_QUARTER_KEY;
+      const la = tail(a[0]) ? '\uffff' : a[0];
+      const lb = tail(b[0]) ? '\uffff' : b[0];
+      if (a[0] === DELAYED_BEYOND_QUARTER_KEY && b[0] !== DELAYED_BEYOND_QUARTER_KEY) return 1;
+      if (b[0] === DELAYED_BEYOND_QUARTER_KEY && a[0] !== DELAYED_BEYOND_QUARTER_KEY) return -1;
       return la.localeCompare(lb, undefined, { sensitivity: 'base' });
     });
-    return entries.map(([headerKey, rows]) => ({
-      header:
-        headerKey === EMPTY_GOAL
-          ? '(No goal)'
-          : headerKey === EMPTY_GTM
-            ? '(No GTM module)'
-            : headerKey === EMPTY_RELEASE
-              ? '(No release)'
-              : groupBy === 'release'
-                ? releaseKeyLabel(headerKey)
-                : headerKey,
-      rows,
-    }));
-  }, [sortedItems, groupBy]);
+    return entries.map(([headerKey, rows]) => {
+      const ordered = [...rows].sort((a, b) =>
+        comparePlanVsActualItemsInGroup(
+          groupBy,
+          a,
+          b,
+          arrDisplayValue(a.ahaKey),
+          arrDisplayValue(b.ahaKey),
+          reportingScope,
+        ),
+      );
+      return {
+        header:
+          headerKey === EMPTY_GOAL
+            ? '(No goal)'
+            : headerKey === EMPTY_GTM
+              ? '(No GTM module)'
+              : headerKey === EMPTY_RELEASE
+                ? '(No release)'
+                : groupBy === 'release'
+                  ? releaseKeyLabel(headerKey, delayedBeyondLabel)
+                  : headerKey,
+        rows: ordered,
+      };
+    });
+  }, [filteredItems, groupBy, reportingScope, delayedBeyondLabel, arrDisplayValue]);
 
   const quarterOptions = quarterSelectOptions();
   const progressOptions = quarterProgressWindowOptions(
@@ -500,6 +553,18 @@ export function PlanVsActualTable({
         style={{ width: 380 }}
         comboboxProps={{ withinPortal: true }}
       />
+      {onRefreshReport ? (
+        <Tooltip label="Reload table from snapshots and ClearGO epics (not AI narrative)">
+          <Button
+            variant="light"
+            leftSection={<IconRefresh size={16} />}
+            onClick={onRefreshReport}
+            loading={refreshReportPending}
+          >
+            Refresh report
+          </Button>
+        </Tooltip>
+      ) : null}
     </Group>
   );
 
@@ -557,9 +622,7 @@ export function PlanVsActualTable({
           size="xs"
           classNames={{ root: classes.pvaArrInput }}
           value={arrDisplayValue(row.ahaKey)}
-          onChange={(e) =>
-            setArrTyping((prev) => ({ ...prev, [row.ahaKey]: e.currentTarget.value }))
-          }
+          onChange={(e) => stageArrDraft(row.ahaKey, e.currentTarget.value)}
           onBlur={() => {
             const v = arrTyping[row.ahaKey] ?? arrDisplayValue(row.ahaKey);
             setArrTyping((prev) => {
