@@ -160,13 +160,18 @@ export function mapRowToPlanVsActualItem(
   launchDateByKey?: ReadonlyMap<string, Date>,
   periodEndIso?: string,
   periodType?: PlanVsActualPeriodType,
+  quarterPlanReleaseByKey?: ReadonlyMap<string, string>,
 ): PlanVsActualItem {
+  const planRelease = quarterPlanReleaseByKey?.get(row.aha_key) ?? null;
+  const onQuarterPlan = quarterPlanReleaseByKey?.has(row.aha_key) ?? row.in_start;
   const { category, label } = derivePlanVsActualStatus(
     {
       inStart: row.in_start,
       inEnd: row.in_end,
       startRelease: row.start_aha_release,
       endRelease: row.end_aha_release,
+      planRelease,
+      onQuarterPlan,
       startStatus: row.start_aha_status,
       endStatus: row.end_aha_status,
       endProgress: row.end_aha_progress ?? null,
@@ -190,6 +195,7 @@ export function mapRowToPlanVsActualItem(
     inEnd: row.in_end,
     startRelease: row.start_aha_release,
     endRelease: row.end_aha_release,
+    planRelease: planRelease ?? row.start_aha_release,
     startProgress: row.start_aha_progress ?? null,
     endProgress: row.end_aha_progress ?? null,
     startStatus: row.start_aha_status,
@@ -198,6 +204,25 @@ export function mapRowToPlanVsActualItem(
     statusCategory: category,
     statusLabel: label,
   };
+}
+
+/** Release train from the quarter Plan (baseline) snapshot, keyed by `aha_key`. */
+async function fetchQuarterBaselinePlanReleases(
+  supabase: SupabaseClient,
+  quarterStartIso: string,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase.rpc('get_period_plan_vs_actual', {
+    p_period_type: 'quarter_baseline',
+    p_period_date: quarterStartIso,
+  });
+  const map = new Map<string, string>();
+  if (error || !data?.length) return map;
+  for (const row of data as RpcPlanVsActualRow[]) {
+    if (!row.in_start) continue;
+    const rel = row.start_aha_release?.trim() || row.end_aha_release?.trim();
+    if (rel) map.set(row.aha_key, rel);
+  }
+  return map;
 }
 
 /** Live ClearGO epics (cleargo candidate) for net-new rows not yet on a weekly snapshot. */
@@ -504,6 +529,12 @@ export async function getPlanVsActualReport(
       endSnapshotDate,
     );
   }
+  const quarterAnchor = format(startOfQuarter(parseISO(periodStart)), 'yyyy-MM-dd');
+  const quarterPlanReleaseByKey =
+    periodType === 'quarter_baseline'
+      ? new Map<string, string>()
+      : await fetchQuarterBaselinePlanReleases(supabase, quarterAnchor);
+
   const ahaKeys = rows.map((r) => r.aha_key);
   const pmCauses = await fetchLatestPmNoteCauseByAhaKeys(supabase, ahaKeys);
 
@@ -516,13 +547,13 @@ export async function getPlanVsActualReport(
         launchDateByKey,
         periodEnd,
         periodType,
+        quarterPlanReleaseByKey,
       ),
     )
     .filter((item) => includePlanVsActualItemForReport(item, reportingScope));
 
   const cached = await loadCachedPeriodAnalysis(supabase, periodType, periodStart);
 
-  const quarterAnchor = format(startOfQuarter(parseISO(periodStart)), 'yyyy-MM-dd');
   const quarterContext = await buildQuarterContext(supabase, quarterAnchor);
 
   return {

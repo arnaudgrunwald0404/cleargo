@@ -88,11 +88,12 @@ export function delayedBeyondQuarterSectionLabel(quarterStartIso: string): strin
 
 /** Planned in-quarter at period start, still on roadmap, but end train is past the report quarter. */
 export function isDelayedBeyondQuarter(
-  item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease'>,
+  item: Pick<DeriveStatusInput, 'inStart' | 'inEnd' | 'startRelease' | 'endRelease' | 'planRelease'>,
   scope: ReportingReleaseScope,
 ): boolean {
   if (!item.inStart || !item.inEnd) return false;
-  const startIn = releaseTrainMatchesReportingScope(item.startRelease, scope);
+  const planTrain = item.planRelease ?? item.startRelease;
+  const startIn = releaseTrainMatchesReportingScope(planTrain, scope);
   const endIn = releaseTrainMatchesReportingScope(item.endRelease, scope);
   return startIn === true && endIn === false;
 }
@@ -102,6 +103,10 @@ export interface DeriveStatusInput {
   inEnd: boolean;
   startRelease: string | null;
   endRelease: string | null;
+  /** Quarter Plan snapshot train; used for slip / Ahead / Delayed vs end (progress & results views). */
+  planRelease?: string | null;
+  /** Epic appeared on the quarter-baseline Plan snapshot (vs net-new mid-quarter). */
+  onQuarterPlan?: boolean;
   startStatus: string | null;
   endStatus: string | null;
   /** Latest in-period snapshot progress % (RPC `end_aha_progress`); used when Aha status lags behind 100% work. */
@@ -377,14 +382,16 @@ export function derivePlanVsActualStatus(
   }
 
   const released = isReleasedForPlanVsActual(row, launchDateByKey);
-  const startId = releaseTrainIdentityKey(row.startRelease);
+  const planTrain = row.planRelease ?? row.startRelease;
+  const onQuarterPlan = row.onQuarterPlan ?? row.inStart;
+  const planId = releaseTrainIdentityKey(planTrain);
   const endId = releaseTrainIdentityKey(row.endRelease);
-  const sameTrain = startId !== null && endId !== null && startId === endId;
-  const dayGap = calendarDaysBetweenReleaseTrains(row.startRelease, row.endRelease, launchDateByKey);
-  const slots = slotDeltaBetween(row.startRelease, row.endRelease, releaseOrderIndex);
+  const sameTrain = planId !== null && endId !== null && planId === endId;
+  const dayGap = calendarDaysBetweenReleaseTrains(planTrain, row.endRelease, launchDateByKey);
+  const slots = slotDeltaBetween(planTrain, row.endRelease, releaseOrderIndex);
 
-  // Net-new this period
-  if (!row.inStart && row.inEnd) {
+  // Net-new this period (not on quarter Plan snapshot)
+  if (!onQuarterPlan && row.inEnd) {
     const rawReleased = looksReleasedBySnapshotSignals(row);
     const knowable = deliveryKnowableByTrainSchedule(
       row.endRelease,
@@ -417,51 +424,46 @@ export function derivePlanVsActualStatus(
   // Compared in both snapshots
   if (row.inStart && row.inEnd) {
     if (released) {
-      if (!startId && !endId) {
+      if (!planId && !endId) {
         return { category: 'green', label: 'Delivered: On Time' };
       }
       if (sameTrain) {
         return { category: 'green', label: 'Delivered: On Time' };
       }
-      if (endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)) {
+      if (endTrainEarlierThanStartTrain(planTrain, row.endRelease, releaseOrderIndex)) {
         return { category: 'green', label: 'Delivered: Early' };
       }
       return { category: 'yellow', label: 'Delivered: Delayed' };
     }
 
     // Not released
-    if (!startId && !endId) {
+    if (!planId && !endId) {
       return { category: 'green', label: 'On Plan' };
     }
     if (sameTrain) {
       return { category: 'green', label: 'On Plan' };
     }
 
-    // Different train, still in flight — vs quarter-start plan
+    // Different train, still in flight — vs quarter Plan (baseline), not first weekly snapshot in quarter
     if (dayGap !== null && dayGap >= 200) {
       return { category: 'red', label: 'Removed' };
     }
 
-    // Target moved earlier than quarter-start plan — not a slip (never when end month is later)
-    if (
-      !endTrainLaterThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex) &&
-      endTrainEarlierThanStartTrain(row.startRelease, row.endRelease, releaseOrderIndex)
-    ) {
-      return { category: 'green', label: 'Ahead of Plan' };
-    }
-
-    // Postponed: different target vs period start, still in flight, not Removed — cannot measure slip, or
-    // neither "within 2 release slots" nor "<90d" on the launch schedule (user-facing OR rule for Delayed).
-    const withinTwoReleaseSlots = slots !== null && slots > 0 && slots <= 2;
-    const underNinetyDaySlip = dayGap !== null && dayGap < 90;
-    const isDelayedSlip = withinTwoReleaseSlots || underNinetyDaySlip;
-
-    if (slots === null && dayGap === null) {
+    if (endTrainLaterThanStartTrain(planTrain, row.endRelease, releaseOrderIndex)) {
+      const withinTwoReleaseSlots = slots !== null && slots > 0 && slots <= 2;
+      const underNinetyDaySlip = dayGap !== null && dayGap < 90;
+      const isDelayedSlip = withinTwoReleaseSlots || underNinetyDaySlip;
+      if (slots === null && dayGap === null) {
+        return { category: 'yellow', label: 'Postponed' };
+      }
+      if (isDelayedSlip) {
+        return { category: 'yellow', label: 'Delayed' };
+      }
       return { category: 'yellow', label: 'Postponed' };
     }
 
-    if (isDelayedSlip) {
-      return { category: 'yellow', label: 'Delayed' };
+    if (endTrainEarlierThanStartTrain(planTrain, row.endRelease, releaseOrderIndex)) {
+      return { category: 'green', label: 'Ahead of Plan' };
     }
 
     return { category: 'yellow', label: 'Postponed' };

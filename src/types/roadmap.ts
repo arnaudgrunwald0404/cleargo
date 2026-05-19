@@ -180,6 +180,8 @@ export interface PlanVsActualItem {
   inEnd: boolean;
   startRelease: string | null;
   endRelease: string | null;
+  /** Release train from quarter Plan (baseline); used for status vs end train. */
+  planRelease?: string | null;
   /** Aha epic progress % at first snapshot of the period (not used for status chip — see `derivePlanVsActualStatus`). */
   startProgress: number | null;
   /** Aha epic progress % at last snapshot of the period. */

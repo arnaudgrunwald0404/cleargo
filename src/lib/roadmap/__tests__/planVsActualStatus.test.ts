@@ -502,6 +502,48 @@ describe('derivePlanVsActualStatus', () => {
     expect(r.label).not.toBe('Ahead of Plan');
   });
 
+  it('marks Delayed when quarter Plan was 2026.5 but early snapshot already showed 2026.6', () => {
+    const order26 = idxMap([
+      ['2026.5', 0],
+      ['2026.6', 1],
+    ]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        startRelease: '2026.6',
+        endRelease: '2026.6',
+        planRelease: '2026.5',
+        onQuarterPlan: true,
+        startStatus: 'In development',
+        endStatus: 'In development',
+        periodEndIso: '2026-05-31',
+      },
+      order26,
+    );
+    expect(r.label).toBe('Delayed');
+  });
+
+  it('marks Delivered: Added for net-new beta not on quarter Plan', () => {
+    const order26 = idxMap([['2026.5', 0]]);
+    const m = launchMap([['2026.5', '2026-05-15']]);
+    const r = derivePlanVsActualStatus(
+      {
+        inStart: true,
+        inEnd: true,
+        onQuarterPlan: false,
+        startRelease: null,
+        endRelease: '2026.5',
+        startStatus: null,
+        endStatus: 'Released to GTM Team',
+        periodEndIso: '2026-05-31',
+      },
+      order26,
+      m,
+    );
+    expect(r.label).toBe('Delivered: Added');
+  });
+
   it('does not mark Ahead of Plan when release_order_index keys are misaligned but months show a slip', () => {
     const badOrder = idxMap([
       ['2026.5', 5],
