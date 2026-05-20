@@ -3,6 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Group, SegmentedControl, Stack, Text } from '@mantine/core';
 import type { HeartMetricDisplay } from '@/lib/heart/types';
+import { isTaskSuccessRateType, hasTaskSuccessPeriodPercentageRaw } from '@/lib/heart/taskSuccessMetric';
 import { getWindowBounds, type HeartTrackerWindow } from '@/lib/heart/window';
 import { parseDateOnlyLocal } from '@/lib/date-utils';
 
@@ -186,6 +187,15 @@ export function HeartMetricTracker({
       const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
       points = points.map((p) => ({ date: p.date, value: periodPct }));
     }
+    if (
+      isTaskSuccessRateType(metric?.measurement_type ?? '') &&
+      (metric?.pendo_event_ids?.length ?? 0) === 1 &&
+      hasTaskSuccessPeriodPercentageRaw(raw) &&
+      points.length > 0
+    ) {
+      const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
+      points = points.map((p) => ({ date: p.date, value: periodPct }));
+    }
     const values = points.map((p) => p.value);
     const dataMin = values.length > 0 ? Math.min(...values) : 0;
     const dataMax = values.length > 0 ? Math.max(...values) : 1;
@@ -356,6 +366,12 @@ export function HeartMetricTracker({
           </Text>
           {metric?.measurement_type === 'unique_users_percentage' && (
             <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>Period-level adoption % (one value for the whole period — flat line matches card)</Text>
+          )}
+          {isTaskSuccessRateType(metric?.measurement_type ?? '') &&
+            (metric?.pendo_event_ids?.length ?? 0) === 1 && (
+            <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>
+              Period-level % of users (flat line matches card). Use Pendo dashboard for funnel detail.
+            </Text>
           )}
           {(metric?.measurement_type === 'return_rate_7_days' || metric?.measurement_type === 'return_rate_14_days' || metric?.measurement_type === 'return_rate_30_days') && (
             <Text size="xs" c="dimmed" style={{ opacity: 0.85 }}>

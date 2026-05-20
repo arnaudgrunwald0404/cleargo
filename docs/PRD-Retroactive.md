@@ -351,7 +351,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 
 #### 5.5 Admin Management
 - **Metric Catalog**: Admins can create/edit success metrics with thresholds and data sources
-- **Pendo Integration**: Admin configuration for Pendo API integration
+- **Pendo Integration**: Admin configuration for Pendo API integration; optional dashboard URL for HEART external link
 - **Settings UI**: Admin pages for managing success metrics, scorecards, and integrations
 - **Feedback Metrics**: Track feedback count per epic
 - **Performance Indicators**: 
@@ -439,7 +439,8 @@ The HEART framework (Google: Happiness, Engagement, Adoption, Retention, Task Su
 - **As-of date view**: Optional "View as of" date picker on the HEART dashboard; when set, `GET /api/epics/[id]/heart?asOf=YYYY-MM-DD` returns data from stored snapshots only (no live Pendo), so users can view a point-in-time report (e.g. for a retro).
 - **Pendo Data Confidence**: Per-metric confidence level (high/medium/low/unknown), score, and issues (e.g. no recent data, low volume, missing feature/event, segment empty, data gap)
 - **Pendo Query Resilience**: Track-event aggregation uses resilient filter logic across `track` and `trackType` entity representations and both name/id fields (`trackType`, `trackTypeId`, `id`, `name`) to reduce false zeroes when subscriptions expose different schemas.
-- **HEART Dashboard**: Epic-level dashboard shows config, metrics with latest snapshot, trend, milestone progress, measurement period; list view of epics with HEART and overall status
+- **HEART Dashboard**: Epic-level dashboard shows config, metrics with latest snapshot, trend, milestone progress, measurement period; list view of epics with HEART and overall status. Optional **View Pendo dashboard** link (configured in Admin → Success Measurement → Pendo) opens the team’s Pendo dashboard in a new tab for funnel drill-down without embedding reports in ClearGO.
+- **Task Success (single event)**: When only one Pendo track/feature is configured, Task Success shows **% of users** (unique visitors who triggered the event ÷ total app visitors in the period), not raw completion counts.
 - **Admin Defaults & Templates**: Category defaults (target value, timeframe, measurement type, guidance, example events, default milestones); custom metric templates (reusable across epics) with name, category label, measurement type, Pendo event pattern, defaults
 - **API Surface**: `GET/POST /api/epics/[id]/heart`, `GET /api/epics/[id]/heart/setup-status` (poll for background job), `GET/POST /api/epics/[id]/heart/metrics`, `GET/POST /api/epics/[id]/heart/recommendations`, `POST /api/epics/[id]/heart/apply-recommendations`, `GET /api/epics/[id]/heart/snapshots`, `GET /api/epics/[id]/heart/release-view`, `GET/POST /api/epics/[id]/heart/automations`, `GET/POST /api/settings/success-measurement/heart/defaults`, `GET/POST /api/settings/success-measurement/heart/templates`; Pendo check and metrics by ID
 - **HEART AI setup (Netlify)**: For `auto` and `ai_assisted` setup, the API enqueues a job and invokes a Netlify **background function** (15 min limit) to run `setupHeartMetricsWithAI`; the client receives `202` and polls `GET .../heart/setup-status?job_id=` until completed/failed. Requires env: `NETLIFY_HEART_SETUP_SECRET`, `NETLIFY_URL` (or `URL`) so the API can trigger `/.netlify/functions/heart-setup-background`.
@@ -654,7 +655,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 #### 9.5 Success Measurement Administration
 - **Metric Catalog**: Create, edit, and manage success metrics with thresholds and data sources
 - **Scorecard Management**: Admin scorecards page under Success Measurement exposes the active window (-90 .. +120 days from launch) and provides a one-click backfill action to generate missing scorecards for all currently active epics up to today.
-- **Pendo Integration**: Configure Pendo API integration for automatic metric data
+- **Pendo Integration**: Configure Pendo API integration for automatic metric data; optional **Pendo dashboard URL** (`app_settings.pendo_dashboard_url`) for the HEART metrics external link
 - **Snowflake Integration**: Configure Snowflake integration for data warehouse metrics
 - **Settings Pages**: Admin UI for managing metrics, scorecards, and integrations
 

@@ -89,6 +89,8 @@ export interface AppSettings {
     rovo_redirect_url?: string | null; // Custom OAuth redirect URL for ROVO integration. If null, uses default computed URL.
   // Mapping of Pendo appId -> human-friendly application name
   pendo_app_names?: Record<string, string>;
+  /** Optional URL to Pendo dashboard for HEART metrics drill-down */
+  pendo_dashboard_url?: string | null;
   /** Enabled feature flag keys (e.g. ai_pruning, meetings, not_applicable). Used in Settings > Other Settings. */
   feature_flags?: string[];
 }

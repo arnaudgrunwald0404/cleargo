@@ -464,6 +464,8 @@ export interface EpicHeartDashboard {
   pendoEventIdToName?: Record<string, string>;
   /** When set, dashboard is built from stored snapshots only (as-of date view) */
   asOfDate?: string | null;
+  /** Optional link to Pendo dashboard (from app settings) for drill-down */
+  pendoDashboardUrl?: string | null;
 }
 
 export interface HeartDashboardSummary {

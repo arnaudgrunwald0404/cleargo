@@ -37,6 +37,7 @@ import {
   IconCalendar,
   IconWorldShare,
   IconWorldOff,
+  IconExternalLink,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
@@ -54,6 +55,10 @@ import type {
   HeartCategoryId,
 } from '@/lib/heart/types';
 import { calculateFrustrationHealth } from '@/lib/heart/happiness-composite';
+import {
+  isTaskSuccessRateType,
+  hasTaskSuccessPeriodPercentageRaw,
+} from '@/lib/heart/taskSuccessMetric';
 
 /** Minimal success config for Publish/Unpublish in header (only on Success Metrics page). */
 export interface HeartDashboardSuccessConfig {
@@ -303,6 +308,19 @@ export function HeartDashboard({
             )}
           </div>
           <Group gap="sm" align="center" wrap="wrap">
+            {dashboard.pendoDashboardUrl && (
+              <Button
+                component="a"
+                href={dashboard.pendoDashboardUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                variant="light"
+                size="xs"
+                leftSection={<IconExternalLink size={14} />}
+              >
+                View Pendo dashboard
+              </Button>
+            )}
             {/* Publish first so it's always visible */}
             {canConfigureSuccessMetrics && (
               <>
@@ -571,10 +589,16 @@ function getPeriodValue(
     return true;
   };
 
-  // Task Success (completion_rate/success_rate) with raw counts: use period-level rate = sum(completions)/sum(starts)*100
-  const isTaskSuccessRate =
-    item.metric?.measurement_type === 'completion_rate' ||
-    item.metric?.measurement_type === 'success_rate';
+  // Task Success — single event: period-level % of users (matches Pendo); two events: sum(starts)/sum(completes)
+  const isTaskSuccessRate = isTaskSuccessRateType(item.metric?.measurement_type ?? '');
+  if (isTaskSuccessRate && hasTaskSuccessPeriodPercentageRaw(item.metricContext?.raw)) {
+    const raw = item.metricContext!.raw!;
+    const periodPct = (raw.uniqueVisitors / raw.totalAppVisitors) * 100;
+    return {
+      value: Math.round(periodPct * 10) / 10,
+      isPostReleaseOnly: Boolean(releaseInWindow),
+    };
+  }
   if (isTaskSuccessRate) {
     let totalStarts = 0;
     let totalCompletions = 0;
@@ -651,10 +675,7 @@ function getPeriodTrend(
   const firstHalf = points.slice(0, mid);
   const secondHalf = points.slice(mid);
 
-  // Task Success with raw counts: compare period rate in first half vs second half
-  const isTaskSuccessRate =
-    item.metric?.measurement_type === 'completion_rate' ||
-    item.metric?.measurement_type === 'success_rate';
+  const isTaskSuccessRate = isTaskSuccessRateType(item.metric?.measurement_type ?? '');
   if (isTaskSuccessRate) {
     const firstDates = new Set(firstHalf.map((p) => p.date));
     const secondDates = new Set(secondHalf.map((p) => p.date));

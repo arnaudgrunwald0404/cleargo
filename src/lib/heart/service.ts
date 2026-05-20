@@ -14,6 +14,13 @@ import {
 } from './happiness-composite';
 import { createEpicSnapshots } from './snapshot-calculator';
 import { getWindowDateRange, type HeartTrackerWindow } from './window';
+import {
+  isTaskSuccessRateType,
+  computeTwoEventCompletionPercent,
+  buildSingleEventTaskSuccessDescription,
+  hasTaskSuccessPeriodPercentageRaw,
+} from './taskSuccessMetric';
+import { getSettings } from '@/lib/settings-db';
 
 // Use admin client for HEART operations since these run in API routes
 // and RLS policies may not have proper auth context
@@ -511,11 +518,7 @@ export async function fetchLiveMetricValue(
           const startCount = startSeries.reduce((s, d) => s + d.events, 0);
           const completeCount = completeSeries.reduce((s, d) => s + d.events, 0);
 
-          if (startCount > 0) {
-            value = (completeCount / startCount) * 100;
-          } else {
-            value = 0;
-          }
+          value = computeTwoEventCompletionPercent(startCount, completeCount);
           const totalEvents = startCount + completeCount;
           let description: string;
           if (completeCount > startCount) {
@@ -528,19 +531,40 @@ export async function fetchLiveMetricValue(
             trackingEvents: eventNames,
             segmentName: resolvedSegmentName,
             descriptionScope: measurementPeriod,
-            raw: { totalEvents: startCount, completionCount: completeCount },
+            raw: { startCount, completeCount, completionCount: completeCount },
           };
         } else {
-          const completeSeries = await client.getDailyMetricTimeSeries({ eventId: eventIds[0], ...seriesParams });
+          const singleEventId = eventIds[0]!;
+          const filters = metric.pendo_segment_id
+            ? { segmentId: metric.pendo_segment_id }
+            : undefined;
+          const [uniqueVis, totalVis, completeSeries] = await Promise.all([
+            client.getUniqueVisitors({
+              eventId: singleEventId,
+              startDate,
+              endDate,
+              filters,
+            }),
+            client.getTotalUniqueVisitors({
+              startDate,
+              endDate,
+              segmentId: metric.pendo_segment_id ?? undefined,
+            }),
+            client.getDailyMetricTimeSeries({ eventId: singleEventId, ...seriesParams }),
+          ]);
           const completionCount = completeSeries.reduce((s, d) => s + d.events, 0);
-          value = completionCount;
-          measurementPeriod = measurementPeriod ? `${measurementPeriod} (completions)` : 'Completions';
+          value = totalVis > 0 ? (uniqueVis / totalVis) * 100 : 0;
+          const periodPct = value;
           metricContext = {
-            description: `${completionCount.toLocaleString()} total completions (single event tracked)`,
+            description: buildSingleEventTaskSuccessDescription(uniqueVis, totalVis, periodPct),
             trackingEvents: eventNames,
             segmentName: resolvedSegmentName,
             descriptionScope: measurementPeriod,
-            raw: { completionCount },
+            raw: {
+              completionCount,
+              uniqueVisitors: uniqueVis,
+              totalAppVisitors: totalVis,
+            },
           };
         }
         break;
@@ -1837,6 +1861,48 @@ export async function getEpicHeartDashboard(
         } catch {
           history = await getSnapshots(metric.id);
         }
+      } else if (
+        isTaskSuccessRateType(metric.measurement_type) &&
+        allEventIds.length === 1 &&
+        pendoClient
+      ) {
+        // Single-event Task Success: chart shows % of users (flat period % matches card, like Adoption)
+        try {
+          const series = await pendoClient.getDailyMetricTimeSeries({
+            eventId: allEventIds[0]!,
+            days: 30,
+          });
+          const raw = metricContext?.raw;
+          const periodPct =
+            latestSnapshot?.value != null
+              ? latestSnapshot.value
+              : hasTaskSuccessPeriodPercentageRaw(raw)
+                ? (raw.uniqueVisitors / raw.totalAppVisitors) * 100
+                : 0;
+          if (series.length > 0) {
+            pendoRawLength = series.length;
+            const totalApp =
+              hasTaskSuccessPeriodPercentageRaw(raw) ? raw.totalAppVisitors : undefined;
+            history = series.map((d) => ({
+              id: `ts-${metric.id}-${d.date}`,
+              epic_heart_metric_id: metric.id,
+              snapshot_date: d.date,
+              value: Math.round(periodPct * 100) / 100,
+              target_at_snapshot: metric.target_value,
+              status: 'PENDING' as HeartMetricStatus,
+              pendo_raw_data: {
+                uniqueVisitors: d.visitors,
+                completionCount: d.events,
+                ...(totalApp != null ? { totalAppVisitors: totalApp } : {}),
+              },
+              calculated_at: new Date().toISOString(),
+            }));
+          } else {
+            history = await getSnapshots(metric.id);
+          }
+        } catch {
+          history = await getSnapshots(metric.id);
+        }
       } else if (allEventIds.length > 0 && pendoClient) {
         // Retention: build chart history from Pendo (return rate per day) so chart has data without waiting for stored snapshots
         if (
@@ -1947,11 +2013,6 @@ export async function getEpicHeartDashboard(
                     break;
                   case 'events_per_user_per_week':
                     metricValue = d.visitors > 0 ? d.events / d.visitors : 0;
-                    break;
-                  case 'success_rate':
-                  case 'completion_rate':
-                    metricValue = d.events;
-                    historyUnit = 'completions';
                     break;
                   default:
                     metricValue = d.events;
@@ -2176,6 +2237,15 @@ export async function getEpicHeartDashboard(
     else if (statuses.every(s => s === 'ON_TRACK')) overallStatus = 'ON_TRACK';
   }
 
+  let pendoDashboardUrl: string | null = null;
+  try {
+    const appSettings = await getSettings();
+    const url = appSettings.pendo_dashboard_url?.trim();
+    if (url) pendoDashboardUrl = url;
+  } catch {
+    // Non-blocking: dashboard works without link
+  }
+
   return {
     config,
     metrics: metricsWithLiveData,
@@ -2183,6 +2253,7 @@ export async function getEpicHeartDashboard(
     daysSinceLaunch,
     launchDate: rawLaunchDate,
     pendoEventIdToName,
+    pendoDashboardUrl,
     ...(asOfDate ? { asOfDate } : useSnapshotOnly ? { asOfDate: referenceDate.toISOString().split('T')[0]! } : {}),
   };
 }

@@ -49,6 +49,8 @@ export default function PendoIntegrationSection() {
   const isSavingRef = useRef(false);
   const hasInitializedRef = useRef(false);
   const saveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const dashboardUrlSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [pendoDashboardUrl, setPendoDashboardUrl] = useState('');
 
   useEffect(() => {
     fetchIntegration();
@@ -58,8 +60,17 @@ export default function PendoIntegrationSection() {
       if (saveTimerRef.current) {
         clearTimeout(saveTimerRef.current);
       }
+      if (dashboardUrlSaveTimerRef.current) {
+        clearTimeout(dashboardUrlSaveTimerRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (settings?.pendo_dashboard_url != null) {
+      setPendoDashboardUrl(settings.pendo_dashboard_url);
+    }
+  }, [settings?.pendo_dashboard_url]);
 
   // Fetch Pendo apps when integration is available
   useEffect(() => {
@@ -134,6 +145,33 @@ export default function PendoIntegrationSection() {
     } finally {
       setAppsLoading(false);
     }
+  };
+
+  const handleDashboardUrlChange = (url: string) => {
+    setPendoDashboardUrl(url);
+    if (dashboardUrlSaveTimerRef.current) {
+      clearTimeout(dashboardUrlSaveTimerRef.current);
+    }
+    dashboardUrlSaveTimerRef.current = setTimeout(async () => {
+      if (!settings) return;
+      try {
+        await autoSaveSettings({
+          ...settings,
+          pendo_dashboard_url: url.trim() || null,
+        });
+        notifications.show({
+          title: 'Saved',
+          message: 'Pendo dashboard link updated',
+          color: 'green',
+        });
+      } catch (error: any) {
+        notifications.show({
+          title: 'Save Failed',
+          message: error?.message || 'Failed to save dashboard URL',
+          color: 'red',
+        });
+      }
+    }, 800);
   };
 
   const handleAppNameChange = async (appId: string, name: string) => {
@@ -422,6 +460,20 @@ export default function PendoIntegrationSection() {
                 )}
               </>
             )}
+            <Divider />
+            <div>
+              <Text fw={500} size="sm" mb="xs">Pendo dashboard link</Text>
+              <Text size="sm" c="dimmed" mb="xs">
+                Optional URL shown on epic HEART metrics so users can open your Pendo dashboard (e.g. funnel reports) without leaving ClearGO for summary metrics.
+              </Text>
+              <TextInput
+                label="Dashboard URL"
+                placeholder="https://app.pendo.io/..."
+                value={pendoDashboardUrl}
+                onChange={(e) => handleDashboardUrlChange(e.currentTarget.value)}
+                description="Saved automatically. Leave empty to hide the link on HEART metrics."
+              />
+            </div>
             <Divider />
             <div>
               <Text fw={500} size="sm" mb="xs">How to get your Pendo API Key:</Text>
