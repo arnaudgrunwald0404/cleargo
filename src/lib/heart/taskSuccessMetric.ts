@@ -4,6 +4,8 @@
  * Two-event metrics use start→complete event count ratio.
  */
 
+import type { MetricContext } from './types';
+
 export function isTaskSuccessRateType(measurementType: string): boolean {
   return measurementType === 'completion_rate' || measurementType === 'success_rate';
 }
@@ -33,7 +35,7 @@ export function buildSingleEventTaskSuccessDescription(
 }
 
 export function hasTaskSuccessPeriodPercentageRaw(
-  raw: Record<string, unknown> | undefined | null
+  raw: MetricContext['raw']
 ): raw is SingleEventTaskSuccessRaw {
   if (!raw) return false;
   return (

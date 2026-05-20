@@ -424,6 +424,11 @@ export interface MetricContext {
     totalAppVisitors?: number;
     frustrationSignals?: number;
     returningVisitors?: number;
+    /** Two-event Task Success: first event count in period */
+    startCount?: number;
+    /** Two-event Task Success: second event count in period */
+    completeCount?: number;
+    /** Single-event completions or alias for completeCount */
     completionCount?: number;
   };
 }
