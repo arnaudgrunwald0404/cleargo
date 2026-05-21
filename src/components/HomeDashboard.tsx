@@ -65,6 +65,14 @@ type ReleaseGroup = {
     items: MyItem[];
 };
 
+function getModuleFromLaunch(launch: MyItem['launch']): string | null {
+    if (!launch.aha_fields || typeof launch.aha_fields !== 'object') return null;
+    const cf = (launch.aha_fields as any).custom_fields;
+    if (!cf || typeof cf !== 'object') return null;
+    const val = cf.gtm_module ?? cf.module;
+    return val && typeof val === 'string' && val.trim() ? val.trim() : null;
+}
+
 // Traffic light (Go/No-Go score) for My Items
 function StatusTrafficLight({
     status,
@@ -1181,7 +1189,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                     <thead style={{ backgroundColor: "#F9FAFB", borderBottom: "2px solid #E5E7EB" }}>
                       <tr>
                         <th className="px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "25%", width: "25%" }}>Epic</th>
-                        <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
                         <th style={{ padding: "12px 16px", textAlign: "left", fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280", minWidth: "240px", width: "25%" }}>Criterion</th>
                         <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Go/No-Go Score</th>
                         <th className="px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Due on</th>
@@ -1191,20 +1198,21 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                       {Array.from({ length: 4 }).map((_, rowIndex) => (
                         <tr key={rowIndex} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
                           <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "70%" }} />
-                          </td>
-                          <td className="px-4 py-3 w-24">
-                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "56px" }} />
+                            <div className="skeleton-shimmer" style={{ height: "14px", width: "70%", marginBottom: "7px" }} />
+                            <div className="flex items-center gap-2">
+                              <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
+                              <div className="skeleton-shimmer" style={{ height: "13px", width: `${50 + (rowIndex * 17) % 50}px` }} />
+                            </div>
                           </td>
                           <td style={{ padding: "12px 20px", minWidth: "240px", width: "25%" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
-                            <div className="h-3 bg-gray-200 rounded animate-pulse mt-2" style={{ width: "50%" }} />
+                            <div className="skeleton-shimmer" style={{ height: "14px", width: "80%", marginBottom: "6px" }} />
+                            <div className="skeleton-shimmer" style={{ height: "12px", width: "50%" }} />
                           </td>
                           <td className="px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                            <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
+                            <div className="skeleton-shimmer" style={{ height: "22px", width: "60px", borderRadius: "10px" }} />
                           </td>
                           <td className="px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                            <div className="skeleton-shimmer" style={{ height: "14px", width: "80px" }} />
                           </td>
                         </tr>
                       ))}
@@ -1639,13 +1647,6 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           minWidth: "25%",
                           width: "25%"
                         }}>Epic</th>
-                        <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "0.05em",
-                          color: "#6B7280"
-                        }}>Tier</th>
                         <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{
                           fontSize: "12px",
                           fontWeight: 600,
@@ -1709,11 +1710,11 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                           onMouseLeave={(e) => e.currentTarget.style.backgroundColor = "#FFFFFF"}
                         >
                           <td className="px-4 py-3 w-100" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                            <Link 
-                              href={`/epics/${item.launch.id}`} 
-                              prefetch={false} 
+                            <Link
+                              href={`/epics/${item.launch.id}`}
+                              prefetch={false}
                               className="font-medium"
-                              style={{ 
+                              style={{
                                 color: "#228BE6",
                                 textDecoration: "none",
                                 fontWeight: 500
@@ -1723,14 +1724,17 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                             >
                               {item.launch.name}
                             </Link>
-                          </td>
-                          <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${item.launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
-                              item.launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                              {item.launch.tier.replace('_', ' ')}
-                            </span>
+                            <div className="flex items-center gap-1 mt-1" style={{ flexWrap: "wrap" }}>
+                              <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' : item.launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                                {item.launch.tier.replace('_', ' ')}
+                              </span>
+                              {getModuleFromLaunch(item.launch) && (
+                                <>
+                                  <span style={{ fontSize: "11px", color: "#D1D5DB" }}>|</span>
+                                  <span style={{ fontSize: "12px", color: "#6B7280" }}>{getModuleFromLaunch(item.launch)}</span>
+                                </>
+                              )}
+                            </div>
                           </td>
                           <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                             <Cohort1DateBadge epic={item.launch} dateOptions={{ month: 'short', day: 'numeric' }} />
