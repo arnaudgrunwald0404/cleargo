@@ -1224,8 +1224,8 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                             <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
@@ -1237,43 +1237,49 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                    {Array.from({ length: 6 }).map((_, index) => (
+                                    {Array.from({ length: 6 }).map((_, index) => {
+                                        const nameWidths = [220, 180, 260, 200, 240, 210];
+                                        const nameW = nameWidths[index % nameWidths.length];
+                                        return (
                                         <tr key={index} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
                                             <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
-                                            </td>
-                                            <td className="px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: `${nameW}px`, marginBottom: "7px" }} />
+                                                <div className="flex items-center gap-2">
+                                                    <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px` }} />
+                                                </div>
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
+                                                <div className="flex items-center gap-2">
+                                                    <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                </div>
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "64px", borderRadius: "10px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
                                             </td>
                                             <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} />
                                             </td>
                                         </tr>
-                                    ))}
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -1840,8 +1846,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                             <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <colgroup>
                                     <col className="w-100" />
-                                    <col className="w-24" />
-                                    <col className="w-auto" />
                                     <col className="w-28" />
                                     <col className="w-28" />
                                     <col className="w-28" />
@@ -1853,8 +1857,8 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "Tier", "Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["Module", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
@@ -1866,40 +1870,42 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                    {Array.from({ length: 5 }).map((_, index) => (
+                                    {[220, 180, 260, 200, 240].map((nameW, index) => (
                                         <tr key={index} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
-                                            <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }} />
+                                            <td className="px-4 py-3 w-100" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: `${nameW}px`, marginBottom: "7px" }} />
+                                                <div style={{ display: "flex", gap: "8px" }}>
+                                                    <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px`, marginTop: "2px" }} />
+                                                </div>
                                             </td>
-                                            <td className="px-4 py-3 w-24">
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
+                                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                                    <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                </div>
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "64px", borderRadius: "10px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
+                                                <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }} />
+                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
-                                                <div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }} />
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }} />
-                                            </td>
-                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }} />
+                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} />
                                             </td>
                                         </tr>
                                     ))}
@@ -2246,8 +2252,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                         <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
-                                                <col className="w-24" />
-                                                <col className="w-auto" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
@@ -2263,8 +2267,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
@@ -2292,29 +2294,43 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
-                                                {Array.from({ length: 5 }).map((_, index) => (
+                                                {Array.from({ length: 5 }).map((_, index) => {
+                                                    const nameWidths = [220, 180, 260, 200, 240];
+                                                    const nameW = nameWidths[index % nameWidths.length];
+                                                    return (
                                                     <tr key={`skeleton-row-${index}`} className="!bg-white" style={{ backgroundColor: '#FFFFFF', borderBottom: "1px solid #E5E7EB" }}>
-                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "80%" }}></div></td>
-                                                        <td className="px-4 py-3 w-24"><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "60px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "100px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "90px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "72px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "70px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}><div className="h-6 bg-gray-200 rounded animate-pulse" style={{ width: "80px" }}></div></td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "50px" }}></div></td>
-                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="h-4 bg-gray-200 rounded animate-pulse ml-auto" style={{ width: "40px" }}></div></td>
+                                                        <td className="px-4 py-3 w-100" style={{ padding: "12px 16px" }}>
+                                                            <div className="skeleton-shimmer" style={{ height: "14px", width: `${nameW}px`, marginBottom: "7px" }} />
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
+                                                                <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px` }} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                            <div className="flex items-center gap-2">
+                                                                <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
+                                                                <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                            </div>
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} /></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} /></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} /></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "22px", width: "64px", borderRadius: "10px" }} /></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-32" style={{ padding: "12px 16px" }}>
+                                                            <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
+                                                            <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
+                                                        </td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} /></td>
+                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} /></td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                             </tbody>
                                         </table>
                                     ) : (
                                         <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                             <colgroup>
                                                 <col className="w-100" />
-                                                <col className="w-24" />
-                                                <col className="w-auto" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
@@ -2330,8 +2346,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Tier</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Module</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
                                                     </th>
@@ -2397,17 +2411,19 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                                 {epic.name}
                                                             </Link>
                                                         </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 whitespace-nowrap w-24">
-                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${epic.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
-                                                            epic.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
-                                                                'bg-gray-100 text-gray-800'
-                                                            }`}>
-                                                            {epic.tier.replace('_', ' ')}
-                                                        </span>
-                                                    </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {getModuleFromEpic(epic) || '-'}
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${epic.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
+                                                                epic.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
+                                                                    'bg-gray-100 text-gray-800'
+                                                                }`}>
+                                                                {epic.tier.replace('_', ' ')}
+                                                            </span>
+                                                            {getModuleFromEpic(epic) && (
+                                                                <span style={{ fontSize: "12px", color: "#6B7280" }}>
+                                                                    {getModuleFromEpic(epic)}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {

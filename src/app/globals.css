@@ -567,3 +567,15 @@ body.has-sidebar .mantine-Modal-inner {
 .mantine-Drawer-content {
   overflow-x: hidden !important;
 }
+
+/* Skeleton shimmer animation */
+@keyframes shimmer {
+  0% { background-position: -600px 0; }
+  100% { background-position: 600px 0; }
+}
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+  background-size: 600px 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
