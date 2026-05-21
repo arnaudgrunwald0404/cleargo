@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -11,7 +11,7 @@ export async function POST(
 ) {
   try {
     const { id: epicId } = await params;
-    const supabase = createClient();
+    const supabase = createAdminClient();
     
     // Authenticate user (supports both Supabase auth and magic link)
     const userEmail = await getAuthenticatedUserEmail();
@@ -89,19 +89,24 @@ export async function POST(
     }
 
     // Fetch read status for all comments if user is authenticated
+    // Batch in chunks of 100 to avoid PostgREST URL length limits
     const readStatusMap = new Map<string, boolean>();
     if (userId && comments && comments.length > 0) {
       const commentIds = comments.map((c: any) => c.id);
-      const { data: readStatuses, error: readError } = await supabase
-        .from('comment_read_status')
-        .select('comment_id')
-        .eq('user_id', userId)
-        .in('comment_id', commentIds);
+      const BATCH_SIZE = 100;
+      for (let i = 0; i < commentIds.length; i += BATCH_SIZE) {
+        const batch = commentIds.slice(i, i + BATCH_SIZE);
+        const { data: readStatuses, error: readError } = await supabase
+          .from('comment_read_status')
+          .select('comment_id')
+          .eq('user_id', userId)
+          .in('comment_id', batch);
 
-      if (!readError && readStatuses) {
-        readStatuses.forEach((rs: any) => {
-          readStatusMap.set(rs.comment_id, true);
-        });
+        if (!readError && readStatuses) {
+          readStatuses.forEach((rs: any) => {
+            readStatusMap.set(rs.comment_id, true);
+          });
+        }
       }
     }
 

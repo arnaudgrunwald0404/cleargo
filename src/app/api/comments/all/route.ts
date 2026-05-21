@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // GET - Fetch all comments across all epics with read/unread status
 export async function GET(req: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = createAdminClient();
     
     // Authenticate user (supports both Supabase auth and magic link)
     const userEmail = await getAuthenticatedUserEmail();
@@ -120,23 +120,25 @@ export async function GET(req: NextRequest) {
     const commentIds = comments.map((c: any) => c.id);
 
     // Fetch read status for all comments for this user
-    const { data: readStatuses, error: readError } = await supabase
-      .from('comment_read_status')
-      .select('comment_id, read_at')
-      .eq('user_id', userId)
-      .in('comment_id', commentIds);
-
-    if (readError) {
-      console.error('Error fetching read statuses:', readError);
-      // Continue without read status if there's an error
-    }
-
-    // Create a map of comment_id -> read_at
+    // Batch in chunks of 100 to avoid PostgREST URL length limits
     const readStatusMap = new Map<string, string>();
-    if (readStatuses) {
-      readStatuses.forEach((rs: any) => {
-        readStatusMap.set(rs.comment_id, rs.read_at);
-      });
+    const BATCH_SIZE = 100;
+    for (let i = 0; i < commentIds.length; i += BATCH_SIZE) {
+      const batch = commentIds.slice(i, i + BATCH_SIZE);
+      const { data: readStatuses, error: readError } = await supabase
+        .from('comment_read_status')
+        .select('comment_id, read_at')
+        .eq('user_id', userId)
+        .in('comment_id', batch);
+
+      if (readError) {
+        console.error('Error fetching read statuses:', readError);
+        // Continue without read status for this batch
+      } else if (readStatuses) {
+        readStatuses.forEach((rs: any) => {
+          readStatusMap.set(rs.comment_id, rs.read_at);
+        });
+      }
     }
 
     // Transform comments to include read status and epic/criterion context

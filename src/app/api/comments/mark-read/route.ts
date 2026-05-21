@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 // POST - Mark one or multiple comments as read
 export async function POST(req: NextRequest) {
   try {
-    const supabase = createClient();
+    const supabase = createAdminClient();
     
     // Authenticate user (supports both Supabase auth and magic link)
     const userEmail = await getAuthenticatedUserEmail();
