@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
 import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, HoverCard, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
-import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconUser, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
+import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
@@ -1224,8 +1224,8 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                             <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
@@ -1247,12 +1247,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                 <div className="flex items-center gap-2">
                                                     <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
                                                     <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px` }} />
-                                                </div>
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                <div className="flex items-center gap-2">
-                                                    <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
-                                                    <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: `${50 + (index * 7) % 40}px` }} />
                                                 </div>
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
@@ -1849,7 +1844,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                     <col className="w-28" />
                                     <col className="w-28" />
                                     <col className="w-28" />
-                                    <col className="w-28" />
                                     <col className="w-24" />
                                     <col className="w-32" />
                                     <col className="w-24" />
@@ -1857,8 +1851,8 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["PM", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`px-4 py-3 text-left${["GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
@@ -1874,15 +1868,10 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                         <tr key={index} className="!bg-white" style={{ backgroundColor: "#FFFFFF", borderBottom: "1px solid #E5E7EB" }}>
                                             <td className="px-4 py-3 w-100" style={{ padding: "14px 16px" }}>
                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: `${nameW}px`, marginBottom: "7px" }} />
-                                                <div style={{ display: "flex", gap: "8px" }}>
+                                                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
                                                     <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
                                                     <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px`, marginTop: "2px" }} />
-                                                </div>
-                                            </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
-                                                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                                    <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
-                                                    <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: `${50 + (index * 7) % 40}px`, marginTop: "2px" }} />
                                                 </div>
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
@@ -2255,7 +2244,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                 <col className="w-28" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
-                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2267,9 +2255,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
-                                                    </th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
@@ -2304,12 +2289,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                             <div className="flex items-center gap-2">
                                                                 <div className="skeleton-shimmer" style={{ height: "18px", width: "52px", borderRadius: "10px" }} />
                                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: `${60 + (index * 13) % 50}px` }} />
-                                                            </div>
-                                                        </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
-                                                            <div className="flex items-center gap-2">
-                                                                <div className="skeleton-shimmer" style={{ height: "24px", width: "24px", borderRadius: "50%" }} />
-                                                                <div className="skeleton-shimmer" style={{ height: "12px", width: "64px" }} />
+                                                                <div className="skeleton-shimmer" style={{ height: "14px", width: `${50 + (index * 7) % 40}px` }} />
                                                             </div>
                                                         </td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} /></td>
@@ -2334,7 +2314,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                 <col className="w-28" />
                                                 <col className="w-28" />
                                                 <col className="w-28" />
-                                                <col className="w-28" />
                                                 <col className="w-24" />
                                                 <col className="w-32" />
                                                 <col className="w-24" />
@@ -2346,9 +2325,6 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                        <div className="flex items-center gap-1"><IconUser size={14} /> PM</div>
-                                                    </th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
@@ -2411,7 +2387,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                                 {epic.name}
                                                             </Link>
                                                         </span>
-                                                        <div className="flex items-center gap-2 mt-1">
+                                                        <div className="flex items-center gap-1 mt-1" style={{ flexWrap: "wrap" }}>
                                                             <span className={`px-2 py-0.5 rounded text-xs font-medium ${epic.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' :
                                                                 epic.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' :
                                                                     'bg-gray-100 text-gray-800'
@@ -2419,27 +2395,23 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                                 {epic.tier.replace('_', ' ')}
                                                             </span>
                                                             {getModuleFromEpic(epic) && (
-                                                                <span style={{ fontSize: "12px", color: "#6B7280" }}>
-                                                                    {getModuleFromEpic(epic)}
-                                                                </span>
+                                                                <>
+                                                                    <span style={{ fontSize: "11px", color: "#D1D5DB" }}>|</span>
+                                                                    <span style={{ fontSize: "12px", color: "#6B7280" }}>{getModuleFromEpic(epic)}</span>
+                                                                </>
                                                             )}
+                                                            {(epic.owner?.email || epic.owner_email) && (() => {
+                                                                const ownerEmail = (epic.owner?.email || epic.owner_email)!;
+                                                                const info = ownerInfoMap[ownerEmail.toLowerCase()];
+                                                                const pmName = info?.first_name || ownerEmail.split('@')[0];
+                                                                return (
+                                                                    <>
+                                                                        <span style={{ fontSize: "11px", color: "#D1D5DB" }}>|</span>
+                                                                        <span style={{ fontSize: "12px", color: "#6B7280" }}>{pmName}</span>
+                                                                    </>
+                                                                );
+                                                            })()}
                                                         </div>
-                                                    </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {(() => {
-                                                            const email = epic.owner?.email || epic.owner_email;
-                                                            if (!email) return <span className="text-gray-500">-</span>;
-                                                            const info = ownerInfoMap[email.toLowerCase()];
-                                                            return (
-                                                                <UserDisplay
-                                                                    email={email}
-                                                                    firstName={info?.first_name}
-                                                                    lastName={undefined}
-                                                                    avatarUrl={info?.avatar_url}
-                                                                    size="xs"
-                                                                />
-                                                            );
-                                                        })()}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
