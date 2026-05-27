@@ -25,6 +25,13 @@ interface HeaderProps {
     imageUrl?: string | null;
 }
 
+type PrimaryNavTab = {
+    link: string;
+    label: string;
+    badge?: number;
+    openInNewTab?: boolean;
+};
+
 export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
     const router = useRouter();
@@ -126,7 +133,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     }
 
     // Primary navigation tabs — change based on app mode
-    const releaseTabs: Array<{ link: string; label: string; badge?: number; openInNewTab?: boolean }> = [
+    const releaseTabs: PrimaryNavTab[] = [
         { link: '/', label: 'Home' },
         { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
@@ -137,7 +144,7 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 
-    const launchTabs: Array<{ link: string; label: string; badge?: number }> = [
+    const launchTabs: PrimaryNavTab[] = [
         { link: '/', label: 'Home' },
         { link: '/epics', label: 'Launches' },
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
