@@ -1,38 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Title, Text } from "@mantine/core";
-import { FeedbackSection } from "@/components/FeedbackSection";
-import { PurpleLoader } from "@/components/PurpleLoader";
+import { AhaIdeasPortalEmbed } from "@/components/AhaIdeasPortalEmbed";
 
 export default function FeedbackPage() {
-  const [currentUserEmail, setCurrentUserEmail] = useState<string>("");
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-  const [loadingUser, setLoadingUser] = useState(true);
-
-  useEffect(() => {
-    const loadUser = async () => {
-      setLoadingUser(true);
-      try {
-        const { fetchWithRateLimit } = await import("@/lib/fetch-with-rate-limit");
-        const res = await fetchWithRateLimit("/api/me", { credentials: "include", maxRetries: 1 });
-        if (res.ok) {
-          const data = await res.json();
-          const email = data?.user?.email;
-          if (typeof email === "string") setCurrentUserEmail(email);
-          setIsSuperAdmin(Boolean(data?.isSuperAdmin));
-        }
-      } catch (e) {
-        // If this fails, the page still renders; delete button will just not show.
-        console.warn("Failed to load current user:", e);
-      } finally {
-        setLoadingUser(false);
-      }
-    };
-
-    loadUser();
-  }, []);
-
   return (
     <div className="min-h-screen">
       <div
@@ -46,7 +17,7 @@ export default function FeedbackPage() {
         }}
         className="sm:px-6 lg:px-8"
       >
-        <div className="mb-8">
+        <div className="mb-6">
           <Title
             order={1}
             style={{
@@ -56,22 +27,15 @@ export default function FeedbackPage() {
               color: "var(--color-gray-900)",
             }}
           >
-            Feedback
+            Ideas &amp; feedback
           </Title>
           <Text size="sm" c="dimmed" mt="xs" style={{ fontFamily: "var(--font-body)" }}>
-            Share feedback on epics, the process, or the tool.
+            Share product ideas and feedback for the ClearGO team.
           </Text>
         </div>
 
-        {loadingUser ? (
-          <div className="flex items-center justify-center py-12">
-            <PurpleLoader size="sm" />
-          </div>
-        ) : (
-          <FeedbackSection currentUserEmail={currentUserEmail} isSuperAdmin={isSuperAdmin} />
-        )}
+        <AhaIdeasPortalEmbed />
       </div>
     </div>
   );
 }
-

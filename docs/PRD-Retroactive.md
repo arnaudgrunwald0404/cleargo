@@ -184,7 +184,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Jira Integration**: Jira epic key linking and ticket tracking
 - **Archived Status**: Epics are automatically archived/unarchived based on ClearGO candidate status
 - **Comments & Attachments**: Per-criterion discussion and file attachments
-- **Feedback**: Accessible via the global Feedback page; feedback can optionally be linked to a specific epic
+- **Ideas & feedback**: Global Feedback page embeds the Aha! Ideas in-app widget (JWT-authenticated); submissions flow to Aha! Ideas
 - **Activity History**: Timeline of all changes
 
 #### 1.4 Epic Archiving
@@ -457,15 +457,8 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **APIs**: `GET/POST /api/epics/[id]/heart/automations`, `GET/PATCH/DELETE /api/epics/[id]/heart/automations/[ruleId]`, `POST /api/epics/[id]/heart/automations/[ruleId]/execute`
 
 #### 4.2 Feedback Collection
-- **Feedback Entry**: Manual feedback entry from a global Feedback page, with optional epic linking
-- **Feedback Types**:
-  - EPIC: Feedback tied to a specific epic (or “Product” when no epic name is available for display)
-  - PROCESS: Feedback about workflows/process
-  - TOOL: Feedback about internal tools (including ClearGO itself)
-- **Feedback Attribution**: Track who provided feedback
-- **Feedback Source**: Track source (manual, Slack, email, meeting, Aha!)
-- **Feedback Display**: Chronological list of all feedback
-- **Feedback Metrics**: Count feedback per epic for performance tracking
+- **Ideas portal (primary)**: `/feedback` embeds the Aha! Ideas portal via the official embedded script (`idea_portals/embedded/application.js`, `data-portal-url`). Portal must use **Embedded** display in Aha!; optional `NEXT_PUBLIC_AHA_IDEAS_PORTAL_URL` (default `https://cleargo.ideas.aha.io/`).
+- **Legacy epic feedback data**: Historical rows in the `feedback` table and epic-level APIs remain for portfolio metrics and activity feed; new product ideas are collected in Aha! Ideas, not the in-app form.
 
 ### 5. Activity Feed
 

@@ -11,7 +11,6 @@ import {
   Avatar,
   FileButton,
   Group,
-  Title,
 } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
@@ -173,11 +172,10 @@ export function ProfileCompletionModal() {
     <Modal
       opened={opened}
       onClose={handleSkip}
-      title={
-        <Title order={3} style={{ fontFamily: 'var(--font-heading)' }}>
-          Complete Your Profile
-        </Title>
-      }
+      title="Complete Your Profile"
+      styles={{
+        title: { fontFamily: "var(--font-heading)", fontWeight: 600 },
+      }}
       size="md"
       closeOnClickOutside={false}
       closeOnEscape={true}
