@@ -20,6 +20,8 @@ type WidgetTokenResponse = {
 type AhaIdeasWidgetProps = {
   /** Open the widget panel after initialize (requires Custom position in Aha admin). */
   autoOpen?: boolean;
+  /** Show Target URL setup hints (off on /feedback). */
+  showSetupHints?: boolean;
 };
 
 function openAhaWidget(widgetId: string): void {
@@ -33,7 +35,7 @@ function scheduleOpenAttempts(widgetId: string): void {
   }
 }
 
-export function AhaIdeasWidget({ autoOpen = true }: AhaIdeasWidgetProps) {
+export function AhaIdeasWidget({ autoOpen = true, showSetupHints = true }: AhaIdeasWidgetProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pageUrl, setPageUrl] = useState("");
@@ -127,6 +129,16 @@ export function AhaIdeasWidget({ autoOpen = true }: AhaIdeasWidgetProps) {
       <Alert color="red" title="Ideas portal unavailable">
         {error}
       </Alert>
+    );
+  }
+
+  if (!showSetupHints) {
+    return (
+      <Stack gap="md" maw={560}>
+        <Button onClick={handleOpen} disabled={!initialized} size="md" variant="light">
+          Open ideas
+        </Button>
+      </Stack>
     );
   }
 

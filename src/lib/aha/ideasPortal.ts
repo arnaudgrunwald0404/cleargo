@@ -4,6 +4,10 @@ export const AHA_IDEAS_EMBEDDED_SCRIPT_SRC =
 
 export const AHA_IDEAS_PORTAL_DEFAULT_URL = "https://cleargo.ideas.aha.io";
 
+/** ClearGO route that JWT-signs the user and redirects to the ideas portal (use with target="_blank"). */
+export const AHA_IDEAS_PORTAL_SSO_PATH =
+  "/api/integrations/aha/ideas-portal-sso?return_to=/";
+
 /** Portal base URL with trailing slash (required by data-portal-url). */
 export function getAhaIdeasPortalUrl(): string {
   const configured = process.env.NEXT_PUBLIC_AHA_IDEAS_PORTAL_URL?.trim();

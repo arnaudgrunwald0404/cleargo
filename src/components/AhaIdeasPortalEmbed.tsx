@@ -1,46 +1,105 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import { Box } from "@mantine/core";
-import {
-  AHA_IDEAS_EMBEDDED_SCRIPT_SRC,
-  getAhaIdeasPortalUrl,
-} from "@/lib/aha/ideasPortal";
+/**
+ * @deprecated Do not use on /feedback. Aha routes many @clearcompany.com users to
+ * https://secure.aha.io/session/new inside the portal iframe; that host sets
+ * frame-ancestors 'self' and cannot be embedded. Use Feedback nav (new-tab portal SSO) instead.
+ */
 
-const SCRIPT_ID = "aha-ideas-portal-embedded";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Box } from "@mantine/core";
+import { PurpleLoader } from "@/components/PurpleLoader";
+import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { getAhaIdeasPortalUrl } from "@/lib/aha/ideasPortal";
+
+type PortalJwtResponse = {
+  callbackUrl: string;
+};
+
+type EmbedPhase = "boot" | "auth" | "portal";
 
 export function AhaIdeasPortalEmbed() {
-  const containerRef = useRef<HTMLDivElement>(null);
   const portalUrl = getAhaIdeasPortalUrl();
+  const authFinishedRef = useRef(false);
+  const [phase, setPhase] = useState<EmbedPhase>("boot");
+  const [iframeSrc, setIframeSrc] = useState<string | null>(null);
 
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    let cancelled = false;
+    authFinishedRef.current = false;
 
-    const existing = document.getElementById(SCRIPT_ID);
-    if (existing) existing.remove();
+    async function boot() {
+      setPhase("boot");
+      setIframeSrc(null);
 
-    const script = document.createElement("script");
-    script.id = SCRIPT_ID;
-    script.async = true;
-    script.src = AHA_IDEAS_EMBEDDED_SCRIPT_SRC;
-    script.setAttribute("data-portal-url", portalUrl);
+      try {
+        const res = await fetchWithRateLimit("/api/integrations/aha/ideas-portal-jwt", {
+          credentials: "include",
+          maxRetries: 1,
+        });
 
-    container.appendChild(script);
+        if (cancelled) return;
+
+        if (res.ok) {
+          const { callbackUrl } = (await res.json()) as PortalJwtResponse;
+          setIframeSrc(callbackUrl);
+          setPhase("auth");
+          return;
+        }
+      } catch {
+        // fall through
+      }
+
+      if (!cancelled) {
+        setIframeSrc(portalUrl);
+        setPhase("portal");
+      }
+    }
+
+    void boot();
 
     return () => {
-      script.remove();
-      container.replaceChildren();
+      cancelled = true;
     };
   }, [portalUrl]);
 
+  const finishAuthAndShowPortal = useCallback(() => {
+    if (authFinishedRef.current) return;
+    authFinishedRef.current = true;
+    setIframeSrc(portalUrl);
+    setPhase("portal");
+  }, [portalUrl]);
+
+  const handleIframeLoad = useCallback(() => {
+    if (phase === "auth") {
+      window.setTimeout(finishAuthAndShowPortal, 1500);
+    }
+  }, [phase, finishAuthAndShowPortal]);
+
+  const showLoader = phase === "boot" || !iframeSrc;
+
   return (
-    <Box
-      ref={containerRef}
-      style={{
-        width: "100%",
-        minHeight: "min(75vh, 900px)",
-      }}
-    />
+    <Box style={{ width: "100%", minHeight: "min(75vh, 900px)", position: "relative" }}>
+      {showLoader ? (
+        <div className="flex justify-center py-16">
+          <PurpleLoader size="sm" />
+        </div>
+      ) : null}
+      {iframeSrc ? (
+        <iframe
+          key={phase === "auth" ? "auth" : "portal"}
+          src={iframeSrc}
+          title="ClearGO ideas portal"
+          onLoad={handleIframeLoad}
+          style={{
+            width: "100%",
+            minHeight: "min(75vh, 900px)",
+            border: 0,
+            display: showLoader ? "none" : "block",
+          }}
+          allow="fullscreen"
+        />
+      ) : null}
+    </Box>
   );
 }

@@ -457,7 +457,7 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **APIs**: `GET/POST /api/epics/[id]/heart/automations`, `GET/PATCH/DELETE /api/epics/[id]/heart/automations/[ruleId]`, `POST /api/epics/[id]/heart/automations/[ruleId]/execute`
 
 #### 4.2 Feedback Collection
-- **Ideas portal (primary)**: `/feedback` embeds the Aha! Ideas portal via the official embedded script (`idea_portals/embedded/application.js`, `data-portal-url`). Portal must use **Embedded** display in Aha!; optional `NEXT_PUBLIC_AHA_IDEAS_PORTAL_URL` (default `https://cleargo.ideas.aha.io/`).
+- **Ideas portal (primary)**: **Feedback** nav opens Aha ideas portal in a **new tab** via `GET /api/integrations/aha/ideas-portal-sso` (JWT SSO). Legacy `/feedback` redirects through the same SSO route. Portal must be **Private** with JWT SSO; uncheck **Access for Aha! Ideas users** on the JWT provider. See `docs/aha-ideas-portal-sso-setup.md`. Uses `AHA_IDEAS_WIDGET_JWT_SECRET`.
 - **Legacy epic feedback data**: Historical rows in the `feedback` table and epic-level APIs remain for portfolio metrics and activity feed; new product ideas are collected in Aha! Ideas, not the in-app form.
 
 ### 5. Activity Feed

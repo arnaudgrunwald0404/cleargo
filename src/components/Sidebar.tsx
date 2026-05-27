@@ -30,6 +30,7 @@ import type { CapabilityId } from '@/lib/permissions';
 import { isEnabled, FEATURE_MEETINGS, FEATURE_ROADMAP_REWIND } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { AHA_IDEAS_PORTAL_SSO_PATH } from '@/lib/aha/ideasPortal';
 
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
 
@@ -44,6 +45,8 @@ interface NavItem {
   label: string;
   icon: React.ComponentType<{ size?: number | string; stroke?: number | string }>;
   badge?: number;
+  /** Opens Aha ideas portal via SSO in a new browser tab (not in-app routing). */
+  openInNewTab?: boolean;
 }
 
 export function Sidebar({ email, role, imageUrl }: SidebarProps) {
@@ -169,7 +172,7 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   // Common items shown below both sections
   const commonTabs: NavItem[] = [
     ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics', icon: IconChartBar }] : []),
-    { link: '/feedback', label: 'Feedback', icon: IconMessageReport },
+    { link: AHA_IDEAS_PORTAL_SSO_PATH, label: 'Feedback', icon: IconMessageReport, openInNewTab: true },
     ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings', icon: IconCalendarEvent }] : []),
   ];
 
@@ -427,42 +430,27 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   }
 
   function renderNavItem(tab: NavItem, isCollapsed: boolean) {
-    const active = isActive(tab.link);
+    const active = !tab.openInNewTab && isActive(tab.link);
     const Icon = tab.icon;
-    const linkContent = (
-      <Link
-        key={tab.link}
-        href={tab.link}
-        prefetch={false}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: isCollapsed ? '10px 0' : '10px 12px',
-          justifyContent: isCollapsed ? 'center' : 'flex-start',
-          borderRadius: 'var(--radius-md)',
-          backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'transparent',
-          color: active ? 'white' : 'rgba(255,255,255,0.55)',
-          textDecoration: 'none',
-          fontSize: 14,
-          fontWeight: active ? 600 : 400,
-          fontFamily: 'var(--font-body)',
-          transition: 'all 0.15s ease',
-          position: 'relative',
-        }}
-        onMouseEnter={(e) => {
-          if (!active) {
-            e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if (!active) {
-            e.currentTarget.style.backgroundColor = 'transparent';
-            e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
-          }
-        }}
-      >
+    const linkStyle = {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12,
+      padding: isCollapsed ? '10px 0' : '10px 12px',
+      justifyContent: isCollapsed ? 'center' : 'flex-start',
+      borderRadius: 'var(--radius-md)',
+      backgroundColor: active ? 'rgba(255,255,255,0.12)' : 'transparent',
+      color: active ? 'white' : 'rgba(255,255,255,0.55)',
+      textDecoration: 'none',
+      fontSize: 14,
+      fontWeight: active ? 600 : 400,
+      fontFamily: 'var(--font-body)',
+      transition: 'all 0.15s ease',
+      position: 'relative' as const,
+    };
+
+    const linkInner = (
+      <>
         <Icon size={20} stroke={1.5} />
         {!isCollapsed && (
           <>
@@ -495,6 +483,44 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
             backgroundColor: 'var(--color-copper)',
           }} />
         )}
+      </>
+    );
+
+    const hoverHandlers = {
+      onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.06)';
+          e.currentTarget.style.color = 'rgba(255,255,255,0.85)';
+        }
+      },
+      onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+        if (!active) {
+          e.currentTarget.style.backgroundColor = 'transparent';
+          e.currentTarget.style.color = 'rgba(255,255,255,0.55)';
+        }
+      },
+    };
+
+    const linkContent = tab.openInNewTab ? (
+      <a
+        key={tab.link}
+        href={tab.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={linkStyle}
+        {...hoverHandlers}
+      >
+        {linkInner}
+      </a>
+    ) : (
+      <Link
+        key={tab.link}
+        href={tab.link}
+        prefetch={false}
+        style={linkStyle}
+        {...hoverHandlers}
+      >
+        {linkInner}
       </Link>
     );
 

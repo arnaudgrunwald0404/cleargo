@@ -15,6 +15,7 @@ import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { useAppMode } from '@/contexts/AppModeContext';
 import type { AppMode } from '@/contexts/AppModeContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
+import { AHA_IDEAS_PORTAL_SSO_PATH } from '@/lib/aha/ideasPortal';
 
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
 
@@ -125,13 +126,13 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     }
 
     // Primary navigation tabs — change based on app mode
-    const releaseTabs: Array<{ link: string; label: string; badge?: number }> = [
+    const releaseTabs: Array<{ link: string; label: string; badge?: number; openInNewTab?: boolean }> = [
         { link: '/', label: 'Home' },
         { link: '/portfolio', label: 'Portfolio' },
         { link: '/epics', label: 'Releases' },
         { link: '/releases/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
-        { link: '/feedback', label: 'Feedback' },
+        { link: AHA_IDEAS_PORTAL_SSO_PATH, label: 'Feedback', openInNewTab: true },
         ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
@@ -247,13 +248,15 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                         <EpicSearch fetchEpics={true} className="header-search" />
                                     </Box>
                                     {primaryTabs.map((tab) => {
-                                        const active = isActive(tab.link);
+                                        const active = !tab.openInNewTab && isActive(tab.link);
                                         return (
                                             <Menu.Item
                                                 key={tab.link}
-                                                component={Link}
+                                                component={tab.openInNewTab ? 'a' : Link}
                                                 href={tab.link}
-                                                prefetch={false}
+                                                {...(tab.openInNewTab
+                                                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                                                    : { prefetch: false })}
                                                 style={{
                                                     fontWeight: active ? 700 : 500,
                                                     backgroundColor: active ? 'var(--color-gray-100)' : undefined
@@ -275,47 +278,72 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                         ) : (
                             <nav style={{ display: 'flex', alignItems: 'center', gap: '8px', height: '100%' }}>
                                 {primaryTabs.map((tab) => {
-                                    const active = isActive(tab.link);
+                                    const active = !tab.openInNewTab && isActive(tab.link);
+                                    const tabStyle = {
+                                        color: active ? 'var(--nav-text, #FFFFFF)' : 'var(--color-blue-200, #BFDBFE)',
+                                        fontSize: 'var(--font-size-base, 14px)',
+                                        fontWeight: active ? 'var(--font-weight-bold, 700)' : 'var(--font-weight-medium, 500)',
+                                        textDecoration: 'none',
+                                        fontFamily: 'var(--font-body, system-ui, sans-serif)',
+                                        padding: 'var(--spacing-2, 8px) var(--spacing-3, 12px)',
+                                        borderRadius: 'var(--radius-base, 6px)',
+                                        backgroundColor: active ? 'var(--color-accent-bg)' : 'transparent',
+                                        borderBottom: active ? '2px solid var(--color-accent, #C3B497)' : '2px solid transparent',
+                                        transition: 'var(--transition-base, 0.2s ease)',
+                                        height: 'fit-content',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                    };
+                                    const hoverHandlers = {
+                                        onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+                                            if (!active) {
+                                                e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
+                                                e.currentTarget.style.color = 'var(--color-blue-100)';
+                                            }
+                                        },
+                                        onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+                                            if (!active) {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                                e.currentTarget.style.color = 'var(--color-blue-200)';
+                                            }
+                                        },
+                                    };
+                                    const tabLabel = (
+                                        <>
+                                            {tab.label}
+                                            {tab.badge !== undefined && tab.badge > 0 && (
+                                                <Badge size="xs" variant="filled" style={{ minWidth: '20px', backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
+                                                    {tab.badge > 99 ? '99+' : tab.badge}
+                                                </Badge>
+                                            )}
+                                        </>
+                                    );
+
+                                    if (tab.openInNewTab) {
+                                        return (
+                                            <a
+                                                key={tab.link}
+                                                href={tab.link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={tabStyle}
+                                                {...hoverHandlers}
+                                            >
+                                                {tabLabel}
+                                            </a>
+                                        );
+                                    }
+
                                     return (
                                         <Link
                                             key={tab.link}
                                             href={tab.link}
                                             prefetch={false}
-                                            style={{
-                                                color: active ? 'var(--nav-text, #FFFFFF)' : 'var(--color-blue-200, #BFDBFE)',
-                                                fontSize: 'var(--font-size-base, 14px)',
-                                                fontWeight: active ? 'var(--font-weight-bold, 700)' : 'var(--font-weight-medium, 500)',
-                                                textDecoration: 'none',
-                                                fontFamily: 'var(--font-body, system-ui, sans-serif)',
-                                                padding: 'var(--spacing-2, 8px) var(--spacing-3, 12px)',
-                                                borderRadius: 'var(--radius-base, 6px)',
-                                                backgroundColor: active ? 'var(--color-accent-bg)' : 'transparent',
-                                                borderBottom: active ? '2px solid var(--color-accent, #C3B497)' : '2px solid transparent',
-                                                transition: 'var(--transition-base, 0.2s ease)',
-                                                height: 'fit-content',
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '8px'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                if (!active) {
-                                                    e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)';
-                                                    e.currentTarget.style.color = 'var(--color-blue-100)';
-                                                }
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                if (!active) {
-                                                    e.currentTarget.style.backgroundColor = 'transparent';
-                                                    e.currentTarget.style.color = 'var(--color-blue-200)';
-                                                }
-                                            }}
+                                            style={tabStyle}
+                                            {...hoverHandlers}
                                         >
-                                            {tab.label}
-                                            {tab.badge !== undefined && tab.badge > 0 && (
-                                <Badge size="xs" variant="filled" style={{ minWidth: '20px', backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
-                                                {tab.badge > 99 ? '99+' : tab.badge}
-                                            </Badge>
-                                            )}
+                                            {tabLabel}
                                         </Link>
                                     );
                                 })}
