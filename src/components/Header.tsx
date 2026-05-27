@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from 'react';
+import { forwardRef, useEffect, useRef, useState, type ComponentPropsWithoutRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useMediaQuery } from '@mantine/hooks';
@@ -18,6 +18,12 @@ import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { AHA_IDEAS_PORTAL_SSO_PATH } from '@/lib/aha/ideasPortal';
 
 const MOBILE_BREAKPOINT = '(max-width: 768px)';
+
+const ExternalAnchor = forwardRef<HTMLAnchorElement, ComponentPropsWithoutRef<'a'>>(
+    function ExternalAnchor(props, ref) {
+        return <a ref={ref} {...props} />;
+    }
+);
 
 interface HeaderProps {
     email?: string | null;
@@ -256,27 +262,45 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                                     </Box>
                                     {primaryTabs.map((tab) => {
                                         const active = !tab.openInNewTab && isActive(tab.link);
+                                        const itemStyle = {
+                                            fontWeight: active ? 700 : 500,
+                                            backgroundColor: active ? 'var(--color-gray-100)' : undefined,
+                                        };
+                                        const itemLabel = (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {tab.label}
+                                                {tab.badge !== undefined && tab.badge > 0 && (
+                                                    <Badge size="xs" variant="filled" style={{ backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
+                                                        {tab.badge > 99 ? '99+' : tab.badge}
+                                                    </Badge>
+                                                )}
+                                            </div>
+                                        );
+
+                                        if (tab.openInNewTab) {
+                                            return (
+                                                <Menu.Item
+                                                    key={tab.link}
+                                                    component={ExternalAnchor}
+                                                    href={tab.link}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    style={itemStyle}
+                                                >
+                                                    {itemLabel}
+                                                </Menu.Item>
+                                            );
+                                        }
+
                                         return (
                                             <Menu.Item
                                                 key={tab.link}
-                                                component={tab.openInNewTab ? 'a' : Link}
+                                                component={Link}
                                                 href={tab.link}
-                                                {...(tab.openInNewTab
-                                                    ? { target: '_blank', rel: 'noopener noreferrer' }
-                                                    : { prefetch: false })}
-                                                style={{
-                                                    fontWeight: active ? 700 : 500,
-                                                    backgroundColor: active ? 'var(--color-gray-100)' : undefined
-                                                }}
+                                                prefetch={false}
+                                                style={itemStyle}
                                             >
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    {tab.label}
-                                                    {tab.badge !== undefined && tab.badge > 0 && (
-                                                        <Badge size="xs" variant="filled" style={{ backgroundColor: 'var(--color-accent, #C3B497)', color: '#3a3322' }}>
-                                                            {tab.badge > 99 ? '99+' : tab.badge}
-                                                        </Badge>
-                                                    )}
-                                                </div>
+                                                {itemLabel}
                                             </Menu.Item>
                                         );
                                     })}
