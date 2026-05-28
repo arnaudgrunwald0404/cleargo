@@ -25,12 +25,12 @@ export type EpicForGaDate = Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_
  */
 export function resolveEpicGaDateYmd(
   epic: EpicForGaDate,
-  options?: { releaseSchedule?: ReleaseScheduleDateRow[] }
+  options?: { releaseSchedule?: ReleaseScheduleDateRow[]; cohort1Ymd?: string | null }
 ): string | null {
   const scheduled = parseDateOnlyLocal(epic.scheduled_ga_dev_date);
   if (scheduled) return dateToLocalDateString(scheduled);
 
-  const cohort1 = getEffectiveCohort1DateYmd(epic);
+  const cohort1 = options?.cohort1Ymd ?? getEffectiveCohort1DateYmd(epic);
   if (!cohort1) return null;
 
   const releaseName = getReleaseNameFromAhaFields(epic.aha_fields);

@@ -23,6 +23,8 @@ import { addCalendarDaysToYmd } from '@/lib/date-utils';
 interface EpicsClientProps {
     initialEpics?: Epic[];
     initialReleaseSchedule?: ReleaseScheduleRow[];
+    initialReleaseScheduleStages?: DbReleaseStageRow[];
+    initialUiRolloutStages?: DbReleaseStageRow[];
 }
 
 type DbReleaseStageRow = {
@@ -85,7 +87,12 @@ function getDaysUntilCohort1(releaseDate: string): number | null {
     return days > 0 ? days : null;
 }
 
-function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsClientProps) {
+function EpicsClient({
+    initialEpics = [],
+    initialReleaseSchedule = [],
+    initialReleaseScheduleStages = [],
+    initialUiRolloutStages = [],
+}: EpicsClientProps) {
     const router = useRouter();
     const searchParams = useSearchParams();
     /** Stable for effect deps — `searchParams` object identity can change every render in App Router. */
@@ -146,8 +153,12 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
     const [releasesView, setReleasesView] = useState<'upcoming' | 'recent' | 'all'>('upcoming');
     const [showTimelineForRelease, setShowTimelineForRelease] = useState<string | null>(null);
     /** Configured stages from DB — same scopes as epic readiness tab (`release_schedule` vs `ui_rollout`). */
-    const [releaseScheduleStagesForTimeline, setReleaseScheduleStagesForTimeline] = useState<DbReleaseStageRow[] | undefined>(undefined);
-    const [uiRolloutStagesForTimeline, setUiRolloutStagesForTimeline] = useState<DbReleaseStageRow[] | undefined>(undefined);
+    const [releaseScheduleStagesForTimeline, setReleaseScheduleStagesForTimeline] = useState<DbReleaseStageRow[]>(
+        () => initialReleaseScheduleStages,
+    );
+    const [uiRolloutStagesForTimeline, setUiRolloutStagesForTimeline] = useState<DbReleaseStageRow[]>(
+        () => initialUiRolloutStages,
+    );
 
     // Sync with Aha state
     const [refreshingEpics, setRefreshingEpics] = useState(false);
@@ -214,6 +225,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
     }, [initialEpics.length]);
 
     useEffect(() => {
+        if (initialReleaseScheduleStages.length > 0) return;
         let cancelled = false;
         void (async () => {
             try {
@@ -248,7 +260,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
         return () => {
             cancelled = true;
         };
-    }, []);
+    }, [initialReleaseScheduleStages.length]);
 
     async function loadData() {
         try {
@@ -710,13 +722,14 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                 .map(group => group.releaseName);
 
             if (releasesNeedingDates.length === 0 && releasesMissingCohort2.length === 0) {
-                // No releases need dates, order is determined
                 setIsDeterminingOrder(false);
                 return;
             }
-            
-            // We're fetching dates, so order is not yet determined
-            setIsDeterminingOrder(true);
+
+            // Only block the page for missing launch dates (sorting/cards). Cohort 2 backfill updates in place.
+            if (releasesNeedingDates.length > 0) {
+                setIsDeterminingOrder(true);
+            }
 
             // Mark as fetched to prevent duplicate requests and set loading state
             releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.add(name));
@@ -878,7 +891,7 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
 
         fetchMissingReleaseDates();
          
-    }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups]);
+    }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups.length]);
 
     // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)
     useEffect(() => {
@@ -2415,17 +2428,27 @@ function EpicsClient({ initialEpics = [], initialReleaseSchedule = [] }: EpicsCl
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
-                                                            const ymd = getEpicInternalOrgsDateYmd(epic, releaseScheduleStagesForTimeline, uiRolloutStagesForTimeline);
+                                                            const ymd = getEpicInternalOrgsDateYmd(
+                                                                epic,
+                                                                releaseScheduleStagesForTimeline,
+                                                                uiRolloutStagesForTimeline,
+                                                                { releaseTrainDateYmd: group.releaseDate },
+                                                            );
                                                             return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
                                                         })()}
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        <Cohort1DateBadge epic={epic} dateOptions={{ month: 'short', day: 'numeric' }} />
+                                                        <Cohort1DateBadge
+                                                            epic={epic}
+                                                            scheduleReleaseDate={group.releaseDate}
+                                                            dateOptions={{ month: 'short', day: 'numeric' }}
+                                                        />
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
                                                             const ymd = getEpicGaDateYmd(epic, {
                                                                 releaseSchedule: releaseScheduleWithIds,
+                                                                releaseTrainDateYmd: group.releaseDate,
                                                             });
                                                             return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
                                                         })()}

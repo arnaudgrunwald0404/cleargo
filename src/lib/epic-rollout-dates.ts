@@ -15,6 +15,23 @@ import {
 
 export type { ReleaseScheduleDateRow };
 
+export type EpicRolloutDateOptions = {
+  /** When the epic has no PM Cohort 1 date, use the release train launch_date from the grouped release. */
+  releaseTrainDateYmd?: string | null;
+};
+
+/** Cohort 1 anchor for rollout math: PM/off-schedule date, else release train date. */
+export function getEpicRolloutAnchorYmd(
+  epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>,
+  releaseTrainDateYmd?: string | null
+): string | null {
+  const fromEpic = getEffectiveCohort1DateYmd(epic);
+  if (fromEpic) return fromEpic;
+  if (releaseTrainDateYmd == null || releaseTrainDateYmd === '') return null;
+  const d = parseDateOnlyLocal(releaseTrainDateYmd);
+  return d ? dateToLocalDateString(d) : null;
+}
+
 export type EpicRolloutStageRow = {
   id: number;
   name: string;
@@ -140,12 +157,13 @@ function internalOrgsDateUiRollout(anchor: string, sortedInput: EpicRolloutStage
 export function getEpicInternalOrgsDateYmd(
   epic: Epic,
   releaseScheduleStages: EpicRolloutStageRow[] | undefined,
-  uiRolloutStages: EpicRolloutStageRow[] | undefined
+  uiRolloutStages: EpicRolloutStageRow[] | undefined,
+  options?: EpicRolloutDateOptions
 ): string | null {
   const explicit = parseAhaCustomDate(epic);
   if (explicit) return explicit;
 
-  const anchor = epic.target_launch_date;
+  const anchor = getEpicRolloutAnchorYmd(epic, options?.releaseTrainDateYmd);
   if (!anchor) return null;
 
   const uiLevel = parseUiLevelFromEpic(epic);
@@ -171,7 +189,11 @@ export function getEpicCohort1DateYmd(epic: Pick<Epic, 'target_launch_date' | 'a
 /** GA date: Aha scheduled GA, else release-train Cohort 2, else Cohort 1 + 28 calendar days. */
 export function getEpicGaDateYmd(
   epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>,
-  options?: { releaseSchedule?: ReleaseScheduleDateRow[] }
+  options?: { releaseSchedule?: ReleaseScheduleDateRow[] } & EpicRolloutDateOptions
 ): string | null {
-  return resolveEpicGaDateYmd(epic, options);
+  const cohort1Ymd = getEpicRolloutAnchorYmd(epic, options?.releaseTrainDateYmd);
+  return resolveEpicGaDateYmd(epic, {
+    releaseSchedule: options?.releaseSchedule,
+    cohort1Ymd,
+  });
 }

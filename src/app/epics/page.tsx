@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { Suspense } from 'react';
 import { getEpics } from '@/lib/epics';
 import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
+import { getReleaseStagesForTimeline } from '@/lib/release-stages-server';
 import EpicsClient from './EpicsClient';
 export const dynamic = 'force-dynamic';
 
@@ -25,9 +26,10 @@ export default async function EpicsPage() {
             redirect('/');
         }
 
-        const [epics, initialReleaseSchedule] = await Promise.all([
+        const [epics, initialReleaseSchedule, initialReleaseStages] = await Promise.all([
             getEpics(),
             getActiveReleaseScheduleRows(),
+            getReleaseStagesForTimeline(),
         ]);
 
         return (
@@ -74,7 +76,12 @@ export default async function EpicsPage() {
                     </div>
                 </div>
             }>
-                <EpicsClient initialEpics={epics || []} initialReleaseSchedule={initialReleaseSchedule} />
+                <EpicsClient
+                    initialEpics={epics || []}
+                    initialReleaseSchedule={initialReleaseSchedule}
+                    initialReleaseScheduleStages={initialReleaseStages.releaseSchedule}
+                    initialUiRolloutStages={initialReleaseStages.uiRollout}
+                />
             </Suspense>
         );
     } catch (error: any) {

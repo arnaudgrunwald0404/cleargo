@@ -43,6 +43,16 @@ describe('getCohort2DateForTimeline', () => {
         expect(result).toBe('2026-08-16');
     });
 
+    it('ignores non-standard release trains when picking next cohort 2 date', () => {
+        const scheduleWithOneOff = [
+            { release_name: 'Release 2026.6', launch_date: '2026-06-18', cohort2_date: null },
+            { release_name: 'HRSG Competencies Sunset', launch_date: '2026-07-01', cohort2_date: null },
+            { release_name: 'Release 2026.7', launch_date: '2026-07-16', cohort2_date: null },
+        ];
+        const result = getCohort2DateForTimeline('Release 2026.6', '2026-06-18', scheduleWithOneOff);
+        expect(result).toBe('2026-07-16');
+    });
+
     it('cohort2_date takes priority over a closer next release', () => {
         const scheduleWithC2 = [
             { release_name: 'Release 2026.5', launch_date: '2026-05-14', cohort2_date: '2026-06-18' },

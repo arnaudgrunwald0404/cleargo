@@ -21,13 +21,23 @@ type Props = {
 };
 
 export function Cohort1DateBadge({ epic, scheduleReleaseDate, dateOptions, emptyLabel = '-' }: Props) {
+  const pmYmd = getEffectiveCohort1DateYmd(epic);
   const ymd =
     scheduleReleaseDate !== undefined
       ? getEpicCohort1DisplayYmd(epic, scheduleReleaseDate)
-      : getEffectiveCohort1DateYmd(epic);
+      : pmYmd;
   const off = isCohort1FromOffSchedule(epic);
+  const fromReleaseTrain =
+    scheduleReleaseDate !== undefined && !pmYmd && !off && !!ymd && !!scheduleReleaseDate;
   if (!ymd) return <span>{emptyLabel}</span>;
   const text = formatDateOnlyForDisplay(ymd, dateOptions);
+  if (fromReleaseTrain) {
+    return (
+      <Tooltip label="Planned Cohort 1 from release train (no PM date on epic)" withArrow>
+        <span style={{ color: '#6B7280', fontStyle: 'italic' }}>{text}</span>
+      </Tooltip>
+    );
+  }
   if (!off) return <span>{text}</span>;
   return (
     <Tooltip label="Off Schedule Release Date" withArrow>
