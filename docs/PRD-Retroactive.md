@@ -1381,6 +1381,7 @@ All ported from RRV with ClearGo-aligned table names:
    - Today (if `slack_nudge_on_due_date` enabled)
    - Before today (if `slack_nudge_daily_after_due` enabled)
 3. System filters criteria by:
+   - **Dedup & completion**: Deduplicates `(epic_id, criterion_id)` rows (prefers GO/NO_GO/N/A over stale NOT_SET duplicates), drops normalized complete statuses, and suppresses non-signoff criteria when that category’s signoff row is already GO (matches readiness signoff override).
    - **Past Release Exclusion**: Excludes criteria for epics with:
      - Past release dates (from `release_schedule.launch_date`)
      - Released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`)

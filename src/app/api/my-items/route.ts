@@ -8,6 +8,7 @@ import {
     getUiFrameworkDueDateOptions,
     resolveAnchorLaunchDateFromReleaseSchedule,
 } from '@/lib/criterion-due-date';
+import { filterCriteriaSuppressedByCategorySignoffGo } from '@/lib/services/criteriaNotificationFilters';
 
 export const dynamic = 'force-dynamic';
 
@@ -171,6 +172,29 @@ export async function GET(req: NextRequest) {
 
         const stagesForDue = allStages ?? [];
         const scheduleForDue = scheduleRows ?? [];
+
+        const signoffFiltered = await filterCriteriaSuppressedByCategorySignoffGo(
+            (filtered as Array<Record<string, unknown>>).map((row) => {
+                const item = row as {
+                    id: string;
+                    status?: string | null;
+                    launch?: { id?: string };
+                    criterion?: { label?: string; category?: string };
+                };
+                return {
+                    id: item.id,
+                    epic_id: item.launch?.id ?? '',
+                    criterion_id: null,
+                    status: item.status,
+                    criterion: item.criterion,
+                };
+            }),
+            supabase
+        );
+        const signoffFilteredIds = new Set(signoffFiltered.map((r) => r.id));
+        filtered = (filtered as Array<Record<string, unknown>>).filter((row) =>
+            signoffFilteredIds.has((row as { id?: string }).id ?? '')
+        );
 
         filtered = (filtered as Array<Record<string, unknown>>).map((row) => {
             const item = row as {

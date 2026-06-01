@@ -8,6 +8,11 @@ import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { generateSmartNudge } from '@/lib/ai/client';
 import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
+import {
+    dedupeCriteriaForNotifications,
+    filterCriteriaSuppressedByCategorySignoffGo,
+    filterIncompleteCriteriaForNotifications,
+} from '@/lib/services/criteriaNotificationFilters';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -80,9 +85,17 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        const dedupedStale = dedupeCriteriaForNotifications(
+            staleCriteria.map((c: any) => ({
+                ...c,
+                epic_id: Array.isArray(c.epic) ? c.epic[0]?.id : c.epic?.id,
+                criterion_id: Array.isArray(c.criterion) ? c.criterion[0]?.id : c.criterion?.id,
+            }))
+        );
+        const incompleteStale = filterIncompleteCriteriaForNotifications(dedupedStale);
+
         // Filter out criteria for inactive launches
-        const activeCriteria = staleCriteria.filter((c: any) => {
-            // Add logic to filter by launch status if you have a status field
+        const activeCriteria = incompleteStale.filter((c: any) => {
             return c.epic && c.decision_owner;
         });
 
@@ -114,11 +127,21 @@ export async function GET(request: NextRequest) {
             })()
             : activeCriteria;
 
+        const notifyCriteria = await filterCriteriaSuppressedByCategorySignoffGo(
+            activeCriteriaFiltered.map((c: any) => ({
+                ...c,
+                epic_id: Array.isArray(c.epic) ? c.epic[0]?.id : c.epic?.id,
+                criterion_id: Array.isArray(c.criterion) ? c.criterion[0]?.id : c.criterion?.id,
+                criterion: Array.isArray(c.criterion) ? c.criterion[0] : c.criterion,
+            })),
+            supabase
+        );
+
         // Send notifications
         const notifications = [];
         const errors = [];
 
-        for (const criterion of activeCriteriaFiltered) {
+        for (const criterion of notifyCriteria) {
             const daysSinceUpdate = Math.floor(
                 (Date.now() - new Date(criterion.last_updated_at).getTime()) / (1000 * 60 * 60 * 24)
             );
@@ -189,7 +212,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({
             success: true,
-            message: `Processed ${activeCriteria.length} stale criteria`,
+            message: `Processed ${notifyCriteria.length} stale criteria`,
             notifications_sent: notifications.length,
             errors: errors.length,
             details: {

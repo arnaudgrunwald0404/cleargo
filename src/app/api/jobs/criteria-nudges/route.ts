@@ -20,6 +20,11 @@ import {
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
 import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
 import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
+import {
+    dedupeCriteriaForNotifications,
+    filterCriteriaSuppressedByCategorySignoffGo,
+    filterIncompleteCriteriaForNotifications,
+} from '@/lib/services/criteriaNotificationFilters';
 import { normalizeStatus } from '@/lib/readiness-scoring';
 import { appendFileSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
@@ -519,6 +524,16 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        const beforeDedupe = allCriteria.length;
+        const dedupedCriteria = dedupeCriteriaForNotifications(allCriteria);
+        if (dedupedCriteria.length < beforeDedupe) {
+            console.log(
+                `[criteria-nudges] Deduped ${beforeDedupe - dedupedCriteria.length} duplicate epic/criterion rows (kept completed or latest)`
+            );
+        }
+        allCriteria.length = 0;
+        allCriteria.push(...filterIncompleteCriteriaForNotifications(dedupedCriteria));
+
         const beforeNaExclude = allCriteria.length;
         const naExcluded = allCriteria.filter((c: any) => normalizeStatus(c.status) !== 'NOT_APPLICABLE');
         if (naExcluded.length < beforeNaExclude) {
@@ -545,11 +560,16 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        const criteriaAfterSignoffFilter = await filterCriteriaSuppressedByCategorySignoffGo(
+            criteriaAfterGateFilter,
+            supabase
+        );
+
         // Filter out criteria for epics where cleargo_candidate is not "Yes" (i.e., 'no' or null)
         // #region agent log
         fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:429',message:'Starting cleargo_candidate filter',data:{totalCriteria:allCriteria.length,sampleEpics:allCriteria.slice(0,3).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,cleargoCandidate:c.epic?.aha_fields?.custom_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'G'})}).catch(()=>{});
         // #endregion
-        const filteredByClearGOCandidate = criteriaAfterGateFilter.filter((c: any) => {
+        const filteredByClearGOCandidate = criteriaAfterSignoffFilter.filter((c: any) => {
             const epic = c.epic;
             if (!epic) {
                 console.warn(`⚠️ Criterion ${c.id} has no epic data, excluding from reminders`);
@@ -1436,16 +1456,19 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Update last_nudge_sent_at for all criteria
-                const criterionIds = criteria.map((c) => c.id);
-                const { error: updateError } = await supabase
-                    .from('epic_criterion_status')
-                    .update({ last_nudge_sent_at: todayStr })
-                    .in('id', criterionIds);
+                // Update last_nudge_sent_at for persisted criteria only (skip synthetic missing-metrics ids)
+                const criterionIds = criteria
+                    .map((c) => c.id)
+                    .filter((id) => typeof id === 'string' && !id.startsWith('missing-metrics-'));
+                if (criterionIds.length > 0) {
+                    const { error: updateError } = await supabase
+                        .from('epic_criterion_status')
+                        .update({ last_nudge_sent_at: todayStr })
+                        .in('id', criterionIds);
 
-                if (updateError) {
-                    console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
-                    // Continue anyway - notification was sent
+                    if (updateError) {
+                        console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
+                    }
                 }
 
                 notificationsSent.push({
@@ -1645,15 +1668,18 @@ export async function GET(request: NextRequest) {
                         },
                     });
 
-                    // Update last_nudge_sent_at for all criteria
-                    const criterionIds = criteria.map((c) => c.id);
-                    const { error: updateError } = await supabase
-                        .from('epic_criterion_status')
-                        .update({ last_nudge_sent_at: todayStr })
-                        .in('id', criterionIds);
+                    const criterionIds = criteria
+                        .map((c) => c.id)
+                        .filter((id) => typeof id === 'string' && !id.startsWith('missing-metrics-'));
+                    if (criterionIds.length > 0) {
+                        const { error: updateError } = await supabase
+                            .from('epic_criterion_status')
+                            .update({ last_nudge_sent_at: todayStr })
+                            .in('id', criterionIds);
 
-                    if (updateError) {
-                        console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
+                        if (updateError) {
+                            console.error(`Failed to update last_nudge_sent_at for criteria:`, updateError);
+                        }
                     }
 
                     notificationsSent.push({
