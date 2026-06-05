@@ -22,8 +22,9 @@ type Props = {
 };
 
 export function Cohort1DateBadge({ epic, scheduleReleaseDate, dateOptions, emptyLabel = '-' }: Props) {
+  // Single GA: leave Cohort 1 blank — no date, dash, or N/A (date lives in GA column)
   if (!shouldShowCohort1Column(epic)) {
-    return <span>{emptyLabel}</span>;
+    return null;
   }
 
   const pmYmd = getEffectiveCohort1DateYmd(epic);
