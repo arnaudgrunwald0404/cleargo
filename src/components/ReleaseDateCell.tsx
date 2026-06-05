@@ -4,32 +4,13 @@ import { Tooltip } from '@mantine/core';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import type { ReleaseDateShading } from '@/lib/epic-rollout-process';
 
-const SHADING_STYLES: Record<
-  Exclude<ReleaseDateShading, 'none'>,
-  { backgroundColor: string; color: string; padding: string; borderRadius: number; display: string }
-> = {
-  orange: {
-    backgroundColor: '#FED7AA',
-    color: '#9A3412',
-    padding: '2px 8px',
-    borderRadius: 6,
-    display: 'inline-block',
-  },
-  blue: {
-    backgroundColor: '#BFDBFE',
-    color: '#1E40AF',
-    padding: '2px 8px',
-    borderRadius: 6,
-    display: 'inline-block',
-  },
-  'off-schedule': {
-    backgroundColor: '#FDE047',
-    color: '#713F12',
-    padding: '2px 8px',
-    borderRadius: 6,
-    display: 'inline-block',
-  },
-};
+const OUTLIER_STYLE = {
+  backgroundColor: '#FDE047',
+  color: '#713F12',
+  padding: '2px 8px',
+  borderRadius: 6,
+  display: 'inline-block',
+} as const;
 
 type Props = {
   ymd: string | null;
@@ -60,15 +41,8 @@ export function ReleaseDateCell({
     );
   }
 
-  const pillStyle = shading !== 'none' ? SHADING_STYLES[shading] : undefined;
-  const defaultTooltip =
-    shading === 'off-schedule'
-      ? 'Off Schedule Release Date'
-      : shading === 'orange'
-        ? 'Dual Cohort — Cohort 1 date'
-        : shading === 'blue'
-          ? 'General Availability date'
-          : undefined;
+  const pillStyle = shading === 'off-schedule' ? OUTLIER_STYLE : undefined;
+  const defaultTooltip = shading === 'off-schedule' ? 'Date differs from the release train' : undefined;
   const tip = tooltip ?? defaultTooltip;
 
   if (pillStyle) {

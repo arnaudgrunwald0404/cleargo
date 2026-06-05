@@ -35,13 +35,22 @@ export function Cohort1DateBadge({ epic, scheduleReleaseDate, dateOptions, empty
   const fromReleaseTrain =
     scheduleReleaseDate !== undefined && !pmYmd && !off && !!ymd && !!scheduleReleaseDate;
 
+  const shading = getCohort1CellShading(epic, !!ymd, scheduleReleaseDate);
+  const tooltip =
+    off
+      ? 'Off Schedule Release Date'
+      : shading === 'off-schedule'
+        ? 'Cohort 1 date differs from the release train'
+        : undefined;
+
   return (
     <ReleaseDateCell
       ymd={ymd}
-      shading={getCohort1CellShading(epic, !!ymd)}
+      shading={shading}
       dateOptions={dateOptions}
       emptyLabel={emptyLabel}
       fromReleaseTrain={fromReleaseTrain}
+      tooltip={tooltip}
     />
   );
 }

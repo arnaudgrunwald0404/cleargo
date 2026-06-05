@@ -2,6 +2,7 @@ import type { Epic } from '@/types/epics';
 import { parseDateOnlyLocal, dateToLocalDateString } from '@/lib/date-utils';
 import {
   getOffScheduleReleaseDate,
+  getEffectiveCohort1DateYmd,
   getEpicCohort1DisplayYmd,
   isCohort1FromOffSchedule,
 } from '@/lib/epic-cohort1-date';
@@ -97,22 +98,37 @@ export function getRolloutAwareGaYmd(
   });
 }
 
-export type ReleaseDateShading = 'none' | 'orange' | 'blue' | 'off-schedule';
+/** Yellow highlight only — used when a date is an outlier vs. the release train. */
+export type ReleaseDateShading = 'none' | 'off-schedule';
 
 export function getCohort1CellShading(
-  epic: Pick<Epic, 'aha_fields'>,
-  hasDate: boolean
+  epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>,
+  hasDate: boolean,
+  releaseTrainCohort1Ymd?: string | null
 ): ReleaseDateShading {
   if (!hasDate || isSingleGaRollout(epic)) return 'none';
   if (isCohort1FromOffSchedule(epic)) return 'off-schedule';
-  return 'orange';
+  const epicYmd = getEffectiveCohort1DateYmd(epic);
+  if (
+    releaseTrainCohort1Ymd &&
+    epicYmd &&
+    epicYmd !== releaseTrainCohort1Ymd
+  ) {
+    return 'off-schedule';
+  }
+  return 'none';
 }
 
 export function getGaCellShading(
   epic: Pick<Epic, 'aha_fields'>,
-  hasDate: boolean
+  hasDate: boolean,
+  epicGaYmd?: string | null,
+  releaseTrainGaYmd?: string | null
 ): ReleaseDateShading {
   if (!hasDate) return 'none';
   if (isRolloutGaFromOffSchedule(epic)) return 'off-schedule';
-  return 'blue';
+  if (epicGaYmd && releaseTrainGaYmd && epicGaYmd !== releaseTrainGaYmd) {
+    return 'off-schedule';
+  }
+  return 'none';
 }

@@ -76,12 +76,20 @@ describe('off-schedule routing', () => {
     expect(getGaCellShading(singleGaOffSchedule, true)).toBe('off-schedule');
   });
 
-  it('uses orange shading for Dual Cohort Cohort 1', () => {
-    expect(getCohort1CellShading(dualEpic, true)).toBe('orange');
+  it('does not shade Cohort 1 when it matches the release train', () => {
+    expect(getCohort1CellShading(dualEpic, true, '2026-08-20')).toBe('none');
   });
 
-  it('uses blue shading for GA when not off-schedule', () => {
-    expect(getGaCellShading(dualEpic, true)).toBe('blue');
+  it('highlights Cohort 1 when it differs from the release train', () => {
+    expect(getCohort1CellShading(dualEpic, true, '2026-07-16')).toBe('off-schedule');
+  });
+
+  it('does not shade GA when it matches the release train', () => {
+    expect(getGaCellShading(dualEpic, true, '2026-09-17', '2026-09-17')).toBe('none');
+  });
+
+  it('highlights GA when it differs from the release train', () => {
+    expect(getGaCellShading(dualEpic, true, '2026-08-20', '2026-09-17')).toBe('off-schedule');
   });
 });
 
