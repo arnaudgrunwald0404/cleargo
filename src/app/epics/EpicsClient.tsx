@@ -4,18 +4,20 @@ import { Epic } from "@/types/epics";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
-import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, HoverCard, Checkbox, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
+import { TextInput, Select, Group, Box, ActionIcon, Title, Text, Alert, Modal, Button, Tooltip, HoverCard, Stack, ScrollArea, Anchor, Collapse, SegmentedControl } from '@mantine/core';
 import { IconSearch, IconX, IconAlertCircle, IconAlertTriangle, IconArchive, IconInfoCircle, IconRefresh, IconChevronDown, IconChevronUp } from '@tabler/icons-react';
 import { canRolesPerform } from '@/lib/permissions';
 import { notifications } from '@mantine/notifications';
 import { PurpleLoader } from '@/components/PurpleLoader';
 import { createClient } from '@/lib/supabase/client';
 import { UserDisplay } from '@/components/UserDisplay';
-import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, getCohort2DateForTimeline, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
+import { addCalendarDays, addCalendarMonth, dateToLocalDateString, diffCalendarDaysBetweenYmd, formatDateOnlyForDisplay, getCohort2DateForTimeline, parseDateOnlyLocal, subtractCalendarDays } from '@/lib/date-utils';
 import { fetchStreamJSON } from '@/lib/fetch-stream';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
-import { getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
+import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd, getReleaseDefaultGtmAccessDateYmd, getReleaseDefaultInternalReadinessDateYmd } from '@/lib/epic-rollout-dates';
+import { GtmAccessDateCell } from '@/components/GtmAccessDateCell';
+import { InternalReadinessDateCell } from '@/components/InternalReadinessDateCell';
 import {
     mergeReleaseScheduleApiResponse,
     mergeReleaseScheduleRows,
@@ -53,7 +55,7 @@ function CohortDateHeaderIcon() {
     return (
         <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
             <HoverCard.Target>
-                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
             </HoverCard.Target>
             <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
                 {COHORT_DATE_TOOLTIP}
@@ -65,7 +67,7 @@ function GtmOrgsHeaderIcon() {
     return (
         <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
             <HoverCard.Target>
-                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
             </HoverCard.Target>
             <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
                 This is the date that GTM orgs have been enabled with the new feature.{' '}
@@ -80,6 +82,77 @@ function GtmOrgsHeaderIcon() {
                 </a>
             </HoverCard.Dropdown>
         </HoverCard>
+    );
+}
+
+function GtmOrgsColumnHeader({ defaultTargetYmd }: { defaultTargetYmd?: string | null }) {
+    const targetLabel = defaultTargetYmd
+        ? formatDateOnlyForDisplay(defaultTargetYmd, { month: 'short', day: 'numeric' })
+        : null;
+
+    return (
+        <div style={{ textTransform: 'none', letterSpacing: 'normal' }}>
+            <div className="flex items-center gap-1" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                GTM Orgs
+                <GtmOrgsHeaderIcon />
+            </div>
+            {targetLabel && (
+                <Tooltip
+                    label="Planned GTM Access and Prep start from the release timeline (not Go/No-Go)"
+                    withArrow
+                    multiline
+                    w={240}
+                >
+                    <div
+                        style={{
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))',
+                            marginTop: '4px',
+                            lineHeight: 1.35,
+                            cursor: 'help',
+                        }}
+                    >
+                        {targetLabel}
+                    </div>
+                </Tooltip>
+            )}
+        </div>
+    );
+}
+
+function InternalReadinessColumnHeader({ defaultTargetYmd }: { defaultTargetYmd?: string | null }) {
+    const targetLabel = defaultTargetYmd
+        ? formatDateOnlyForDisplay(defaultTargetYmd, { month: 'short', day: 'numeric' })
+        : null;
+
+    return (
+        <div style={{ textTransform: 'none', letterSpacing: 'normal' }}>
+            <div className="flex items-center gap-1" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Internal Readiness
+            </div>
+            {targetLabel && (
+                <Tooltip
+                    label="Planned Internal Readiness start from the release timeline"
+                    withArrow
+                    multiline
+                    w={240}
+                >
+                    <div
+                        style={{
+                            fontSize: '13px',
+                            fontWeight: 500,
+                            color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))',
+                            marginTop: '4px',
+                            lineHeight: 1.35,
+                            cursor: 'help',
+                        }}
+                    >
+                        {targetLabel}
+                    </div>
+                </Tooltip>
+            )}
+        </div>
     );
 }
 
@@ -355,6 +428,79 @@ function EpicsClient({
 
 
     const canArchiveEpic = canRolesPerform(currentUserRoles, 'launch.delete');
+    const canEditAccessDates = canRolesPerform(currentUserRoles, 'launch.accessDates.update');
+
+    const handleGtmAccessUpdate = async (
+        epicId: string,
+        patch: { actual_gtm_access_date?: string | null; gtm_access_confirmed?: boolean }
+    ) => {
+        const prev = epics.find((e) => e.id === epicId);
+        if (!prev) return;
+
+        setEpics((list) =>
+            list.map((e) => (e.id === epicId ? { ...e, ...patch } : e))
+        );
+
+        try {
+            const res = await fetch(`/api/epics/${epicId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to update GTM access');
+            }
+            const updated = await res.json();
+            setEpics((list) => list.map((e) => (e.id === epicId ? { ...e, ...updated } : e)));
+        } catch (error: unknown) {
+            setEpics((list) => list.map((e) => (e.id === epicId ? prev : e)));
+            notifications.show({
+                title: 'Update failed',
+                message: error instanceof Error ? error.message : 'Could not save GTM access',
+                color: 'red',
+            });
+        }
+    };
+
+    const handleInternalReadinessUpdate = async (
+        epicId: string,
+        patch: {
+            actual_internal_readiness_date?: string | null;
+            internal_readiness_confirmed?: boolean;
+            internal_readiness_na?: boolean;
+        }
+    ) => {
+        const prev = epics.find((e) => e.id === epicId);
+        if (!prev) return;
+
+        setEpics((list) =>
+            list.map((e) => (e.id === epicId ? { ...e, ...patch } : e))
+        );
+
+        try {
+            const res = await fetch(`/api/epics/${epicId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to update Internal Readiness');
+            }
+            const updated = await res.json();
+            setEpics((list) => list.map((e) => (e.id === epicId ? { ...e, ...updated } : e)));
+        } catch (error: unknown) {
+            setEpics((list) => list.map((e) => (e.id === epicId ? prev : e)));
+            notifications.show({
+                title: 'Update failed',
+                message: error instanceof Error ? error.message : 'Could not save Internal Readiness',
+                color: 'red',
+            });
+        }
+    };
 
     const handleArchiveClick = (epicId: string, epicName: string) => {
         setEpicToArchive({ id: epicId, name: epicName });
@@ -444,6 +590,60 @@ function EpicsClient({
             }
         }
         return null;
+    };
+
+    const getGroupRolloutDateOptions = (group: { releaseDate: string | null; epics: Epic[] }) => {
+        const uiEpics = group.epics.filter(isUiFrameworkEpic);
+        const uiLevels = uiEpics.map(parseUiLevelFromEpic).filter((x): x is number => x != null);
+        return {
+            useUiRollout: uiEpics.length > 0,
+            uiRolloutStages: uiRolloutStagesForTimeline,
+            uiLevel: uiLevels[0] ?? 1,
+        };
+    };
+
+    const getGroupGtmPlannedTargetYmd = (group: { releaseDate: string | null; epics: Epic[] }) => {
+        return getReleaseDefaultGtmAccessDateYmd(
+            group.releaseDate,
+            releaseScheduleStagesForTimeline,
+            getGroupRolloutDateOptions(group),
+        );
+    };
+
+    const getGroupInternalReadinessPlannedTargetYmd = (group: { releaseDate: string | null; epics: Epic[] }) => {
+        return getReleaseDefaultInternalReadinessDateYmd(
+            group.releaseDate,
+            releaseScheduleStagesForTimeline,
+            getGroupRolloutDateOptions(group),
+        );
+    };
+
+    const epicNeedsGtmConfirmation = (epic: Epic, releaseDateYmd?: string | null): boolean => {
+        if (epic.gtm_access_confirmed === true) return false;
+        const plannedYmd = getEpicGtmAccessDateYmd(
+            epic,
+            releaseScheduleStagesForTimeline,
+            uiRolloutStagesForTimeline,
+            { releaseTrainDateYmd: releaseDateYmd ?? undefined },
+        );
+        if (!plannedYmd) return false;
+        const todayYmd = dateToLocalDateString(new Date());
+        const daysUntil = diffCalendarDaysBetweenYmd(plannedYmd, todayYmd);
+        return daysUntil != null && daysUntil <= 0;
+    };
+
+    const epicNeedsInternalReadinessConfirmation = (epic: Epic, releaseDateYmd?: string | null): boolean => {
+        if (epic.internal_readiness_confirmed === true || epic.internal_readiness_na === true) return false;
+        const plannedYmd = getEpicInternalOrgsDateYmd(
+            epic,
+            releaseScheduleStagesForTimeline,
+            uiRolloutStagesForTimeline,
+            { releaseTrainDateYmd: releaseDateYmd ?? undefined },
+        );
+        if (!plannedYmd) return false;
+        const todayYmd = dateToLocalDateString(new Date());
+        const daysUntil = diffCalendarDaysBetweenYmd(plannedYmd, todayYmd);
+        return daysUntil != null && daysUntil <= 0;
     };
 
     const filteredEpics = epics.filter(l => {
@@ -1291,7 +1491,7 @@ function EpicsClient({
                         </div>
                     </div>
                     <div
-                        className="rounded-lg"
+                        className="rounded-lg overflow-hidden"
                         style={{
                             border: "1px solid #E5E7EB",
                             backgroundColor: "#FFFFFF",
@@ -1299,19 +1499,22 @@ function EpicsClient({
                         }}
                     >
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
+                            <table className="releases-epics-table w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1170px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Readiness" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col === "Internal Readiness" ? (
+                                                    <span>{col}</span>
+                                                ) : col === "Risk" ? (
+                                                    <div className="hidden md:flex items-center justify-end gap-1">{col}</div>
                                                 ) : col}
                                             </th>
                                         ))}
-                                        <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
@@ -1332,6 +1535,9 @@ function EpicsClient({
                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}>
@@ -1344,11 +1550,11 @@ function EpicsClient({
                                                 <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
                                                 <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
-                                            </td>
-                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}>
-                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} />
+                                            <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <div className="hidden md:block skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: "14px" }} />
+                                                </div>
                                             </td>
                                         </tr>
                                         );
@@ -1916,29 +2122,32 @@ function EpicsClient({
                             boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                     }}>
                         <div className="overflow-x-auto">
-                            <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
+                            <table className="releases-epics-table w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1170px" }}>
                                 <colgroup>
-                                    <col className="w-100" />
-                                    <col className="w-28" />
-                                    <col className="w-28" />
-                                    <col className="w-28" />
-                                    <col className="w-24" />
-                                    <col className="w-32" />
-                                    <col className="w-24" />
-                                    <col className="w-24" />
+                                    <col />
+                                    <col style={{ width: '6.5rem' }} />
+                                    <col style={{ width: '6.5rem' }} />
+                                    <col style={{ width: '5.5rem' }} />
+                                    <col style={{ width: '5.5rem' }} />
+                                    <col style={{ width: '6.5rem' }} />
+                                    <col style={{ width: '7rem' }} />
+                                    <col style={{ width: '5.5rem' }} />
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`px-4 py-3 text-left${["GTM Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].includes(col) ? " hidden md:table-cell" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Readiness" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
+                                                ) : col === "Internal Readiness" ? (
+                                                    <span>{col}</span>
+                                                ) : col === "Risk" ? (
+                                                    <div className="hidden md:flex items-center justify-end gap-1">{col}</div>
                                                 ) : col}
                                             </th>
                                         ))}
-                                        <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }} />
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
@@ -1956,6 +2165,9 @@ function EpicsClient({
                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
+                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} />
+                                            </td>
+                                            <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
                                                 <div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} />
                                             </td>
                                             <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "14px 16px" }}>
@@ -1968,11 +2180,11 @@ function EpicsClient({
                                                 <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
                                                 <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
                                             </td>
-                                            <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "14px 16px" }}>
-                                                <div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
-                                            </td>
-                                            <td className="px-4 py-3 text-right w-24" style={{ padding: "14px 16px" }}>
-                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} />
+                                            <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <div className="hidden md:block skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
+                                                    <div className="skeleton-shimmer" style={{ height: "14px", width: "14px" }} />
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -2309,23 +2521,23 @@ function EpicsClient({
                                         </div>
                                     );
                                 })()}
-                                <div className="rounded-lg" style={{ 
+                                <div className="rounded-lg overflow-hidden" style={{ 
                                     border: "1px solid #E5E7EB",
                                     backgroundColor: "#FFFFFF",
                                     boxShadow: "0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06)"
                                 }}>
                                     <div className="overflow-x-auto overflow-y-visible">
                                     {(loading || (isDeterminingOrder && releaseSchedule.length === 0 && group.epics.length === 0)) ? (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
+                                        <table className="releases-epics-table w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1170px" }}>
                                             <colgroup>
-                                                <col className="w-100" />
-                                                <col className="w-28" />
-                                                <col className="w-28" />
-                                                <col className="w-28" />
-                                                <col className="w-24" />
-                                                <col className="w-32" />
-                                                <col className="w-24" />
-                                                <col className="w-24" />
+                                                <col />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '7rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
                                             </colgroup>
                                             <thead style={{
                                                 backgroundColor: "#FFFFFF",
@@ -2333,7 +2545,8 @@ function EpicsClient({
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><GtmOrgsColumnHeader defaultTargetYmd={getGroupGtmPlannedTargetYmd(group)} /></th>
+                                                    <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><InternalReadinessColumnHeader defaultTargetYmd={getGroupInternalReadinessPlannedTargetYmd(group)} /></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
@@ -2341,19 +2554,18 @@ function EpicsClient({
                                                         <div className="flex items-center gap-1">
                                                             Readiness
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
-                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                        <div className="flex items-center gap-1">
+                                                    <th className="px-4 py-3 text-right" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="hidden md:flex items-center justify-end gap-1">
                                                             Risk
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
-                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
@@ -2371,6 +2583,7 @@ function EpicsClient({
                                                             </div>
                                                         </td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} /></td>
+                                                        <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "56px" }} /></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} /></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-28" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "60px" }} /></td>
                                                         <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "22px", width: "64px", borderRadius: "10px" }} /></td>
@@ -2378,24 +2591,28 @@ function EpicsClient({
                                                             <div className="skeleton-shimmer" style={{ height: "8px", width: "80px", borderRadius: "4px", marginBottom: "5px" }} />
                                                             <div className="skeleton-shimmer" style={{ height: "12px", width: "36px" }} />
                                                         </td>
-                                                        <td className="hidden md:table-cell px-4 py-3 w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} /></td>
-                                                        <td className="px-4 py-3 text-right w-24" style={{ padding: "12px 16px" }}><div className="skeleton-shimmer" style={{ height: "14px", width: "32px", marginLeft: "auto" }} /></td>
+                                                        <td className="px-4 py-3" style={{ padding: "12px 16px" }}>
+                                                            <div className="flex items-center justify-end gap-2">
+                                                                <div className="hidden md:block skeleton-shimmer" style={{ height: "22px", width: "44px", borderRadius: "10px" }} />
+                                                                <div className="skeleton-shimmer" style={{ height: "14px", width: "14px" }} />
+                                                            </div>
+                                                        </td>
                                                     </tr>
                                                     );
                                                 })}
                                             </tbody>
                                         </table>
                                     ) : (
-                                        <table className="min-w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1100px" }}>
+                                        <table className="releases-epics-table w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1170px" }}>
                                             <colgroup>
-                                                <col className="w-100" />
-                                                <col className="w-28" />
-                                                <col className="w-28" />
-                                                <col className="w-28" />
-                                                <col className="w-24" />
-                                                <col className="w-32" />
-                                                <col className="w-24" />
-                                                <col className="w-24" />
+                                                <col />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
+                                                <col style={{ width: '6.5rem' }} />
+                                                <col style={{ width: '7rem' }} />
+                                                <col style={{ width: '5.5rem' }} />
                                             </colgroup>
                                             <thead style={{
                                                 backgroundColor: "#FFFFFF",
@@ -2403,7 +2620,8 @@ function EpicsClient({
                                             }}>
                                                 <tr>
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GTM Orgs<GtmOrgsHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><GtmOrgsColumnHeader defaultTargetYmd={getGroupGtmPlannedTargetYmd(group)} /></th>
+                                                    <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><InternalReadinessColumnHeader defaultTargetYmd={getGroupInternalReadinessPlannedTargetYmd(group)} /></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
@@ -2411,19 +2629,18 @@ function EpicsClient({
                                                         <div className="flex items-center gap-1">
                                                             Readiness
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>The readiness score measures how complete your launch preparation is. Criteria are grouped into categories (like Technical, Legal, Marketing). Within each category, each criterion gets a score: GO = 100%, CONDITIONAL = 50%, NO_GO or NOT_SET = 0%. Gate criteria (must-have items) count 3 times more than regular criteria. If a category has a signoff that&apos;s GO, all criteria in that category are treated as GO. We then average the scores across all categories (each category has equal weight). The score is capped lower if there are gate blockers or missing criteria.</div></div>} withArrow multiline>
-                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                        <div className="flex items-center gap-1">
+                                                    <th className="px-4 py-3 text-right" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                                        <div className="hidden md:flex items-center justify-end gap-1">
                                                             Risk
                                                             <Tooltip label={<div style={{ maxWidth: '300px' }}><div style={{ fontWeight: 600, marginBottom: '8px' }}>How is this calculated?</div><div style={{ fontSize: '12px', lineHeight: '1.5' }}>Risk is calculated from multiple factors that add up to a score (0-100 points). Days to launch: More points if launching soon (up to 40 points). Readiness status: NO_GO adds 30 points, CONDITIONAL adds 20 points. Readiness score below threshold: Up to 20 points based on how far below. Gate blockers: Adds 30 points if any gate criteria are NO_GO. Overdue criteria: Up to 20 points (5 points per overdue item). The final risk level is LOW, MEDIUM, or HIGH based on the total score. A GO epic can still be HIGH risk if launching soon.</div></div>} withArrow multiline>
-                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: '#9CA3AF' }} />
+                                                                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
                                                             </Tooltip>
                                                         </div>
                                                     </th>
-                                                    <th className="px-4 py-3 text-right w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}></th>
                                                 </tr>
                                             </thead>
                                             <tbody className="bg-white" style={{ borderTop: "1px solid #E5E7EB" }}>
@@ -2492,15 +2709,34 @@ function EpicsClient({
                                                         </div>
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {(() => {
-                                                            const ymd = getEpicInternalOrgsDateYmd(
+                                                        <GtmAccessDateCell
+                                                            epic={epic}
+                                                            plannedYmd={getEpicGtmAccessDateYmd(
                                                                 epic,
                                                                 releaseScheduleStagesForTimeline,
                                                                 uiRolloutStagesForTimeline,
                                                                 { releaseTrainDateYmd: group.releaseDate },
-                                                            );
-                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
-                                                        })()}
+                                                            )}
+                                                            needsAttention={epicNeedsGtmConfirmation(epic, group.releaseDate)}
+                                                            dateOptions={{ month: 'short', day: 'numeric' }}
+                                                            editable={canEditAccessDates}
+                                                            onUpdate={(patch) => handleGtmAccessUpdate(epic.id, patch)}
+                                                        />
+                                                    </td>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        <InternalReadinessDateCell
+                                                            epic={epic}
+                                                            plannedYmd={getEpicInternalOrgsDateYmd(
+                                                                epic,
+                                                                releaseScheduleStagesForTimeline,
+                                                                uiRolloutStagesForTimeline,
+                                                                { releaseTrainDateYmd: group.releaseDate },
+                                                            )}
+                                                            needsAttention={epicNeedsInternalReadinessConfirmation(epic, group.releaseDate)}
+                                                            dateOptions={{ month: 'short', day: 'numeric' }}
+                                                            editable={canEditAccessDates}
+                                                            onUpdate={(patch) => handleInternalReadinessUpdate(epic.id, patch)}
+                                                        />
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         <Cohort1DateBadge
@@ -2551,32 +2787,30 @@ function EpicsClient({
                                                             </span>
                                                         </div>
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24">
-                                                        <span className="inline-flex items-center gap-1">
-                                                            {epic.risk_level && (
-                                                                <span className={`px-2 py-1 rounded text-xs font-medium ${epic.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
-                                                                    epic.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
-                                                                        'bg-green-100 text-green-800'
-                                                                    }`}>
-                                                                    {epic.risk_level}
-                                                                </span>
-                                                            )}
-                                                            {(epic.criteria_red_flag_count ?? 0) > 0 && (
-                                                                <span className="inline-flex items-center gap-0.5" aria-label={`${epic.criteria_red_flag_count} criteria with No Go`}>
-                                                                    {(epic.criteria_red_flag_names ?? Array.from({ length: epic.criteria_red_flag_count ?? 0 }, () => 'No Go criterion')).map((name, i) => (
-                                                                        <Tooltip key={i} label={name} withArrow>
-                                                                            <span className="rounded-full bg-red-500 shrink-0" style={{ width: 9, height: 9 }} aria-label={name} />
-                                                                        </Tooltip>
-                                                                    ))}
-                                                                </span>
-                                                            )}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
+                                                    <td className="px-4 py-3 whitespace-nowrap" style={{ padding: "12px 16px" }}>
                                                         <div className="flex items-center justify-end gap-2">
+                                                            <span className="hidden md:inline-flex items-center gap-1 shrink-0">
+                                                                {epic.risk_level && (
+                                                                    <span className={`px-2 py-1 rounded text-xs font-medium ${epic.risk_level === 'HIGH' ? 'bg-red-100 text-red-800' :
+                                                                        epic.risk_level === 'MEDIUM' ? 'bg-orange-100 text-orange-800' :
+                                                                            'bg-green-100 text-green-800'
+                                                                        }`}>
+                                                                        {epic.risk_level}
+                                                                    </span>
+                                                                )}
+                                                                {(epic.criteria_red_flag_count ?? 0) > 0 && (
+                                                                    <span className="inline-flex items-center gap-0.5" aria-label={`${epic.criteria_red_flag_count} criteria with No Go`}>
+                                                                        {(epic.criteria_red_flag_names ?? Array.from({ length: epic.criteria_red_flag_count ?? 0 }, () => 'No Go criterion')).map((name, i) => (
+                                                                            <Tooltip key={i} label={name} withArrow>
+                                                                                <span className="rounded-full bg-red-500 shrink-0" style={{ width: 9, height: 9 }} aria-label={name} />
+                                                                            </Tooltip>
+                                                                        ))}
+                                                                    </span>
+                                                                )}
+                                                            </span>
                                                             {epic.aha_record_not_found && (
                                                                 <Tooltip label="Record not found in Aha." withArrow>
-                                                                    <span className="inline-flex text-red-600" style={{ flexShrink: 0 }} aria-hidden>
+                                                                    <span className="inline-flex text-red-600 shrink-0" aria-hidden>
                                                                         <IconAlertTriangle size={20} strokeWidth={2.5} />
                                                                     </span>
                                                                 </Tooltip>
@@ -2586,7 +2820,7 @@ function EpicsClient({
                                                                     <button
                                                                         onClick={() => handleArchiveClick(epic.id, epic.name)}
                                                                         disabled={archivingEpicId === epic.id}
-                                                                        className="text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                                                                        className="text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center shrink-0"
                                                                     >
                                                                         {archivingEpicId === epic.id ? (
                                                                             <span className="text-xs">...</span>

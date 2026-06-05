@@ -1,10 +1,11 @@
 'use client';
 
 import { Tooltip } from '@mantine/core';
+import { ReleaseDateCell } from '@/components/ReleaseDateCell';
 import { formatDateOnlyForDisplay, getCohort2DateForTimeline } from '@/lib/date-utils';
-import { getEpicGaDateYmd } from '@/lib/epic-rollout-dates';
 import type { ReleaseScheduleDateRow } from '@/lib/epic-ga-date';
 import type { Epic } from '@/types/epics';
+import { getRolloutAwareGaYmd, getGaCellShading } from '@/lib/epic-rollout-process';
 
 type Props = {
   epic: Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>;
@@ -16,8 +17,7 @@ type Props = {
 };
 
 /**
- * GA column on /epics. Shows per-epic GA (Aha scheduled GA → release train → Cohort 1 + 28).
- * When the epic date differs from the release-train GA shown on the timeline, explains the mismatch.
+ * GA column on /epics. Rollout-aware: Single GA shows off-schedule in GA; Dual Cohort uses standard resolution.
  */
 export function EpicGaDateBadge({
   epic,
@@ -27,7 +27,7 @@ export function EpicGaDateBadge({
   dateOptions,
   emptyLabel = '-',
 }: Props) {
-  const epicGaYmd = getEpicGaDateYmd(epic, {
+  const epicGaYmd = getRolloutAwareGaYmd(epic, {
     releaseSchedule,
     releaseTrainDateYmd,
   });
@@ -38,7 +38,15 @@ export function EpicGaDateBadge({
 
   if (!epicGaYmd) return <span>{emptyLabel}</span>;
 
-  const text = formatDateOnlyForDisplay(epicGaYmd, dateOptions);
+  const cell = (
+    <ReleaseDateCell
+      ymd={epicGaYmd}
+      shading={getGaCellShading(epic, true)}
+      dateOptions={dateOptions}
+      emptyLabel={emptyLabel}
+    />
+  );
+
   if (releaseGaYmd && epicGaYmd !== releaseGaYmd) {
     const trainLabel = formatDateOnlyForDisplay(releaseGaYmd, dateOptions);
     return (
@@ -48,9 +56,10 @@ export function EpicGaDateBadge({
         multiline
         w={280}
       >
-        <span>{text}</span>
+        {cell}
       </Tooltip>
     );
   }
-  return <span>{text}</span>;
+
+  return cell;
 }

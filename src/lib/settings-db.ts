@@ -62,6 +62,7 @@ export interface AppSettings {
     slack_scorecard_alert?: boolean;
     slack_escalation_alert?: boolean;
     slack_criterion_comment_or_attachment?: boolean;
+    slack_gtm_access_nudge?: boolean;
     // Email notification type flags
     email_criteria_assignment?: boolean;
     email_criteria_nudge?: boolean;
@@ -78,6 +79,7 @@ export interface AppSettings {
     email_scorecard_alert?: boolean;
     email_escalation_alert?: boolean;
     email_criterion_comment_or_attachment?: boolean;
+    email_gtm_access_nudge?: boolean;
     slack_theme?: import('./slack/theme').SlackThemeConfig; // Slack notification theme customization
     jira_domain?: string | null; // Jira domain (e.g., "clearco.atlassian.net")
     jira_api_token?: string | null; // Jira API token for authentication

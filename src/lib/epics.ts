@@ -453,6 +453,11 @@ export async function getEpic(id: string) {
 export type EpicUpdatePayload = Partial<CreateEpicDTO> & {
     /** Only 'Cancelled' is stored; all other statuses are computed from dates. */
     status?: 'Cancelled';
+    actual_gtm_access_date?: string | null;
+    gtm_access_confirmed?: boolean;
+    actual_internal_readiness_date?: string | null;
+    internal_readiness_confirmed?: boolean;
+    internal_readiness_na?: boolean;
 };
 
 export async function updateEpic(id: string, updates: EpicUpdatePayload) {

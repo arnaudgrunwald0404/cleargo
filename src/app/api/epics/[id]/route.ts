@@ -119,6 +119,26 @@ export async function PATCH(
             if (!ok) return NextResponse.json({ error: 'Forbidden: cannot update epic risk level' }, { status: 403 });
         }
 
+        const rolloutDateFields = [
+            'actual_gtm_access_date',
+            'gtm_access_confirmed',
+            'actual_internal_readiness_date',
+            'internal_readiness_confirmed',
+            'internal_readiness_na',
+        ] as const;
+        const touchesRolloutDates = rolloutDateFields.some((f) => typeof body[f] !== 'undefined');
+        if (touchesRolloutDates) {
+            const ok = canRolesPerformWithRules(roles, 'launch.accessDates.update', rules);
+            if (!ok) {
+                return NextResponse.json({ error: 'Forbidden: cannot update rollout access fields' }, { status: 403 });
+            }
+            for (const f of rolloutDateFields) {
+                if (typeof body[f] !== 'undefined') {
+                    updates[f] = body[f];
+                }
+            }
+        }
+
         await updateEpic(id, updates);
 
         const needsDueDateRecalc =

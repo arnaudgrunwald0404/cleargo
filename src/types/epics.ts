@@ -36,6 +36,16 @@ export interface Epic {
     jira_epic_key?: string | null;
     launch_ref?: string | null;
     aha_record_not_found?: boolean;
+    /** PM-entered actual/revised GTM org access date (YYYY-MM-DD). */
+    actual_gtm_access_date?: string | null;
+    /** Manual confirmation that GTM access has occurred. */
+    gtm_access_confirmed?: boolean;
+    /** PM-entered actual/revised Internal Readiness distributed date (YYYY-MM-DD). */
+    actual_internal_readiness_date?: string | null;
+    /** Manual confirmation that Internal Readiness has been distributed. */
+    internal_readiness_confirmed?: boolean;
+    /** PM marked Internal Readiness as not applicable for this epic. */
+    internal_readiness_na?: boolean;
     /** Number of criteria with NO_GO (red flag) rating for this epic. */
     criteria_red_flag_count?: number;
     /** Names of criteria with NO_GO rating (same order as dots). */

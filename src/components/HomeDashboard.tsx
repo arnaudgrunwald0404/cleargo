@@ -65,6 +65,13 @@ type ReleaseGroup = {
     items: MyItem[];
 };
 
+type GtmAccessPendingItem = {
+    epicId: string;
+    epicName: string;
+    plannedGtmYmd: string;
+    daysSincePlanned: number;
+};
+
 function getModuleFromLaunch(launch: MyItem['launch']): string | null {
     if (!launch.aha_fields || typeof launch.aha_fields !== 'object') return null;
     const cf = (launch.aha_fields as any).custom_fields;
@@ -457,6 +464,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isLoadingReleaseNames, setIsLoadingReleaseNames] = useState(true);
   const [releaseStagesFull, setReleaseStagesFull] = useState<CriterionDueDateStageRow[]>([]);
+  const [gtmPendingItems, setGtmPendingItems] = useState<GtmAccessPendingItem[]>([]);
 
   useEffect(() => {
     if (!isSuperAdmin) return;
@@ -733,9 +741,27 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     }
   };
 
+  const loadGtmPending = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (viewAsUser?.email) params.set('viewAsEmail', viewAsUser.email);
+      const url = `/api/gtm-access-pending${params.toString() ? `?${params.toString()}` : ''}`;
+      const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+      if (!res.ok) {
+        setGtmPendingItems([]);
+        return;
+      }
+      const data = await res.json();
+      setGtmPendingItems(Array.isArray(data) ? data : []);
+    } catch {
+      setGtmPendingItems([]);
+    }
+  };
+
   useEffect(() => {
     if (readOnly) {
       loadData(0, false);
+      loadGtmPending();
       return;
     }
     const cachedItems = getCachedData(showAllItems);
@@ -744,6 +770,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       setIsRefreshing(true);
     }
     loadData(0, false);
+    loadGtmPending();
   }, [showAllItems, viewAsUser?.email]);
 
   async function fetchReleaseSchedule() {
@@ -1581,6 +1608,53 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
             }}>
               <PurpleLoader size="sm" />
               <span>Refreshing data...</span>
+            </div>
+          )}
+
+          {gtmPendingItems.length > 0 && (
+            <div style={{
+              backgroundColor: '#FFFBEB',
+              border: '1px solid #FCD34D',
+              borderRadius: 'var(--radius-base)',
+              padding: 'var(--spacing-3) var(--spacing-4)',
+              marginBottom: 'var(--spacing-4)',
+              fontFamily: 'var(--font-body)',
+              fontSize: 'var(--font-size-sm)',
+              color: '#92400E',
+            }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                Confirm GTM access ({gtmPendingItems.length})
+              </div>
+              <div style={{ lineHeight: 1.5, marginBottom: 8 }}>
+                {gtmPendingItems.length === 1
+                  ? 'One launch has passed its planned GTM access date and still needs confirmation.'
+                  : `${gtmPendingItems.length} launches have passed their planned GTM access dates and still need confirmation.`}
+              </div>
+              <ul style={{ margin: '0 0 10px', paddingLeft: 18 }}>
+                {gtmPendingItems.slice(0, 3).map((item) => (
+                  <li key={item.epicId}>
+                    <Link
+                      href={`/epics/${item.epicId}`}
+                      style={{ color: '#B45309', textDecoration: 'underline', textUnderlineOffset: '2px' }}
+                    >
+                      {item.epicName}
+                    </Link>
+                    {' '}
+                    <span style={{ color: '#A16207' }}>
+                      (planned {formatDateOnlyForDisplay(item.plannedGtmYmd, { month: 'short', day: 'numeric' })})
+                    </span>
+                  </li>
+                ))}
+                {gtmPendingItems.length > 3 && (
+                  <li style={{ color: '#A16207' }}>+{gtmPendingItems.length - 3} more</li>
+                )}
+              </ul>
+              <Link
+                href="/epics"
+                style={{ color: '#B45309', fontWeight: 500, textDecoration: 'underline', textUnderlineOffset: '2px' }}
+              >
+                View on Releases
+              </Link>
             </div>
           )}
 

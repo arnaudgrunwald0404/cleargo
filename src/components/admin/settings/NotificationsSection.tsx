@@ -26,6 +26,7 @@ const allNotificationTypes = [
   { key: 'criteria_nudge', label: 'Criteria Nudge', category: 'Reminder' },
   { key: 'retro_reminder', label: 'Retro Reminder', category: 'Reminder' },
   { key: 'success_review_reminder', label: 'Success Review Reminder', category: 'Reminder' },
+  { key: 'gtm_access_nudge', label: 'GTM Access Confirmation', category: 'Reminder' },
   { key: 'stale_criterion', label: 'Stale Criterion', category: 'Alert' },
   { key: 'launch_risk_alert', label: 'Launch Risk Alert', category: 'Alert' },
   { key: 'go_no_go_decision', label: 'Go/No-Go Decision', category: 'Alert' },
@@ -52,6 +53,7 @@ const slackReadyTypes = new Set([
   'delegation',
   'scorecard_alert',
   'criterion_comment_or_attachment',
+  'gtm_access_nudge',
 ]);
 
 // Notification types that are ready for Email (have handlers implemented)

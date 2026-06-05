@@ -27,6 +27,9 @@ import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDate
 import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
 import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
 import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
+import { GtmAccessDateCell } from "@/components/GtmAccessDateCell";
+import { InternalReadinessDateCell } from "@/components/InternalReadinessDateCell";
+import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd } from "@/lib/epic-rollout-dates";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 import { EpicRoadmapRewindPanel } from "@/components/epic/EpicRoadmapRewindPanel";
@@ -97,6 +100,9 @@ export default function EpicDetailPage() {
     const [loadingSuccessData, setLoadingSuccessData] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
     const [canConfigureSuccessMetrics, setCanConfigureSuccessMetrics] = useState(false);
+    const [canEditAccessDates, setCanEditAccessDates] = useState(false);
+    const [releaseScheduleStagesAll, setReleaseScheduleStagesAll] = useState<any[]>([]);
+    const [uiRolloutStagesAll, setUiRolloutStagesAll] = useState<any[]>([]);
     const isMobile = useMediaQuery("(max-width: 768px)");
 
     // Memoize status options based on admin status
@@ -175,6 +181,7 @@ export default function EpicDetailPage() {
                 const rawRoles = meData?.user?.roles;
                 const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
                 const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
+                setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
                 console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
                 setIsAdmin(adminStatus);
                 setCanConfigureSuccessMetrics(adminStatus);
@@ -374,6 +381,8 @@ export default function EpicDetailPage() {
 
             const fetchedReleaseStages = epicIsUiFramework ? uiRolloutStagesData : releaseStagesData;
             setReleaseStages(fetchedReleaseStages);
+            setReleaseScheduleStagesAll(releaseStagesData);
+            setUiRolloutStagesAll(uiRolloutStagesData);
 
             const ratingTimingBridge = new Map<number, number>();
             if (epicIsUiFramework && releaseStagesData.length > 0 && uiRolloutStagesData.length > 0) {
@@ -1117,6 +1126,7 @@ export default function EpicDetailPage() {
                     const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
                     const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                     setCanConfigureSuccessMetrics(adminStatus);
+                    setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
                     console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
                     setIsAdmin(adminStatus);
                 }
@@ -1374,6 +1384,68 @@ export default function EpicDetailPage() {
             });
         } finally {
             setUpdatingTier(false);
+        }
+    }
+
+    async function handleGtmAccessUpdate(
+        patch: { actual_gtm_access_date?: string | null; gtm_access_confirmed?: boolean }
+    ) {
+        if (!epic) return;
+        const prev = epic;
+        setEpic({ ...epic, ...patch });
+        try {
+            const res = await fetch(`/api/epics/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to update GTM access');
+            }
+            const updated = await res.json();
+            setEpic((e) => (e ? { ...e, ...updated } : e));
+        } catch (error: unknown) {
+            setEpic(prev);
+            notifications.show({
+                title: 'Update failed',
+                message: error instanceof Error ? error.message : 'Could not save GTM access',
+                color: 'red',
+            });
+        }
+    }
+
+    async function handleInternalReadinessUpdate(
+        patch: {
+            actual_internal_readiness_date?: string | null;
+            internal_readiness_confirmed?: boolean;
+            internal_readiness_na?: boolean;
+        }
+    ) {
+        if (!epic) return;
+        const prev = epic;
+        setEpic({ ...epic, ...patch });
+        try {
+            const res = await fetch(`/api/epics/${id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to update Internal Readiness');
+            }
+            const updated = await res.json();
+            setEpic((e) => (e ? { ...e, ...updated } : e));
+        } catch (error: unknown) {
+            setEpic(prev);
+            notifications.show({
+                title: 'Update failed',
+                message: error instanceof Error ? error.message : 'Could not save Internal Readiness',
+                color: 'red',
+            });
         }
     }
 
@@ -1707,6 +1779,48 @@ export default function EpicDetailPage() {
                         <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
                             {epic ? (
                                 <Cohort1DateBadge epic={epic} scheduleReleaseDate={releaseDate} emptyLabel="Not set" />
+                            ) : (
+                                'Not set'
+                            )}
+                        </span>
+                    </span>
+                    <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ color: 'var(--color-gray-500)' }}>GTM Access </span>
+                        <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
+                            {epic ? (
+                                <GtmAccessDateCell
+                                    epic={epic}
+                                    plannedYmd={getEpicGtmAccessDateYmd(
+                                        epic,
+                                        releaseScheduleStagesAll,
+                                        uiRolloutStagesAll,
+                                        { releaseTrainDateYmd: releaseDate },
+                                    )}
+                                    editable={canEditAccessDates}
+                                    onUpdate={handleGtmAccessUpdate}
+                                />
+                            ) : (
+                                'Not set'
+                            )}
+                        </span>
+                    </span>
+                    <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <span style={{ color: 'var(--color-gray-500)' }}>Internal Readiness </span>
+                        <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
+                            {epic ? (
+                                <InternalReadinessDateCell
+                                    epic={epic}
+                                    plannedYmd={getEpicInternalOrgsDateYmd(
+                                        epic,
+                                        releaseScheduleStagesAll,
+                                        uiRolloutStagesAll,
+                                        { releaseTrainDateYmd: releaseDate },
+                                    )}
+                                    editable={canEditAccessDates}
+                                    onUpdate={handleInternalReadinessUpdate}
+                                />
                             ) : (
                                 'Not set'
                             )}

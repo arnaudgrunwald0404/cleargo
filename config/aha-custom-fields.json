@@ -484,6 +484,10 @@
     "off_schedule_release_date": {
       "label": "Off Schedule Release Date",
       "key": "off_schedule_release_date"
+    },
+    "rollout_process": {
+      "label": "Rollout Process",
+      "key": "rollout_process"
     }
   }
 }

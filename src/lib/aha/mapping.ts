@@ -365,6 +365,20 @@ export async function mapEpicToEpic(
         customFields.off_schedule_release_date = offScheduleReleaseDate;
     }
 
+    // ALWAYS extract rollout_process for Single GA vs Dual Cohort date display on Releases
+    if (Array.isArray(epic.custom_fields)) {
+        const rolloutField =
+            epic.custom_fields.find((f: any) => f?.key === 'rollout_process') ??
+            epic.custom_fields.find((f: any) =>
+                typeof f?.key === 'string' && /rollout.?process/i.test(f.key)
+            );
+        if (rolloutField) {
+            const value = rolloutField.value;
+            customFields.rollout_process =
+                typeof value === 'object' && value?.name != null ? value.name : value;
+        }
+    }
+
     // Store the full release name in standard fields (no parsing)
     const releaseName = epic.release?.name || null;
     if (releaseName) {

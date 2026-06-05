@@ -12,6 +12,7 @@ import {
 } from '@/lib/slack/templates';
 import { buildRetroReminderMessage } from '@/lib/slack/templates/retro-reminders';
 import { buildScorecardAlertMessage } from '@/lib/slack/templates/scorecard-alerts';
+import { buildGtmAccessNudgeMessage } from '@/lib/slack/templates/gtm-access-nudges';
 import { getSlackTheme } from '@/lib/slack/theme';
 import {
   getLaunchStatusChangeEmail,
@@ -246,6 +247,27 @@ export async function GET(request: NextRequest) {
               },
               theme
             );
+            break;
+
+          case 'gtm_access_nudge':
+            message = buildGtmAccessNudgeMessage([
+              {
+                epicId: mockEpicId,
+                epicName: 'Analytics Platform Launch',
+                plannedGtmYmd: '2026-06-01',
+                daysSincePlanned: 4,
+                ownerEmail: 'pm@clearcompany.com',
+                actualGtmAccessDate: null,
+              },
+              {
+                epicId: '660e8400-e29b-41d4-a716-446655440002',
+                epicName: 'E-commerce Integration',
+                plannedGtmYmd: '2026-05-28',
+                daysSincePlanned: 8,
+                ownerEmail: 'pm@clearcompany.com',
+                actualGtmAccessDate: null,
+              },
+            ]);
             break;
 
           case 'retro_reminder':

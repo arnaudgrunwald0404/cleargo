@@ -44,7 +44,8 @@ export type CapabilityId =
   | "roadmap.movementNote.write"
   | "roadmap.analysis.generate"
   | "roadmap.planVsActual.arr.write"
-  | "roadmap.planVsActual.gtm.write";
+  | "roadmap.planVsActual.gtm.write"
+  | "launch.accessDates.update";
 
 export type Capability = {
   id: CapabilityId;
@@ -268,6 +269,11 @@ export const CAPABILITIES: Capability[] = [
     label: "Edit Plan vs Actual GTM module",
     description: "Set GTM module/name on roadmap snapshot rows when missing from Aha pivot sync.",
   },
+  {
+    id: "launch.accessDates.update",
+    label: "Update GTM Access Dates",
+    description: "Set actual GTM access and Internal Readiness dates, mark N/A, and confirm completion on epics (PM only).",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -314,6 +320,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.analysis.generate": ["CPO", "PRODUCT_OPS"],
   "roadmap.planVsActual.arr.write": ["CPO", "PRODUCT_OPS", "PM"],
   "roadmap.planVsActual.gtm.write": ["CPO", "PRODUCT_OPS", "PM"],
+  "launch.accessDates.update": ["PM"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

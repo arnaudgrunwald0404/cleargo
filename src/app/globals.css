@@ -454,6 +454,15 @@ body {
   color: var(--table-header-text-platinum) !important;
   border-color: var(--table-steel) !important;
 }
+[data-table-scope="app"] table.releases-epics-table {
+  width: 100%;
+}
+[data-table-scope="app"] table.releases-epics-table thead th:first-child {
+  border-top-left-radius: 0.5rem;
+}
+[data-table-scope="app"] table.releases-epics-table thead th:last-child {
+  border-top-right-radius: 0.5rem;
+}
 [data-table-scope="app"] table {
   border-color: var(--table-steel);
 }

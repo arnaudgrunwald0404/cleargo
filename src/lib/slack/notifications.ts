@@ -381,6 +381,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildSuccessReviewReminderMessage(payload.metadata as any);
                 break;
 
+            case 'gtm_access_nudge':
+                if (!payload.metadata?.epics) throw new Error('Missing metadata for gtm_access_nudge');
+                const { buildGtmAccessNudgeMessage } = await import('./templates/gtm-access-nudges');
+                message = buildGtmAccessNudgeMessage(payload.metadata.epics);
+                break;
+
             case 'criteria_nudge':
                 if (!payload.metadata) throw new Error('Missing metadata for criteria_nudge');
                 const { buildCriteriaNudgeMessage } = await import('./templates');
