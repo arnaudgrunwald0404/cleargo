@@ -44,9 +44,9 @@ export function EpicGaDateBadge({
   const differsFromTrain = !!releaseGaYmd && epicGaYmd !== releaseGaYmd;
   const shading = getGaCellShading(epic, true, epicGaYmd, releaseGaYmd);
   const tooltip = isRolloutGaFromOffSchedule(epic)
-    ? 'Off Schedule Release Date'
+    ? 'Off Schedule Release Date — outside the standard release train'
     : differsFromTrain
-      ? `Release train GA is ${formatDateOnlyForDisplay(releaseGaYmd!, dateOptions)}. This row shows a different epic GA date.`
+      ? `Epic GA differs from release train (${formatDateOnlyForDisplay(releaseGaYmd!, dateOptions)})`
       : undefined;
 
   return (

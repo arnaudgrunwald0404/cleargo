@@ -83,8 +83,11 @@ export function getRolloutAwareGaYmd(
   });
 }
 
-/** Yellow highlight only — used when a date is an outlier vs. the release train. */
-export type ReleaseDateShading = 'none' | 'off-schedule';
+/**
+ * - off-schedule: yellow pill (Aha Off Schedule Release Date)
+ * - alternate: bold italic when epic date differs from train but is not off-schedule
+ */
+export type ReleaseDateShading = 'none' | 'off-schedule' | 'alternate';
 
 export function getCohort1CellShading(
   epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>,
@@ -99,7 +102,7 @@ export function getCohort1CellShading(
     epicYmd &&
     epicYmd !== releaseTrainCohort1Ymd
   ) {
-    return 'off-schedule';
+    return 'alternate';
   }
   return 'none';
 }
@@ -113,7 +116,7 @@ export function getGaCellShading(
   if (!hasDate) return 'none';
   if (isRolloutGaFromOffSchedule(epic)) return 'off-schedule';
   if (epicGaYmd && releaseTrainGaYmd && epicGaYmd !== releaseTrainGaYmd) {
-    return 'off-schedule';
+    return 'alternate';
   }
   return 'none';
 }

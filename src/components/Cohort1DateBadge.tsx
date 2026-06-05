@@ -39,9 +39,9 @@ export function Cohort1DateBadge({ epic, scheduleReleaseDate, dateOptions, empty
   const shading = getCohort1CellShading(epic, !!ymd, scheduleReleaseDate);
   const tooltip =
     off
-      ? 'Off Schedule Release Date'
-      : shading === 'off-schedule'
-        ? 'Cohort 1 date differs from the release train'
+      ? 'Off Schedule Release Date — outside the standard release train'
+      : shading === 'alternate'
+        ? 'Cohort 1 date differs from the release train planned date'
         : undefined;
 
   return (

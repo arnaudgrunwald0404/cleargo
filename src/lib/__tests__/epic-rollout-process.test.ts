@@ -92,16 +92,16 @@ describe('off-schedule routing', () => {
     expect(getCohort1CellShading(dualEpic, true, '2026-08-20')).toBe('none');
   });
 
-  it('highlights Cohort 1 when it differs from the release train', () => {
-    expect(getCohort1CellShading(dualEpic, true, '2026-07-16')).toBe('off-schedule');
+  it('uses alternate styling when Cohort 1 differs from the release train', () => {
+    expect(getCohort1CellShading(dualEpic, true, '2026-07-16')).toBe('alternate');
   });
 
   it('does not shade GA when it matches the release train', () => {
     expect(getGaCellShading(dualEpic, true, '2026-09-17', '2026-09-17')).toBe('none');
   });
 
-  it('highlights GA when it differs from the release train', () => {
-    expect(getGaCellShading(dualEpic, true, '2026-08-20', '2026-09-17')).toBe('off-schedule');
+  it('uses alternate styling when GA differs from the release train', () => {
+    expect(getGaCellShading(dualEpic, true, '2026-08-20', '2026-09-17')).toBe('alternate');
   });
 });
 
@@ -117,6 +117,6 @@ describe('APP-E-729 Single GA + off-schedule', () => {
     expect(shouldShowCohort1Column(appE729)).toBe(false);
     expect(getRolloutAwareCohort1Ymd(appE729, '2026-07-01')).toBeNull();
     expect(getRolloutAwareGaYmd(appE729, { releaseTrainDateYmd: '2026-07-01' })).toBe('2026-07-01');
-    expect(getGaCellShading(appE729, true, '2026-07-01', '2026-07-16')).toBe('off-schedule');
+    expect(getGaCellShading(appE729, true, '2026-07-01', '2026-07-16')).toBe('off-schedule'); // off-schedule → yellow
   });
 });

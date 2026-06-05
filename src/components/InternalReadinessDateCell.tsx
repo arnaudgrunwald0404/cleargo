@@ -75,13 +75,13 @@ export function InternalReadinessDateCell({
   const isOverridden = !isNa && !!actualYmd && !!plannedYmd && actualYmd !== plannedYmd;
 
   const dateTooltip = isNa
-    ? 'Internal Readiness marked not applicable — click to change'
-    : actualYmd && plannedYmd && actualYmd !== plannedYmd
-      ? `Actual Internal Readiness. Planned was ${formatDateOnlyForDisplay(plannedYmd, dateOptions)}.`
+    ? 'Internal Readiness marked not applicable'
+    : isOverridden
+      ? `Actual Internal Readiness date (differs from planned ${formatDateOnlyForDisplay(plannedYmd!, dateOptions)})`
       : actualYmd
-        ? 'Actual Internal Readiness — click to change'
+        ? 'Actual Internal Readiness date'
         : plannedYmd
-          ? 'Planned Internal Readiness — click to set actual date'
+          ? 'Planned Internal Readiness date from release train'
           : editable
             ? 'Click to set Internal Readiness date or N/A'
             : undefined;
@@ -121,22 +121,34 @@ export function InternalReadinessDateCell({
       style={{
         fontSize: '14px',
         color: isNa || showingPlannedOnly ? '#6B7280' : '#111827',
-        fontStyle: isNa || showingPlannedOnly ? 'italic' : 'normal',
+        fontStyle: isOverridden || isNa || showingPlannedOnly ? 'italic' : 'normal',
         fontWeight: isOverridden ? 600 : showingPlannedOnly || isNa ? 400 : 500,
         cursor: editable ? 'pointer' : 'default',
       }}
     >
       {displayText ?? '-'}
+      {isOverridden ? (
+        <sup aria-hidden style={{ marginLeft: 1, fontSize: '0.75em' }}>
+          *
+        </sup>
+      ) : null}
     </span>
   );
+
+  const dateContent =
+    dateTooltip ? (
+      <Tooltip label={dateTooltip} withArrow multiline w={280}>
+        {dateSpan}
+      </Tooltip>
+    ) : (
+      dateSpan
+    );
 
   if (!editable) {
     if (!displayText && !confirmed) return <span>-</span>;
     return (
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-        {displayText ? (
-          dateTooltip ? <Tooltip label={dateTooltip} withArrow>{dateSpan}</Tooltip> : dateSpan
-        ) : null}
+        {displayText ? dateContent : null}
         {doneControl}
       </span>
     );
@@ -159,7 +171,7 @@ export function InternalReadinessDateCell({
             style={{ padding: 0, lineHeight: 1.3, height: 'auto' }}
             aria-label="Set Internal Readiness date"
           >
-            {dateTooltip ? <Tooltip label={dateTooltip} withArrow>{dateSpan}</Tooltip> : dateSpan}
+            {dateContent}
           </UnstyledButton>
         </Popover.Target>
         <Popover.Dropdown p="xs">
