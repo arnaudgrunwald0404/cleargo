@@ -15,9 +15,15 @@ import { addCalendarDays, addCalendarMonth, formatDateOnlyForDisplay, getCohort2
 import { fetchStreamJSON } from '@/lib/fetch-stream';
 import { ReleaseStagesChart } from '@/components/admin/ReleaseStagesChart';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
-import { getEpicGaDateYmd, getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
-import type { ReleaseScheduleRow } from '@/lib/release-schedule';
+import { getEpicInternalOrgsDateYmd } from '@/lib/epic-rollout-dates';
+import {
+    mergeReleaseScheduleApiResponse,
+    mergeReleaseScheduleRows,
+    toReleaseScheduleSummary,
+    type ReleaseScheduleRow,
+} from '@/lib/release-schedule-merge';
 import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
+import { EpicGaDateBadge } from '@/components/EpicGaDateBadge';
 import { addCalendarDaysToYmd } from '@/lib/date-utils';
 
 interface EpicsClientProps {
@@ -117,12 +123,14 @@ function EpicsClient({
     const [syncingReleaseName, setSyncingReleaseName] = useState<string | null>(null);
     const [fetchingReleaseDates, setFetchingReleaseDates] = useState<Set<string>>(new Set());
     const fetchedReleaseDatesRef = useRef<Set<string>>(new Set());
+    const releaseDatesFetchGenRef = useRef(0);
+    const releaseDatesInFlightRef = useRef(false);
     const [ahaEpicCounts, setAhaEpicCounts] = useState<Map<string, number | null>>(new Map());
     const fetchingAhaCountsRef = useRef<Set<string>>(new Set());
     const [archivingReleaseName, setArchivingReleaseName] = useState<string | null>(null);
     const [celebrationModalOpen, setCelebrationModalOpen] = useState(false);
     const [releaseToCelebrate, setReleaseToCelebrate] = useState<{ releaseName: string; releaseId: number | null } | null>(null);
-    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<Array<{ id: number; release_name: string; launch_date: string | null; cohort2_date?: string | null; archived: boolean; aha_epic_count?: number | null }>>(
+    const [releaseScheduleWithIds, setReleaseScheduleWithIds] = useState<ReleaseScheduleRow[]>(
         () =>
             initialReleaseSchedule.map((r) => ({
                 id: r.id ?? 0,
@@ -194,7 +202,7 @@ function EpicsClient({
                     const supportingUrls = [
                         "/api/settings",
                         "/api/products",
-                        "/api/releases"
+                        ...(initialReleaseSchedule.length === 0 ? ["/api/releases"] : []),
                     ];
 
                     const supportingResults = await batchFetchWithRateLimit(supportingUrls, {
@@ -210,12 +218,15 @@ function EpicsClient({
                         setProducts(data);
                     }
 
-                    // Handle releases
+                    // Refetch releases only when SSR did not provide schedule (avoids overwriting good dates)
                     const releasesResult = supportingResults.find(r => r.url === '/api/releases');
                     if (releasesResult?.response?.ok) {
-                        const data = await releasesResult.response.json();
-                        setReleaseSchedule(data || []);
-                        setReleaseScheduleWithIds(data || []);
+                        const data = (await releasesResult.response.json()) as ReleaseScheduleRow[];
+                        setReleaseScheduleWithIds((prev) => {
+                            const merged = mergeReleaseScheduleApiResponse(prev, data || []);
+                            setReleaseSchedule(toReleaseScheduleSummary(merged));
+                            return merged;
+                        });
                     }
                 } catch (err) {
                     console.error("Failed to load initial data:", err);
@@ -317,8 +328,12 @@ function EpicsClient({
                         aha_epic_count: releasesData[0].aha_epic_count
                     });
                 }
-                setReleaseSchedule(releasesData || []);
-                setReleaseScheduleWithIds(releasesData || []);
+                const rows = (releasesData || []) as ReleaseScheduleRow[];
+                setReleaseScheduleWithIds((prev) => {
+                    const merged = mergeReleaseScheduleApiResponse(prev, rows);
+                    setReleaseSchedule(toReleaseScheduleSummary(merged));
+                    return merged;
+                });
             }
 
             // Load pod order from settings
@@ -501,16 +516,16 @@ function EpicsClient({
         return [{ value: "ALL", label: "All Modules" }, ...list.map(m => ({ value: m, label: m }))];
     }, [epics, podOrder]);
 
-    // Create a map of release names to dates from release schedule
+    // Create a map of release names to dates from release schedule (full rows, not summary state)
     const releaseDateMap = useMemo(() => {
         const map = new Map<string, string | null>();
-        releaseSchedule.forEach(release => {
+        releaseScheduleWithIds.forEach((release) => {
             if (release.release_name) {
                 map.set(release.release_name, release.launch_date);
             }
         });
         return map;
-    }, [releaseSchedule]);
+    }, [releaseScheduleWithIds]);
 
     // Group epics by release and sort by pod order
     const releaseGroups: Array<{ releaseName: string; releaseDate: string | null; epics: Epic[] }> = useMemo(() => {
@@ -670,6 +685,9 @@ function EpicsClient({
 
     // Automatically fetch release dates from API when needed (only if not in database)
     useEffect(() => {
+        let cancelled = false;
+        const fetchGen = ++releaseDatesFetchGenRef.current;
+
         const fetchMissingReleaseDates = async () => {
             // If we don't have epics yet, keep determining order
             if (epics.length === 0) {
@@ -679,15 +697,15 @@ function EpicsClient({
             
             // If we have epics but no release schedule, we can still show epics
             // Order determination is just for sorting, not for display
-            if (releaseSchedule.length === 0) {
+            if (releaseScheduleWithIds.length === 0) {
                 setIsDeterminingOrder(false);
                 return;
             }
             
-            // First, check the database (releaseSchedule) to see which releases already have dates
+            // First, check the database to see which releases already have dates
             const releasesInDb = new Set<string>();
             const releasesWithCohort2 = new Set<string>();
-            releaseSchedule.forEach((release: any) => {
+            releaseScheduleWithIds.forEach((release) => {
                 if (release.release_name && release.launch_date) {
                     releasesInDb.add(release.release_name);
                 }
@@ -726,18 +744,26 @@ function EpicsClient({
                 return;
             }
 
+            if (releaseDatesInFlightRef.current) {
+                return;
+            }
+
             // Only block the page for missing launch dates (sorting/cards). Cohort 2 backfill updates in place.
             if (releasesNeedingDates.length > 0) {
                 setIsDeterminingOrder(true);
             }
 
-            // Mark as fetched to prevent duplicate requests and set loading state
-            releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.add(name));
-            releasesMissingCohort2.forEach(name => fetchedReleaseDatesRef.current.add(`cohort2:${name}`));
             setFetchingReleaseDates(new Set([...releasesNeedingDates, ...releasesMissingCohort2]));
 
+            releaseDatesInFlightRef.current = true;
             try {
-                const res = await fetch("/api/epics/release-dates", { credentials: 'include' });
+                const { fetchWithRateLimit } = await import('@/lib/fetch-with-rate-limit');
+                const res = await fetchWithRateLimit('/api/epics/release-dates', {
+                    credentials: 'include',
+                    maxRetries: 2,
+                });
+                if (cancelled || fetchGen !== releaseDatesFetchGenRef.current) return;
+
                 if (res.ok) {
                     const data = await res.json();
                     const releaseDates = data.releases || [];
@@ -756,11 +782,12 @@ function EpicsClient({
                         if (found && found.launchDate) {
                             console.log(`[EpicsClient] Found date for "${releaseName}": ${found.launchDate} (matched with "${found.releaseName}") - saving to database`);
                             datesToSave.push({
-                                release_name: found.releaseName,
+                                release_name: releaseName,
                                 launch_date: found.launchDate,
                                 cohort2_date: found.cohort2Date ?? null,
                             });
                         } else {
+                            fetchedReleaseDatesRef.current.add(releaseName);
                             console.warn(`[EpicsClient] No date found for release: "${releaseName}"`);
                             console.log(`[EpicsClient] Available releases in API response:`, releaseDates.map((r: any) => r.releaseName));
                         }
@@ -772,7 +799,7 @@ function EpicsClient({
                         if (found?.cohort2Date) {
                             console.log(`[EpicsClient] Found cohort2_date for "${releaseName}": ${found.cohort2Date} - saving to database`);
                             // Only update cohort2_date; use the existing launch_date from releaseSchedule
-                            const existing = releaseSchedule.find((r: any) => r.release_name === releaseName);
+                            const existing = releaseScheduleWithIds.find((r) => r.release_name === releaseName);
                             if (existing?.launch_date) {
                                 datesToSave.push({
                                     release_name: releaseName,
@@ -780,8 +807,22 @@ function EpicsClient({
                                     cohort2_date: found.cohort2Date,
                                 });
                             }
+                        } else {
+                            fetchedReleaseDatesRef.current.add(`cohort2:${releaseName}`);
                         }
                     });
+
+                    // Show dates immediately (do not wait for POST + schedule refetch)
+                    if (datesToSave.length > 0) {
+                        setReleaseScheduleWithIds((prev) => {
+                            const merged = mergeReleaseScheduleRows(prev, datesToSave);
+                            if (!cancelled && fetchGen === releaseDatesFetchGenRef.current) {
+                                setReleaseSchedule(toReleaseScheduleSummary(merged));
+                            }
+                            return merged;
+                        });
+                        setIsDeterminingOrder(false);
+                    }
 
                     // Save all found dates
                     if (datesToSave.length > 0) {
@@ -834,9 +875,14 @@ function EpicsClient({
                             await new Promise(resolve => setTimeout(resolve, 500));
                             
                             // Refresh only the release schedule to show the new dates (without showing full page loading)
-                            const releasesRes = await fetch("/api/releases", { credentials: 'include' });
+                            const releasesRes = await fetchWithRateLimit('/api/releases', {
+                                credentials: 'include',
+                                maxRetries: 1,
+                            });
+                            if (cancelled || fetchGen !== releaseDatesFetchGenRef.current) return;
+
                             if (releasesRes.ok) {
-                                const releasesData = await releasesRes.json();
+                                const releasesData = (await releasesRes.json()) as ReleaseScheduleRow[];
                                 console.log("Refreshed release schedule from database:", releasesData);
                                 
                                 // Verify the saved releases are in the refreshed data (archived releases are excluded from the list)
@@ -850,8 +896,13 @@ function EpicsClient({
                                     // If not found: release may be archived (GET /api/releases excludes archived by default) - no error
                                 });
                                 
-                                setReleaseSchedule(releasesData || []);
-                                setReleaseScheduleWithIds(releasesData || []);
+                                setReleaseScheduleWithIds((prev) => {
+                                    const merged = mergeReleaseScheduleApiResponse(prev, releasesData || []);
+                                    if (!cancelled && fetchGen === releaseDatesFetchGenRef.current) {
+                                        setReleaseSchedule(toReleaseScheduleSummary(merged));
+                                    }
+                                    return merged;
+                                });
                                 
                                 // Order is now determined after refresh
                                 setIsDeterminingOrder(false);
@@ -876,22 +927,36 @@ function EpicsClient({
                         // No dates found, order is determined
                         setIsDeterminingOrder(false);
                     }
+                } else {
+                    console.error('[EpicsClient] release-dates API failed:', res.status, res.statusText);
+                    releasesNeedingDates.forEach((name) => fetchedReleaseDatesRef.current.delete(name));
+                    releasesMissingCohort2.forEach((name) =>
+                        fetchedReleaseDatesRef.current.delete(`cohort2:${name}`)
+                    );
+                    setIsDeterminingOrder(false);
                 }
             } catch (error) {
                 console.error("Failed to fetch release dates:", error);
                 // Remove from fetched set on error so we can retry
                 releasesNeedingDates.forEach(name => fetchedReleaseDatesRef.current.delete(name));
-                // Even on error, we've done what we can - order is determined
+                releasesMissingCohort2.forEach((name) =>
+                    fetchedReleaseDatesRef.current.delete(`cohort2:${name}`)
+                );
                 setIsDeterminingOrder(false);
             } finally {
-                // Clear loading state
-                setFetchingReleaseDates(new Set());
+                releaseDatesInFlightRef.current = false;
+                if (!cancelled && fetchGen === releaseDatesFetchGenRef.current) {
+                    setFetchingReleaseDates(new Set());
+                }
             }
         };
 
-        fetchMissingReleaseDates();
-         
-    }, [releaseSchedule, epics.length, releaseGroups.length, displayedReleaseGroups.length]);
+        void fetchMissingReleaseDates();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [releaseScheduleWithIds, epics.length, releaseGroups.length, displayedReleaseGroups.length]);
 
     // Load AHA epic counts from release_schedule (cached) and fetch missing ones (lazy loaded)
     useEffect(() => {
@@ -1073,7 +1138,7 @@ function EpicsClient({
                     const release = releaseScheduleWithIds.find(r => r.release_name === group.releaseName);
                     if (release && !release.archived) {
                         checkedReleasesRef.current.add(group.releaseName);
-                        setReleaseToCelebrate({ releaseName: group.releaseName, releaseId: release.id });
+                        setReleaseToCelebrate({ releaseName: group.releaseName, releaseId: release.id ?? null });
                         setCelebrationModalOpen(true);
                         break; // Only show one at a time
                     }
@@ -2426,7 +2491,7 @@ function EpicsClient({
                                                             })()}
                                                         </div>
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         {(() => {
                                                             const ymd = getEpicInternalOrgsDateYmd(
                                                                 epic,
@@ -2437,21 +2502,21 @@ function EpicsClient({
                                                             return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
                                                         })()}
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
                                                         <Cohort1DateBadge
                                                             epic={epic}
                                                             scheduleReleaseDate={group.releaseDate}
                                                             dateOptions={{ month: 'short', day: 'numeric' }}
                                                         />
                                                     </td>
-                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
-                                                        {(() => {
-                                                            const ymd = getEpicGaDateYmd(epic, {
-                                                                releaseSchedule: releaseScheduleWithIds,
-                                                                releaseTrainDateYmd: group.releaseDate,
-                                                            });
-                                                            return ymd ? formatDateOnlyForDisplay(ymd, { month: 'short', day: 'numeric' }) : '-';
-                                                        })()}
+                                                    <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-28 text-left" style={{ padding: "12px 16px", fontSize: "14px", color: "#111827" }}>
+                                                        <EpicGaDateBadge
+                                                            epic={epic}
+                                                            releaseSchedule={releaseScheduleWithIds}
+                                                            releaseTrainDateYmd={group.releaseDate}
+                                                            releaseName={group.releaseName}
+                                                            dateOptions={{ month: 'short', day: 'numeric' }}
+                                                        />
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <span className="px-2 py-1 rounded text-xs font-medium" style={{

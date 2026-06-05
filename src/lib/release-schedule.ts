@@ -1,7 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { toDateOnlyString } from '@/lib/date-utils';
-import type { ReleaseScheduleDateRow } from '@/lib/epic-ga-date';
+import type { ReleaseScheduleRow } from '@/lib/release-schedule-merge';
+
+export type { ReleaseScheduleRow } from '@/lib/release-schedule-merge';
 
 /** Upsert a release-train row; supports composite `(release_name, context)` or legacy `release_name` unique. */
 export async function upsertReleaseScheduleRow(
@@ -38,12 +40,6 @@ export async function upsertReleaseScheduleRow(
 
   return { error: attempt1.error };
 }
-
-export type ReleaseScheduleRow = ReleaseScheduleDateRow & {
-  id?: number;
-  archived?: boolean;
-  aha_epic_count?: number | null;
-};
 
 /** Active release-train rows (`context = release`, not archived) for GA dates and epics UI. */
 export async function getActiveReleaseScheduleRows(): Promise<ReleaseScheduleRow[]> {
