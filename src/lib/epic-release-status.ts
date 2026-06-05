@@ -10,6 +10,7 @@ import {
   resolveEpicGaDateYmd,
   type ReleaseScheduleDateRow,
 } from '@/lib/epic-ga-date';
+import { isSingleGaRollout, getRolloutAwareGaYmd } from '@/lib/epic-rollout-process';
 import type { Epic } from '@/types/epics';
 
 export { GA_DAYS_AFTER_LAUNCH };
@@ -71,7 +72,22 @@ export function computeEpicReleaseStatus(
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  const cohortYmd = getEffectiveCohort1DateYmd(epic as Pick<Epic, 'target_launch_date' | 'aha_fields'>);
+  const epicDates = epic as Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>;
+
+  // Single GA: no Cohort 1 milestone — off-schedule (when set) is the GA date
+  if (isSingleGaRollout(epicDates)) {
+    const gaYmd = getRolloutAwareGaYmd(epicDates, {
+      releaseSchedule: options?.releaseSchedule,
+    });
+    if (!gaYmd) return 'Pre_Release';
+    const gaDate = new Date(gaYmd + 'T12:00:00');
+    gaDate.setHours(0, 0, 0, 0);
+    if (today <= gaDate) return 'Pre_Release';
+    const retrosComplete = allRetrosSubmitted(retros);
+    return retrosComplete ? 'Released_Retroed' : 'Released_GA';
+  }
+
+  const cohortYmd = getEffectiveCohort1DateYmd(epicDates);
   const launchDate = cohortYmd ? new Date(cohortYmd + 'T12:00:00') : null;
 
   if (!launchDate || isNaN(launchDate.getTime())) {
@@ -84,7 +100,7 @@ export function computeEpicReleaseStatus(
     return 'Pre_Release';
   }
 
-  const gaYmd = resolveEpicGaDateYmd(epic as Pick<Epic, 'scheduled_ga_dev_date' | 'target_launch_date' | 'aha_fields'>, {
+  const gaYmd = resolveEpicGaDateYmd(epicDates, {
     releaseSchedule: options?.releaseSchedule,
   });
   let gaDate: Date | null = gaYmd ? new Date(gaYmd + 'T12:00:00') : null;

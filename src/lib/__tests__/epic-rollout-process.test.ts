@@ -33,6 +33,18 @@ const singleGaOffSchedule = {
   },
 };
 
+/** APP-E-729: Single GA + off-schedule Jul 1 — GA only, no Cohort 1 */
+const appE729 = {
+  target_launch_date: null,
+  scheduled_ga_dev_date: null,
+  aha_fields: {
+    custom_fields: {
+      rollout_process: 'Single GA',
+      off_schedule_release_date: '2026-07-01',
+    },
+  },
+};
+
 const missingRollout = {
   target_launch_date: '2026-08-20',
   scheduled_ga_dev_date: null,
@@ -97,5 +109,14 @@ describe('getRolloutProcess', () => {
   it('reads from aha_fields', () => {
     expect(getRolloutProcess(singleGaEpic)).toBe('single_ga');
     expect(getRolloutProcess(dualEpic)).toBe('dual_cohort');
+  });
+});
+
+describe('APP-E-729 Single GA + off-schedule', () => {
+  it('hides Cohort 1 and shows off-schedule date in GA only', () => {
+    expect(shouldShowCohort1Column(appE729)).toBe(false);
+    expect(getRolloutAwareCohort1Ymd(appE729, '2026-07-01')).toBeNull();
+    expect(getRolloutAwareGaYmd(appE729, { releaseTrainDateYmd: '2026-07-01' })).toBe('2026-07-01');
+    expect(getGaCellShading(appE729, true, '2026-07-01', '2026-07-16')).toBe('off-schedule');
   });
 });

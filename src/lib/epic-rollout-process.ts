@@ -8,31 +8,16 @@ import {
 } from '@/lib/epic-cohort1-date';
 import { resolveEpicGaDateYmd, type ReleaseScheduleDateRow } from '@/lib/epic-ga-date';
 import { getEpicRolloutAnchorYmd } from '@/lib/epic-rollout-dates';
+import {
+  type RolloutProcessKind,
+  parseRolloutProcess,
+  getRolloutProcess,
+  isSingleGaRollout,
+  normalizeRolloutProcessRaw,
+} from '@/lib/rollout-process-kind';
 
-export type RolloutProcessKind = 'single_ga' | 'dual_cohort';
-
-/** Normalize Aha picklist value to internal kind. Missing/unknown defaults to dual_cohort. */
-export function parseRolloutProcess(raw: unknown): RolloutProcessKind {
-  if (raw == null || raw === '') return 'dual_cohort';
-  const s = String(raw).trim().toLowerCase();
-  if (s.includes('single') && s.includes('ga')) return 'single_ga';
-  if (s === 'single ga' || s === 'single_ga') return 'single_ga';
-  if (s.includes('dual') && s.includes('cohort')) return 'dual_cohort';
-  if (s === 'dual cohort' || s === 'dual_cohort') return 'dual_cohort';
-  return 'dual_cohort';
-}
-
-export function getRolloutProcess(
-  epic: Pick<Epic, 'aha_fields'>
-): RolloutProcessKind {
-  const raw = (epic.aha_fields as { custom_fields?: Record<string, unknown> } | null)?.custom_fields
-    ?.rollout_process;
-  return parseRolloutProcess(raw);
-}
-
-export function isSingleGaRollout(epic: Pick<Epic, 'aha_fields'>): boolean {
-  return getRolloutProcess(epic) === 'single_ga';
-}
+export type { RolloutProcessKind };
+export { parseRolloutProcess, getRolloutProcess, isSingleGaRollout, normalizeRolloutProcessRaw };
 
 export function isDualCohortRollout(epic: Pick<Epic, 'aha_fields'>): boolean {
   return !isSingleGaRollout(epic);

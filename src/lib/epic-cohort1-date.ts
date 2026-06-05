@@ -1,5 +1,6 @@
 import type { Epic } from '@/types/epics';
 import { parseDateOnlyLocal, dateToLocalDateString, formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { isSingleGaRollout } from '@/lib/rollout-process-kind';
 
 /**
  * Read the off-schedule release date from the aha_fields JSONB column.
@@ -13,6 +14,11 @@ export function getOffScheduleReleaseDate(epic: Pick<Epic, 'aha_fields'>): strin
 export function getEffectiveCohort1DateYmd(
   epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>
 ): string | null {
+  // Single GA: off-schedule is the GA date, not Cohort 1
+  if (isSingleGaRollout(epic)) {
+    const tl = parseDateOnlyLocal(epic.target_launch_date);
+    return tl ? dateToLocalDateString(tl) : null;
+  }
   const off = parseDateOnlyLocal(getOffScheduleReleaseDate(epic));
   if (off) return dateToLocalDateString(off);
   const tl = parseDateOnlyLocal(epic.target_launch_date);
@@ -30,6 +36,7 @@ export function getEpicCohort1DisplayYmd(
   epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>,
   releaseDateFromSchedule?: string | null
 ): string | null {
+  if (isSingleGaRollout(epic)) return null;
   const off = parseDateOnlyLocal(getOffScheduleReleaseDate(epic));
   if (off) return dateToLocalDateString(off);
   const sched = releaseDateFromSchedule ? parseDateOnlyLocal(releaseDateFromSchedule) : null;

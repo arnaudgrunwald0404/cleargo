@@ -374,8 +374,21 @@ export async function mapEpicToEpic(
             );
         if (rolloutField) {
             const value = rolloutField.value;
-            customFields.rollout_process =
-                typeof value === 'object' && value?.name != null ? value.name : value;
+            let stored: string | null = null;
+            if (typeof value === 'string' && value.trim()) {
+                stored = value.trim();
+            } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+                const o = value as Record<string, unknown>;
+                if (typeof o.value === 'string' && o.value.trim()) {
+                    stored = o.value.trim();
+                } else if (typeof o.name === 'string' && /single|dual/i.test(o.name)) {
+                    stored = o.name.trim();
+                }
+            } else if (Array.isArray(value) && value.length > 0) {
+                const first = value[0];
+                stored = typeof first === 'string' ? first.trim() : null;
+            }
+            if (stored) customFields.rollout_process = stored;
         }
     }
 
