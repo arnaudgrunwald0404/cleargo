@@ -1553,6 +1553,34 @@ All ported from RRV with ClearGo-aligned table names:
 - Setup guide: `docs/rovo-setup.md`
 - See `src/lib/rovo/` for implementation details
 
+### AI API & MCP Server
+
+#### Overview
+✅ **IMPLEMENTED** - Read-only API for the AI chief-of-staff system, providing structured data for 1:1 prep packs, blocker surfacing, and launch readiness summaries across direct reports. Exposed as both REST endpoints (Netlify Functions) and an MCP server (Next.js API route).
+
+#### REST API (Netlify Functions)
+- **Base path**: `/api/v1/`
+- **Authentication**: `X-ClearGo-Key` header validated against `CLEARGO_AI_API_KEY` env var
+- **Endpoints**:
+  - `GET /api/v1/team-members` — List active direct reports with health snapshot
+  - `GET /api/v1/team-members/:id/epics` — Epics by team member, optional status filter
+  - `GET /api/v1/team-members/:id/blockers` — Open blockers with escalation flags
+  - `GET /api/v1/1on1-prep/:person_id` — Structured 1:1 prep document with talking points
+  - `GET /api/v1/epics/:id` — Full epic detail with milestones and criteria breakdown
+- **Implementation**: `netlify/functions/v1-*.ts` with shared helpers in `netlify/functions/_shared/`
+
+#### MCP Server
+- **Endpoint**: `POST /api/mcp`
+- **Protocol**: Model Context Protocol (MCP) via `@modelcontextprotocol/sdk`
+- **Transport**: WebStandardStreamableHTTPServerTransport (stateless, one session per request — suitable for serverless)
+- **Authentication**: Same `X-ClearGo-Key` header as REST endpoints
+- **Tools**: `list_team_members`, `get_1on1_prep`, `list_member_epics`, `list_member_blockers`, `get_epic_detail`
+- **Implementation**: `src/lib/mcp/server.ts` (server + tool definitions), `src/lib/mcp/queries.ts` (DB query logic shared with Netlify functions), `src/app/api/mcp/route.ts` (Next.js route handler)
+- **Consumer**: Team Tactical Sync (TTS) connects via `StreamableHTTPClientTransport` for Daily Check-in brief generation
+
+#### Documentation
+- API reference: `docs/ai-api.md`
+
 ### Slack Integration
 
 #### Slash Commands

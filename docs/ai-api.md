@@ -508,3 +508,51 @@ Run the unit tests:
 ```bash
 npm test -- --testPathPattern=netlify/functions/__tests__
 ```
+
+---
+
+## MCP Server
+
+ClearGo also exposes the AI API as an MCP server at `POST /api/mcp`.
+
+**Transport:** Streamable HTTP (stateless, one session per request)
+
+**Auth:** Same `X-ClearGo-Key` header as the REST endpoints
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `list_team_members` | List all direct reports with health snapshot |
+| `get_1on1_prep` | Full 1:1 prep doc with talking points |
+| `list_member_epics` | Epics for a team member, optional status filter |
+| `list_member_blockers` | Open blockers with escalation flags |
+| `get_epic_detail` | Full epic with milestones and criteria breakdown |
+
+### Connecting from TTS (or any MCP client)
+
+Base URL: same as the REST API (e.g. `https://cleargo.netlify.app`)
+
+MCP endpoint: `POST /api/mcp`
+
+Auth header: `X-ClearGo-Key: <your-key>`
+
+The MCP server is stateless — no session management needed. Each tool call is a self-contained POST request.
+
+### Example: list tools
+
+```bash
+curl -s -X POST https://cleargo.netlify.app/api/mcp \
+  -H "X-ClearGo-Key: $CLEARGO_AI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | python3 -m json.tool
+```
+
+### Example: call a tool
+
+```bash
+curl -s -X POST https://cleargo.netlify.app/api/mcp \
+  -H "X-ClearGo-Key: $CLEARGO_AI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_team_members","arguments":{}}}' | python3 -m json.tool
+```
