@@ -1786,7 +1786,7 @@ export default function EpicDetailPage() {
                     </span>
                     <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ color: 'var(--color-gray-500)' }}>GTM Access </span>
+                        <span style={{ color: 'var(--color-gray-500)' }}>GTM Orgs </span>
                         <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
                             {epic ? (
                                 <GtmAccessDateCell
@@ -1807,7 +1807,7 @@ export default function EpicDetailPage() {
                     </span>
                     <span style={{ color: 'var(--color-gray-300)' }} aria-hidden>·</span>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                        <span style={{ color: 'var(--color-gray-500)' }}>Internal Readiness </span>
+                        <span style={{ color: 'var(--color-gray-500)' }}>Internal Orgs </span>
                         <span style={{ fontWeight: 'var(--font-weight-medium)', color: 'var(--color-gray-900)' }}>
                             {epic ? (
                                 <InternalReadinessDateCell

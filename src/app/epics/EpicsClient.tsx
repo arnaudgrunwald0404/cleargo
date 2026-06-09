@@ -70,7 +70,7 @@ function GtmOrgsHeaderIcon() {
                 <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
             </HoverCard.Target>
             <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
-                This is the date that GTM orgs have been enabled with the new feature.{' '}
+                The date GTM orgs are enabled in the platform so users can access the functionality to perform launch tasks.{' '}
                 <a
                     href="https://docs.google.com/spreadsheets/d/17Qka5O9fcZcRfCZ42k0MHLScMRu4BKvH2Zp00efI2oQ/edit?gid=0#gid=0"
                     target="_blank"
@@ -80,6 +80,20 @@ function GtmOrgsHeaderIcon() {
                 >
                     You can see a list of the GTM orgs here.
                 </a>
+                {' '}If you see a date but no checkmark, a PM has not yet confirmed it is turned on.
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
+}
+function InternalOrgsHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                The date all internal orgs (not just GTM orgs) are enabled in the platform to access this feature.
+                If you see a date but no checkmark, a PM has not yet confirmed it is turned on.
             </HoverCard.Dropdown>
         </HoverCard>
     );
@@ -98,7 +112,7 @@ function GtmOrgsColumnHeader({ defaultTargetYmd }: { defaultTargetYmd?: string |
             </div>
             {targetLabel && (
                 <Tooltip
-                    label="Planned GTM Access and Prep start from the release timeline (not Go/No-Go)"
+                    label="Planned date GTM orgs are enabled, from the release timeline"
                     withArrow
                     multiline
                     w={240}
@@ -129,11 +143,12 @@ function InternalReadinessColumnHeader({ defaultTargetYmd }: { defaultTargetYmd?
     return (
         <div style={{ textTransform: 'none', letterSpacing: 'normal' }}>
             <div className="flex items-center gap-1" style={{ textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Internal Readiness
+                Internal Orgs
+                <InternalOrgsHeaderIcon />
             </div>
             {targetLabel && (
                 <Tooltip
-                    label="Planned Internal Readiness start from the release timeline"
+                    label="Planned date all internal orgs are enabled, from the release timeline"
                     withArrow
                     multiline
                     w={240}
@@ -1504,14 +1519,14 @@ function EpicsClient({
                             <table className="releases-epics-table w-full table-fixed" style={{ borderCollapse: "collapse", minWidth: "1170px" }}>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Readiness" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Orgs" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
-                                                ) : col === "Internal Readiness" ? (
-                                                    <span>{col}</span>
+                                                ) : col === "Internal Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<InternalOrgsHeaderIcon /></div>
                                                 ) : col === "Risk" ? (
                                                     <div className="hidden md:flex items-center justify-end gap-1">{col}</div>
                                                 ) : col}
@@ -2137,14 +2152,14 @@ function EpicsClient({
                                 </colgroup>
                                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                                     <tr>
-                                        {["Name", "GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
-                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Readiness", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Readiness" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
+                                        {["Name", "GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
+                                            <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Orgs" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                 {["Cohort 1", "GA"].includes(col) ? (
                                                     <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
-                                                ) : col === "Internal Readiness" ? (
-                                                    <span>{col}</span>
+                                                ) : col === "Internal Orgs" ? (
+                                                    <div className="flex items-center gap-1">{col}<InternalOrgsHeaderIcon /></div>
                                                 ) : col === "Risk" ? (
                                                     <div className="hidden md:flex items-center justify-end gap-1">{col}</div>
                                                 ) : col}

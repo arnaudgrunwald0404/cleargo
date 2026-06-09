@@ -50,24 +50,24 @@ export function GtmAccessDateCell({
   const isOverridden = !!actualYmd && !!plannedYmd && actualYmd !== plannedYmd;
 
   const dateTooltip = isOverridden
-    ? `Actual GTM access date (differs from planned ${formatDateOnlyForDisplay(plannedYmd!, dateOptions)})`
+    ? `Actual GTM orgs enabled date (differs from planned ${formatDateOnlyForDisplay(plannedYmd!, dateOptions)})`
     : actualYmd
-      ? 'Actual GTM access date'
+      ? 'Actual GTM orgs enabled date'
       : plannedYmd
-        ? 'Planned GTM access date from release train'
+        ? 'Planned GTM orgs enabled date from release train'
         : editable
-          ? 'Click to set GTM access date'
+          ? 'Click to set GTM orgs enabled date'
           : undefined;
 
   const doneControl = editable ? (
-    <Tooltip label={confirmed ? 'Undo GTM access done' : 'Mark GTM access done'} withArrow>
+    <Tooltip label={confirmed ? 'Undo GTM orgs enabled confirmation' : 'Confirm GTM orgs are enabled'} withArrow>
       <Checkbox
         checked={confirmed}
         onChange={handleConfirmToggle}
         onClick={(e) => e.stopPropagation()}
         size="md"
         color={confirmed ? 'green' : needsAttention ? 'orange' : 'gray'}
-        aria-label={confirmed ? 'Undo GTM access done' : 'Mark GTM access done'}
+        aria-label={confirmed ? 'Undo GTM orgs enabled confirmation' : 'Confirm GTM orgs are enabled'}
         styles={{
           root: { display: 'inline-flex', alignItems: 'center' },
           input: { cursor: 'pointer' },
@@ -75,7 +75,7 @@ export function GtmAccessDateCell({
       />
     </Tooltip>
   ) : confirmed ? (
-    <IconCheck size={16} style={{ color: '#16A34A', flexShrink: 0 }} aria-label="GTM access confirmed" />
+    <IconCheck size={16} style={{ color: '#16A34A', flexShrink: 0 }} aria-label="GTM orgs enabled confirmed" />
   ) : null;
 
   const dateSpan = (
