@@ -594,9 +594,11 @@ function EpicsClient({
 
     const getGroupRolloutDateOptions = (group: { releaseDate: string | null; epics: Epic[] }) => {
         const uiEpics = group.epics.filter(isUiFrameworkEpic);
+        const hasStandardEpics = group.epics.some((e) => !isUiFrameworkEpic(e));
         const uiLevels = uiEpics.map(parseUiLevelFromEpic).filter((x): x is number => x != null);
+        // Column header defaults follow the standard release train unless every epic is UI Framework.
         return {
-            useUiRollout: uiEpics.length > 0,
+            useUiRollout: uiEpics.length > 0 && !hasStandardEpics,
             uiRolloutStages: uiRolloutStagesForTimeline,
             uiLevel: uiLevels[0] ?? 1,
         };
