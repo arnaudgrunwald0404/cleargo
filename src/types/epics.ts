@@ -40,6 +40,8 @@ export interface Epic {
     actual_gtm_access_date?: string | null;
     /** Manual confirmation that GTM access has occurred. */
     gtm_access_confirmed?: boolean;
+    /** PM marked GTM org access as not applicable for this epic. */
+    gtm_access_na?: boolean;
     /** PM-entered actual/revised Internal Readiness distributed date (YYYY-MM-DD). */
     actual_internal_readiness_date?: string | null;
     /** Manual confirmation that Internal Readiness has been distributed. */

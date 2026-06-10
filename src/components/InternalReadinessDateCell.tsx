@@ -60,6 +60,11 @@ export function InternalReadinessDateCell({
     setPickerOpen(false);
   };
 
+  const handleClearNa = async () => {
+    if (!editable) return;
+    await onUpdate({ internal_readiness_na: false });
+  };
+
   const handleConfirmToggle = async () => {
     if (!editable) return;
     await onUpdate({ internal_readiness_confirmed: !confirmed });
@@ -154,41 +159,70 @@ export function InternalReadinessDateCell({
     );
   }
 
+  const naControl = isNa ? (
+    <Button
+      variant="subtle"
+      color="gray"
+      size="compact-xs"
+      p={0}
+      h="auto"
+      styles={{ root: { fontSize: '11px', lineHeight: 1.2 } }}
+      onClick={handleClearNa}
+    >
+      Clear N/A
+    </Button>
+  ) : (
+    <Button
+      variant="subtle"
+      color="gray"
+      size="compact-xs"
+      p={0}
+      h="auto"
+      styles={{ root: { fontSize: '11px', lineHeight: 1.2 } }}
+      onClick={handleMarkNa}
+    >
+      Mark N/A
+    </Button>
+  );
+
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, lineHeight: 1.3 }}>
-      <Popover
-        opened={pickerOpen}
-        onChange={setPickerOpen}
-        position="bottom-start"
-        withArrow
-        shadow="md"
-        withinPortal
-        width="auto"
-      >
-        <Popover.Target>
-          <UnstyledButton
-            onClick={() => setPickerOpen((o) => !o)}
-            style={{ padding: 0, lineHeight: 1.3, height: 'auto' }}
-            aria-label="Set Internal Readiness date"
-          >
-            {dateContent}
-          </UnstyledButton>
-        </Popover.Target>
-        <Popover.Dropdown p="xs">
-          <DatePicker value={isNa ? null : actualYmd} onChange={handleDateChange} size="sm" />
-          <Button
-            variant={isNa ? 'filled' : 'light'}
-            color="gray"
-            size="compact-xs"
-            fullWidth
-            mt="xs"
-            onClick={handleMarkNa}
-          >
-            N/A — not applicable
-          </Button>
-        </Popover.Dropdown>
-      </Popover>
-      {doneControl}
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, lineHeight: 1.3 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <Popover
+          opened={pickerOpen}
+          onChange={setPickerOpen}
+          position="bottom-start"
+          withArrow
+          shadow="md"
+          withinPortal
+          width="auto"
+        >
+          <Popover.Target>
+            <UnstyledButton
+              onClick={() => setPickerOpen((o) => !o)}
+              style={{ padding: 0, lineHeight: 1.3, height: 'auto' }}
+              aria-label="Set Internal Readiness date"
+            >
+              {dateContent}
+            </UnstyledButton>
+          </Popover.Target>
+          <Popover.Dropdown p="xs">
+            <DatePicker value={isNa ? null : actualYmd} onChange={handleDateChange} size="sm" />
+            <Button
+              variant="light"
+              color="gray"
+              size="compact-xs"
+              fullWidth
+              mt="xs"
+              onClick={handleMarkNa}
+            >
+              N/A — not applicable
+            </Button>
+          </Popover.Dropdown>
+        </Popover>
+        {doneControl}
+      </span>
+      {naControl}
     </span>
   );
 }

@@ -1388,7 +1388,11 @@ export default function EpicDetailPage() {
     }
 
     async function handleGtmAccessUpdate(
-        patch: { actual_gtm_access_date?: string | null; gtm_access_confirmed?: boolean }
+        patch: {
+            actual_gtm_access_date?: string | null;
+            gtm_access_confirmed?: boolean;
+            gtm_access_na?: boolean;
+        }
     ) {
         if (!epic) return;
         const prev = epic;

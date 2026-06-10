@@ -36,6 +36,7 @@ type EpicRow = Pick<
   | 'aha_fields'
   | 'target_launch_date'
   | 'gtm_access_confirmed'
+  | 'gtm_access_na'
   | 'actual_gtm_access_date'
   | 'archived'
   | 'status'
@@ -73,7 +74,7 @@ function isActionableGtmPending(
   plannedGtmYmd: string,
   todayYmd: string
 ): boolean {
-  if (epic.gtm_access_confirmed === true) return false;
+  if (epic.gtm_access_confirmed === true || epic.gtm_access_na === true) return false;
   if (epic.archived === true) return false;
   if (epic.status === 'Cancelled') return false;
 
@@ -102,7 +103,7 @@ export async function getGtmAccessPendingEpics(
     supabase
       .from('epic')
       .select(
-        'id, name, owner_email, owner_id, pod, aha_fields, target_launch_date, gtm_access_confirmed, actual_gtm_access_date, archived, status'
+        'id, name, owner_email, owner_id, pod, aha_fields, target_launch_date, gtm_access_confirmed, gtm_access_na, actual_gtm_access_date, archived, status'
       )
       .or('archived.is.null,archived.eq.false')
       .neq('status', 'Cancelled')

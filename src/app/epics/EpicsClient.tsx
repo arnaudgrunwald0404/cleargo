@@ -447,7 +447,11 @@ function EpicsClient({
 
     const handleGtmAccessUpdate = async (
         epicId: string,
-        patch: { actual_gtm_access_date?: string | null; gtm_access_confirmed?: boolean }
+        patch: {
+            actual_gtm_access_date?: string | null;
+            gtm_access_confirmed?: boolean;
+            gtm_access_na?: boolean;
+        }
     ) => {
         const prev = epics.find((e) => e.id === epicId);
         if (!prev) return;
@@ -636,7 +640,7 @@ function EpicsClient({
     };
 
     const epicNeedsGtmConfirmation = (epic: Epic, releaseDateYmd?: string | null): boolean => {
-        if (epic.gtm_access_confirmed === true) return false;
+        if (epic.gtm_access_confirmed === true || epic.gtm_access_na === true) return false;
         const plannedYmd = getEpicGtmAccessDateYmd(
             epic,
             releaseScheduleStagesForTimeline,

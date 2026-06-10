@@ -122,6 +122,7 @@ export async function PATCH(
         const rolloutDateFields = [
             'actual_gtm_access_date',
             'gtm_access_confirmed',
+            'gtm_access_na',
             'actual_internal_readiness_date',
             'internal_readiness_confirmed',
             'internal_readiness_na',

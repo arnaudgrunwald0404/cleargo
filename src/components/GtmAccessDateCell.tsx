@@ -1,22 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import { Checkbox, Popover, UnstyledButton, Tooltip } from '@mantine/core';
+import { Button, Checkbox, Popover, UnstyledButton, Tooltip } from '@mantine/core';
 import { DatePicker } from '@mantine/dates';
 import { IconCheck } from '@tabler/icons-react';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import type { Epic } from '@/types/epics';
 
+export type GtmAccessDatePatch = {
+  actual_gtm_access_date?: string | null;
+  gtm_access_confirmed?: boolean;
+  gtm_access_na?: boolean;
+};
+
 type Props = {
-  epic: Pick<Epic, 'id' | 'actual_gtm_access_date' | 'gtm_access_confirmed'>;
+  epic: Pick<
+    Epic,
+    'id' | 'actual_gtm_access_date' | 'gtm_access_confirmed' | 'gtm_access_na'
+  >;
   plannedYmd: string | null;
   dateOptions?: Intl.DateTimeFormatOptions;
   editable?: boolean;
   needsAttention?: boolean;
-  onUpdate: (patch: {
-    actual_gtm_access_date?: string | null;
-    gtm_access_confirmed?: boolean;
-  }) => void | Promise<void>;
+  onUpdate: (patch: GtmAccessDatePatch) => void | Promise<void>;
 };
 
 export function GtmAccessDateCell({
@@ -28,13 +34,32 @@ export function GtmAccessDateCell({
   onUpdate,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const isNa = epic.gtm_access_na === true;
   const actualYmd = epic.actual_gtm_access_date ?? null;
   const confirmed = epic.gtm_access_confirmed === true;
 
   const handleDateChange = async (value: string | null) => {
-    if (!editable) return;
-    await onUpdate({ actual_gtm_access_date: value });
+    if (!editable || !value) return;
+    await onUpdate({
+      actual_gtm_access_date: value,
+      gtm_access_na: false,
+    });
     setPickerOpen(false);
+  };
+
+  const handleMarkNa = async () => {
+    if (!editable) return;
+    await onUpdate({
+      gtm_access_na: true,
+      actual_gtm_access_date: null,
+      gtm_access_confirmed: false,
+    });
+    setPickerOpen(false);
+  };
+
+  const handleClearNa = async () => {
+    if (!editable) return;
+    await onUpdate({ gtm_access_na: false });
   };
 
   const handleConfirmToggle = async () => {
@@ -42,25 +67,38 @@ export function GtmAccessDateCell({
     await onUpdate({ gtm_access_confirmed: !confirmed });
   };
 
-  const displayYmd = actualYmd ?? plannedYmd;
-  const displayText = displayYmd
-    ? formatDateOnlyForDisplay(displayYmd, dateOptions)
-    : null;
-  const showingPlannedOnly = !actualYmd && !!plannedYmd;
-  const isOverridden = !!actualYmd && !!plannedYmd && actualYmd !== plannedYmd;
+  const displayYmd = !isNa ? (actualYmd ?? plannedYmd) : null;
+  const displayText = isNa
+    ? 'N/A'
+    : displayYmd
+      ? formatDateOnlyForDisplay(displayYmd, dateOptions)
+      : null;
+  const showingPlannedOnly = !isNa && !actualYmd && !!plannedYmd;
+  const isOverridden = !isNa && !!actualYmd && !!plannedYmd && actualYmd !== plannedYmd;
 
-  const dateTooltip = isOverridden
-    ? `Actual GTM orgs enabled date (differs from planned ${formatDateOnlyForDisplay(plannedYmd!, dateOptions)})`
-    : actualYmd
-      ? 'Actual GTM orgs enabled date'
-      : plannedYmd
-        ? 'Planned GTM orgs enabled date from release train'
-        : editable
-          ? 'Click to set GTM orgs enabled date'
-          : undefined;
+  const dateTooltip = isNa
+    ? 'GTM orgs access marked not applicable'
+    : isOverridden
+      ? `Actual GTM orgs enabled date (differs from planned ${formatDateOnlyForDisplay(plannedYmd!, dateOptions)})`
+      : actualYmd
+        ? 'Actual GTM orgs enabled date'
+        : plannedYmd
+          ? 'Planned GTM orgs enabled date from release train'
+          : editable
+            ? 'Click to set GTM orgs enabled date or N/A'
+            : undefined;
 
   const doneControl = editable ? (
-    <Tooltip label={confirmed ? 'Undo GTM orgs enabled confirmation' : 'Confirm GTM orgs are enabled'} withArrow>
+    <Tooltip
+      label={
+        confirmed
+          ? 'Undo GTM orgs enabled confirmation'
+          : isNa
+            ? 'Confirm GTM orgs N/A'
+            : 'Confirm GTM orgs are enabled'
+      }
+      withArrow
+    >
       <Checkbox
         checked={confirmed}
         onChange={handleConfirmToggle}
@@ -82,9 +120,9 @@ export function GtmAccessDateCell({
     <span
       style={{
         fontSize: '14px',
-        color: showingPlannedOnly ? '#6B7280' : '#111827',
-        fontStyle: isOverridden || showingPlannedOnly ? 'italic' : 'normal',
-        fontWeight: isOverridden ? 600 : showingPlannedOnly ? 400 : 500,
+        color: isNa || showingPlannedOnly ? '#6B7280' : '#111827',
+        fontStyle: isOverridden || isNa || showingPlannedOnly ? 'italic' : 'normal',
+        fontWeight: isOverridden ? 600 : showingPlannedOnly || isNa ? 400 : 500,
         cursor: editable ? 'pointer' : 'default',
       }}
     >
@@ -116,31 +154,70 @@ export function GtmAccessDateCell({
     );
   }
 
+  const naControl = isNa ? (
+    <Button
+      variant="subtle"
+      color="gray"
+      size="compact-xs"
+      p={0}
+      h="auto"
+      styles={{ root: { fontSize: '11px', lineHeight: 1.2 } }}
+      onClick={handleClearNa}
+    >
+      Clear N/A
+    </Button>
+  ) : (
+    <Button
+      variant="subtle"
+      color="gray"
+      size="compact-xs"
+      p={0}
+      h="auto"
+      styles={{ root: { fontSize: '11px', lineHeight: 1.2 } }}
+      onClick={handleMarkNa}
+    >
+      Mark N/A
+    </Button>
+  );
+
   return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, lineHeight: 1.3 }}>
-      <Popover
-        opened={pickerOpen}
-        onChange={setPickerOpen}
-        position="bottom-start"
-        withArrow
-        shadow="md"
-        withinPortal
-        width="auto"
-      >
-        <Popover.Target>
-          <UnstyledButton
-            onClick={() => setPickerOpen((o) => !o)}
-            style={{ padding: 0, lineHeight: 1.3, height: 'auto' }}
-            aria-label="Set actual GTM access date"
-          >
-            {dateContent}
-          </UnstyledButton>
-        </Popover.Target>
-        <Popover.Dropdown p="xs">
-          <DatePicker value={actualYmd} onChange={handleDateChange} size="sm" />
-        </Popover.Dropdown>
-      </Popover>
-      {doneControl}
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2, lineHeight: 1.3 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+        <Popover
+          opened={pickerOpen}
+          onChange={setPickerOpen}
+          position="bottom-start"
+          withArrow
+          shadow="md"
+          withinPortal
+          width="auto"
+        >
+          <Popover.Target>
+            <UnstyledButton
+              onClick={() => setPickerOpen((o) => !o)}
+              style={{ padding: 0, lineHeight: 1.3, height: 'auto' }}
+              aria-label="Set actual GTM access date"
+            >
+              {dateContent}
+            </UnstyledButton>
+          </Popover.Target>
+          <Popover.Dropdown p="xs">
+            <DatePicker value={isNa ? null : actualYmd} onChange={handleDateChange} size="sm" />
+            <Button
+              variant="light"
+              color="gray"
+              size="compact-xs"
+              fullWidth
+              mt="xs"
+              onClick={handleMarkNa}
+            >
+              N/A — not applicable
+            </Button>
+          </Popover.Dropdown>
+        </Popover>
+        {doneControl}
+      </span>
+      {naControl}
     </span>
   );
 }

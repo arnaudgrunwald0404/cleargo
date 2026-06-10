@@ -455,6 +455,7 @@ export type EpicUpdatePayload = Partial<CreateEpicDTO> & {
     status?: 'Cancelled';
     actual_gtm_access_date?: string | null;
     gtm_access_confirmed?: boolean;
+    gtm_access_na?: boolean;
     actual_internal_readiness_date?: string | null;
     internal_readiness_confirmed?: boolean;
     internal_readiness_na?: boolean;
