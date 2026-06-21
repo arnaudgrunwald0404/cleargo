@@ -26,6 +26,7 @@ export interface CategoryScoreResult {
   categoryId: string;
   score: number;          // 0–1
   hasGatingNoGo: boolean;
+  hasGatingUnvoted: boolean; // a gating criterion with no vote yet (NOT_SET)
   hasAnyNotSet: boolean;
 }
 
@@ -35,6 +36,20 @@ export interface LaunchReadinessResult {
   blocked: boolean;
   verdict: Verdict;
   categoryScores: CategoryScoreResult[];
+}
+
+export interface LaunchReadinessOptions {
+  /**
+   * When true, a gating criterion with no vote (NOT_SET) is treated as hard as a
+   * NO_GO: it blocks the launch (verdict NO_GO_BLOCKED_BY_GATING).
+   *
+   * When false (default), an unvoted gate instead forces an AT_RISK ceiling — the
+   * verdict can never be GO/CONDITIONAL_GO, but the launch is not hard-blocked.
+   *
+   * This is switched on once an epic enters the "GTM Access and Prep" phase; see
+   * recomputeEpicReadiness in src/lib/readiness.ts.
+   */
+  enforceUnvotedGatesAsNoGo?: boolean;
 }
 
 // Tunable knobs
@@ -59,10 +74,14 @@ function statusToScore(status: Status): number {
   }
 }
 
-function computeCategoryScore(criteria: CriterionInput[], categoryId: string): CategoryScoreResult {
+function computeCategoryScore(
+  criteria: CriterionInput[],
+  categoryId: string,
+  enforceUnvotedGatesAsNoGo: boolean
+): CategoryScoreResult {
   const inCategory = criteria.filter(c => c.categoryId === categoryId);
   if (inCategory.length === 0) {
-    return { categoryId, score: 0, hasGatingNoGo: false, hasAnyNotSet: false };
+    return { categoryId, score: 0, hasGatingNoGo: false, hasGatingUnvoted: false, hasAnyNotSet: false };
   }
 
   // 1. Find signoff and apply signoff override
@@ -71,7 +90,8 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
 
   let hasGatingNoGo = false;
   let hasGatingConditional = false;
-  let hasGatingNotSet = false;
+  let hasGatingNotSet = false;     // NOT_SET or NOT_APPLICABLE gate — caps score
+  let hasGatingUnvoted = false;    // genuinely unvoted (NOT_SET) gate — blocks launch
   let hasAnyNotSet = false;
 
   let sumScores = 0;
@@ -97,7 +117,10 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
 
     if (effectiveStatus === "NOT_SET") {
       hasAnyNotSet = true;
-      if (c.isGating) hasGatingNotSet = true;
+      if (c.isGating) {
+        hasGatingNotSet = true;
+        hasGatingUnvoted = true;
+      }
     }
 
     if (c.isGating) {
@@ -111,12 +134,17 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
 
   let score = sumWeights === 0 ? 0 : sumScores / sumWeights;
 
-  // 2. Apply gating caps inside category
-  if (hasGatingNoGo) {
+  // 2. Apply gating caps inside category.
+  //    From GTM Access and Prep onward (enforceUnvotedGatesAsNoGo), an unvoted gate
+  //    ("no vote" => NOT_SET) is treated as hard as a NO_GO and caps at the NO_GO cap.
+  //    Before that phase it only caps at the NOT_SET cap (the verdict ceiling is
+  //    applied at the launch level instead).
+  if (hasGatingNoGo || (enforceUnvotedGatesAsNoGo && hasGatingUnvoted)) {
     score = Math.min(score, NO_GO_GATING_CAP);
   } else if (hasGatingConditional) {
     score = Math.min(score, CONDITIONAL_GATING_CAP);
   } else if (hasGatingNotSet) {
+    // Remaining: pre-phase unvoted gate or a NOT_APPLICABLE gate — only caps.
     score = Math.min(score, NOT_SET_GATING_CAP);
   }
 
@@ -129,11 +157,17 @@ function computeCategoryScore(criteria: CriterionInput[], categoryId: string): C
     categoryId,
     score,
     hasGatingNoGo,
+    hasGatingUnvoted,
     hasAnyNotSet,
   };
 }
 
-export function computeLaunchReadiness(criteria: CriterionInput[]): LaunchReadinessResult {
+export function computeLaunchReadiness(
+  criteria: CriterionInput[],
+  options?: LaunchReadinessOptions
+): LaunchReadinessResult {
+  const enforceUnvotedGatesAsNoGo = options?.enforceUnvotedGatesAsNoGo ?? false;
+
   // Handle empty criteria
   if (criteria.length === 0) {
     return {
@@ -149,13 +183,13 @@ export function computeLaunchReadiness(criteria: CriterionInput[]): LaunchReadin
   const categoryIds = Array.from(new Set(criteria.map(c => c.categoryId)));
 
   const categoryScores: CategoryScoreResult[] = categoryIds.map(categoryId =>
-    computeCategoryScore(criteria, categoryId)
+    computeCategoryScore(criteria, categoryId, enforceUnvotedGatesAsNoGo)
   );
 
   // Fairness: each category has equal weight
-  const activeCategories = categoryScores.length > 0 
-    ? categoryScores 
-    : [{ categoryId: "none", score: 0, hasGatingNoGo: false, hasAnyNotSet: false }];
+  const activeCategories = categoryScores.length > 0
+    ? categoryScores
+    : [{ categoryId: "none", score: 0, hasGatingNoGo: false, hasGatingUnvoted: false, hasAnyNotSet: false }];
 
   let sumCategoryScores = 0;
   let sumCategoryWeights = 0;
@@ -169,11 +203,20 @@ export function computeLaunchReadiness(criteria: CriterionInput[]): LaunchReadin
   const readiness = sumCategoryWeights === 0 ? 0 : sumCategoryScores / sumCategoryWeights;
   const readinessPct = Math.round(readiness * 100);
 
-  const blocked = activeCategories.some(cs => cs.hasGatingNoGo);
+  const hasUnvotedGate = activeCategories.some(cs => cs.hasGatingUnvoted);
+
+  // A launch is blocked by a gate voted NO_GO, or — once enforcement is on
+  // (GTM Access and Prep onward) — by a gate with no vote at all.
+  const blocked =
+    activeCategories.some(cs => cs.hasGatingNoGo) ||
+    (enforceUnvotedGatesAsNoGo && hasUnvotedGate);
 
   let verdict: Verdict;
   if (blocked) {
     verdict = "NO_GO_BLOCKED_BY_GATING";
+  } else if (hasUnvotedGate) {
+    // Pre-phase: an unvoted gate can't pass as GO/CONDITIONAL_GO — ceiling at AT_RISK.
+    verdict = "AT_RISK";
   } else if (readiness >= 0.9) {
     verdict = "GO";
   } else if (readiness >= 0.7) {

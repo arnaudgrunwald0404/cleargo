@@ -162,7 +162,7 @@ describe('Readiness Scoring Algorithm', () => {
       expect(result.categoryScores[0].score).toBeLessThanOrEqual(0.85);
     });
 
-    it('should apply NOT_SET_GATING_CAP when gating criterion is NOT_SET', () => {
+    it('should block (treat as NO_GO) when a gating criterion is unvoted and enforcement is on (GTM Access phase+)', () => {
       const criteria: CriterionInput[] = [
         {
           id: '1',
@@ -176,14 +176,72 @@ describe('Readiness Scoring Algorithm', () => {
           categoryId: 'category1',
           isSignoff: false,
           status: 'NOT_SET',
-          isGating: true, // Gating NOT_SET
+          isGating: true, // Gating NOT_SET — no vote on a gate
+        },
+      ];
+
+      const result = computeLaunchReadiness(criteria, { enforceUnvotedGatesAsNoGo: true });
+
+      // With enforcement on, an unvoted gate is as hard as a NO_GO: caps at 0.60 and blocks.
+      expect(result.categoryScores[0].score).toBeLessThanOrEqual(0.60);
+      expect(result.categoryScores[0].hasGatingUnvoted).toBe(true);
+      expect(result.blocked).toBe(true);
+      expect(result.verdict).toBe('NO_GO_BLOCKED_BY_GATING');
+    });
+
+    it('should force an AT_RISK ceiling (not block) for an unvoted gate before the GTM Access phase (default)', () => {
+      const criteria: CriterionInput[] = [
+        {
+          id: '1',
+          categoryId: 'category1',
+          isSignoff: false,
+          status: 'GO',
+          isGating: false,
+        },
+        {
+          id: '2',
+          categoryId: 'category1',
+          isSignoff: false,
+          status: 'NOT_SET',
+          isGating: true, // Gating NOT_SET — no vote on a gate
+        },
+      ];
+
+      // Default (no options) == pre-phase behavior.
+      const result = computeLaunchReadiness(criteria);
+
+      // Pre-phase: caps at the NOT_SET cap (0.75), does NOT block, but verdict is AT_RISK.
+      expect(result.categoryScores[0].score).toBeLessThanOrEqual(0.75);
+      expect(result.categoryScores[0].hasGatingUnvoted).toBe(true);
+      expect(result.blocked).toBe(false);
+      expect(result.verdict).toBe('AT_RISK');
+    });
+
+    it('should NOT block when a gating criterion is NOT_APPLICABLE (only caps)', () => {
+      const criteria: CriterionInput[] = [
+        {
+          id: '1',
+          categoryId: 'category1',
+          isSignoff: false,
+          status: 'GO',
+          isGating: false,
+        },
+        {
+          id: '2',
+          categoryId: 'category1',
+          isSignoff: false,
+          status: 'NOT_APPLICABLE',
+          isGating: true, // N/A is an explicit choice, not a missing vote
         },
       ];
 
       const result = computeLaunchReadiness(criteria);
 
-      // Score should be capped at 0.75 (NOT_SET_GATING_CAP)
+      // N/A gate caps at 0.75 but does not block.
       expect(result.categoryScores[0].score).toBeLessThanOrEqual(0.75);
+      expect(result.categoryScores[0].hasGatingUnvoted).toBe(false);
+      expect(result.blocked).toBe(false);
+      expect(result.verdict).not.toBe('NO_GO_BLOCKED_BY_GATING');
     });
 
     it('should apply ANY_NOT_SET_CAP when any criterion is NOT_SET', () => {

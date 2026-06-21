@@ -4,12 +4,70 @@ import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { SlackNotificationPayload } from '@/types/slack';
 import { sendEmailNotification } from '@/lib/email/notifications';
-import { 
-    computeLaunchReadiness, 
-    isSignoffCriterion, 
+import {
+    computeLaunchReadiness,
+    isSignoffCriterion,
     normalizeStatus,
-    type CriterionInput 
+    type CriterionInput
 } from '@/lib/readiness-scoring';
+import { getEpicGtmAccessDateYmd, hasReachedGtmAccessPhase } from '@/lib/epic-rollout-dates';
+import { getReleaseStagesForTimeline } from '@/lib/release-stages-server';
+import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
+import { getCalendarDateStringInTimeZone } from '@/lib/date-utils';
+import { getSettings } from '@/lib/settings-db';
+import { defaults } from '@/lib/settings';
+
+/**
+ * Whether an epic has entered the "GTM Access and Prep" phase — the point from which
+ * an unvoted gate becomes a hard no-go (before it, an unvoted gate only forces AT_RISK).
+ *
+ * Resolves the epic's GTM Access date (actual if confirmed, else planned from the
+ * release-stage timeline) and compares it against today in the configured timezone.
+ * Any failure defaults to `false` (soft / pre-phase behavior) so we never surprise-block.
+ */
+async function epicHasEnteredGtmAccessPhase(
+    supabase: ReturnType<typeof createClient>,
+    epic: Epic
+): Promise<boolean> {
+    try {
+        // Fast path: explicitly confirmed → access has happened, we're in the phase.
+        if (epic?.gtm_access_confirmed) return true;
+
+        const [settings, stages, releaseRows] = await Promise.all([
+            getSettings(supabase),
+            getReleaseStagesForTimeline(),
+            getActiveReleaseScheduleRows(),
+        ]);
+
+        const todayYmd = getCalendarDateStringInTimeZone(settings.timezone || defaults.timezone);
+
+        // Release train launch date (fallback anchor for epics without their own Cohort 1).
+        const releaseName =
+            epic?.aha_fields?.standard_fields?.aha_release_name ||
+            epic?.aha_fields?.custom_fields?.release_target_after_pod_planning ||
+            null;
+        const releaseTrainDateYmd = releaseName
+            ? releaseRows.find((r) => r.release_name === releaseName)?.launch_date ?? null
+            : null;
+
+        const plannedGtmAccessYmd = getEpicGtmAccessDateYmd(
+            epic,
+            stages.releaseSchedule,
+            stages.uiRollout,
+            { releaseTrainDateYmd: releaseTrainDateYmd ?? undefined }
+        );
+
+        return hasReachedGtmAccessPhase({
+            gtmAccessConfirmed: epic?.gtm_access_confirmed,
+            actualGtmAccessYmd: epic?.actual_gtm_access_date ?? null,
+            plannedGtmAccessYmd,
+            todayYmd,
+        });
+    } catch (err) {
+        console.error('[recomputeEpicReadiness] Failed to resolve GTM Access phase; defaulting to pre-phase (soft):', err);
+        return false;
+    }
+}
 
 export async function recomputeEpicReadiness(epicId: string, excludeUserId?: string) {
     const supabase = createClient();
@@ -17,7 +75,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     // 1. Fetch epic data and criteria statuses
     const { data: epic, error: epicError } = await supabase
         .from('epic')
-        .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email')
+        .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email, aha_fields, gtm_access_confirmed, actual_gtm_access_date')
         .eq('id', epicId)
         .single();
 
@@ -102,8 +160,12 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
         });
     }
 
+    // From "GTM Access and Prep" onward, an unvoted gate is a hard no-go; before it,
+    // an unvoted gate only forces an AT_RISK ceiling.
+    const enforceUnvotedGatesAsNoGo = await epicHasEnteredGtmAccessPhase(supabase, epic as unknown as Epic);
+
     // Use new scoring algorithm
-    const scoringResult = computeLaunchReadiness(criteriaInputs);
+    const scoringResult = computeLaunchReadiness(criteriaInputs, { enforceUnvotedGatesAsNoGo });
 
     const readinessScore = scoringResult.readiness;
     
