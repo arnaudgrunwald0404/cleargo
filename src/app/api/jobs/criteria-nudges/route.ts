@@ -26,34 +26,6 @@ import {
     filterIncompleteCriteriaForNotifications,
 } from '@/lib/services/criteriaNotificationFilters';
 import { normalizeStatus } from '@/lib/readiness-scoring';
-import { appendFileSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
-
-const DEBUG_LOG_PATH = '/Users/arnaudgrunwald/AGcodework/cleargo/.cursor/debug.log';
-const debugLog = (location: string, message: string, data: any, hypothesisId: string) => {
-    try {
-        const logEntry = { location, message, data, timestamp: Date.now(), runId: 'debug1', hypothesisId };
-        const logLine = JSON.stringify(logEntry) + '\n';
-        appendFileSync(DEBUG_LOG_PATH, logLine);
-        // Also log to console for immediate visibility
-        console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
-    } catch (e: any) {
-        // If directory doesn't exist, try to create it
-        if (e.code === 'ENOENT') {
-            try {
-                mkdirSync(dirname(DEBUG_LOG_PATH), { recursive: true });
-                appendFileSync(DEBUG_LOG_PATH, JSON.stringify({ location, message, data, timestamp: Date.now(), runId: 'debug1', hypothesisId }) + '\n');
-                console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
-            } catch (e2) {
-                console.error(`[DEBUG] Failed to write log:`, e2);
-                console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
-            }
-        } else {
-            console.error(`[DEBUG] Failed to write log:`, e);
-            console.log(`[DEBUG ${hypothesisId}] ${location}: ${message}`, data);
-        }
-    }
-};
 
 // Match Home list rules: Success Defined criterion (metrics, goals, reporting)
 const isSuccessDefinedCriterion = (c: { criterion?: { label?: string } | null }): boolean =>
@@ -139,24 +111,13 @@ export async function GET(request: NextRequest) {
         // Helper function to check if epic has cleargo_candidate = "Yes"
         // Returns false for "No", null, undefined, or missing values
         const isClearGOCandidate = (epic: any): boolean => {
-            const epicId = epic?.id || 'unknown';
-            const epicName = epic?.name || 'unknown';
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:82',message:'isClearGOCandidate called',data:{epicId,epicName,hasAhaFields:!!epic?.aha_fields,ahaFieldsType:typeof epic?.aha_fields,ahaFieldsKeys:epic?.aha_fields?Object.keys(epic.aha_fields):null,cleargoCandidatePath1:epic?.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidatePath2:epic?.aha_fields?.cleargo_candidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             // Check if epic has aha_fields
             if (!epic?.aha_fields) {
                 // Epic has no aha_fields - exclude it (shouldn't happen for synced epics)
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:85',message:'No aha_fields - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             
             if (typeof epic.aha_fields !== 'object') {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:90',message:'aha_fields not object - EXCLUDING',data:{epicId,epicName,ahaFieldsType:typeof epic.aha_fields},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             
@@ -174,9 +135,6 @@ export async function GET(request: NextRequest) {
             
             if (!customFields || typeof customFields !== 'object') {
                 // No custom_fields found - exclude epic
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:107',message:'No custom_fields found - EXCLUDING',data:{epicId,epicName,hasCustomFields:!!epic.aha_fields.custom_fields,customFieldsType:typeof epic.aha_fields.custom_fields},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             
@@ -187,51 +145,29 @@ export async function GET(request: NextRequest) {
                 ? cleargoCandidate.trim() 
                 : cleargoCandidate;
             
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:110',message:'Checking cleargo_candidate value',data:{epicId,epicName,cleargoCandidate,normalizedValue,cleargoCandidateType:typeof cleargoCandidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
-            
             // Explicitly exclude "No", null, undefined, false, and only include "Yes" or true
             if (normalizedValue === null || normalizedValue === undefined) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:118',message:'cleargo_candidate is null/undefined - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             if (normalizedValue === false) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:121',message:'cleargo_candidate is false - EXCLUDING',data:{epicId,epicName},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             if (typeof normalizedValue === 'string') {
                 const lowerValue = normalizedValue.toLowerCase();
                 // Exclude: "no", "false", empty string, or any other value that's not "yes"
                 if (lowerValue === 'no' || lowerValue === 'false' || lowerValue === '') {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:127',message:'cleargo_candidate is "no"/"false"/empty - EXCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
                     return false;
                 }
                 // Only return true for "Yes" or "Yes - UI Framework" (case-insensitive)
                 if (lowerValue === 'yes' || lowerValue === 'yes - ui framework') {
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:131',message:'cleargo_candidate is "yes" - INCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                    // #endregion
                     return true;
                 }
                 // Any other string value is not "Yes", so exclude
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:135',message:'cleargo_candidate is other string value - EXCLUDING',data:{epicId,epicName,lowerValue},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 return false;
             }
             
             // For boolean values, only true is acceptable
             const result = normalizedValue === true;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:139',message:'Boolean cleargo_candidate check',data:{epicId,epicName,normalizedValue,result},timestamp:Date.now(),runId:'debug1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
             return result;
         };
 
@@ -566,42 +502,25 @@ export async function GET(request: NextRequest) {
         );
 
         // Filter out criteria for epics where cleargo_candidate is not "Yes" (i.e., 'no' or null)
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:429',message:'Starting cleargo_candidate filter',data:{totalCriteria:allCriteria.length,sampleEpics:allCriteria.slice(0,3).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,cleargoCandidate:c.epic?.aha_fields?.custom_fields?.cleargo_candidate}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'G'})}).catch(()=>{});
-        // #endregion
         const filteredByClearGOCandidate = criteriaAfterSignoffFilter.filter((c: any) => {
             const epic = c.epic;
             if (!epic) {
                 console.warn(`⚠️ Criterion ${c.id} has no epic data, excluding from reminders`);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:432',message:'Criterion has no epic - EXCLUDING',data:{criterionId:c.id,epicId:c.epic_id},timestamp:Date.now(),runId:'debug1',hypothesisId:'H'})}).catch(()=>{});
-                // #endregion
                 return false; // Exclude if epic not found
             }
             
             const isCandidate = isClearGOCandidate(epic);
             const epicId = c.epic_id || epic?.id || 'no-id';
-            const epicName = epic?.name || 'unknown';
-            
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:442',message:'Filter check result',data:{epicId,epicName,criterionId:c.id,isCandidate,cleargoCandidate:epic?.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:epic?.aha_fields?.cleargo_candidate},timestamp:Date.now(),runId:'debug1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            
+
             // Debug logging for epics that are being excluded
             if (!isCandidate) {
                 const cleargoValue = epic?.aha_fields?.custom_fields?.cleargo_candidate;
                 console.log(`🚫 Excluding epic "${epic.name}" (${epicId}) - cleargo_candidate: ${JSON.stringify(cleargoValue)}, aha_fields structure: ${JSON.stringify(Object.keys(epic?.aha_fields || {}))}`);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:449',message:'Epic cleargo_candidate is not Yes - EXCLUDING',data:{epicId,epicName:epic.name,cleargoValue,criterionId:c.id},timestamp:Date.now(),runId:'debug1',hypothesisId:'I'})}).catch(()=>{});
-                // #endregion
             }
             
             return isCandidate;
         });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:446',message:'After cleargo_candidate filter',data:{before:allCriteria.length,after:filteredByClearGOCandidate.length,excluded:allCriteria.length-filteredByClearGOCandidate.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'J'})}).catch(()=>{});
-        // #endregion
-        
+
         if (filteredByClearGOCandidate.length !== allCriteria.length) {
             const excludedCount = allCriteria.length - filteredByClearGOCandidate.length;
             console.log(`📋 Filtered ${excludedCount} criteria from epics where cleargo_candidate is not "Yes"`);
@@ -658,21 +577,15 @@ export async function GET(request: NextRequest) {
         // Rules:
         // - Past release date / released status → exclude ALL criteria reminders
         // - Future/today release date → include all criteria reminders
+        // Shared release-date map, populated by the release date filter block below
+        let sharedReleaseToDate = new Map<string, string | null>();
         const epicIds = [...new Set(criteriaToProcess.map((c: any) => c.epic_id))];
         if (epicIds.length > 0) {
-            // #region agent log
-            debugLog('route.ts:570', 'Re-fetching epic data for release date filter', {epicIds:epicIds.slice(0,10),epicIdsCount:epicIds.length,criteriaCount:criteriaToProcess.length}, 'B');
-            // #endregion
             const { data: epicsWithReleases } = await supabase
                 .from('epic')
                 .select('id, aha_fields, status')
                 .in('id', epicIds);
-            // #region agent log
-            if (epicsWithReleases) {
-                debugLog('route.ts:575', 'Re-fetched epic data', {fetchedCount:epicsWithReleases.length,epics:epicsWithReleases.slice(0,5).map((e:any)=>({id:e.id,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,status:e.status}))}, 'B');
-            }
-            // #endregion
-            
+
             const { data: releasesData } = await supabase
                 .from('release_schedule')
                 .select('release_name, launch_date')
@@ -692,24 +605,8 @@ export async function GET(request: NextRequest) {
                     }
                 }
             }
-            
-            // #region agent log
-            const release2026_2InMap = Array.from(releaseToDate.keys()).filter(rn => rn.includes('2026.2'));
-            const all2026_2Variants = [
-                ...Array.from(releaseToDate.keys()).filter(rn => rn.includes('2026.2')),
-                ...Array.from(releaseToDate.keys()).filter(rn => normalizeReleaseName(rn).includes('2026.2'))
-            ];
-            console.log('🗓️ RELEASE DATE MAP DEBUG:', {
-                releaseCount: releaseToDate.size,
-                allReleaseNames: Array.from(releaseToDate.keys()),
-                release2026_2Entries: release2026_2InMap.map(rn => ({name: rn, date: releaseToDate.get(rn), normalized: normalizeReleaseName(rn)})),
-                all2026_2Variants: [...new Set(all2026_2Variants)].map(rn => ({name: rn, date: releaseToDate.get(rn)})),
-                today: todayStr,
-                todayObj: today.toISOString()
-            });
-            debugLog('route.ts:586', 'Release date map built', {releaseCount:releaseToDate.size,allReleaseNames:Array.from(releaseToDate.keys()),release2026_2Entries:release2026_2InMap.map(rn => ({name: rn, date: releaseToDate.get(rn)})),today:todayStr}, 'A');
-            // #endregion
-            
+            sharedReleaseToDate = releaseToDate;
+
             // Released statuses that indicate past release
             const releasedStatuses = ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'];
             
@@ -718,26 +615,17 @@ export async function GET(request: NextRequest) {
             criteriaToProcess = criteriaToProcess.filter((c: any) => {
                 const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
                 if (!epic) {
-                    // #region agent log
-                    debugLog('route.ts:598', 'Epic not found in DB', {criterionId:c.id,epicId:c.epic_id,epicName:c.epic?.name}, 'B');
-                    // #endregion
                     return true; // Keep if epic not found (shouldn't happen)
                 }
                 
                 // Check if epic has released status
                 if (epic.status && releasedStatuses.includes(epic.status)) {
-                    // #region agent log
-                    debugLog('route.ts:606', 'Epic has released status - EXCLUDING', {epicId:epic.id,epicStatus:epic.status,criterionId:c.id,epicName:c.epic?.name}, 'C');
-                    // #endregion
                     return false; // Exclude criteria for released epics
                 }
                 
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
                 if (!releaseName) {
-                    // #region agent log
-                    debugLog('route.ts:613', 'No release name found - KEEPING', {epicId:epic.id,criterionId:c.id,epicName:c.epic?.name,ahaFieldsKeys:Object.keys(epic.aha_fields||{}),ahaFieldsSample:JSON.stringify(epic.aha_fields).substring(0,200)}, 'D');
-                    // #endregion
                     return true; // Keep if no release assigned
                 }
                 
@@ -760,72 +648,13 @@ export async function GET(request: NextRequest) {
                     }
                 }
                 
-                // #region agent log
-                const releaseNameInMap = releaseToDate.has(releaseName) || releaseToDate.has(normalizedReleaseName);
-                const is2026_2 = releaseName.includes('2026.2') || normalizedReleaseName.includes('2026.2');
-                if (is2026_2) {
-                    const all2026_2InDb = Array.from(releaseToDate.keys()).filter(rn => {
-                        const rnNorm = normalizeReleaseName(rn);
-                        return rn.includes('2026.2') || rnNorm.includes('2026.2');
-                    });
-                    console.log('🔍 RELEASE 2026.2 MATCH CHECK:', {
-                        epicId: epic.id,
-                        epicName: c.epic?.name,
-                        releaseName,
-                        normalizedReleaseName,
-                        releaseNameFound: releaseToDate.has(releaseName),
-                        normalizedNameFound: releaseToDate.has(normalizedReleaseName),
-                        releaseDate,
-                        all2026_2Releases: all2026_2InDb.map(rn => ({name: rn, date: releaseToDate.get(rn), normalized: normalizeReleaseName(rn)})),
-                        matchedViaFuzzy: !releaseToDate.has(releaseName) && !releaseToDate.has(normalizedReleaseName) && !!releaseDate
-                    });
-                }
-                debugLog('route.ts:620', 'Checking release name match', {epicId:epic.id,releaseName,normalizedReleaseName,releaseNameInMap,releaseNameFound:releaseToDate.has(releaseName),normalizedNameFound:releaseToDate.has(normalizedReleaseName),allReleaseNames:Array.from(releaseToDate.keys()).filter(rn=>rn.includes('2026.2')||normalizedReleaseName.includes(rn)||rn.includes(normalizedReleaseName)),criterionId:c.id,epicName:c.epic?.name}, 'M');
-                // #endregion
                 if (!releaseDate) {
-                    // #region agent log
-                    if (is2026_2) {
-                        console.log('⚠️ RELEASE 2026.2 HAS NO DATE - KEEPING:', {
-                            epicId: epic.id,
-                            epicName: c.epic?.name,
-                            releaseName,
-                            normalizedReleaseName,
-                            closestMatches: Array.from(releaseToDate.keys()).filter((rn:string)=>{
-                                const rnNorm = normalizeReleaseName(rn);
-                                return rn.toLowerCase().includes(releaseName.toLowerCase()) || 
-                                       releaseName.toLowerCase().includes(rn.toLowerCase()) ||
-                                       rnNorm.toLowerCase().includes(normalizedReleaseName.toLowerCase()) ||
-                                       normalizedReleaseName.toLowerCase().includes(rnNorm.toLowerCase());
-                            })
-                        });
-                    }
-                    debugLog('route.ts:625', 'Release has no date - KEEPING', {epicId:epic.id,releaseName,releaseNameInMap,closestMatches:Array.from(releaseToDate.keys()).filter((rn:string)=>rn.toLowerCase().includes(releaseName.toLowerCase())||releaseName.toLowerCase().includes(rn.toLowerCase())),criterionId:c.id,epicName:c.epic?.name}, 'E');
-                    // #endregion
                     return true; // Keep if release has no date
                 }
                 
                 const releaseDateObj = new Date(releaseDate);
                 releaseDateObj.setHours(0, 0, 0, 0);
-                
-                // #region agent log
-                const daysDiff = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-                const willExclude = releaseDateObj < today;
-                if (is2026_2) {
-                    console.log('📅 RELEASE 2026.2 DATE CHECK:', {
-                        epicId: epic.id,
-                        epicName: c.epic?.name,
-                        releaseName,
-                        releaseDate,
-                        releaseDateObj: releaseDateObj.toISOString(),
-                        today: today.toISOString(),
-                        daysDiff,
-                        willExclude,
-                        action: willExclude ? 'EXCLUDING (PAST)' : 'KEEPING (FUTURE/TODAY)'
-                    });
-                }
-                debugLog('route.ts:634', 'Checking release date', {epicId:epic.id,releaseName,releaseDate,releaseDateObj:releaseDateObj.toISOString(),today:today.toISOString(),daysDiff,willExclude,action:willExclude?'EXCLUDING':'KEEPING',criterionId:c.id,epicName:c.epic?.name}, 'F');
-                // #endregion
-                
+
                 // Past release: only notify for Success Defined criterion that is still due (not GO)
                 if (willExclude) {
                     return (
@@ -846,9 +675,6 @@ export async function GET(request: NextRequest) {
             });
             
             console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
-            // #region agent log
-            debugLog('route.ts:653', 'After past release filter', {before:beforeFilterCount,after:criteriaToProcess.length,excluded:beforeFilterCount-criteriaToProcess.length}, 'K');
-            // #endregion
         }
 
         // Add missing metrics reminders for Product Managers on past releases
@@ -972,10 +798,7 @@ export async function GET(request: NextRequest) {
             for (const [epicId, pmUser] of pmUserDataByEpic.entries()) {
                 const epic = allEpics?.find((e: any) => e.id === epicId);
                 if (!epic) continue;
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:720',message:'Adding missing metrics reminder',data:{epicId,epicName:epic.name,cleargoCandidate:epic.aha_fields?.custom_fields?.cleargo_candidate,isCandidate:isClearGOCandidate(epic)},timestamp:Date.now(),runId:'debug1',hypothesisId:'D'})}).catch(()=>{});
-                // #endregion
-                
+
                 const successDefinedDueDate = successDefinedDueDateByEpic.get(epicId);
                 
                 // Create a virtual "missing metrics" criterion reminder
@@ -1015,27 +838,6 @@ export async function GET(request: NextRequest) {
         }
 
         // Log all notifications before filtering
-        // #region agent log
-        const release2026_2Criteria = criteriaToProcess.filter((c:any)=>{
-            const releaseName = c.epic?.aha_fields?.standard_fields?.aha_release_name || 
-                                c.epic?.aha_fields?.standard_fields?.release?.name ||
-                                c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning;
-            return releaseName && (releaseName.includes('2026.2') || releaseName.toLowerCase().includes('release 2026.2'));
-        });
-        console.log('🔍 RELEASE 2026.2 DEBUG:', {
-            totalCriteria: criteriaToProcess.length,
-            release2026_2Count: release2026_2Criteria.length,
-            release2026_2Criteria: release2026_2Criteria.map((c:any)=>({
-                epicId: c.epic_id,
-                epicName: c.epic?.name,
-                criterion: c.criterion?.label,
-                dueDate: c.condition_due_date,
-                decisionOwner: c.decision_owner?.email,
-                releaseName: c.epic?.aha_fields?.standard_fields?.aha_release_name||c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning
-            }))
-        });
-        debugLog('route.ts:837', 'Final criteria count before notifications', {totalCriteria:criteriaToProcess.length,release2026_2Count:release2026_2Criteria.length,release2026_2Criteria:release2026_2Criteria.map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date,decisionOwner:c.decision_owner?.email,releaseName:c.epic?.aha_fields?.standard_fields?.aha_release_name||c.epic?.aha_fields?.custom_fields?.release_target_after_pod_planning})),sampleCriteria:criteriaToProcess.slice(0,5).map((c:any)=>({epicId:c.epic_id,epicName:c.epic?.name,criterion:c.criterion?.label,dueDate:c.condition_due_date}))}, 'L');
-        // #endregion
         const notificationsByEmail = new Map<string, any[]>();
         for (const c of criteriaToProcess) {
             const ownerEmail = c.decision_owner?.email?.toLowerCase() || 'unknown';
@@ -1164,9 +966,6 @@ export async function GET(request: NextRequest) {
         const notificationsSent: any[] = [];
         const errors: any[] = [];
 
-        // Helper function to add delay between notifications
-        const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
         // Helper function to calculate urgency score (lower = more urgent)
         const getUrgencyScore = (criterion: any): number => {
             const daysDiff = diffCalendarDaysBetweenYmd(criterion.condition_due_date, todayStr);
@@ -1177,11 +976,6 @@ export async function GET(request: NextRequest) {
         // Process each assignee (one message per user)
         let notificationCount = 0;
         for (const [email, criteria] of groupedByAssignee.entries()) {
-            // Add delay between notifications to avoid rate limiting (500ms between each)
-            if (notificationCount > 0) {
-                await delay(500);
-            }
-
             // Sort criteria by urgency (most urgent first)
             criteria.sort((a, b) => getUrgencyScore(a) - getUrgencyScore(b));
 
@@ -1215,70 +1009,27 @@ export async function GET(request: NextRequest) {
                     overallPriority = 'high';
                 }
 
-                // Extract release names from epics and fetch release dates
-                const epicIds = [...new Set(criteria.map(c => c.epic_id))];
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:963',message:'Fetching epic data before sending notification',data:{epicIds,email:assigneeEmail,criteriaCount:criteria.length},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
-                // #endregion
-                const { data: epicsData } = await supabase
-                    .from('epic')
-                    .select('id, name, aha_fields')
-                    .in('id', epicIds);
-                // #region agent log
-                if (epicsData) {
-                    fetch('http://127.0.0.1:7242/ingest/02bb678d-8fa7-4f70-af47-31a813f6ac12',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'route.ts:968',message:'Epic data before sending notification',data:{epics:epicsData.map((e:any)=>({id:e.id,name:e.name,cleargoCandidate:e.aha_fields?.custom_fields?.cleargo_candidate,cleargoCandidateDirect:e.aha_fields?.cleargo_candidate,isCandidate:isClearGOCandidate(e)}))},timestamp:Date.now(),runId:'debug1',hypothesisId:'C'})}).catch(()=>{});
-                }
-                // #endregion
-                
+                // Extract release names from epics — build from already-fetched criterion data
+                const epicIds = [...new Set(criteria.map((c: any) => c.epic_id))];
+                const epicsData = epicIds.map((id: string) => {
+                    const c = criteria.find((cr: any) => cr.epic_id === id);
+                    return c?.epic ? { id, name: c.epic.name, aha_fields: c.epic.aha_fields } : null;
+                }).filter(Boolean);
+
                 const epicToRelease = new Map<string, string>();
-                const releaseNames = new Set<string>();
-                
+
                 if (epicsData) {
                     for (const epic of epicsData) {
                         const releaseName = getReleaseNameFromEpic(epic as any);
                         if (releaseName) {
                             epicToRelease.set(epic.id, releaseName);
-                            releaseNames.add(releaseName);
                         }
                     }
                 }
-                
-                // Fetch release dates - need to normalize release names for lookup
-                // Build a map of normalized -> original release names for lookup
-                const normalizedToOriginal = new Map<string, string>();
-                for (const releaseName of releaseNames) {
-                    const normalized = normalizeReleaseName(releaseName);
-                    if (normalized !== releaseName) {
-                        normalizedToOriginal.set(normalized, releaseName);
-                    }
-                }
-                
-                // Fetch all releases that might match (original and normalized names)
-                const allReleaseNamesToFetch = new Set<string>();
-                releaseNames.forEach(rn => {
-                    allReleaseNamesToFetch.add(rn);
-                    allReleaseNamesToFetch.add(normalizeReleaseName(rn));
-                });
-                
-                const { data: releasesData } = await supabase
-                    .from('release_schedule')
-                    .select('release_name, launch_date')
-                    .in('release_name', Array.from(allReleaseNamesToFetch))
-                    .eq('archived', false);
-                
-                const releaseToDate = new Map<string, string | null>();
-                if (releasesData) {
-                    for (const release of releasesData) {
-                        const originalName = release.release_name;
-                        const normalizedName = normalizeReleaseName(originalName);
-                        // Store both original and normalized versions
-                        releaseToDate.set(originalName, release.launch_date);
-                        if (normalizedName !== originalName) {
-                            releaseToDate.set(normalizedName, release.launch_date);
-                        }
-                    }
-                }
-                
+
+                // Use the shared release-date map (already populated during the release date filter above)
+                const releaseToDate = sharedReleaseToDate;
+
                 // Group criteria by release, then by epic within each release
                 const criteriaByRelease = new Map<string, Map<string, any[]>>();
                 const noReleaseCriteria: any[] = [];
@@ -1499,11 +1250,6 @@ export async function GET(request: NextRequest) {
                     continue;
                 }
 
-                // Add delay between notifications
-                if (notificationCount > 0) {
-                    await delay(500);
-                }
-
                 // Sort criteria by urgency
                 criteria.sort((a, b) => getUrgencyScore(a) - getUrgencyScore(b));
 
@@ -1513,38 +1259,26 @@ export async function GET(request: NextRequest) {
                 const assigneeName = `${firstCriterion.decision_owner?.first_name || ''} ${firstCriterion.decision_owner?.last_name || ''}`.trim() || assigneeEmail;
 
                 try {
-                    // Build release groups for email (same logic as Slack)
-                    const emailEpicIds = [...new Set(criteria.map(c => c.epic_id))];
-                    const { data: emailEpicsData } = await supabase
-                        .from('epic')
-                        .select('id, name, aha_fields')
-                        .in('id', emailEpicIds);
+                    // Build release groups for email — use already-fetched criterion data
+                    const emailEpicIds = [...new Set(criteria.map((c: any) => c.epic_id))];
+                    const emailEpicsData = emailEpicIds.map((id: string) => {
+                        const c = criteria.find((cr: any) => cr.epic_id === id);
+                        return c?.epic ? { id, name: c.epic.name, aha_fields: c.epic.aha_fields } : null;
+                    }).filter(Boolean);
                     
                     const emailEpicToRelease = new Map<string, string>();
-                    const emailReleaseNames = new Set<string>();
-                    
+
                     if (emailEpicsData) {
                         for (const epic of emailEpicsData) {
                             const releaseName = getReleaseNameFromEpic(epic as any);
                             if (releaseName) {
                                 emailEpicToRelease.set(epic.id, releaseName);
-                                emailReleaseNames.add(releaseName);
                             }
                         }
                     }
-                    
-                    const { data: emailReleasesData } = await supabase
-                        .from('release_schedule')
-                        .select('release_name, launch_date')
-                        .in('release_name', Array.from(emailReleaseNames))
-                        .eq('archived', false);
-                    
-                    const emailReleaseToDate = new Map<string, string | null>();
-                    if (emailReleasesData) {
-                        for (const release of emailReleasesData) {
-                            emailReleaseToDate.set(release.release_name, release.launch_date);
-                        }
-                    }
+
+                    // Use the shared release-date map
+                    const emailReleaseToDate = sharedReleaseToDate;
                     
                     // Group email criteria by release
                     const emailCriteriaByRelease = new Map<string, Map<string, any[]>>();
