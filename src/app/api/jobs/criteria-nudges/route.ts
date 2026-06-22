@@ -656,7 +656,7 @@ export async function GET(request: NextRequest) {
                 releaseDateObj.setHours(0, 0, 0, 0);
 
                 // Past release: only notify for Success Defined criterion that is still due (not GO)
-                if (willExclude) {
+                if (releaseDateObj < today) {
                     return (
                         isSuccessDefinedCriterion(c) &&
                         c.status !== 'GO' &&
@@ -1014,7 +1014,7 @@ export async function GET(request: NextRequest) {
                 const epicsData = epicIds.map((id: string) => {
                     const c = criteria.find((cr: any) => cr.epic_id === id);
                     return c?.epic ? { id, name: c.epic.name, aha_fields: c.epic.aha_fields } : null;
-                }).filter(Boolean);
+                }).filter((e): e is { id: string; name: any; aha_fields: any } => e !== null);
 
                 const epicToRelease = new Map<string, string>();
 
@@ -1264,7 +1264,7 @@ export async function GET(request: NextRequest) {
                     const emailEpicsData = emailEpicIds.map((id: string) => {
                         const c = criteria.find((cr: any) => cr.epic_id === id);
                         return c?.epic ? { id, name: c.epic.name, aha_fields: c.epic.aha_fields } : null;
-                    }).filter(Boolean);
+                    }).filter((e): e is { id: string; name: any; aha_fields: any } => e !== null);
                     
                     const emailEpicToRelease = new Map<string, string>();
 
