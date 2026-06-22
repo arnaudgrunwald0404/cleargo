@@ -6,6 +6,7 @@ import {
     type RetroForStatus,
 } from '@/lib/epic-release-status';
 import { getActiveReleaseScheduleRows } from '@/lib/release-schedule';
+import { createGtmAccessPhaseResolver } from '@/lib/gtm-phase';
 
 export async function instantiateEpicMatrix(epicId: string, tier: string) {
     const supabase = createClient();
@@ -124,24 +125,55 @@ async function applyComputedStatusToEpics(epics: any[]): Promise<any[]> {
     }
 }
 
-/** Attach criteria_red_flag_count and criteria_red_flag_names (NO_GO criteria) to each epic. Uses admin client so RLS does not hide rows. */
+/**
+ * Attach criteria_red_flag_count and criteria_red_flag_names to each epic. A red flag is:
+ *  - any criterion voted NO_GO, or
+ *  - an unvoted (NOT_SET) gate criterion, but ONLY once the epic has entered the
+ *    "GTM Access and Prep" phase (before that an unvoted gate shows no dot).
+ * Uses admin client so RLS does not hide rows.
+ */
 async function enrichEpicsWithRedFlagCounts(epics: any[]): Promise<any[]> {
     if (!epics?.length) return epics;
     try {
         const supabase = createAdminClient();
         const ids = epics.map((e) => e.id);
-        const { data: rows } = await supabase
-            .from('epic_criterion_status')
-            .select('epic_id, criterion:criterion_id(label)')
-            .eq('status', 'NO_GO')
-            .in('epic_id', ids);
+
+        const [noGoResult, unvotedGateResult, phaseResolver] = await Promise.all([
+            // All NO_GO criteria count, regardless of gate/phase.
+            supabase
+                .from('epic_criterion_status')
+                .select('epic_id, criterion:criterion_id(label)')
+                .eq('status', 'NO_GO')
+                .in('epic_id', ids),
+            // Unvoted gates — only these count, and only from GTM Access and Prep onward.
+            supabase
+                .from('epic_criterion_status')
+                .select('epic_id, criterion:criterion_id!inner(label, gate)')
+                .eq('status', 'NOT_SET')
+                .eq('criterion.gate', true)
+                .in('epic_id', ids),
+            createGtmAccessPhaseResolver(supabase),
+        ]);
+
+        const epicById = new Map(epics.map((e) => [e.id, e]));
         const namesByEpic = new Map<string, string[]>();
-        for (const row of rows || []) {
+
+        for (const row of noGoResult.data || []) {
             const label = (row.criterion as { label?: string } | null)?.label;
             const list = namesByEpic.get(row.epic_id) ?? [];
             list.push(typeof label === 'string' && label ? label : 'No Go criterion');
             namesByEpic.set(row.epic_id, list);
         }
+
+        for (const row of unvotedGateResult.data || []) {
+            // Skip unless the epic has reached GTM Access and Prep.
+            if (!phaseResolver(epicById.get(row.epic_id))) continue;
+            const label = (row.criterion as { label?: string } | null)?.label;
+            const list = namesByEpic.get(row.epic_id) ?? [];
+            list.push(typeof label === 'string' && label ? `${label} (awaiting gate vote)` : 'Gate awaiting vote');
+            namesByEpic.set(row.epic_id, list);
+        }
+
         return epics.map((e) => {
             const names = namesByEpic.get(e.id) ?? [];
             return {
