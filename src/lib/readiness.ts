@@ -4,12 +4,13 @@ import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 import { SlackNotificationPayload } from '@/types/slack';
 import { sendEmailNotification } from '@/lib/email/notifications';
-import { 
-    computeLaunchReadiness, 
-    isSignoffCriterion, 
+import {
+    computeLaunchReadiness,
+    isSignoffCriterion,
     normalizeStatus,
-    type CriterionInput 
+    type CriterionInput
 } from '@/lib/readiness-scoring';
+import { createGtmAccessPhaseResolver, type GtmPhaseEpic } from '@/lib/gtm-phase';
 
 export async function recomputeEpicReadiness(epicId: string, excludeUserId?: string) {
     const supabase = createClient();
@@ -17,7 +18,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     // 1. Fetch epic data and criteria statuses
     const { data: epic, error: epicError } = await supabase
         .from('epic')
-        .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email')
+        .select('id, name, tier, target_launch_date, readiness_status, risk_level, console_url, owner_email, aha_fields, gtm_access_confirmed, actual_gtm_access_date')
         .eq('id', epicId)
         .single();
 
@@ -102,8 +103,13 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
         });
     }
 
+    // From "GTM Access and Prep" onward, an unvoted gate is a hard no-go; before it,
+    // an unvoted gate only forces an AT_RISK ceiling.
+    const phaseResolver = await createGtmAccessPhaseResolver(supabase);
+    const enforceUnvotedGatesAsNoGo = phaseResolver(epic as unknown as GtmPhaseEpic);
+
     // Use new scoring algorithm
-    const scoringResult = computeLaunchReadiness(criteriaInputs);
+    const scoringResult = computeLaunchReadiness(criteriaInputs, { enforceUnvotedGatesAsNoGo });
 
     const readinessScore = scoringResult.readiness;
     

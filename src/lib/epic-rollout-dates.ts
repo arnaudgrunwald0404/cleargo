@@ -326,6 +326,29 @@ export function getEpicInternalOrgsDateYmd(
   return null;
 }
 
+/**
+ * Whether the epic has entered (or passed) the "GTM Access and Prep" phase as of `todayYmd`.
+ *
+ * Uses the confirmed actual GTM Access date when available, otherwise the planned date.
+ * When neither is known, the phase is considered reached only if GTM access was
+ * explicitly confirmed. All dates are `YYYY-MM-DD`; lexical comparison matches calendar order.
+ */
+export function hasReachedGtmAccessPhase(args: {
+  gtmAccessConfirmed?: boolean | null;
+  actualGtmAccessYmd?: string | null;
+  plannedGtmAccessYmd?: string | null;
+  todayYmd: string;
+}): boolean {
+  const { gtmAccessConfirmed, actualGtmAccessYmd, plannedGtmAccessYmd, todayYmd } = args;
+  const effective =
+    gtmAccessConfirmed && actualGtmAccessYmd ? actualGtmAccessYmd : plannedGtmAccessYmd;
+  if (!effective) {
+    // No computable date: only treat as reached if GTM access was explicitly confirmed.
+    return !!gtmAccessConfirmed;
+  }
+  return todayYmd >= effective;
+}
+
 /** Cohort 1 go-live — off-schedule release date overrides target launch when set. */
 export function getEpicCohort1DateYmd(epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>): string | null {
   return getEffectiveCohort1DateYmd(epic);
