@@ -10,6 +10,7 @@ import { SidebarWrapper } from "@/components/SidebarWrapper";
 import { TableScopeWrapper } from "@/components/TableScopeWrapper";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import { ProfileCompletionModal } from "@/components/ProfileCompletionModal";
+import { ChatPanel } from "@/components/ChatPanel";
 import { createClient } from "@/lib/supabase/server";
 import { resolveRole } from "@/lib/roles";
 import type { Role } from "@/lib/roles-constants";
@@ -116,6 +117,7 @@ export default async function RootLayout({
                 </div>
                 <ImpersonationBanner />
                 <ProfileCompletionModal />
+                <ChatPanel />
               </AppModeProvider>
             </FeatureFlagsProvider>
           </QueryProviders>

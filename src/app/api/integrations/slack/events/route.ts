@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackEventPayload } from '@/types/slack';
 import { getSlackClient } from '@/lib/slack/client';
+import { runCleargoAgent, hasCleargoAgentKey } from '@/lib/ai/cleargoAgent';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
@@ -49,12 +50,18 @@ export async function POST(request: NextRequest) {
                     break;
 
                 case 'app_mention':
-                    await handleAppMention(event);
+                    // Fire-and-forget — AI may take > 3s; Slack already acknowledged above
+                    handleAppMention(event).catch((err) =>
+                        console.error('app_mention handler error:', err)
+                    );
                     break;
 
                 case 'message':
                     if (event.channel_type === 'im') {
-                        await handleDirectMessage(event);
+                        // Fire-and-forget — same reason as app_mention
+                        handleDirectMessage(event).catch((err) =>
+                            console.error('message.im handler error:', err)
+                        );
                     }
                     break;
 
@@ -317,14 +324,89 @@ async function handleAppHomeOpened(event: any) {
     }
 }
 
+async function resolveUserEmailFromSlackId(slackUserId: string): Promise<string | null> {
+    try {
+        const { createAdminClient } = await import('@/lib/supabase/server');
+        const supabase = createAdminClient();
+        const { data } = await supabase
+            .from('app_user')
+            .select('email')
+            .eq('slack_handle', slackUserId)
+            .maybeSingle();
+        return data?.email ?? null;
+    } catch {
+        return null;
+    }
+}
+
+/** Strip the bot @mention from the text so the agent sees a clean query */
+function stripBotMention(text: string): string {
+    return text.replace(/<@[A-Z0-9]+>/g, '').trim();
+}
+
 async function handleAppMention(event: any) {
-    // TODO: Respond to @mentions with helpful information
-    console.log('App mentioned:', event.text);
+    const slackUserId: string = event.user;
+    const rawText: string = event.text || '';
+    const channel: string = event.channel;
+    const threadTs: string = event.thread_ts || event.ts;
+
+    // Ignore bot's own messages
+    if (event.bot_id) return;
+
+    const message = stripBotMention(rawText);
+    if (!message) return;
+
+    const slackClient = getSlackClient();
+
+    if (!hasCleargoAgentKey()) {
+        await slackClient.postMessage({
+            channel,
+            thread_ts: threadTs,
+            text: 'The ClearGO AI assistant is not configured. Contact your admin to enable it.',
+        });
+        return;
+    }
+
+    // Post a "thinking" reaction while processing
+    try {
+        await slackClient.addReaction(channel, event.ts, 'hourglass_flowing_sand');
+    } catch {
+        // Reactions are non-critical
+    }
+
+    const userEmail = await resolveUserEmailFromSlackId(slackUserId);
+    const response = await runCleargoAgent({ message, userEmail: userEmail ?? undefined });
+
+    await slackClient.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: response,
+    });
 }
 
 async function handleDirectMessage(event: any) {
-    // TODO: Handle DMs to the bot
-    console.log('Direct message received:', event.text);
+    const slackUserId: string = event.user;
+    const channel: string = event.channel;
+    const text: string = event.text || '';
+
+    // Ignore bot messages and message_changed subtypes to avoid loops
+    if (event.bot_id || event.subtype) return;
+    if (!text.trim()) return;
+
+    const slackClient = getSlackClient();
+
+    if (!hasCleargoAgentKey()) {
+        await slackClient.postMessage({
+            channel,
+            text: 'The ClearGO AI assistant is not configured. Contact your admin to enable it.',
+        });
+        return;
+    }
+
+    const userEmail = await resolveUserEmailFromSlackId(slackUserId);
+    const response = await runCleargoAgent({ message: text.trim(), userEmail: userEmail ?? undefined });
+
+    await slackClient.postMessage({ channel, text: response });
 }
 
 async function handleLinkShared(event: any) {

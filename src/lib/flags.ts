@@ -16,12 +16,16 @@ export const FEATURE_NOT_APPLICABLE = 'not_applicable';
 /** Roadmap Snapshot / Roadmap Rewind (historical Aha! pivot snapshots from Roadmap Rewind Visualizer merge); off by default */
 export const FEATURE_ROADMAP_REWIND = 'roadmap_rewind';
 
+/** Conversational AI assistant (Slack bot + in-app chat panel); off by default */
+export const FEATURE_AI_CHAT = 'ai_chat';
+
 /** All feature flag keys for UI (Settings > Other Settings) */
 export const ALL_FEATURE_FLAGS = [
   { key: FEATURE_AI_PRUNING, label: 'AI checklist pruning', description: 'Suggest criteria to prune per epic (human-in-the-loop)' },
   { key: FEATURE_MEETINGS, label: 'Meetings', description: 'Meetings page and tab (Calendar sync, transcripts, snippets)' },
   { key: FEATURE_NOT_APPLICABLE, label: 'Not Applicable Go/No-Go Score', description: 'Fourth traffic light option; neutral to readiness; gating cannot be NA' },
   { key: FEATURE_ROADMAP_REWIND, label: 'Roadmap Rewind', description: 'Roadmap Snapshot & Rewind (weekly Aha! pivot history, confidence, movements)' },
+  { key: FEATURE_AI_CHAT, label: 'AI Assistant', description: 'Conversational AI: in-app chat panel + Slack bot answers questions and pings stakeholders' },
 ] as const;
 
 export function isEnabled(flag: string, flagsFromSettings?: string[]): boolean {
