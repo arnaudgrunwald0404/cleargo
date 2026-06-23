@@ -95,6 +95,7 @@ export default function UserManagementSection(props: Props) {
   const [bulkImportEmailsStep, setBulkImportEmailsStep] = useState<1 | 2>(1);
   const [bulkImportEmailsText, setBulkImportEmailsText] = useState("");
   const [bulkImportRoles, setBulkImportRoles] = useState<Record<string, string>>({});
+  const [slackSyncLoading, setSlackSyncLoading] = useState(false);
   const [bulkImportEmailsLoading, setBulkImportEmailsLoading] = useState(false);
 
   type SortKey = "firstName" | "lastName" | "email" | "role" | "lastLoggedIn";
@@ -340,6 +341,22 @@ export default function UserManagementSection(props: Props) {
     }
   };
 
+  const handleSyncSlackHandles = async () => {
+    if (!confirm("Sync Slack handles for all users? This will look up each user's Slack ID by email.")) return;
+    setSlackSyncLoading(true);
+    try {
+      const res = await fetch("/api/admin/slack-sync", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "Failed to sync Slack handles");
+      alert(`Slack sync complete: ${data.synced} synced, ${data.errors} errors (${data.total} total)`);
+      onRefresh();
+    } catch (error: any) {
+      alert(`Error: ${error.message}`);
+    } finally {
+      setSlackSyncLoading(false);
+    }
+  };
+
   const editingUser = users.find((u) => u.id === editingUserId);
 
   const sortedUsers = useMemo(() => {
@@ -407,6 +424,14 @@ export default function UserManagementSection(props: Props) {
                 </button>
                 <button type="button" onClick={exportToCSV} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors">
                   Export CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSyncSlackHandles}
+                  disabled={slackSyncLoading}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium transition-colors disabled:opacity-50"
+                >
+                  {slackSyncLoading ? "Syncing..." : "Sync Slack Handles"}
                 </button>
                 {selectedUserIds.size > 0 && (
                   <>
