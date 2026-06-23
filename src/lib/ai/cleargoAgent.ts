@@ -8,7 +8,9 @@
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { google } from '@ai-sdk/google';
 import { generateText, streamText, tool, stepCountIs } from 'ai';
+import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient } from '@/lib/slack/client';
@@ -24,15 +26,34 @@ function getAnthropicBaseUrl(): string {
   return ANTHROPIC_API_V1;
 }
 
-function ensureAnthropicKey(): boolean {
+function ensureKeys(): void {
+  // Map CLAUDE_API_KEY → ANTHROPIC_API_KEY (Claude SDK convention)
   if (!process.env.ANTHROPIC_API_KEY && process.env.CLAUDE_API_KEY) {
     process.env.ANTHROPIC_API_KEY = process.env.CLAUDE_API_KEY;
   }
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  // Map GEMINI_API_KEY → GOOGLE_GENERATIVE_AI_API_KEY (Google SDK convention)
+  if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
+  }
 }
 
 export function hasCleargoAgentKey(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
+  return Boolean(
+    process.env.ANTHROPIC_API_KEY ||
+    process.env.CLAUDE_API_KEY ||
+    process.env.GEMINI_API_KEY ||
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY
+  );
+}
+
+/** Pick Claude if available, otherwise Gemini. */
+function resolveModel(): LanguageModel {
+  ensureKeys();
+  if (process.env.ANTHROPIC_API_KEY) {
+    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+  }
+  // Gemini Flash — fast, cheap, tool-capable
+  return google('gemini-2.0-flash');
 }
 
 const SYSTEM_PROMPT = `You are ClearGO Assistant, an AI embedded in the ClearGO Launch Readiness Console.
@@ -401,11 +422,11 @@ export async function runCleargoAgent(params: {
 }): Promise<string> {
   const { message, userEmail = 'unknown', contextEpicId } = params;
 
-  if (!ensureAnthropicKey()) {
-    return 'The ClearGO AI assistant is not configured. Contact your admin to set up CLAUDE_API_KEY.';
+  if (!hasCleargoAgentKey()) {
+    return 'The ClearGO AI assistant is not configured. Contact your admin to set up CLAUDE_API_KEY or GEMINI_API_KEY.';
   }
 
-  const model = createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+  const model = resolveModel();
   const system = contextEpicId
     ? `${SYSTEM_PROMPT}\n\nThe user is currently viewing epic ID: ${contextEpicId}.`
     : SYSTEM_PROMPT;
@@ -436,9 +457,7 @@ export function createCleargoAgentStream(params: {
 }) {
   const { messages, userEmail = 'unknown', contextEpicId } = params;
 
-  ensureAnthropicKey();
-
-  const model = createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+  const model = resolveModel();
   const system = contextEpicId
     ? `${SYSTEM_PROMPT}\n\nThe user is currently viewing epic ID: ${contextEpicId}.`
     : SYSTEM_PROMPT;
