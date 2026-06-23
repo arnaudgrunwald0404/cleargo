@@ -7,10 +7,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackEventPayload } from '@/types/slack';
 import { getSlackClient } from '@/lib/slack/client';
-import { runCleargoAgent, hasCleargoAgentKey } from '@/lib/ai/cleargoAgent';
+import { hasCleargoAgentKey } from '@/lib/ai/cleargoAgent';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+
+async function triggerAgentBackground(payload: {
+    type: 'app_mention' | 'direct_message';
+    message: string;
+    channel: string;
+    thread_ts?: string;
+    userEmail?: string;
+}): Promise<void> {
+    const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
+    if (!baseUrl || baseUrl.includes('localhost')) return;
+    const secret = process.env.CRON_SECRET || '';
+    const bgUrl = `${baseUrl}/.netlify/functions/slack-agent-background`;
+    try {
+        await fetch(bgUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ secret, ...payload }),
+        });
+    } catch (err) {
+        console.error('Failed to trigger slack-agent-background:', err);
+    }
+}
 
 export async function POST(request: NextRequest) {
     try {
@@ -50,18 +72,12 @@ export async function POST(request: NextRequest) {
                     break;
 
                 case 'app_mention':
-                    // Fire-and-forget — AI may take > 3s; Slack already acknowledged above
-                    handleAppMention(event).catch((err) =>
-                        console.error('app_mention handler error:', err)
-                    );
+                    await handleAppMention(event);
                     break;
 
                 case 'message':
                     if (event.channel_type === 'im') {
-                        // Fire-and-forget — same reason as app_mention
-                        handleDirectMessage(event).catch((err) =>
-                            console.error('message.im handler error:', err)
-                        );
+                        await handleDirectMessage(event);
                     }
                     break;
 
@@ -350,7 +366,6 @@ async function handleAppMention(event: any) {
     const channel: string = event.channel;
     const threadTs: string = event.thread_ts || event.ts;
 
-    // Ignore bot's own messages
     if (event.bot_id) return;
 
     const message = stripBotMention(rawText);
@@ -367,7 +382,6 @@ async function handleAppMention(event: any) {
         return;
     }
 
-    // Post a "thinking" reaction while processing
     try {
         await slackClient.addReaction(channel, event.ts, 'hourglass_flowing_sand');
     } catch {
@@ -375,12 +389,12 @@ async function handleAppMention(event: any) {
     }
 
     const userEmail = await resolveUserEmailFromSlackId(slackUserId);
-    const response = await runCleargoAgent({ message, userEmail: userEmail ?? undefined });
-
-    await slackClient.postMessage({
+    await triggerAgentBackground({
+        type: 'app_mention',
+        message,
         channel,
         thread_ts: threadTs,
-        text: response,
+        userEmail: userEmail ?? undefined,
     });
 }
 
@@ -389,7 +403,6 @@ async function handleDirectMessage(event: any) {
     const channel: string = event.channel;
     const text: string = event.text || '';
 
-    // Ignore bot messages and message_changed subtypes to avoid loops
     if (event.bot_id || event.subtype) return;
     if (!text.trim()) return;
 
@@ -404,9 +417,12 @@ async function handleDirectMessage(event: any) {
     }
 
     const userEmail = await resolveUserEmailFromSlackId(slackUserId);
-    const response = await runCleargoAgent({ message: text.trim(), userEmail: userEmail ?? undefined });
-
-    await slackClient.postMessage({ channel, text: response });
+    await triggerAgentBackground({
+        type: 'direct_message',
+        message: text.trim(),
+        channel,
+        userEmail: userEmail ?? undefined,
+    });
 }
 
 async function handleLinkShared(event: any) {
