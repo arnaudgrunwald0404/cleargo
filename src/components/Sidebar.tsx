@@ -12,8 +12,7 @@ import {
   IconMessageCircle,
   IconChartBar,
   IconMessageReport,
-  IconCalendarEvent,
-  IconSettings,
+IconSettings,
   IconChevronsLeft,
   IconChevronsRight,
   IconSearch,
@@ -27,7 +26,7 @@ import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
-import { isEnabled, FEATURE_MEETINGS, FEATURE_ROADMAP_REWIND } from '@/lib/flags';
+import { isEnabled, FEATURE_ROADMAP_REWIND } from '@/lib/flags';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { AHA_IDEAS_PORTAL_SSO_PATH } from '@/lib/aha/ideasPortal';
@@ -55,7 +54,6 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   const { flags: featureFlags } = useFeatureFlags();
   const [userRoles, setUserRoles] = useState<string[]>([]);
   const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
-  const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
   const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
   const [displayName, setDisplayName] = useState<string | null>(null);
   const [unreadCommentCount, setUnreadCommentCount] = useState(0);
@@ -95,7 +93,6 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
             'settings.webhookUrl.read',
           ];
           setHasSettingsAccess(settingsCapabilities.some(cap => canRolesPerform(roles, cap)));
-          setHasMeetingsAccess(isEnabled(FEATURE_MEETINGS, featureFlags) && canRolesPerform(roles, 'meetings.read'));
           setHasAnalyticsAccess(canRolesPerform(roles, 'analytics.read'));
 
           // Get display name (first + last)
@@ -173,7 +170,6 @@ export function Sidebar({ email, role, imageUrl }: SidebarProps) {
   const commonTabs: NavItem[] = [
     ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics', icon: IconChartBar }] : []),
     { link: AHA_IDEAS_PORTAL_SSO_PATH, label: 'Feedback', icon: IconMessageReport, openInNewTab: true },
-    ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings', icon: IconCalendarEvent }] : []),
   ];
 
   // "My Settings" is shown to all users; admins additionally see Admin Settings

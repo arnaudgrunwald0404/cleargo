@@ -35,7 +35,6 @@ export type CapabilityId =
   | "settings.ahaTags.update"
   | "settings.webhookUrl.read"
   | "settings.webhookUrl.update"
-  | "meetings.read"
   | "analytics.read"
   | "settings.successMeasurement.update"
   | "roadmap.confidence.adjust"
@@ -220,11 +219,6 @@ export const CAPABILITIES: Capability[] = [
     description: "Allow updating the Aha! webhook URL configuration.",
   },
   {
-    id: "meetings.read",
-    label: "View Meetings",
-    description: "Allow viewing and accessing the Meetings section.",
-  },
-  {
     id: "analytics.read",
     label: "View Analytics",
     description: "Allow viewing the Analytics dashboard (CPO-only for now).",
@@ -310,7 +304,6 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.ahaTags.update": ["CPO"],
   "settings.webhookUrl.read": ["CPO", "PRODUCT_OPS", "PRODUCT"],
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
-  "meetings.read": ["CPO", "SUPERADMIN"],
   "analytics.read": ["CPO"],
   "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "PM", "PMM", "SUPERADMIN"],
   "roadmap.confidence.adjust": ["PM", "PRODUCT_OPS", "CPO"],

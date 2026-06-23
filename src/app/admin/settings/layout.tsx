@@ -70,8 +70,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                             <li><Link {...linkPropsSm("/admin/settings/integrations/jira", isActive("/admin/settings/integrations/jira"))}>Jira</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/slack", isActive("/admin/settings/integrations/slack"))}>Slack</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/calendar", isActive("/admin/settings/integrations/calendar"))}>Calendar</Link></li>
-                            <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
+<li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/rovo", isActive("/admin/settings/integrations/rovo"))}>Rovo</Link></li>
                         </ul>
                     )}

@@ -10,8 +10,6 @@ import { UserAvatar } from './UserAvatar';
 import { EpicSearch } from './EpicSearch';
 import { canRolesPerform } from '@/lib/permissions';
 import type { CapabilityId } from '@/lib/permissions';
-import { isEnabled, FEATURE_MEETINGS } from '@/lib/flags';
-import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { useAppMode } from '@/contexts/AppModeContext';
 import type { AppMode } from '@/contexts/AppModeContext';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
@@ -42,12 +40,10 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
     const pathname = usePathname();
     const router = useRouter();
     const isMobile = useMediaQuery(MOBILE_BREAKPOINT);
-    const { flags: featureFlags } = useFeatureFlags();
     const { appMode, setAppMode } = useAppMode();
     const [userRoles, setUserRoles] = useState<string[]>([]);
     const [menuOpen, setMenuOpen] = useState(false);
     const [hasSettingsAccess, setHasSettingsAccess] = useState(false);
-    const [hasMeetingsAccess, setHasMeetingsAccess] = useState(false);
     const [hasAnalyticsAccess, setHasAnalyticsAccess] = useState(false);
     const [canToggleMode, setCanToggleMode] = useState(false);
     const [unreadCommentCount, setUnreadCommentCount] = useState(0);
@@ -78,9 +74,6 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
                         canRolesPerform(roles, capability)
                     );
                     setHasSettingsAccess(hasAccess);
-
-                    const hasMeetings = isEnabled(FEATURE_MEETINGS, featureFlags) && canRolesPerform(roles, 'meetings.read');
-                    setHasMeetingsAccess(hasMeetings);
 
                     setHasAnalyticsAccess(canRolesPerform(roles, 'analytics.read'));
 
@@ -146,7 +139,6 @@ export function Header({ email, role, imageUrl }: HeaderProps) {
         { link: '/releases/comments', label: 'Comments', badge: unreadCommentCount > 0 ? unreadCommentCount : undefined },
         ...(hasAnalyticsAccess ? [{ link: '/analytics', label: 'Analytics' }] : []),
         { link: AHA_IDEAS_PORTAL_SSO_PATH, label: 'Feedback', openInNewTab: true },
-        ...(hasMeetingsAccess ? [{ link: '/meetings', label: 'Meetings' }] : []),
         ...(hasSettingsAccess ? [{ link: '/admin/settings', label: 'Settings' }] : []),
     ];
 

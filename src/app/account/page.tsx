@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { TextInput, Button, Avatar, FileButton, Group, Text, Loader, Paper, Title, Container, Divider, Alert } from "@mantine/core";
+import { TextInput, Button, Avatar, FileButton, Group, Text, Loader, Paper, Title, Container } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
-import { IconUpload, IconCheck, IconCalendar, IconAlertCircle } from "@tabler/icons-react";
+import { IconUpload, IconCheck } from "@tabler/icons-react";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -13,8 +13,6 @@ export default function AccountPage() {
     const [saving, setSaving] = useState(false);
     const [user, setUser] = useState<any>(null);
     const [file, setFile] = useState<File | null>(null);
-    const [isCalendarConnected, setIsCalendarConnected] = useState(false);
-    const [checkingCalendar, setCheckingCalendar] = useState(true);
     const supabase = createClient();
 
     const form = useForm({
@@ -27,47 +25,7 @@ export default function AccountPage() {
 
     useEffect(() => {
         fetchProfile();
-        checkGoogleCalendarConnection();
     }, []);
-
-    const checkGoogleCalendarConnection = async () => {
-        try {
-            const res = await fetch("/api/integrations/google-calendar/status");
-            if (res.ok) {
-                const data = await res.json();
-                setIsCalendarConnected(data.connected);
-            }
-        } catch (error) {
-            console.error("Error checking connection:", error);
-        } finally {
-            setCheckingCalendar(false);
-        }
-    };
-
-    const handleConnectGoogleCalendar = async () => {
-        try {
-            // Check if credentials are configured before redirecting
-            const res = await fetch("/api/integrations/google-calendar/status");
-            if (!res.ok) {
-                const error = await res.json();
-                if (error.error && error.error.includes("not configured")) {
-                    notifications.show({
-                        title: "Configuration Required",
-                        message: "Google Calendar credentials are not configured. Please contact your administrator.",
-                        color: "orange",
-                    });
-                    return;
-                }
-            }
-            window.location.href = "/api/integrations/google-calendar/oauth";
-        } catch (error) {
-            notifications.show({
-                title: "Error",
-                message: "Failed to connect Google Calendar. Please try again.",
-                color: "red",
-            });
-        }
-    };
 
     const fetchProfile = async () => {
         try {
@@ -222,41 +180,6 @@ export default function AccountPage() {
                     </Group>
                 </form>
 
-                <Divider my="xl" />
-
-                <div>
-                    <Title order={3} mb="md">Integrations</Title>
-                    
-                    <div className="mb-4">
-                        <Text size="sm" fw={500} mb="xs">Google Calendar</Text>
-                        <Text size="xs" c="dimmed" mb="md">
-                            Connect your Google Calendar to automatically detect check-in meetings. Meetings will be automatically linked to epics based on name matching.
-                        </Text>
-                        
-                        {checkingCalendar ? (
-                            <Loader size="sm" />
-                        ) : isCalendarConnected ? (
-                            <Alert icon={<IconCheck size={16} />} color="green" mb="md">
-                                Google Calendar is connected
-                            </Alert>
-                        ) : (
-                            <Alert icon={<IconAlertCircle size={16} />} color="blue" mb="md">
-                                Connect your Google Calendar to automatically detect check-in meetings.
-                            </Alert>
-                        )}
-                        
-                        {!isCalendarConnected && (
-                            <Button
-                                leftSection={<IconCalendar size={18} />}
-                                onClick={handleConnectGoogleCalendar}
-                                variant="filled"
-                                color="blue"
-                            >
-                                Connect Google Calendar
-                            </Button>
-                        )}
-                    </div>
-                </div>
             </Paper>
         </Container>
     );

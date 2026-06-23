@@ -4,7 +4,6 @@ import type { AppSettings } from "@/lib/settings-db";
 import EmailIntegrationSection from "./EmailIntegrationSection";
 import AhaIntegrationSection from "./AhaIntegrationSection";
 import SlackIntegrationSection from "./SlackIntegrationSection";
-import CalendarIntegrationSection from "./CalendarIntegrationSection";
 import JiraIntegrationSection from "./JiraIntegrationSection";
 import PendoIntegrationSection from "./PendoIntegrationSection";
 import RovoIntegrationSection from "./RovoIntegrationSection";
@@ -88,10 +87,6 @@ export default function IntegrationsSection({
           setSettings={setSettings}
           onSave={onAutoSaveSettings}
         />
-      )}
-
-      {activeSubSection === "calendar" && (
-        <CalendarIntegrationSection settings={settings} setSettings={setSettings} />
       )}
 
       {activeSubSection === "jira" && (
