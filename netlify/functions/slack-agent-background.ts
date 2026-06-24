@@ -76,14 +76,7 @@ export default async (req: Request): Promise<Response> => {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err: any) {
-    const msg = err?.message || String(err);
-    console.error('slack-agent-background error:', msg);
-    // Temporarily surface error to Slack for debugging
-    await fetch('https://slack.com/api/chat.postMessage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}` },
-      body: JSON.stringify({ channel: payload.channel, thread_ts: payload.thread_ts, text: `⚠️ Debug: ${msg}` }),
-    }).catch(() => {});
-    return new Response(JSON.stringify({ error: msg }), { status: 500 });
+    console.error('slack-agent-background error:', err?.message || err);
+    return new Response(JSON.stringify({ error: 'Agent failed' }), { status: 500 });
   }
 };

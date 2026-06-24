@@ -443,9 +443,8 @@ export async function runCleargoAgent(params: {
     });
     return text || "I couldn't generate a response — please try rephrasing.";
   } catch (error: any) {
-    const msg = error?.message || String(error);
-    console.error('ClearGO agent error:', msg);
-    return `⚠️ Debug error: ${msg}`;
+    console.error('ClearGO agent error:', error?.message || error);
+    return 'Sorry, something went wrong. Please try again.';
   }
 }
 
