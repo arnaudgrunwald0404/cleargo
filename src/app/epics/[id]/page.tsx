@@ -23,7 +23,7 @@ import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 import type { ReleaseStagesScope } from "@/lib/services/settingsService";
-import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal } from "@/lib/date-utils";
+import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, getCohort2DateForTimeline } from "@/lib/date-utils";
 import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
 import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
 import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
@@ -378,6 +378,7 @@ export default function EpicDetailPage() {
             const levelMatch = uiuxImpactStr.match(/\b([123])\b/);
             const parsedUiLevel = levelMatch ? parseInt(levelMatch[1], 10) : null;
             setUiLevel(parsedUiLevel);
+            const effectiveUiLevel = epicIsUiFramework ? (parsedUiLevel ?? 1) : parsedUiLevel;
 
             const fetchedReleaseStages = epicIsUiFramework ? uiRolloutStagesData : releaseStagesData;
             setReleaseStages(fetchedReleaseStages);
@@ -426,20 +427,22 @@ export default function EpicDetailPage() {
             let fetchedReleaseDate: string | null = null;
             let cohort2DateFetched: string | null = null;
             if (extractedReleaseName) {
-                const { data: releaseSchedule, error: releaseError } = await supabase
+                const { data: allScheduleRows } = await supabase
                     .from('release_schedule')
-                    .select('launch_date, cohort2_date')
-                    .eq('release_name', extractedReleaseName)
-                    .maybeSingle();
+                    .select('release_name, launch_date, cohort2_date');
+                const releaseSchedule = allScheduleRows?.find(
+                    (row) => row.release_name === extractedReleaseName
+                );
+                const resolveCohort2Date = (launchDate: string): string | null =>
+                    getCohort2DateForTimeline(extractedReleaseName, launchDate, allScheduleRows ?? []);
 
                 // Check if we have a date in the schedule
                 if (releaseSchedule?.launch_date) {
                     fetchedReleaseDate = releaseSchedule.launch_date;
                     setReleaseDate(releaseSchedule.launch_date);
-                    if (releaseSchedule.cohort2_date) {
-                        cohort2DateFetched = releaseSchedule.cohort2_date;
-                        setCohort2Date(releaseSchedule.cohort2_date);
-                    }
+                    cohort2DateFetched =
+                        releaseSchedule.cohort2_date ?? resolveCohort2Date(releaseSchedule.launch_date);
+                    setCohort2Date(cohort2DateFetched);
                 } else {
                     // Automatically fetch release date from API if not in schedule
                     setFetchingReleaseDate(true);
@@ -472,10 +475,9 @@ export default function EpicDetailPage() {
                                     console.log(`[Epic Detail] Successfully saved release date:`, savedData);
                                     fetchedReleaseDate = found.launchDate;
                                     setReleaseDate(found.launchDate);
-                                    if (found.cohort2Date) {
-                                        cohort2DateFetched = found.cohort2Date;
-                                        setCohort2Date(found.cohort2Date);
-                                    }
+                                    cohort2DateFetched =
+                                        found.cohort2Date ?? resolveCohort2Date(found.launchDate);
+                                    setCohort2Date(cohort2DateFetched);
                                 } else {
                                     const errorData = await saveRes.json().catch(() => ({}));
                                     console.error("[Epic Detail] Failed to save release date:", errorData);
@@ -746,7 +748,7 @@ export default function EpicDetailPage() {
                 fetchedReleaseStages.length > 0 && targetDate
                     ? computeStageEndDatesByStageId(fetchedReleaseStages, targetDate, {
                           useBusinessDayTimeline: epicIsUiFramework,
-                          uiLevel: parsedUiLevel,
+                          uiLevel: effectiveUiLevel,
                           cohort2Date: cohort2DateFetched,
                       })
                     : new Map<number, string>();
@@ -1996,7 +1998,7 @@ export default function EpicDetailPage() {
                                         stages={releaseStages}
                                         showHeading={true}
                                         noContainer={false}
-                                        uiLevel={isUiFrameworkEpic && uiLevel != null ? uiLevel : undefined}
+                                        uiLevel={isUiFrameworkEpic ? (uiLevel ?? 1) : undefined}
                                         criteriaItems={matrix}
                                         stageIdBridge={stageIdBridge}
                                     />
