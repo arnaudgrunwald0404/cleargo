@@ -19,7 +19,7 @@ async function triggerAgentBackground(payload: {
     thread_ts?: string;
     userEmail?: string;
 }): Promise<void> {
-    const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
+    const baseUrl = (process.env.NETLIFY_URL || process.env.URL || process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/$/, '');
     if (!baseUrl || baseUrl.includes('localhost')) return;
     const secret = process.env.CRON_SECRET || '';
     const bgUrl = `${baseUrl}/.netlify/functions/slack-agent-background`;
