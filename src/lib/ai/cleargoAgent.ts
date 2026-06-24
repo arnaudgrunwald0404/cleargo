@@ -76,10 +76,18 @@ Key concepts:
 - Tiers: TIER_1 = biggest launches, TIER_2 = medium, TIER_3 = smaller
 - Risk levels: HIGH, MEDIUM, LOW
 
+Tool routing rules (follow these strictly):
+- "Who is blocking / delaying / ruining / holding up launches?" → get_accountability_report
+- "Who has unreviewed criteria?" → get_accountability_report
+- "What launches are at risk / show portfolio?" → get_team_overview
+- "What do I need to do?" → get_my_pending_actions
+- "Is launch X ready?" → check_launch_readiness
+
 When responding:
 - Be concise and actionable — lead with the most important information
 - Use mrkdwn when in Slack (bold with *, code with \`, lists with -)
 - Summarize tool results in plain language — don't dump raw data
+- For accountability results, be direct and name names — the user wants actionable info, not diplomacy
 - If you can't find something, say so clearly rather than guessing`;
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
@@ -257,7 +265,7 @@ function buildTools(userEmail: string) {
 
     get_team_overview: tool({
       description:
-        'Get a summary of all active launches sorted by risk level and launch date. Useful for portfolio-level questions.',
+        'Get a summary of all active launches sorted by risk level and launch date. Useful for portfolio-level questions like "what launches are at risk?", "show me all TIER_1 launches", or "what is the state of our portfolio?". Do NOT use this for questions about people, accountability, or who is blocking things — use get_accountability_report for that.',
       inputSchema: z.object({
         tier: z
           .enum(['TIER_1', 'TIER_2', 'TIER_3'])
@@ -272,12 +280,9 @@ function buildTools(userEmail: string) {
         const supabase = createAdminClient();
         let query = supabase
           .from('epic')
-          .select(
-            'id, name, tier, status, readiness_score, risk_level, target_launch_date, criteria_red_flag_count'
-          )
+          .select('id, name, tier, status, readiness_score, risk_level, target_launch_date')
           .neq('status', 'Cancelled')
           .neq('status', 'Released_Retroed')
-          .order('risk_level', { ascending: false })
           .order('target_launch_date', { ascending: true })
           .limit(20);
 
@@ -297,7 +302,6 @@ function buildTools(userEmail: string) {
             readinessScore:
               e.readiness_score != null ? `${Math.round(e.readiness_score * 100)}%` : 'N/A',
             targetLaunchDate: e.target_launch_date,
-            redFlagCount: e.criteria_red_flag_count ?? 0,
             url: `${APP_URL}/epics/${e.id}`,
           })),
         };
