@@ -49,10 +49,12 @@ export function hasCleargoAgentKey(): boolean {
 /** Pick Claude if available, otherwise Gemini. */
 function resolveModel(): LanguageModel {
   ensureKeys();
-  if (process.env.ANTHROPIC_API_KEY) {
+  const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+  // Only use Claude with a real Anthropic key — Netlify's AI integration injects a proxy
+  // key that starts with something other than sk-ant- and fails against api.anthropic.com
+  if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
     return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
   }
-  // Gemini Flash — fast, cheap, tool-capable
   return google('gemini-2.0-flash');
 }
 
