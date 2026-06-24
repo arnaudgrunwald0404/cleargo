@@ -440,9 +440,10 @@ export async function runCleargoAgent(params: {
       stopWhen: stepCountIs(5),
     });
     return text || "I couldn't generate a response — please try rephrasing.";
-  } catch (error) {
-    console.error('ClearGO agent error:', error);
-    return 'Sorry, something went wrong. Please try again.';
+  } catch (error: any) {
+    const msg = error?.message || String(error);
+    console.error('ClearGO agent error:', msg);
+    return `⚠️ Debug error: ${msg}`;
   }
 }
 
