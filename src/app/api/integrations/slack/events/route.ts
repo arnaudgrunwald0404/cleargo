@@ -169,7 +169,7 @@ async function handleAppHomeOpened(event: any) {
                     )
                 `)
                 .eq('decision_owner_id', appUser.id)
-                .in('status', ['NOT_SET', 'CONDITIONAL'])
+                .in('status', ['NOT_SET'])
                 .limit(5);
 
             const launches = ownedLaunches || [];

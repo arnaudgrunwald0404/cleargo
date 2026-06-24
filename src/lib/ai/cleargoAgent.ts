@@ -62,7 +62,7 @@ const SYSTEM_PROMPT = `You are ClearGO Assistant, an AI embedded in the ClearGO 
 
 You help product managers and stakeholders:
 - Check the readiness status of product launches (called "epics")
-- Identify which criteria are blocking a launch (GO / NO_GO / CONDITIONAL / NOT_SET)
+- Identify which criteria are blocking a launch (NO_GO or NOT_SET — CONDITIONAL is acceptable)
 - Find who owns which decisions
 - Send reminders or pings to stakeholders about pending criteria
 - Summarize team-wide launch risk and status
@@ -71,6 +71,8 @@ Key concepts:
 - A "launch" or "epic" is a product feature being shipped
 - Epics have readiness criteria across categories: PRODUCT_TECH, GTM, SUPPORT, LEGAL_SECURITY, DATA_ANALYTICS, OPS, etc.
 - A "gate" criterion must be GO for the launch to proceed — these are the most critical
+- Criterion statuses: GO = approved, NO_GO = blocking, CONDITIONAL = approved with conditions (this is fine, not a problem), NOT_SET = unreviewed and needs attention
+- Only NOT_SET criteria are truly "pending" — CONDITIONAL means someone has already reviewed and set conditions, which is acceptable
 - Tiers: TIER_1 = biggest launches, TIER_2 = medium, TIER_3 = smaller
 - Risk levels: HIGH, MEDIUM, LOW
 
@@ -197,7 +199,7 @@ function buildTools(userEmail: string) {
 
     get_my_pending_actions: tool({
       description:
-        'Get criteria decisions that are pending (NOT_SET or CONDITIONAL) for the current user or a specified person.',
+        'Get criteria decisions that are unreviewed (NOT_SET only) for the current user or a specified person. CONDITIONAL criteria are acceptable and not included.',
       inputSchema: z.object({
         email: z
           .string()
@@ -224,7 +226,7 @@ function buildTools(userEmail: string) {
              criterion:criterion_id (label, category, gate)`
           )
           .eq('decision_owner_id', user.id)
-          .in('status', ['NOT_SET', 'CONDITIONAL'])
+          .in('status', ['NOT_SET'])
           .order('last_updated_at', { ascending: true });
 
         if (!pending || pending.length === 0) {
