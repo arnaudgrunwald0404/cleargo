@@ -113,6 +113,43 @@ export async function canReceiveSlackNotification(email: string): Promise<boolea
 }
 
 /**
+ * Check if an epic's release is present in the release_schedule table (synced by admin).
+ * Returns true when: the epic has no release name, or the release exists in release_schedule.
+ * Returns false when: the epic has a release name that is NOT in release_schedule.
+ * Fails open (returns true) on any DB error so a transient failure doesn't block notifications.
+ */
+async function isEpicReleaseSynced(epicId: string): Promise<boolean> {
+    try {
+        const supabase = createAdminClient();
+        const { data: epic } = await supabase
+            .from('epic')
+            .select('aha_fields')
+            .eq('id', epicId)
+            .maybeSingle();
+
+        if (!epic) return true;
+
+        const { getReleaseNameFromAhaFields } = await import('@/lib/criterion-due-date');
+        const releaseName = getReleaseNameFromAhaFields(epic.aha_fields);
+        if (!releaseName) return true;
+
+        // Also check the name without a leading "Release " prefix (Aha inconsistency)
+        const normalizedName = releaseName.replace(/^release\s+/i, '').trim();
+        const namesToCheck = releaseName === normalizedName ? [releaseName] : [releaseName, normalizedName];
+
+        const { data: found } = await supabase
+            .from('release_schedule')
+            .select('id')
+            .in('release_name', namesToCheck)
+            .limit(1);
+
+        return !!(found && found.length > 0);
+    } catch {
+        return true; // Fail open on error
+    }
+}
+
+/**
  * Check if a notification type is enabled for Slack
  */
 async function isSlackNotificationTypeEnabled(type: SlackNotificationType): Promise<boolean> {
@@ -146,6 +183,20 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             delivery_channel: 'slack',
             status: 'pending',
             error: `Skipped: notification type '${payload.type}' is disabled in Settings`,
+        });
+        return;
+    }
+
+    // Skip notifications for epics whose release has not yet been synced in admin/settings/releases
+    if (payload.launch_id && !(await isEpicReleaseSynced(payload.launch_id))) {
+        await logNotification({
+            user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
+            launch_id: payload.launch_id,
+            type: payload.type,
+            payload: payload.metadata,
+            delivery_channel: 'slack',
+            status: 'pending',
+            error: `Skipped: epic's release is not yet synced in admin/settings/releases`,
         });
         return;
     }

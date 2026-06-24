@@ -1040,9 +1040,14 @@ export async function GET(request: NextRequest) {
                         noReleaseCriteria.push(c);
                         continue;
                     }
-                    
+
                     // Normalize release name for consistent grouping
                     const normalizedReleaseName = normalizeReleaseName(releaseName);
+
+                    // Skip criteria for epics whose release has not been synced in admin/settings/releases
+                    if (!releaseToDate.has(releaseName) && !releaseToDate.has(normalizedReleaseName)) {
+                        continue;
+                    }
                     // Use normalized name for grouping, but try to find original name for date lookup
                     const releaseNameForGrouping = releaseToDate.has(releaseName) ? releaseName : 
                                                    (releaseToDate.has(normalizedReleaseName) ? normalizedReleaseName : releaseName);
@@ -1151,6 +1156,12 @@ export async function GET(request: NextRequest) {
                 
                 // Flatten epic groups for backward compatibility
                 const epicGroups = releaseGroups.flatMap(rg => rg.epic_groups);
+
+                // Nothing left to notify about (all criteria are for un-synced releases)
+                if (epicGroups.length === 0) {
+                    console.log(`Skipping criteria nudge for ${assigneeEmail}: all criteria belong to un-synced releases`);
+                    continue;
+                }
 
                 // Send Slack notification
                 await sendSlackNotification({
