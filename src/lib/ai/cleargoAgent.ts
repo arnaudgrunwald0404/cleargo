@@ -677,6 +677,128 @@ function buildTools(userEmail: string) {
         };
       },
     }),
+
+    get_accountability_report: tool({
+      description:
+        'Identifies which people are holding up valuable launches by owning NOT_SET criteria on high-tier epics. Ranks individuals by impact score based on tier weight, gate status, and proximity to target launch date. Use when asked who is blocking launches, who is delaying things, or who is responsible for unreviewed criteria.',
+      inputSchema: z.object({
+        top_n: z
+          .number()
+          .optional()
+          .describe('How many people to show (default 10)'),
+        tier_filter: z
+          .enum(['TIER_1', 'TIER_2', 'TIER_3'])
+          .optional()
+          .describe('Restrict to a specific tier'),
+      }),
+      execute: async ({ top_n = 10, tier_filter }) => {
+        const supabase = createAdminClient();
+
+        let query = supabase
+          .from('epic_criterion_status')
+          .select(`
+            id,
+            decision_owner_id,
+            epic:epic_id (id, name, tier, target_launch_date, status),
+            criterion:criterion_id (label, gate),
+            decision_owner:app_user!epic_criterion_status_decision_owner_id_fkey (
+              id, first_name, last_name, email
+            )
+          `)
+          .eq('status', 'NOT_SET')
+          .not('decision_owner_id', 'is', null);
+
+        if (tier_filter) {
+          query = (query as any).eq('epic.tier', tier_filter);
+        }
+
+        const { data: rows } = await query;
+        if (!rows || rows.length === 0) {
+          return { message: 'No unreviewed criteria with assigned owners. All good!' };
+        }
+
+        const tierWeight: Record<string, number> = { TIER_1: 10, TIER_2: 5, TIER_3: 2 };
+        const now = Date.now();
+
+        const personMap: Record<
+          string,
+          {
+            name: string;
+            email: string;
+            score: number;
+            criteria: Array<{
+              epic: string;
+              tier: string;
+              label: string;
+              isGate: boolean;
+              daysUntilLaunch: number | null;
+            }>;
+          }
+        > = {};
+
+        for (const r of rows) {
+          const owner = r.decision_owner as any;
+          const epic = r.epic as any;
+          const criterion = r.criterion as any;
+          if (!owner || !epic || epic.status === 'Cancelled') continue;
+          if (tier_filter && epic.tier !== tier_filter) continue;
+
+          const personKey = owner.id;
+          if (!personMap[personKey]) {
+            const name =
+              [owner.first_name, owner.last_name].filter(Boolean).join(' ') || owner.email;
+            personMap[personKey] = { name, email: owner.email, score: 0, criteria: [] };
+          }
+
+          const weight = tierWeight[epic.tier] ?? 1;
+          const gateMultiplier = criterion?.gate ? 2 : 1;
+
+          let urgencyMultiplier = 1;
+          let daysUntilLaunch: number | null = null;
+          if (epic.target_launch_date) {
+            const msUntil = new Date(epic.target_launch_date).getTime() - now;
+            daysUntilLaunch = Math.ceil(msUntil / (1000 * 60 * 60 * 24));
+            if (daysUntilLaunch < 0) urgencyMultiplier = 3;
+            else if (daysUntilLaunch <= 14) urgencyMultiplier = 2.5;
+            else if (daysUntilLaunch <= 30) urgencyMultiplier = 1.5;
+          }
+
+          personMap[personKey].score += weight * gateMultiplier * urgencyMultiplier;
+          personMap[personKey].criteria.push({
+            epic: epic.name,
+            tier: epic.tier,
+            label: criterion?.label ?? 'Unknown',
+            isGate: criterion?.gate ?? false,
+            daysUntilLaunch,
+          });
+        }
+
+        const ranked = Object.values(personMap)
+          .sort((a, b) => b.score - a.score)
+          .slice(0, top_n);
+
+        return {
+          totalUnreviewedCriteria: rows.filter(
+            (r) => (r.epic as any)?.status !== 'Cancelled'
+          ).length,
+          totalPeopleWithPending: Object.keys(personMap).length,
+          ranked: ranked.map((p, i) => ({
+            rank: i + 1,
+            name: p.name,
+            email: p.email,
+            impactScore: Math.round(p.score),
+            unreviewedCount: p.criteria.length,
+            mostUrgent: p.criteria
+              .sort((a, b) => {
+                if (a.daysUntilLaunch === null) return 1;
+                if (b.daysUntilLaunch === null) return -1;
+                return a.daysUntilLaunch - b.daysUntilLaunch;
+              })
+              .slice(0, 3),
+          })),
+        };
+      },
+    }),
   };
 }
 
