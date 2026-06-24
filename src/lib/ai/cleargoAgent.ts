@@ -55,7 +55,7 @@ function resolveModel(): LanguageModel {
   if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
     return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
   }
-  return google('gemini-2.0-flash');
+  return google('gemini-2.5-flash');
 }
 
 const SYSTEM_PROMPT = `You are ClearGO Assistant, an AI embedded in the ClearGO Launch Readiness Console.
