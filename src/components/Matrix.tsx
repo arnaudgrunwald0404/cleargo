@@ -394,6 +394,8 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             }
             // Don't show favicon if only epic key exists but URL is not saved
             return false;
+        } else if (source.type === 'forecast') {
+            return forecastLinkUrl !== null;
         }
         return false;
     };
@@ -420,6 +422,8 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             case 'url':
                 return IconLink;
             case 'success_metrics_defined':
+                return null; // Will use emoji instead
+            case 'forecast':
                 return null; // Will use emoji instead
             default:
                 return IconDatabase;
@@ -485,6 +489,8 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
             return `Synced from ${countText}`;
         } else if (source.type === 'success_metrics_defined') {
             return 'Synced from success metrics';
+        } else if (source.type === 'forecast') {
+            return forecastLinkUrl ? 'Forecast available — click to open' : 'No forecast published yet';
         }
         return '';
     };
@@ -499,6 +505,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
     const [jiraDomain, setJiraDomain] = useState<string | null>(null);
     const [hasSuccessMetrics, setHasSuccessMetrics] = useState<boolean>(false);
     const [loadingSuccessMetrics, setLoadingSuccessMetrics] = useState<boolean>(true);
+    const [forecastLinkUrl, setForecastLinkUrl] = useState<string | null>(null);
     
     // Fetch success metrics count when epic changes
     useEffect(() => {
@@ -531,6 +538,25 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
 
         fetchSuccessMetrics();
     }, [epicId]);
+
+    // Fetch the latest forecast link when any criterion has a 'forecast' data source
+    useEffect(() => {
+        const hasForecastSource = items.some(item =>
+            item.criterion.data_sources?.some(s => s.type === 'forecast')
+        );
+        if (!hasForecastSource) return;
+
+        const epicAhaId = (epic?.aha_fields as any)?.standard_fields?.reference_num as string | null;
+        if (!epicAhaId) return;
+
+        fetch(`/api/forecasts/${encodeURIComponent(epicAhaId)}/link`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                const links: any[] = data?.links ?? [];
+                setForecastLinkUrl(links.length > 0 ? links[0].url : null);
+            })
+            .catch(() => setForecastLinkUrl(null));
+    }, [epicId, items, epic]);
 
     // Fetch Jira domain and ticket counts when epic changes
     useEffect(() => {
@@ -1956,6 +1982,14 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                         <div className="text-gray-600 hover:text-gray-900 transition-colors" style={{ display: 'inline-flex', alignItems: 'center' }}>
                                                                             {source.type === 'success_metrics_defined' ? (
                                                                                 <span style={{ fontSize: '16px' }}>📊</span>
+                                                                            ) : source.type === 'forecast' ? (
+                                                                                forecastLinkUrl ? (
+                                                                                    <a href={forecastLinkUrl} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }} onClick={e => e.stopPropagation()}>
+                                                                                        <span style={{ fontSize: '16px' }}>📈</span>
+                                                                                    </a>
+                                                                                ) : (
+                                                                                    <span style={{ fontSize: '16px' }}>📈</span>
+                                                                                )
                                                                             ) : source.type === 'aha_field' || source.type === 'aha_description_part' ? (
                                                                                 <img 
                                                                                     src="https://www.google.com/s2/favicons?domain=aha.io&sz=12" 

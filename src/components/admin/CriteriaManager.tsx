@@ -11,7 +11,7 @@ import { PurpleLoader } from '../PurpleLoader';
 const POD_PM_PLACEHOLDER = "[name of pod's product manager]";
 
 type DataSource = {
-  type: "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined";
+  type: "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined" | "forecast";
   value: string;
   label?: string; // Optional label for URL sources (e.g., "Figma designs", "PRD")
 };
@@ -1465,6 +1465,7 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
                         { value: "url", label: "URL" },
                         { value: "jira_jql", label: "Jira (open tickets in epic)" },
                         { value: "success_metrics_defined", label: "Success metrics defined" },
+                        { value: "forecast", label: "Forecast (Chrysalis)" },
                       ]}
                       required
                     />
@@ -1526,6 +1527,12 @@ function EditDrawer({ item, opened, onClose, onSave, onDelete, releaseStages }: 
                     {source.type === "success_metrics_defined" && (
                       <Text size="sm" c="dimmed">
                         This data source automatically checks if the epic has at least one success metric defined. The icon will show a 📊 emoji when metrics are present.
+                      </Text>
+                    )}
+
+                    {source.type === "forecast" && (
+                      <Text size="sm" c="dimmed">
+                        Automatically links to the most recent forecast published for this epic from the Chrysalis repo. Shows a 📈 icon when a forecast exists. No manual input required.
                       </Text>
                     )}
                   </Stack>

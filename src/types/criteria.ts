@@ -28,7 +28,7 @@ export type DecisionOwnerRole =
   | "SECURITY"
   | "SUPPORT";
 
-export type DataSourceType = "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined";
+export type DataSourceType = "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined" | "forecast";
 
 export type DataSource = {
   type: DataSourceType;
