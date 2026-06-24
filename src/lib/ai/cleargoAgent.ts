@@ -361,6 +361,273 @@ function buildTools(userEmail: string) {
       },
     }),
 
+    update_criterion_status: tool({
+      description:
+        'Update the status (GO, NO_GO, CONDITIONAL) of a specific criterion on a launch. Only call this when the user explicitly asks to mark or update a criterion. Requires the launch name and criterion label.',
+      inputSchema: z.object({
+        epic_name: z.string().describe('Name of the launch (fuzzy matched)'),
+        criterion_label: z.string().describe('Label of the criterion to update (fuzzy matched)'),
+        status: z.enum(['GO', 'NO_GO', 'CONDITIONAL']).describe('New status to set'),
+        notes: z.string().optional().describe('Optional notes or reason for the status change'),
+      }),
+      execute: async ({ epic_name, criterion_label, status, notes }) => {
+        const supabase = createAdminClient();
+
+        const { data: epic } = await supabase
+          .from('epic')
+          .select('id, name')
+          .ilike('name', `%${epic_name}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!epic) return { error: `Launch not found: "${epic_name}"` };
+
+        const { data: user } = await supabase
+          .from('app_user')
+          .select('id')
+          .eq('email', userEmail)
+          .maybeSingle();
+        if (!user) return { error: `Could not find user: ${userEmail}` };
+
+        // Find the criterion_status row by joining through criterion label
+        const { data: rows } = await supabase
+          .from('epic_criterion_status')
+          .select('id, status, criterion:criterion_id (id, label)')
+          .eq('epic_id', epic.id);
+
+        const match = (rows || []).find((r) =>
+          (r.criterion as any)?.label?.toLowerCase().includes(criterion_label.toLowerCase())
+        );
+        if (!match) return { error: `Criterion "${criterion_label}" not found on "${epic.name}"` };
+
+        const updateData: Record<string, unknown> = {
+          status,
+          last_updated_at: new Date().toISOString(),
+          last_updated_by: user.id,
+        };
+        if (notes) updateData.current_status_notes = notes;
+
+        const { error } = await supabase
+          .from('epic_criterion_status')
+          .update(updateData)
+          .eq('id', match.id);
+
+        if (error) return { error: error.message };
+
+        try {
+          await supabase.from('audit_log').insert({
+            actor_id: user.id,
+            entity_type: 'epic_criterion_status',
+            entity_id: match.id,
+            json_diff: { status: { old: match.status, new: status } },
+          });
+        } catch {}
+
+        return {
+          success: true,
+          message: `Updated "${(match.criterion as any)?.label}" on "${epic.name}" to ${status}.`,
+          url: `${APP_URL}/epics/${epic.id}`,
+        };
+      },
+    }),
+
+    get_launch_comments: tool({
+      description:
+        'Get recent comments on a launch across all criteria. Useful for understanding context, blockers, or history.',
+      inputSchema: z.object({
+        epic_name: z.string().describe('Name of the launch'),
+        limit: z.number().optional().describe('Max number of comments to return (default 20)'),
+      }),
+      execute: async ({ epic_name, limit = 20 }) => {
+        const supabase = createAdminClient();
+
+        const { data: epic } = await supabase
+          .from('epic')
+          .select('id, name')
+          .ilike('name', `%${epic_name}%`)
+          .limit(1)
+          .maybeSingle();
+        if (!epic) return { error: `Launch not found: "${epic_name}"` };
+
+        const { data: statusRows } = await supabase
+          .from('epic_criterion_status')
+          .select('id, criterion:criterion_id (label)')
+          .eq('epic_id', epic.id);
+
+        const lcsIds = (statusRows || []).map((r) => r.id);
+        if (lcsIds.length === 0) return { message: `No criteria found for "${epic.name}".` };
+
+        const { data: comments } = await supabase
+          .from('criterion_comment')
+          .select(`
+            comment_text, created_at, status_at_comment,
+            launch_criterion_status_id,
+            created_by:app_user!criterion_comment_created_by_fkey(first_name, last_name, email)
+          `)
+          .in('launch_criterion_status_id', lcsIds)
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (!comments || comments.length === 0)
+          return { message: `No comments found on "${epic.name}".` };
+
+        const lcsMap = Object.fromEntries(
+          (statusRows || []).map((r) => [r.id, (r.criterion as any)?.label])
+        );
+
+        return {
+          epicName: epic.name,
+          commentCount: comments.length,
+          comments: comments.map((c) => ({
+            criterion: lcsMap[c.launch_criterion_status_id] ?? 'Unknown',
+            text: c.comment_text,
+            author: [(c.created_by as any)?.first_name, (c.created_by as any)?.last_name]
+              .filter(Boolean)
+              .join(' ') || (c.created_by as any)?.email,
+            statusAtTime: c.status_at_comment,
+            date: c.created_at,
+          })),
+        };
+      },
+    }),
+
+    get_user_workload: tool({
+      description:
+        'Get all launches a user is involved with as a decision owner, grouped by epic. Shows how many criteria they own and their statuses.',
+      inputSchema: z.object({
+        email: z.string().optional().describe('Email of the person — omit for current user'),
+      }),
+      execute: async ({ email }) => {
+        const supabase = createAdminClient();
+        const targetEmail = email || userEmail;
+
+        const { data: user } = await supabase
+          .from('app_user')
+          .select('id, first_name, last_name')
+          .eq('email', targetEmail)
+          .maybeSingle();
+        if (!user) return { error: `No user found with email: ${targetEmail}` };
+
+        const { data: rows } = await supabase
+          .from('epic_criterion_status')
+          .select(`
+            status,
+            epic:epic_id (id, name, tier, risk_level, target_launch_date),
+            criterion:criterion_id (label, gate)
+          `)
+          .eq('decision_owner_id', user.id);
+
+        if (!rows || rows.length === 0) {
+          const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail;
+          return { message: `${name} is not assigned as decision owner on any criteria.` };
+        }
+
+        // Group by epic
+        const epicMap: Record<string, any> = {};
+        for (const r of rows) {
+          const epic = r.epic as any;
+          if (!epic) continue;
+          if (!epicMap[epic.id]) {
+            epicMap[epic.id] = {
+              name: epic.name,
+              tier: epic.tier,
+              riskLevel: epic.risk_level,
+              targetLaunchDate: epic.target_launch_date,
+              url: `${APP_URL}/epics/${epic.id}`,
+              criteria: { GO: 0, NO_GO: 0, CONDITIONAL: 0, NOT_SET: 0 },
+              gatesNotGo: [] as string[],
+            };
+          }
+          epicMap[epic.id].criteria[r.status as string] =
+            (epicMap[epic.id].criteria[r.status as string] || 0) + 1;
+          if ((r.criterion as any)?.gate && r.status !== 'GO') {
+            epicMap[epic.id].gatesNotGo.push((r.criterion as any)?.label);
+          }
+        }
+
+        const name = [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail;
+        return {
+          user: name,
+          totalCriteria: rows.length,
+          epics: Object.values(epicMap),
+        };
+      },
+    }),
+
+    check_launch_readiness: tool({
+      description:
+        'Assess whether a launch is ready to ship. Returns the readiness score, blocking issues, and a clear GO / NO_GO / NEEDS_WORK recommendation.',
+      inputSchema: z.object({
+        epic_name: z.string().optional().describe('Name of the launch (fuzzy matched)'),
+        epic_id: z.string().optional().describe('Epic UUID (use if known)'),
+      }),
+      execute: async ({ epic_name, epic_id }) => {
+        const supabase = createAdminClient();
+        let resolvedId = epic_id;
+
+        if (!resolvedId && epic_name) {
+          const { data } = await supabase
+            .from('epic')
+            .select('id')
+            .ilike('name', `%${epic_name}%`)
+            .limit(1)
+            .maybeSingle();
+          resolvedId = data?.id;
+        }
+        if (!resolvedId) return { error: 'Launch not found. Try search_launches first.' };
+
+        const [epicRes, criteriaRes] = await Promise.all([
+          supabase
+            .from('epic')
+            .select('id, name, tier, readiness_score, risk_level, target_launch_date, status')
+            .eq('id', resolvedId)
+            .single(),
+          supabase
+            .from('epic_criterion_status')
+            .select('status, criterion:criterion_id (label, category, gate)')
+            .eq('epic_id', resolvedId),
+        ]);
+
+        const epic = epicRes.data;
+        const criteria = criteriaRes.data || [];
+
+        const gatesNotGo = criteria.filter(
+          (c) => (c.criterion as any)?.gate && c.status !== 'GO'
+        );
+        const blocking = criteria.filter((c) => c.status === 'NO_GO');
+        const notSet = criteria.filter((c) => c.status === 'NOT_SET');
+        const score = epic?.readiness_score != null ? Math.round(epic.readiness_score * 100) : null;
+
+        let recommendation: string;
+        if (blocking.length > 0) {
+          recommendation = 'NO_GO — has blocking criteria that must be resolved first.';
+        } else if (gatesNotGo.length > 0) {
+          recommendation = 'NO_GO — one or more gate criteria are not yet GO.';
+        } else if (notSet.length > 0) {
+          recommendation = `NEEDS_WORK — ${notSet.length} criteria still unreviewed (NOT_SET).`;
+        } else {
+          recommendation = 'GO — all criteria reviewed with no blockers.';
+        }
+
+        return {
+          name: epic?.name,
+          tier: epic?.tier,
+          riskLevel: epic?.risk_level,
+          targetLaunchDate: epic?.target_launch_date,
+          readinessScore: score != null ? `${score}%` : 'N/A',
+          recommendation,
+          blockingCount: blocking.length,
+          gatesNotGoCount: gatesNotGo.length,
+          notSetCount: notSet.length,
+          blockers: blocking.map((c) => (c.criterion as any)?.label),
+          gatesNotGo: gatesNotGo.map((c) => ({
+            label: (c.criterion as any)?.label,
+            status: c.status,
+          })),
+          url: `${APP_URL}/epics/${resolvedId}`,
+        };
+      },
+    }),
+
     get_criteria_by_category: tool({
       description:
         'Get all criteria for a launch filtered by category (e.g. GTM, SUPPORT, PRODUCT_TECH, LEGAL_SECURITY).',
