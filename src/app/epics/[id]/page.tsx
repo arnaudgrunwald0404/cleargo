@@ -751,16 +751,26 @@ export default function EpicDetailPage() {
             // Criterion due dates = end of each stage segment (same as ReleaseStagesChart).
             // Anchor date is cohort1-aware (matches the rest of the app).
             const targetDate = getEpicCohort1DisplayYmd(data as Epic, fetchedReleaseDate);
-            const loadTimelineOverrides = getEpicTimelineStageOverrides(data as Epic);
-            const hasLoadTimelineOverrides =
-                !!loadTimelineOverrides.gtmAccessYmd || !!loadTimelineOverrides.internalReadinessYmd;
+            const loadTimelineOverrides =
+                fetchedReleaseStages.length > 0 && targetDate
+                    ? getEpicTimelineStageOverrides(data as Epic, {
+                          anchorYmd: targetDate,
+                          timelineStages: fetchedReleaseStages,
+                          useBusinessDayTimeline: epicIsUiFramework,
+                          uiLevel: effectiveUiLevel,
+                          cohort2Date: cohort2DateFetched,
+                          releaseScheduleStages: releaseStagesData,
+                          uiRolloutStages: uiRolloutStagesData,
+                          releaseTrainDateYmd: fetchedReleaseDate,
+                      })
+                    : null;
             const computedStageEndDates =
                 fetchedReleaseStages.length > 0 && targetDate
                     ? computeStageEndDatesByStageId(fetchedReleaseStages, targetDate, {
                           useBusinessDayTimeline: epicIsUiFramework,
                           uiLevel: effectiveUiLevel,
                           cohort2Date: cohort2DateFetched,
-                          stageOverrides: hasLoadTimelineOverrides ? loadTimelineOverrides : null,
+                          stageOverrides: loadTimelineOverrides,
                       })
                     : new Map<number, string>();
 
@@ -797,7 +807,7 @@ export default function EpicDetailPage() {
                     uiLevel: effectiveUiLevel,
                     cohort2Date: cohort2DateFetched,
                     isGateCriterion: isGateCriterion === true,
-                    stageOverrides: hasLoadTimelineOverrides ? loadTimelineOverrides : null,
+                    stageOverrides: loadTimelineOverrides,
                 });
             };
 
@@ -1216,16 +1226,34 @@ export default function EpicDetailPage() {
     );
 
     const timelineStageOverrides = useMemo(() => {
-        if (!epic) return null;
-        const overrides = getEpicTimelineStageOverrides(epic);
-        if (!overrides.gtmAccessYmd && !overrides.internalReadinessYmd) return null;
-        return overrides;
+        if (!epic || releaseStages.length === 0) return null;
+        const targetDate = getEpicCohort1DisplayYmd(epic, releaseDate);
+        if (!targetDate) return null;
+        return getEpicTimelineStageOverrides(epic, {
+            anchorYmd: targetDate,
+            timelineStages: releaseStages,
+            useBusinessDayTimeline: isUiFrameworkEpic,
+            uiLevel: isUiFrameworkEpic ? (uiLevel ?? 1) : uiLevel,
+            cohort2Date,
+            releaseScheduleStages: releaseScheduleStagesAll,
+            uiRolloutStages: uiRolloutStagesAll,
+            releaseTrainDateYmd: releaseDate,
+        });
     }, [
+        epic,
+        releaseDate,
+        releaseStages,
+        isUiFrameworkEpic,
+        uiLevel,
+        cohort2Date,
+        releaseScheduleStagesAll,
+        uiRolloutStagesAll,
         epic?.actual_gtm_access_date,
         epic?.gtm_access_na,
         epic?.actual_internal_readiness_date,
         epic?.internal_readiness_na,
-        epic,
+        epic?.aha_fields,
+        epic?.target_launch_date,
     ]);
 
     const stageEndDates = useMemo(() => {

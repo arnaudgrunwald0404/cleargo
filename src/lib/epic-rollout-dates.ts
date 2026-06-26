@@ -6,6 +6,13 @@ import {
   subtractCalendarDays,
   addCalendarDaysToYmd,
 } from '@/lib/date-utils';
+import {
+  buildTimelineStageStarts,
+  findTimelineGtmStageIndex,
+  findTimelineInternalStageIndex,
+  type ReleaseTimelineStage,
+  type TimelineStageDateOverrides,
+} from '@/lib/releaseTimeline';
 import { isUiFrameworkEpic, parseUiLevelFromEpic } from '@/lib/epic-ui-framework';
 import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
 import {
@@ -266,13 +273,20 @@ export function getReleaseDefaultInternalReadinessDateYmd(
   return null;
 }
 
-export type EpicTimelineStageOverrides = {
-  gtmAccessYmd?: string | null;
-  internalReadinessYmd?: string | null;
+export type GetEpicTimelineStageOverridesParams = {
+  anchorYmd: string;
+  timelineStages: EpicRolloutStageRow[];
+  useBusinessDayTimeline: boolean;
+  uiLevel?: number | null;
+  cohort2Date?: string | null;
+  releaseScheduleStages?: EpicRolloutStageRow[];
+  uiRolloutStages?: EpicRolloutStageRow[];
+  releaseTrainDateYmd?: string | null;
 };
 
 /**
- * Manual ClearGO overrides for timeline re-walk (actual dates only, not planned/Aha defaults).
+ * Timeline pins for GTM / Internal when the epic's effective dates (same as the header cells:
+ * actual ClearGO date, else planned from Aha or release train) differ from the default walk.
  */
 export function getEpicTimelineStageOverrides(
   epic: Pick<
@@ -281,16 +295,68 @@ export function getEpicTimelineStageOverrides(
     | 'gtm_access_na'
     | 'actual_internal_readiness_date'
     | 'internal_readiness_na'
-  >
-): EpicTimelineStageOverrides {
-  return {
-    gtmAccessYmd:
-      epic.gtm_access_na === true ? null : epic.actual_gtm_access_date?.trim() || null,
-    internalReadinessYmd:
-      epic.internal_readiness_na === true
-        ? null
-        : epic.actual_internal_readiness_date?.trim() || null,
-  };
+    | 'aha_fields'
+    | 'target_launch_date'
+  >,
+  params: GetEpicTimelineStageOverridesParams
+): TimelineStageDateOverrides | null {
+  const rolloutOpts = { releaseTrainDateYmd: params.releaseTrainDateYmd };
+  const plannedGtm = getEpicGtmAccessDateYmd(
+    epic as Epic,
+    params.releaseScheduleStages,
+    params.uiRolloutStages,
+    rolloutOpts
+  );
+  const plannedInternal = getEpicInternalOrgsDateYmd(
+    epic as Epic,
+    params.releaseScheduleStages,
+    params.uiRolloutStages,
+    rolloutOpts
+  );
+
+  const displayGtm =
+    epic.gtm_access_na === true ? null : epic.actual_gtm_access_date?.trim() || plannedGtm;
+  const displayInternal =
+    epic.internal_readiness_na === true
+      ? null
+      : epic.actual_internal_readiness_date?.trim() || plannedInternal;
+
+  if (!displayGtm && !displayInternal) return null;
+
+  const sorted = [...params.timelineStages].sort((a, b) => a.sort_order - b.sort_order);
+  const { starts } = buildTimelineStageStarts(sorted as ReleaseTimelineStage[], params.anchorYmd, {
+    useBusinessDayTimeline: params.useBusinessDayTimeline,
+    uiLevel: params.uiLevel,
+    cohort2Date: params.cohort2Date ?? null,
+  });
+
+  const gtmIdx = findTimelineGtmStageIndex(sorted as ReleaseTimelineStage[]);
+  const internalIdx = findTimelineInternalStageIndex(sorted as ReleaseTimelineStage[]);
+
+  const baseYmdAt = (idx: number): string | null =>
+    idx >= 0 ? dateToLocalDateString(starts[idx].date) : null;
+
+  const gtmPin =
+    displayGtm && gtmIdx >= 0 && displayGtm !== baseYmdAt(gtmIdx) ? displayGtm : null;
+
+  // Pin Internal Readiness when there is an explicit source (ClearGO actual, Aha phase 4b, or
+  // legacy release schedule). UI rollout planned "internal orgs" is the Cohort 1 boundary — not this node.
+  const hasExplicitInternalDate =
+    !!epic.actual_internal_readiness_date?.trim() ||
+    !!parseAhaInternalReadinessDate(epic as Epic) ||
+    !params.useBusinessDayTimeline;
+
+  const internalPin =
+    displayInternal &&
+    internalIdx >= 0 &&
+    hasExplicitInternalDate &&
+    displayInternal !== baseYmdAt(internalIdx)
+      ? displayInternal
+      : null;
+
+  if (!gtmPin && !internalPin) return null;
+
+  return { gtmAccessYmd: gtmPin, internalReadinessYmd: internalPin };
 }
 
 /**
