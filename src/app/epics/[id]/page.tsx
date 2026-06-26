@@ -25,11 +25,12 @@ import type { ReleaseStageLevelDurations } from "@/components/admin/settings/Rel
 import type { ReleaseStagesScope } from "@/lib/services/settingsService";
 import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDateOnlyLocal, getCohort2DateForTimeline } from "@/lib/date-utils";
 import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
+import { buildCategoryStageFallbackMap, computeCriterionDueDateYmd } from "@/lib/criterion-due-date";
 import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
 import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
 import { GtmAccessDateCell } from "@/components/GtmAccessDateCell";
 import { InternalReadinessDateCell } from "@/components/InternalReadinessDateCell";
-import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd } from "@/lib/epic-rollout-dates";
+import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd, getEpicTimelineStageOverrides } from "@/lib/epic-rollout-dates";
 
 import { TalkTrackTab } from "@/components/epic/TalkTrackTab";
 import { EpicRoadmapRewindPanel } from "@/components/epic/EpicRoadmapRewindPanel";
@@ -60,6 +61,7 @@ export default function EpicDetailPage() {
     const [matrix, setMatrix] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [authRequired, setAuthRequired] = useState(false);
     const [updatingTier, setUpdatingTier] = useState(false);
     const [updatingRiskLevel, setUpdatingRiskLevel] = useState(false);
     const [updatingStatus, setUpdatingStatus] = useState(false);
@@ -83,7 +85,6 @@ export default function EpicDetailPage() {
     >([]);
     const [uiLevel, setUiLevel] = useState<number | null>(null);
     const [isUiFrameworkEpic, setIsUiFrameworkEpic] = useState(false);
-    const [stageEndDates, setStageEndDates] = useState<Map<number, string>>(new Map());
     const [stageIdBridge, setStageIdBridge] = useState<Map<number, number>>(new Map());
     const [instantiationFailed, setInstantiationFailed] = useState(false);
     const [instantiating, setInstantiating] = useState(false);
@@ -162,6 +163,7 @@ export default function EpicDetailPage() {
 
         loadDataInProgressRef.current = true;
         lastLoadDataRef.current = Date.now();
+        setAuthRequired(false);
 
         try {
             // Get current user email and roles from server (GET /api/me) so roles are not blocked by RLS
@@ -193,6 +195,11 @@ export default function EpicDetailPage() {
                 fetchWithRetry('/api/settings'),
                 fetchWithRetry('/api/criteria')
             ]);
+
+            if (meRes.status === 401 || settingsRes.status === 401 || epicRes.status === 401) {
+                setAuthRequired(true);
+                return;
+            }
 
             // Read responses immediately to avoid "body stream already read" errors
             let settingsData: any = null;
@@ -744,54 +751,26 @@ export default function EpicDetailPage() {
             // Criterion due dates = end of each stage segment (same as ReleaseStagesChart).
             // Anchor date is cohort1-aware (matches the rest of the app).
             const targetDate = getEpicCohort1DisplayYmd(data as Epic, fetchedReleaseDate);
+            const loadTimelineOverrides = getEpicTimelineStageOverrides(data as Epic);
+            const hasLoadTimelineOverrides =
+                !!loadTimelineOverrides.gtmAccessYmd || !!loadTimelineOverrides.internalReadinessYmd;
             const computedStageEndDates =
                 fetchedReleaseStages.length > 0 && targetDate
                     ? computeStageEndDatesByStageId(fetchedReleaseStages, targetDate, {
                           useBusinessDayTimeline: epicIsUiFramework,
                           uiLevel: effectiveUiLevel,
                           cohort2Date: cohort2DateFetched,
+                          stageOverrides: hasLoadTimelineOverrides ? loadTimelineOverrides : null,
                       })
                     : new Map<number, string>();
-            setStageEndDates(computedStageEndDates);
 
-            const categoryStageMap = new Map<string, number>();
-            if (fetchedReleaseStages.length > 0) {
-                const stageByName = new Map(fetchedReleaseStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
-                const uxStage = epicIsUiFramework ? 'ux preview' : 'gtm access and prep';
-                const mappings: [string, string][] = [
-                    ['strategy', 'product definition complete'],
-                    ['legal & security', 'product definition complete'],
-                    ['legal_security', 'product definition complete'],
-                    ['ux & research', uxStage],
-                    ['product_tech', uxStage],
-                    ['technical readiness', uxStage],
-                    ['product documentation', 'gtm access and prep'],
-                    ['product_documentation', 'gtm access and prep'],
-                    ['gtm', 'gtm access and prep'],
-                    ['enablement & training readiness', 'gtm access and prep'],
-                    ['sales enablement', 'gtm access and prep'],
-                    ['product marketing', 'gtm access and prep'],
-                    ['support', 'internal readiness'],
-                    ['customer support readiness', 'internal readiness'],
-                    ['ops', 'internal readiness'],
-                    ['revenue ops', 'internal readiness'],
-                    ['product', 'internal readiness'],
-                    ['customer success', 'internal readiness'],
-                    ['data & analytics', 'internal readiness'],
-                    ['data_analytics', 'internal readiness'],
-                    ['analytics & metrics', 'internal readiness'],
-                    ['analytics_and_metrics', 'internal readiness'],
-                    ['implementation scale & customer adoption', 'cohort 1'],
-                    ['customer success & ongoing adoption', 'cohort 1'],
-                    ['other', 'internal readiness'],
-                ];
-                for (const [cat, stageName] of mappings) {
-                    const id = stageByName.get(stageName);
-                    if (id != null) categoryStageMap.set(cat, id);
-                }
-            }
+            const categoryStageMap = buildCategoryStageFallbackMap(fetchedReleaseStages, epicIsUiFramework);
 
-            const calculateDueDate = (ratingTimingRaw: unknown, category?: string): string | null => {
+            const calculateDueDate = (
+                ratingTimingRaw: unknown,
+                category?: string,
+                isGateCriterion?: boolean
+            ): string | null => {
                 const ratingTimingId = normalizeRatingTimingId(ratingTimingRaw);
                 const catStageId = category ? categoryStageMap.get(category.toLowerCase().trim()) : undefined;
 
@@ -810,8 +789,16 @@ export default function EpicDetailPage() {
                     resolvedId = catStageId;
                 }
 
-                if (!resolvedId) return null;
-                return computedStageEndDates.get(resolvedId) ?? null;
+                if (!resolvedId || !targetDate) return null;
+                return computeCriterionDueDateYmd({
+                    anchorYmd: targetDate,
+                    ratingTimingId: resolvedId,
+                    allStages: fetchedReleaseStages,
+                    uiLevel: effectiveUiLevel,
+                    cohort2Date: cohort2DateFetched,
+                    isGateCriterion: isGateCriterion === true,
+                    stageOverrides: hasLoadTimelineOverrides ? loadTimelineOverrides : null,
+                });
             };
 
             // LAZY LOAD: Initialize with empty data, fetch after initial render (non-blocking)
@@ -957,7 +944,11 @@ export default function EpicDetailPage() {
                 // Calculate due date based on rating_timing
                 // If rating_timing is set, always calculate (override stored date)
                 // Otherwise, use stored date if available
-                const calculatedDueDate = calculateDueDate(item.criterion?.rating_timing, item.criterion?.category);
+                const calculatedDueDate = calculateDueDate(
+                    item.criterion?.rating_timing,
+                    item.criterion?.category,
+                    item.criterion?.gate
+                );
                 const finalDueDate = calculatedDueDate || item.condition_due_date || null;
 
                 // Resolve "due by" stage name (same resolution as due date: rating_timing + bridge + category fallback)
@@ -1219,44 +1210,42 @@ export default function EpicDetailPage() {
 
     // Memoize calculateDueDateForFilter function
     // Category → stage ID fallback for filter recalculation
-    const filterCategoryStageMap = useMemo(() => {
-        const map = new Map<string, number>();
-        if (releaseStages.length === 0) return map;
-        const byName = new Map(releaseStages.map((s: any) => [s.name.toLowerCase().trim(), s.id]));
-        const uxStage = isUiFrameworkEpic ? 'ux preview' : 'gtm access and prep';
-        const mappings: [string, string][] = [
-            ['strategy', 'product definition complete'],
-            ['legal & security', 'product definition complete'],
-            ['legal_security', 'product definition complete'],
-            ['ux & research', uxStage],
-            ['product_tech', uxStage],
-            ['technical readiness', uxStage],
-            ['product documentation', 'gtm access and prep'],
-            ['product_documentation', 'gtm access and prep'],
-            ['gtm', 'gtm access and prep'],
-            ['enablement & training readiness', 'gtm access and prep'],
-            ['sales enablement', 'gtm access and prep'],
-            ['product marketing', 'gtm access and prep'],
-            ['support', 'internal readiness'],
-            ['customer support readiness', 'internal readiness'],
-            ['ops', 'internal readiness'],
-            ['revenue ops', 'internal readiness'],
-            ['product', 'internal readiness'],
-            ['customer success', 'internal readiness'],
-            ['data & analytics', 'internal readiness'],
-            ['data_analytics', 'internal readiness'],
-            ['analytics & metrics', 'internal readiness'],
-            ['analytics_and_metrics', 'internal readiness'],
-            ['implementation scale & customer adoption', 'cohort 1'],
-            ['customer success & ongoing adoption', 'cohort 1'],
-            ['other', 'internal readiness'],
-        ];
-        for (const [cat, stageName] of mappings) {
-            const id = byName.get(stageName);
-            if (id != null) map.set(cat, id);
-        }
-        return map;
-    }, [releaseStages, isUiFrameworkEpic]);
+    const filterCategoryStageMap = useMemo(
+        () => buildCategoryStageFallbackMap(releaseStages, isUiFrameworkEpic),
+        [releaseStages, isUiFrameworkEpic]
+    );
+
+    const timelineStageOverrides = useMemo(() => {
+        if (!epic) return null;
+        const overrides = getEpicTimelineStageOverrides(epic);
+        if (!overrides.gtmAccessYmd && !overrides.internalReadinessYmd) return null;
+        return overrides;
+    }, [
+        epic?.actual_gtm_access_date,
+        epic?.gtm_access_na,
+        epic?.actual_internal_readiness_date,
+        epic?.internal_readiness_na,
+        epic,
+    ]);
+
+    const stageEndDates = useMemo(() => {
+        const targetDate = epic ? getEpicCohort1DisplayYmd(epic, releaseDate) : null;
+        if (!targetDate || releaseStages.length === 0) return new Map<number, string>();
+        return computeStageEndDatesByStageId(releaseStages, targetDate, {
+            useBusinessDayTimeline: isUiFrameworkEpic,
+            uiLevel: isUiFrameworkEpic ? (uiLevel ?? 1) : uiLevel,
+            cohort2Date,
+            stageOverrides: timelineStageOverrides,
+        });
+    }, [
+        epic,
+        releaseDate,
+        releaseStages,
+        isUiFrameworkEpic,
+        uiLevel,
+        cohort2Date,
+        timelineStageOverrides,
+    ]);
 
     const calculateDueDateForFilter = useCallback((item: any): string | null => {
         const rawTimingId = normalizeRatingTimingId(item.criterion?.rating_timing);
@@ -1283,8 +1272,36 @@ export default function EpicDetailPage() {
             return item.condition_due_date || null;
         }
 
-        return stageEndDates.get(resolvedId) ?? item.condition_due_date ?? null;
-    }, [stageEndDates, stageIdBridge, filterCategoryStageMap]);
+        const anchorYmd = epic ? getEpicCohort1DisplayYmd(epic, releaseDate) : null;
+        if (!anchorYmd) {
+            return stageEndDates.get(resolvedId) ?? item.condition_due_date ?? null;
+        }
+
+        return (
+            computeCriterionDueDateYmd({
+                anchorYmd,
+                ratingTimingId: resolvedId,
+                allStages: releaseStages,
+                uiLevel: isUiFrameworkEpic ? (uiLevel ?? 1) : uiLevel,
+                cohort2Date,
+                isGateCriterion: item.criterion?.gate === true,
+                stageOverrides: timelineStageOverrides,
+            }) ??
+            item.condition_due_date ??
+            null
+        );
+    }, [
+        stageEndDates,
+        stageIdBridge,
+        filterCategoryStageMap,
+        epic,
+        releaseDate,
+        releaseStages,
+        isUiFrameworkEpic,
+        uiLevel,
+        cohort2Date,
+        timelineStageOverrides,
+    ]);
 
     // Memoize filtered matrix calculation
     const filteredMatrix = useMemo(() => {
@@ -1333,6 +1350,19 @@ export default function EpicDetailPage() {
 
     if (loading) {
         return <PurpleLoader size="md" fullPage />;
+    }
+    if (authRequired) {
+        const loginHref = `/login?redirect=${encodeURIComponent(`/epics/${id}`)}`;
+        return (
+            <div className="p-8 max-w-lg">
+                <Alert icon={<IconInfoCircle size={16} />} title="Sign in required" color="blue">
+                    Your session may have expired. Sign in to view this launch.
+                    <Button component={Link} href={loginHref} mt="md" variant="filled">
+                        Sign in
+                    </Button>
+                </Alert>
+            </div>
+        );
     }
     if (error) {
         return <div className="p-8 text-red-600">Error: {error}</div>;
@@ -2001,6 +2031,7 @@ export default function EpicDetailPage() {
                                         uiLevel={isUiFrameworkEpic ? (uiLevel ?? 1) : undefined}
                                         criteriaItems={matrix}
                                         stageIdBridge={stageIdBridge}
+                                        stageOverrides={timelineStageOverrides}
                                     />
                                 </div>
                             )}

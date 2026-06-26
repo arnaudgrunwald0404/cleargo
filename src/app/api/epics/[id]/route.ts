@@ -16,6 +16,11 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const userEmail = await getAuthenticatedUserEmail();
+        if (!userEmail) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { id } = await params;
         let epic = await getEpic(id);
         if (!epic) {

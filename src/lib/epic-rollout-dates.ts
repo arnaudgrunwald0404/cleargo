@@ -266,6 +266,33 @@ export function getReleaseDefaultInternalReadinessDateYmd(
   return null;
 }
 
+export type EpicTimelineStageOverrides = {
+  gtmAccessYmd?: string | null;
+  internalReadinessYmd?: string | null;
+};
+
+/**
+ * Manual ClearGO overrides for timeline re-walk (actual dates only, not planned/Aha defaults).
+ */
+export function getEpicTimelineStageOverrides(
+  epic: Pick<
+    Epic,
+    | 'actual_gtm_access_date'
+    | 'gtm_access_na'
+    | 'actual_internal_readiness_date'
+    | 'internal_readiness_na'
+  >
+): EpicTimelineStageOverrides {
+  return {
+    gtmAccessYmd:
+      epic.gtm_access_na === true ? null : epic.actual_gtm_access_date?.trim() || null,
+    internalReadinessYmd:
+      epic.internal_readiness_na === true
+        ? null
+        : epic.actual_internal_readiness_date?.trim() || null,
+  };
+}
+
 /**
  * Planned GTM Access date: Aha Phase 3 cutoff override, else GTM Access and Prep stage start.
  */

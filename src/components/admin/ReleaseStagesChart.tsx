@@ -9,6 +9,7 @@ import {
     getEffectiveStageDuration,
     getBufferDays,
     type ReleaseTimelineStage,
+    type TimelineStageDateOverrides,
 } from "@/lib/releaseTimeline";
 
 interface ReleaseStage {
@@ -63,6 +64,8 @@ interface ReleaseStagesChartProps {
     uiLevel?: number;
     criteriaItems?: CriterionItem[];
     stageIdBridge?: Map<number, number> | null;
+    /** Manual GTM / Internal org enable dates — triggers constrained timeline re-walk. */
+    stageOverrides?: TimelineStageDateOverrides | null;
 }
 
 function toDate(d: string | Date | null | undefined): Date | null {
@@ -171,7 +174,8 @@ function useTimelineData(
     uiLevel: number | undefined,
     criteriaItems?: CriterionItem[],
     cohort2Date?: string | Date | null,
-    stageIdBridge?: Map<number, number> | null
+    stageIdBridge?: Map<number, number> | null,
+    stageOverrides?: TimelineStageDateOverrides | null
 ) {
     const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
     const anchorDate = toDate(releaseDate);
@@ -199,6 +203,7 @@ function useTimelineData(
                 useBusinessDayTimeline: !isTraditionalRelease,
                 uiLevel,
                 cohort2Date: cohort2Ymd,
+                stageOverrides: stageOverrides ?? null,
             }
         );
         if (!isTraditionalRelease && preAnchorPinSecondToLastStart) {
@@ -335,12 +340,13 @@ function CriteriaBadge({
 export type GateMarker = { date: Date; stageName: string };
 
 /* ─── Desktop: horizontal timeline ─── */
-function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1, uiLevel }: {
+function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, showHeading, gateMarkers, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1, uiLevel, hasStageOverrides }: {
     nodes: ComputedNode[]; today: Date; todayPct: number; todayIsVisible: boolean; todayIsBefore: boolean; allDone: boolean;
     showHeading: boolean; gateMarkers: GateMarker[]; timelineStart: Date; totalSpan: number;
     computedEndOfPhaseBeforeCohort1?: Date | null;
     /** When set (UI framework rollout), hide per-phase "3–7d" buffer labels; range still drives layout math elsewhere. */
     uiLevel?: number | null;
+    hasStageOverrides?: boolean;
 }) {
     const n = nodes.length;
     const INSET = 4;
@@ -375,7 +381,15 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
         <div style={{ fontFamily: 'var(--font-body)' }}>
             {showHeading && (
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
-                    <Tooltip label="Phase dates are back-calculated from release date using stage durations (business days), not from actual epic status." withArrow position="top">
+                    <Tooltip
+                        label={
+                            hasStageOverrides
+                                ? 'Phase dates reflect manual GTM / Internal org enable dates where set; other stages are adjusted to keep the timeline in order.'
+                                : 'Phase dates are back-calculated from release date using stage durations (business days), not from actual epic status.'
+                        }
+                        withArrow
+                        position="top"
+                    >
                         <div style={{ margin: 0, fontSize: 'var(--font-size-md)', fontWeight: 600, color: 'var(--color-gray-900)', cursor: 'help' }} role="heading" aria-level={2}>
                             Release Timeline
                         </div>
@@ -671,8 +685,9 @@ function HorizontalTimeline({ nodes, today, todayPct, todayIsVisible, todayIsBef
 }
 
 /* ─── Mobile: vertical stacked timeline ─── */
-function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHeading, gateMarkers }: {
+function VerticalTimeline({ nodes, today, todayIsVisible, todayIsBefore, showHeading, gateMarkers, hasStageOverrides: _hasStageOverrides }: {
     nodes: ComputedNode[]; today: Date; todayIsVisible: boolean; todayIsBefore: boolean; showHeading: boolean; gateMarkers: GateMarker[];
+    hasStageOverrides?: boolean;
 }) {
     const n = nodes.length;
     let phaseColorIdx = 0;
@@ -882,6 +897,7 @@ export function ReleaseStagesChart({
     uiLevel,
     criteriaItems,
     stageIdBridge,
+    stageOverrides,
 }: ReleaseStagesChartProps) {
     const isMobile = useMediaQuery("(max-width: 768px)");
     const releaseDate = releaseDateProp ?? targetReleaseDate;
@@ -899,7 +915,8 @@ export function ReleaseStagesChart({
         );
     }
 
-    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1 } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date, stageIdBridge);
+    const hasStageOverrides = !!(stageOverrides?.gtmAccessYmd || stageOverrides?.internalReadinessYmd);
+    const { nodes, today, todayPct, todayIsVisible, todayIsBefore, allDone, timelineStart, totalSpan, computedEndOfPhaseBeforeCohort1 } = useTimelineData(releaseDate, sortedStages, uiLevel, criteriaItems, cohort2Date, stageIdBridge, stageOverrides);
 
     const gateMarkers: GateMarker[] = (() => {
         const stageNames = new Set(sortedStages.map(s => s.name.toLowerCase().trim()));
@@ -928,8 +945,8 @@ export function ReleaseStagesChart({
     })();
 
     const timeline = isMobile
-        ? <VerticalTimeline nodes={nodes} today={today} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} showHeading={showHeading} gateMarkers={gateMarkers} />
-        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} computedEndOfPhaseBeforeCohort1={computedEndOfPhaseBeforeCohort1} uiLevel={uiLevel} />;
+        ? <VerticalTimeline nodes={nodes} today={today} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} showHeading={showHeading} gateMarkers={gateMarkers} hasStageOverrides={hasStageOverrides} />
+        : <HorizontalTimeline nodes={nodes} today={today} todayPct={todayPct} todayIsVisible={todayIsVisible} todayIsBefore={todayIsBefore} allDone={allDone} showHeading={showHeading} gateMarkers={gateMarkers} timelineStart={timelineStart} totalSpan={totalSpan} computedEndOfPhaseBeforeCohort1={computedEndOfPhaseBeforeCohort1} uiLevel={uiLevel} hasStageOverrides={hasStageOverrides} />;
 
     if (noContainer) {
         return <Box className="min-w-0">{timeline}</Box>;

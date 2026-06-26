@@ -100,7 +100,7 @@ export async function GET(req: NextRequest) {
             supabase.from('release_schedule').select('release_name, launch_date').eq('archived', false),
             supabase
                 .from('release_stages')
-                .select('id, name, sort_order, duration_days, level_durations, scope')
+                .select('id, name, sort_order, duration_days, level_durations, scope, is_gate')
                 .order('sort_order', { ascending: true }),
         ]);
 
@@ -199,7 +199,7 @@ export async function GET(req: NextRequest) {
         filtered = (filtered as Array<Record<string, unknown>>).map((row) => {
             const item = row as {
                 launch?: { id?: string; [key: string]: unknown };
-                criterion?: { rating_timing?: number | null };
+                criterion?: { rating_timing?: number | null; gate?: boolean };
             };
             const launchId = item.launch?.id;
             const epicRow = launchId ? epicRowById.get(launchId) : undefined;
@@ -226,6 +226,7 @@ export async function GET(req: NextRequest) {
                 ratingTimingId: ratingTimingId ?? null,
                 allStages: stagesForDue,
                 uiLevel: uiOpts.isUiFramework ? uiOpts.uiLevel : undefined,
+                isGateCriterion: item.criterion?.gate === true,
             });
             return { ...row, launch: launchEnriched, due_date };
         });

@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/client";
 import { canRolesPerform } from "@/lib/permissions";
 import { getCachedUsers } from "@/lib/cache/usersCache";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
+import { GATE_STAGE_DUE_OFFSET_DAYS } from "@/lib/criterion-due-date";
 
 type MatrixItem = {
     id: string;
@@ -71,8 +72,17 @@ const PHASE_ORDER = [
     'GA · Cohort 2',
 ];
 
-/** Criterion due date = last day of this stage’s segment on the launch timeline (Release Timeline chart). */
-function dueByStageSegmentTooltip(stageName: string): string {
+/** Criterion due date = last day of stage segment, or N days before a gate-stage end for cascading reviews. */
+function dueByStageSegmentTooltip(
+    stageName: string,
+    options?: { isGateStage?: boolean; isGateCriterion?: boolean }
+): string {
+    if (options?.isGateStage) {
+        const days = options.isGateCriterion
+            ? GATE_STAGE_DUE_OFFSET_DAYS.gate
+            : GATE_STAGE_DUE_OFFSET_DAYS.sub;
+        return `Due ${days} day(s) before the “${stageName}” gate on the launch timeline (cascading review window).`;
+    }
     return `Last day of the “${stageName}” segment on the launch timeline (same rule as the Release Timeline chart).`;
 }
 

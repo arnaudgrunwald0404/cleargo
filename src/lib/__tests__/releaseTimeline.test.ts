@@ -1,9 +1,11 @@
 import { describe, it, expect } from '@jest/globals';
 import {
+  buildTimelineStageStarts,
   computeStageEndDatesByStageId,
   parseUiLevelFromEpicAha,
   type ReleaseTimelineStage,
 } from '../releaseTimeline';
+import { getEpicTimelineStageOverrides } from '../epic-rollout-dates';
 
 describe('releaseTimeline', () => {
   describe('parseUiLevelFromEpicAha', () => {
@@ -49,6 +51,74 @@ describe('releaseTimeline', () => {
       expect(computeStageEndDatesByStageId(stages, null, {
         useBusinessDayTimeline: false,
       }).size).toBe(0);
+    });
+
+    it('re-walks pre-launch stages when GTM and Internal manual dates are set', () => {
+      const stages: ReleaseTimelineStage[] = [
+        { id: 1, name: 'Product Definition Complete', sort_order: 0, duration_days: 31 },
+        { id: 2, name: 'GTM Access and Prep', sort_order: 1, duration_days: 14 },
+        { id: 3, name: 'Internal Readiness', sort_order: 2, duration_days: 21 },
+        { id: 4, name: 'Cohort 1 Live', sort_order: 3, duration_days: 28 },
+        { id: 5, name: 'GA · Cohort 2', sort_order: 4, duration_days: null },
+      ];
+      const { starts } = buildTimelineStageStarts(stages, '2026-08-30', {
+        useBusinessDayTimeline: false,
+        stageOverrides: {
+          gtmAccessYmd: '2026-06-11',
+          internalReadinessYmd: '2026-06-25',
+        },
+      });
+
+      const ymd = (i: number) =>
+        starts[i].date.toISOString().slice(0, 10);
+
+      expect(ymd(1)).toBe('2026-06-11');
+      expect(ymd(2)).toBe('2026-06-25');
+      expect(ymd(3)).toBe('2026-08-30');
+      expect(ymd(0) < ymd(1)).toBe(true);
+      expect(ymd(1) < ymd(2)).toBe(true);
+      expect(ymd(2) < ymd(3)).toBe(true);
+
+      const map = computeStageEndDatesByStageId(stages, '2026-08-30', {
+        useBusinessDayTimeline: false,
+        stageOverrides: {
+          gtmAccessYmd: '2026-06-11',
+          internalReadinessYmd: '2026-06-25',
+        },
+      });
+      expect(map.get(1)).toBe('2026-06-11');
+      expect(map.get(2)).toBe('2026-06-25');
+      expect(map.get(3)).toBe('2026-08-30');
+    });
+  });
+
+  describe('getEpicTimelineStageOverrides', () => {
+    it('returns actual manual dates when set', () => {
+      expect(
+        getEpicTimelineStageOverrides({
+          actual_gtm_access_date: '2026-06-11',
+          gtm_access_na: false,
+          actual_internal_readiness_date: '2026-06-25',
+          internal_readiness_na: false,
+        })
+      ).toEqual({
+        gtmAccessYmd: '2026-06-11',
+        internalReadinessYmd: '2026-06-25',
+      });
+    });
+
+    it('returns null overrides when marked N/A', () => {
+      expect(
+        getEpicTimelineStageOverrides({
+          actual_gtm_access_date: '2026-06-11',
+          gtm_access_na: true,
+          actual_internal_readiness_date: null,
+          internal_readiness_na: true,
+        })
+      ).toEqual({
+        gtmAccessYmd: null,
+        internalReadinessYmd: null,
+      });
     });
   });
 });

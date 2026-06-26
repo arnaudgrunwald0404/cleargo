@@ -11,6 +11,7 @@ import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 import {
     type CriterionDueDateStageRow,
     computeCriterionDueDateYmd,
+    getUiFrameworkDueDateOptions,
     resolveAnchorLaunchDateFromReleaseSchedule,
 } from '@/lib/criterion-due-date';
 import { createClient } from '@/lib/supabase/client';
@@ -1014,11 +1015,13 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       const n = Number(rawRt);
       if (!Number.isNaN(n)) ratingTimingId = n;
     }
+    const uiOpts = getUiFrameworkDueDateOptions(item.launch.aha_fields);
     return computeCriterionDueDateYmd({
       anchorYmd: anchor,
       ratingTimingId,
       allStages: releaseStagesFull,
-      uiLevel: undefined,
+      uiLevel: uiOpts.isUiFramework ? uiOpts.uiLevel : undefined,
+      isGateCriterion: item.criterion?.gate === true,
     });
   };
 

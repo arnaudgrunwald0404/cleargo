@@ -403,13 +403,13 @@ export async function calculateDueDateForCriterion(
     targetLaunchDate: string | null,
     ratingTimingId: number | null,
     client: SupabaseClient,
-    options?: { uiLevel?: number; cohort2Date?: string | null }
+    options?: { uiLevel?: number; cohort2Date?: string | null; isGateCriterion?: boolean }
 ): Promise<string | null> {
     const uiLevel = options?.uiLevel ?? null;
 
     const { data: allStages, error: stagesError } = await client
         .from('release_stages')
-        .select('id, name, sort_order, duration_days, level_durations, scope')
+        .select('id, name, sort_order, duration_days, level_durations, scope, is_gate')
         .order('sort_order', { ascending: true });
 
     if (stagesError || !allStages || allStages.length === 0) {
@@ -422,6 +422,8 @@ export async function calculateDueDateForCriterion(
         ratingTimingId,
         allStages,
         uiLevel,
+        cohort2Date: options?.cohort2Date ?? null,
+        isGateCriterion: options?.isGateCriterion,
     });
 }
 
@@ -456,7 +458,7 @@ export async function instantiateReleaseCriteriaForEpic(
     // Get all active release criteria applicable to this tier (with decision_owner_email, rating_timing, ui_framework_only)
     const { data: criteria, error: criteriaError } = await sb
         .from('criterion')
-        .select('id, label, description, tier_applicability, decision_owner_email, rating_timing, ui_framework_only')
+        .select('id, label, description, tier_applicability, decision_owner_email, rating_timing, ui_framework_only, gate')
         .eq('is_active', true)
         .eq('context', 'release');
 
@@ -533,7 +535,7 @@ export async function instantiateReleaseCriteriaForEpic(
     const anchor = await fetchAnchorLaunchDateForEpic(sb, epic);
     const { data: allStagesForDue, error: stagesDueErr } = await sb
         .from('release_stages')
-        .select('id, name, sort_order, duration_days, level_durations, scope')
+        .select('id, name, sort_order, duration_days, level_durations, scope, is_gate')
         .order('sort_order', { ascending: true });
 
     if (stagesDueErr || !allStagesForDue?.length) {
@@ -547,6 +549,7 @@ export async function instantiateReleaseCriteriaForEpic(
             ratingTimingId: c.rating_timing,
             allStages: allStagesForDue ?? [],
             uiLevel: isUiFrameworkEpic ? uiLevel : undefined,
+            isGateCriterion: c.gate === true,
         });
         dueDateMap.set(c.id, dueDate);
     }
@@ -673,7 +676,7 @@ export async function recalculateDueDatesForEpic(
 
     const { data: allStagesForRecalc, error: stagesRecalcErr } = await sb
         .from('release_stages')
-        .select('id, name, sort_order, duration_days, level_durations, scope')
+        .select('id, name, sort_order, duration_days, level_durations, scope, is_gate')
         .order('sort_order', { ascending: true });
 
     if (stagesRecalcErr || !allStagesForRecalc?.length) {
@@ -690,7 +693,8 @@ export async function recalculateDueDatesForEpic(
             id,
             criterion_id,
             criterion:criterion_id (
-                rating_timing
+                rating_timing,
+                gate
             )
         `)
         .eq('epic_id', epicId);
@@ -717,6 +721,7 @@ export async function recalculateDueDatesForEpic(
             ratingTimingId,
             allStages: allStagesForRecalc,
             uiLevel: isUiFrameworkEpic ? uiLevel : undefined,
+            isGateCriterion: criterion?.gate === true,
         });
 
         updates.push({

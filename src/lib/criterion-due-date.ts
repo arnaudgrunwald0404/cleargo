@@ -1,6 +1,21 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import {
+    dateToLocalDateString,
+    parseDateOnlyLocal,
+    subtractBusinessDays,
+    subtractCalendarDays,
+} from '@/lib/date-utils';
+import {
+    computeStageEndDatesByStageId,
+    getEffectiveStageDuration,
+    type ReleaseTimelineStage,
+    type TimelineStageDateOverrides,
+} from '@/lib/releaseTimeline';
 
-/** Row shape from `release_stages` used for due date math (matches `calculateDueDateForCriterion`). */
+/** Days before a gate-stage segment end: gate rollup vs sub-criteria (cascading reviews). */
+export const GATE_STAGE_DUE_OFFSET_DAYS = { gate: 1, sub: 4 } as const;
+
+/** Row shape from `release_stages` used for due date math. */
 export type CriterionDueDateStageRow = {
     id: number;
     name?: string | null;
@@ -8,6 +23,7 @@ export type CriterionDueDateStageRow = {
     duration_days?: number | null;
     level_durations?: Record<string, { min_days: number; max_days: number }> | null;
     scope?: string | null;
+    is_gate?: boolean | null;
 };
 
 export function getReleaseNameFromAhaFields(ahaFields: unknown): string | null {
@@ -76,66 +92,111 @@ export function getUiFrameworkDueDateOptions(ahaFields: unknown): { isUiFramewor
     return { isUiFramework: true, uiLevel };
 }
 
-export function getEffectiveStageDuration(
-    stage: {
-        duration_days?: number | null;
-        level_durations?: Record<string, { min_days: number; max_days: number }> | null;
-    },
-    uiLevel: number | null | undefined
-): number | null {
-    if (uiLevel != null && stage.level_durations && typeof stage.level_durations === 'object') {
-        const d = stage.level_durations[String(uiLevel)];
-        if (d && typeof d.min_days === 'number') {
-            return d.min_days;
-        }
+export { getEffectiveStageDuration };
+
+/** Category → stage name fallback when `rating_timing` is unset or stale. */
+export function buildCategoryStageFallbackMap(
+    stages: Array<{ id: number; name: string }>,
+    isUiFramework: boolean
+): Map<string, number> {
+    const map = new Map<string, number>();
+    if (stages.length === 0) return map;
+    const byName = new Map(stages.map((s) => [s.name.toLowerCase().trim(), s.id]));
+    const uxStage = isUiFramework ? 'ux preview' : 'gtm access and prep';
+    const gtmStage = 'gtm access and prep';
+    const mappings: [string, string][] = [
+        ['strategy', 'product definition complete'],
+        ['legal & security', 'product definition complete'],
+        ['legal_security', 'product definition complete'],
+        ['ux & research', uxStage],
+        ['product_tech', uxStage],
+        ['technical readiness', uxStage],
+        ['product documentation', gtmStage],
+        ['product_documentation', gtmStage],
+        ['gtm', gtmStage],
+        ['enablement & training readiness', gtmStage],
+        ['sales enablement', gtmStage],
+        ['product marketing', gtmStage],
+        ['support', gtmStage],
+        ['customer support readiness', gtmStage],
+        ['ops', gtmStage],
+        ['revenue ops', gtmStage],
+        ['product', gtmStage],
+        ['customer success', gtmStage],
+        ['data & analytics', gtmStage],
+        ['data_analytics', gtmStage],
+        ['analytics & metrics', gtmStage],
+        ['analytics_and_metrics', gtmStage],
+        ['implementation scale & customer adoption', 'cohort 1'],
+        ['customer success & ongoing adoption', 'cohort 1'],
+        ['other', gtmStage],
+    ];
+    for (const [cat, stageName] of mappings) {
+        const id = byName.get(stageName);
+        if (id != null) map.set(cat, id);
     }
-    return stage.duration_days ?? null;
+    return map;
+}
+
+/** Apply cascading-review offset before a gate-stage segment end (Go/No-Go minus N days). */
+export function applyGateStageDueOffset(
+    stageEndYmd: string,
+    isGateCriterion: boolean,
+    useBusinessDays: boolean
+): string {
+    const offsetDays = isGateCriterion
+        ? GATE_STAGE_DUE_OFFSET_DAYS.gate
+        : GATE_STAGE_DUE_OFFSET_DAYS.sub;
+    const parsed = parseDateOnlyLocal(stageEndYmd);
+    if (!parsed) return stageEndYmd;
+    const adjusted = useBusinessDays
+        ? subtractBusinessDays(parsed, offsetDays)
+        : subtractCalendarDays(parsed, offsetDays);
+    return dateToLocalDateString(adjusted);
 }
 
 /**
- * Synchronous due date (YYYY-MM-DD) from anchor launch date and rating_timing stage — same rules as
- * `calculateDueDateForCriterion` in `epics.ts`.
+ * Criterion due date (YYYY-MM-DD): end of the rated stage segment on the launch timeline,
+ * with gate-stage cascading offsets (sub-items −4d, gate rollups −1d before segment end).
  */
 export function computeCriterionDueDateYmd(params: {
     anchorYmd: string | null;
     ratingTimingId: number | null;
     allStages: CriterionDueDateStageRow[];
     uiLevel?: number | null;
+    isGateCriterion?: boolean;
+    cohort2Date?: string | null;
+    stageOverrides?: TimelineStageDateOverrides | null;
 }): string | null {
-    const { anchorYmd, ratingTimingId, allStages, uiLevel } = params;
-    if (!anchorYmd) return null;
+    const { anchorYmd, ratingTimingId, allStages, uiLevel, isGateCriterion, cohort2Date, stageOverrides } = params;
+    if (!anchorYmd || ratingTimingId == null) return null;
 
     const targetStage = allStages.find((s) => s.id === ratingTimingId);
     if (!targetStage) return null;
 
     const scope = targetStage.scope ?? 'release_schedule';
-    const releaseStages = allStages.filter((s) => (s.scope ?? 'release_schedule') === scope);
+    const scopedStages = allStages.filter((s) => (s.scope ?? 'release_schedule') === scope);
+    const useBusinessDayTimeline = scope === 'ui_rollout';
 
-    const cohort1Stage = releaseStages.find((s) => String(s.name || '').toLowerCase().includes('cohort 1'));
-    const lastPreLaunchSortOrder = cohort1Stage ? (cohort1Stage.sort_order as number) - 1 : 3;
+    const endMap = computeStageEndDatesByStageId(
+        scopedStages as ReleaseTimelineStage[],
+        anchorYmd,
+        {
+            useBusinessDayTimeline,
+            uiLevel: useBusinessDayTimeline ? (uiLevel ?? null) : null,
+            cohort2Date: cohort2Date ?? null,
+            stageOverrides: stageOverrides ?? null,
+        }
+    );
 
-    const dueDate = new Date(anchorYmd);
-    if (isNaN(dueDate.getTime())) return null;
+    const stageEndYmd = endMap.get(ratingTimingId);
+    if (!stageEndYmd) return null;
 
-    if (targetStage.sort_order <= lastPreLaunchSortOrder) {
-        const stagesAfterTarget = releaseStages.filter((s) => {
-            const dur = getEffectiveStageDuration(s, uiLevel);
-            return s.sort_order > targetStage.sort_order && s.sort_order <= lastPreLaunchSortOrder && dur !== null;
-        });
-        const totalDaysBefore =
-            (getEffectiveStageDuration(targetStage, uiLevel) || 0) +
-            stagesAfterTarget.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
-        dueDate.setDate(dueDate.getDate() - totalDaysBefore);
-    } else {
-        const postLaunchStages = releaseStages.filter((s) => {
-            const dur = getEffectiveStageDuration(s, uiLevel);
-            return s.sort_order > lastPreLaunchSortOrder && s.sort_order <= targetStage.sort_order && dur !== null;
-        });
-        const totalDaysAfter = postLaunchStages.reduce((sum, s) => sum + (getEffectiveStageDuration(s, uiLevel) ?? 0), 0);
-        dueDate.setDate(dueDate.getDate() + totalDaysAfter);
+    if (targetStage.is_gate) {
+        return applyGateStageDueOffset(stageEndYmd, isGateCriterion === true, useBusinessDayTimeline);
     }
 
-    return dueDate.toISOString().split('T')[0];
+    return stageEndYmd;
 }
 
 export async function fetchAnchorLaunchDateForEpic(
