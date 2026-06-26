@@ -9,6 +9,7 @@ import {
   getGaCellShading,
   isRolloutGaFromOffSchedule,
 } from '@/lib/epic-rollout-process';
+import { getEpicTimelineAnchorYmd } from '@/lib/epic-cohort1-date';
 
 const dualEpic = {
   target_launch_date: '2026-08-20',
@@ -118,5 +119,10 @@ describe('APP-E-729 Single GA + off-schedule', () => {
     expect(getRolloutAwareCohort1Ymd(appE729, '2026-07-01')).toBeNull();
     expect(getRolloutAwareGaYmd(appE729, { releaseTrainDateYmd: '2026-07-01' })).toBe('2026-07-01');
     expect(getGaCellShading(appE729, true, '2026-07-01', '2026-07-16')).toBe('off-schedule'); // off-schedule → yellow
+  });
+
+  it('uses GA/off-schedule anchor for timeline back-walk on Single GA', () => {
+    expect(getEpicTimelineAnchorYmd(appE729, '2026-07-16')).toBe('2026-07-01');
+    expect(getEpicTimelineAnchorYmd(singleGaEpic, '2026-09-17')).toBe('2026-09-17');
   });
 });

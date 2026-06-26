@@ -45,6 +45,26 @@ export function getEpicCohort1DisplayYmd(
   return tl ? dateToLocalDateString(tl) : null;
 }
 
+/**
+ * Release Timeline anchor (back-walk from second-to-last stage).
+ * Single GA has no Cohort 1 column date, but the timeline still needs an anchor — use the GA
+ * date (off-schedule when set, else release train, else target launch).
+ */
+export function getEpicTimelineAnchorYmd(
+  epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>,
+  releaseDateFromSchedule?: string | null
+): string | null {
+  if (isSingleGaRollout(epic)) {
+    const off = parseDateOnlyLocal(getOffScheduleReleaseDate(epic));
+    if (off) return dateToLocalDateString(off);
+    const sched = releaseDateFromSchedule ? parseDateOnlyLocal(releaseDateFromSchedule) : null;
+    if (sched) return dateToLocalDateString(sched);
+    const tl = parseDateOnlyLocal(epic.target_launch_date);
+    return tl ? dateToLocalDateString(tl) : null;
+  }
+  return getEpicCohort1DisplayYmd(epic, releaseDateFromSchedule);
+}
+
 export function formatCohort1DateForSlack(
   epic: Pick<Epic, 'target_launch_date' | 'aha_fields'>
 ): string {

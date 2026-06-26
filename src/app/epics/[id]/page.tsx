@@ -27,7 +27,7 @@ import { formatDateOnlyForDisplay, toDateOnlyString, addCalendarMonth, parseDate
 import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
 import { buildCategoryStageFallbackMap, computeCriterionDueDateYmd } from "@/lib/criterion-due-date";
 import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
-import { getEpicCohort1DisplayYmd } from "@/lib/epic-cohort1-date";
+import { getEpicTimelineAnchorYmd } from "@/lib/epic-cohort1-date";
 import { GtmAccessDateCell } from "@/components/GtmAccessDateCell";
 import { InternalReadinessDateCell } from "@/components/InternalReadinessDateCell";
 import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd, getEpicTimelineStageOverrides } from "@/lib/epic-rollout-dates";
@@ -750,7 +750,7 @@ export default function EpicDetailPage() {
 
             // Criterion due dates = end of each stage segment (same as ReleaseStagesChart).
             // Anchor date is cohort1-aware (matches the rest of the app).
-            const targetDate = getEpicCohort1DisplayYmd(data as Epic, fetchedReleaseDate);
+            const targetDate = getEpicTimelineAnchorYmd(data as Epic, fetchedReleaseDate);
             const loadTimelineOverrides =
                 fetchedReleaseStages.length > 0 && targetDate
                     ? getEpicTimelineStageOverrides(data as Epic, {
@@ -1227,7 +1227,7 @@ export default function EpicDetailPage() {
 
     const timelineStageOverrides = useMemo(() => {
         if (!epic || releaseStages.length === 0) return null;
-        const targetDate = getEpicCohort1DisplayYmd(epic, releaseDate);
+        const targetDate = getEpicTimelineAnchorYmd(epic, releaseDate);
         if (!targetDate) return null;
         return getEpicTimelineStageOverrides(epic, {
             anchorYmd: targetDate,
@@ -1257,7 +1257,7 @@ export default function EpicDetailPage() {
     ]);
 
     const stageEndDates = useMemo(() => {
-        const targetDate = epic ? getEpicCohort1DisplayYmd(epic, releaseDate) : null;
+        const targetDate = epic ? getEpicTimelineAnchorYmd(epic, releaseDate) : null;
         if (!targetDate || releaseStages.length === 0) return new Map<number, string>();
         return computeStageEndDatesByStageId(releaseStages, targetDate, {
             useBusinessDayTimeline: isUiFrameworkEpic,
@@ -1300,7 +1300,7 @@ export default function EpicDetailPage() {
             return item.condition_due_date || null;
         }
 
-        const anchorYmd = epic ? getEpicCohort1DisplayYmd(epic, releaseDate) : null;
+        const anchorYmd = epic ? getEpicTimelineAnchorYmd(epic, releaseDate) : null;
         if (!anchorYmd) {
             return stageEndDates.get(resolvedId) ?? item.condition_due_date ?? null;
         }
@@ -2051,7 +2051,7 @@ export default function EpicDetailPage() {
                             {releaseStages.length > 0 && (
                                 <div className="min-w-0" style={{ marginBottom: "var(--spacing-4)" }}>
                                     <ReleaseStagesChart
-                                        releaseDate={getEpicCohort1DisplayYmd(epic, releaseDate)}
+                                        releaseDate={getEpicTimelineAnchorYmd(epic, releaseDate)}
                                         cohort2Date={cohort2Date}
                                         stages={releaseStages}
                                         showHeading={true}
