@@ -118,6 +118,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                     </li>
                 )}
                 <li><Link {...linkProps("/admin/settings/performance", isActive("/admin/settings/performance"))}>Performance</Link></li>
+                <li><Link {...linkProps("/admin/settings/developer", isActive("/admin/settings/developer"))}>Developer / API Access</Link></li>
                 <li><Link {...linkProps("/admin/settings/general", isActive("/admin/settings/general"))}>Other Settings</Link></li>
             </ul>
         </nav>
