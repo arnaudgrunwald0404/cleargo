@@ -1529,7 +1529,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                 <col style={{ width: 'auto' }} />
                                                                 <col style={{ width: showNotApplicable ? '148px' : '120px' }} />
                                                                 <col style={{ width: '150px' }} />
-                                                                <col style={{ width: '120px' }} />
+                                                                <col style={{ width: '160px' }} />
                                                                 <col style={{ width: '100px' }} />
                                                                 <col style={{ width: 'auto' }} />
                                                                 <col style={{ width: '40px' }} />
@@ -1539,7 +1539,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
                                                                     <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
-                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
+                                                                    <th className="px-4 py-3 text-left font-medium" style={{ width: '160px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Comments</th>
                                                                     <th className="px-4 py-3 text-left font-medium" style={{ width: '40px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}></th>
@@ -1597,22 +1597,23 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                     </div>
                                                                                 )}
                                                                             </td>
-                                                                            <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ width: '120px' }}>
+                                                                            <td className="px-4 py-3 text-sm" style={{ width: '160px', maxWidth: '160px', overflow: 'hidden' }}>
                                                                                 {(() => {
                                                                                     const dueDateStr = item.condition_due_date;
                                                                                     const dueByStage = item.due_by_stage_name?.trim() || null;
+                                                                                    const truncStyle: React.CSSProperties = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
                                                                                     if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
-                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
                                                                                     }
                                                                                     try {
                                                                                         const dueDate = new Date(dueDateStr);
-                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
                                                                                         const today = new Date(); today.setHours(0, 0, 0, 0); dueDate.setHours(0, 0, 0, 0);
                                                                                         const isOverdue = dueDate < today;
-                                                                                        const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'}>{dueDate.toLocaleDateString()}</span>;
+                                                                                        const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>{dueDate.toLocaleDateString()}</span>;
                                                                                         return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">{content}</Tooltip> : content;
                                                                                     } catch {
-                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500">{dueByStage}</span></Tooltip> : '-';
+                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
                                                                                     }
                                                                                 })()}
                                                                             </td>
@@ -1732,7 +1733,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: showNotApplicable ? '148px' : '120px' }} />
                                     <col style={{ width: '150px' }} />
-                                    <col style={{ width: '120px' }} />
+                                    <col style={{ width: '160px' }} />
                                     <col style={{ width: '100px' }} />
                                     <col style={{ width: 'auto' }} />
                                     <col style={{ width: '40px' }} />
@@ -1742,7 +1743,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                         <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Criterion</th>
                                         <th className="px-4 py-3 text-left font-medium normal-case" style={{ width: showNotApplicable ? '148px' : '120px', fontSize: '12px', fontWeight: 600, textTransform: 'none', letterSpacing: '0.05em', color: '#6B7280' }}>Go/No-Go Score</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '150px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Accountable</th>
-                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '120px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ width: '160px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Due On</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '100px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Sources</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}>Comments</th>
                                         <th className="px-4 py-3 text-left font-medium" style={{ width: '40px', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#6B7280' }}></th>
@@ -1909,37 +1910,38 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 </div>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-sm whitespace-nowrap" style={{ width: '120px' }}>
+                                        <td className="px-4 py-3 text-sm" style={{ width: '160px', maxWidth: '160px', overflow: 'hidden' }}>
                                             {(() => {
                                                 const dueDateStr = item.condition_due_date;
                                                 const dueByStage = item.due_by_stage_name?.trim() || null;
+                                                const truncStyle: React.CSSProperties = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
                                                 // Check for null, undefined, or empty string
                                                 if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
                                                     return dueByStage ? (
                                                         <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                            <span className="text-gray-500">{dueByStage}</span>
+                                                            <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
                                                         </Tooltip>
                                                     ) : '-';
                                                 }
-                                                
+
                                                 try {
                                                     const dueDate = new Date(dueDateStr);
                                                     // Check if date is valid
                                                     if (isNaN(dueDate.getTime())) {
                                                         return dueByStage ? (
                                                             <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                                <span className="text-gray-500">{dueByStage}</span>
+                                                                <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
                                                             </Tooltip>
                                                         ) : '-';
                                                     }
-                                                    
+
                                                     const today = new Date();
                                                     today.setHours(0, 0, 0, 0);
                                                     dueDate.setHours(0, 0, 0, 0);
                                                     const isOverdue = dueDate < today;
-                                                    
+
                                                     const content = (
-                                                        <span className={isOverdue ? 'text-red-600' : 'text-gray-700'}>
+                                                        <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>
                                                             {dueDate.toLocaleDateString()}
                                                         </span>
                                                     );
@@ -1951,7 +1953,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 } catch (e) {
                                                     return dueByStage ? (
                                                         <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                            <span className="text-gray-500">{dueByStage}</span>
+                                                            <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
                                                         </Tooltip>
                                                     ) : '-';
                                                 }
