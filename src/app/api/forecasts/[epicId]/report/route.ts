@@ -12,8 +12,10 @@ function validateApiKey(req: NextRequest): boolean {
 }
 
 // POST /api/forecasts/[epicId]/report
-// Accepts HTML content and stores it in Supabase Storage. Returns a stable public URL
-// and creates an epic_forecast_link record.
+// Accepts HTML content, stores it in Supabase Storage, and returns the stable public URL.
+// Does NOT create an epic_forecast_link record — that is the responsibility of the caller
+// (Step 12 of the /forecast skill via POST /link), which adds full metadata including
+// arr_upside_3yr. Separating upload from link creation avoids duplicate records.
 //
 // Body (JSON):  { html_content: string }
 // Body (form):  file field containing an HTML file
@@ -24,10 +26,8 @@ async function postHandler(
     { params }: { params: Promise<{ epicId: string }> }
 ) {
     const apiKeyValid = validateApiKey(req);
-    let userEmail: string | null = null;
-
     if (!apiKeyValid) {
-        userEmail = await getAuthenticatedUserEmail();
+        const userEmail = await getAuthenticatedUserEmail();
         if (!userEmail) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -81,37 +81,7 @@ async function postHandler(
             .from('forecast-reports')
             .getPublicUrl(storagePath);
 
-        const publicUrl = urlData.publicUrl;
-
-        // Look up the internal epic UUID (may not exist if Aha sync hasn't run yet)
-        const { data: epicRow } = await adminSupabase
-            .from('epic')
-            .select('id')
-            .eq('aha_id', epicAhaId)
-            .maybeSingle();
-
-        const { data: link, error: insertError } = await adminSupabase
-            .from('epic_forecast_link')
-            .insert({
-                epic_id: epicRow?.id ?? null,
-                epic_aha_id: epicAhaId,
-                url: publicUrl,
-                generation_date: new Date().toISOString().split('T')[0],
-                scenario: 'base',
-                storage_path: storagePath,
-                created_by: userEmail ?? 'api-key',
-            })
-            .select()
-            .single();
-
-        if (insertError) {
-            // Clean up the uploaded file to avoid orphans
-            await adminSupabase.storage.from('forecast-reports').remove([storagePath]);
-            console.error('DB insert error after upload:', insertError);
-            return NextResponse.json({ error: 'Failed to create forecast link record' }, { status: 500 });
-        }
-
-        return NextResponse.json({ url: publicUrl, id: link.id }, { status: 201 });
+        return NextResponse.json({ url: urlData.publicUrl }, { status: 201 });
     } catch (error: any) {
         console.error('Error in upload_html_report:', error);
         return NextResponse.json(
