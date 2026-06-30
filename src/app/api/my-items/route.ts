@@ -97,7 +97,7 @@ export async function GET(req: NextRequest) {
         }
 
         const [{ data: scheduleRows }, { data: allStages }] = await Promise.all([
-            supabase.from('release_schedule').select('release_name, launch_date').eq('archived', false),
+            supabase.from('release_schedule').select('release_name, launch_date, cohort2_date').eq('archived', false),
             supabase
                 .from('release_stages')
                 .select('id, name, sort_order, duration_days, level_durations, scope, is_gate')
@@ -217,6 +217,10 @@ export async function GET(req: NextRequest) {
                 scheduleForDue,
                 epicRow?.target_launch_date ?? null
             );
+            const scheduleRow = releaseName
+                ? scheduleForDue.find((r) => (r.release_name || '').trim() === releaseName.trim())
+                : null;
+            const cohort2Date = (scheduleRow as { cohort2_date?: string | null } | null | undefined)?.cohort2_date ?? null;
             const rawRt = item.criterion?.rating_timing;
             const ratingTimingId =
                 rawRt != null && rawRt !== undefined ? Number(rawRt) : defaultRatingTimingId;
@@ -227,6 +231,7 @@ export async function GET(req: NextRequest) {
                 allStages: stagesForDue,
                 uiLevel: uiOpts.isUiFramework ? uiOpts.uiLevel : undefined,
                 isGateCriterion: item.criterion?.gate === true,
+                cohort2Date,
             });
             return { ...row, launch: launchEnriched, due_date };
         });
