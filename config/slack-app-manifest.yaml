@@ -32,6 +32,11 @@ features:
       description: Update a criterion status for a launch
       usage_hint: "[launch-id] [criterion-id] [status]"
       should_escape: false
+    - command: /who-is-blocking
+      url: https://your-domain.com/api/integrations/slack/commands/who-is-blocking
+      description: Rank people by unreviewed criteria on active launches
+      usage_hint: "[TIER_1 | TIER_2 | TIER_3]"
+      should_escape: false
 
 oauth_config:
   scopes:
