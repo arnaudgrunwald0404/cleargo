@@ -230,14 +230,18 @@ function buildTools(userEmail: string) {
           .from('epic_criterion_status')
           .select(
             `status, last_updated_at,
-             epic:epic_id (id, name, tier, target_launch_date, risk_level),
+             epic:epic_id (id, name, tier, target_launch_date, risk_level, archived),
              criterion:criterion_id (label, category, gate)`
           )
           .eq('decision_owner_id', user.id)
           .in('status', ['NOT_SET'])
           .order('last_updated_at', { ascending: true });
 
-        if (!pending || pending.length === 0) {
+        const activePending = (pending || []).filter(
+          (p) => !(p.epic as any)?.archived && (p.epic as any)?.status !== 'Cancelled'
+        );
+
+        if (activePending.length === 0) {
           const name =
             [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail;
           return { message: `No pending criteria decisions for ${name}. All caught up!` };
@@ -245,8 +249,8 @@ function buildTools(userEmail: string) {
 
         return {
           user: [user.first_name, user.last_name].filter(Boolean).join(' ') || targetEmail,
-          pendingCount: pending.length,
-          items: pending.map((p) => ({
+          pendingCount: activePending.length,
+          items: activePending.map((p) => ({
             criterion: (p.criterion as any)?.label,
             category: (p.criterion as any)?.category,
             isGate: (p.criterion as any)?.gate ?? false,
@@ -515,7 +519,7 @@ function buildTools(userEmail: string) {
           .from('epic_criterion_status')
           .select(`
             status,
-            epic:epic_id (id, name, tier, risk_level, target_launch_date),
+            epic:epic_id (id, name, tier, risk_level, target_launch_date, archived, status),
             criterion:criterion_id (label, gate)
           `)
           .eq('decision_owner_id', user.id);
@@ -525,11 +529,11 @@ function buildTools(userEmail: string) {
           return { message: `${name} is not assigned as decision owner on any criteria.` };
         }
 
-        // Group by epic
+        // Group by epic, excluding archived and cancelled epics
         const epicMap: Record<string, any> = {};
         for (const r of rows) {
           const epic = r.epic as any;
-          if (!epic) continue;
+          if (!epic || epic.archived || epic.status === 'Cancelled') continue;
           if (!epicMap[epic.id]) {
             epicMap[epic.id] = {
               name: epic.name,
@@ -703,7 +707,7 @@ function buildTools(userEmail: string) {
           .select(`
             id,
             decision_owner_id,
-            epic:epic_id (id, name, tier, target_launch_date, status),
+            epic:epic_id (id, name, tier, target_launch_date, status, archived),
             criterion:criterion_id (label, gate),
             decision_owner:app_user!epic_criterion_status_decision_owner_id_fkey (
               id, first_name, last_name, email
@@ -744,7 +748,7 @@ function buildTools(userEmail: string) {
           const owner = r.decision_owner as any;
           const epic = r.epic as any;
           const criterion = r.criterion as any;
-          if (!owner || !epic || epic.status === 'Cancelled') continue;
+          if (!owner || !epic || epic.archived || epic.status === 'Cancelled') continue;
           if (tier_filter && epic.tier !== tier_filter) continue;
 
           const personKey = owner.id;
@@ -783,7 +787,7 @@ function buildTools(userEmail: string) {
 
         return {
           totalUnreviewedCriteria: rows.filter(
-            (r) => (r.epic as any)?.status !== 'Cancelled'
+            (r) => !(r.epic as any)?.archived && (r.epic as any)?.status !== 'Cancelled'
           ).length,
           totalPeopleWithPending: Object.keys(personMap).length,
           ranked: ranked.map((p, i) => ({
