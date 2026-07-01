@@ -20,6 +20,7 @@ export interface ForecastLink {
 
 export interface ForecastEpicSummary {
   epic_aha_id: string;
+  epic_id: string | null; // internal UUID, used for /epics/[id] links
   epic_name: string | null;
   launch_tier: string | null;
   gtm_module: string | null;
@@ -49,13 +50,13 @@ async function getHandler(_req: NextRequest) {
 
   // Fetch epic metadata (name, aha_fields) and gtm_module for all referenced epics
   const ahaIds = [...new Set((rows ?? []).map(r => r.epic_aha_id as string))];
-  const epicMeta = new Map<string, { name: string | null; launch_tier: string | null; gtm_module: string | null }>();
+  const epicMeta = new Map<string, { id: string | null; name: string | null; launch_tier: string | null; gtm_module: string | null }>();
 
   if (ahaIds.length > 0) {
     const [{ data: epics }, { data: snapshots }] = await Promise.all([
       adminSupabase
         .from('epic')
-        .select('aha_id, name, aha_fields')
+        .select('id, aha_id, name, aha_fields')
         .in('aha_id', ahaIds),
       // Latest gtm_module per epic — grab recent rows and dedupe in JS
       adminSupabase
@@ -85,6 +86,7 @@ async function getHandler(_req: NextRequest) {
         ahaFields?.launch_tier ??
         null;
       epicMeta.set(e.aha_id as string, {
+        id: e.id as string,
         name: (e.name as string | null) ?? nameByKey.get(e.aha_id as string) ?? null,
         launch_tier: typeof launchTier === 'string' ? launchTier : null,
         gtm_module: gtmByKey.get(e.aha_id as string) ?? null,
@@ -94,6 +96,7 @@ async function getHandler(_req: NextRequest) {
     for (const id of ahaIds) {
       if (!epicMeta.has(id)) {
         epicMeta.set(id, {
+          id: null,
           name: nameByKey.get(id) ?? null,
           launch_tier: null,
           gtm_module: gtmByKey.get(id) ?? null,
@@ -112,6 +115,7 @@ async function getHandler(_req: NextRequest) {
     if (!byEpic.has(key)) {
       byEpic.set(key, {
         epic_aha_id: key,
+        epic_id: meta?.id ?? null,
         epic_name: meta?.name ?? null,
         launch_tier: meta?.launch_tier ?? null,
         gtm_module: meta?.gtm_module ?? null,

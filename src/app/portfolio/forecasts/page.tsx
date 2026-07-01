@@ -417,7 +417,15 @@ export default function ForecastsPage() {
                         {epic.epic_name ?? epic.epic_aha_id}
                       </div>
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary, #6b7280)', marginTop: 2 }}>
-                        {epic.epic_aha_id}
+                        {epic.epic_id ? (
+                          <a
+                            href={`/epics/${epic.epic_id}`}
+                            onClick={e => e.stopPropagation()}
+                            style={{ color: 'var(--color-text-secondary, #6b7280)', textDecoration: 'underline', textDecorationColor: '#d1d5db' }}
+                          >
+                            {epic.epic_aha_id}
+                          </a>
+                        ) : epic.epic_aha_id}
                         {epic.links.length > 1 && (
                           <span style={{ marginLeft: 8, color: '#9ca3af' }}>
                             {epic.links.length} versions

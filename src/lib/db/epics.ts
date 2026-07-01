@@ -877,14 +877,17 @@ export async function sendCriteriaAssignmentNotifications(
     if (releaseNameRaw) {
         const { data: releaseScheduleRow } = await sb
             .from('release_schedule')
-            .select('release_name')
+            .select('release_name, launch_date')
             .eq('release_name', releaseNameRaw)
+            .eq('context', 'release')
+            .eq('archived', false)
+            .not('launch_date', 'is', null)
             .maybeSingle();
 
         if (!releaseScheduleRow) {
             console.log(
                 `⏭️  Skipping assignment notifications for epic ${epicId}: ` +
-                `release "${releaseNameRaw}" is not configured in the admin releases page.`
+                `release "${releaseNameRaw}" is not configured (or has no launch date) in the admin releases page.`
             );
             return;
         }
