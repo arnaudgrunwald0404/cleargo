@@ -16,6 +16,70 @@ import { IconMessageCircle, IconSend } from '@tabler/icons-react';
 import { useFeatureFlags } from '@/contexts/FeatureFlagsContext';
 import { FEATURE_AI_CHAT } from '@/lib/flags';
 
+// Render assistant message content with clickable links and basic markdown
+function renderMarkdown(text: string) {
+  // Split into lines to preserve line breaks
+  const lines = text.split('\n');
+  return lines.map((line, li) => (
+    <span key={li}>
+      {li > 0 && <br />}
+      {renderInline(line)}
+    </span>
+  ));
+}
+
+// Tokenise a single line into bold/link/url/plain segments
+function renderInline(line: string): React.ReactNode[] {
+  const pattern = /(\*\*?.+?\*\*?|\[([^\]]+)\]\((https?:\/\/[^\)]+)\)|https?:\/\/\S+)/g;
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(line)) !== null) {
+    if (match.index > last) {
+      nodes.push(line.slice(last, match.index));
+    }
+
+    const token = match[0];
+
+    if (token.startsWith('[')) {
+      // [label](url)
+      const label = match[2];
+      const href = match[3];
+      nodes.push(
+        <a key={match.index} href={href} target="_blank" rel="noopener noreferrer"
+          style={{ color: 'var(--mantine-color-blue-6)', textDecoration: 'underline' }}>
+          {label}
+        </a>
+      );
+    } else if (token.startsWith('http')) {
+      // bare URL
+      nodes.push(
+        <a key={match.index} href={token} target="_blank" rel="noopener noreferrer"
+          style={{ color: 'var(--mantine-color-blue-6)', textDecoration: 'underline', wordBreak: 'break-all' }}>
+          {token}
+        </a>
+      );
+    } else if (token.startsWith('**')) {
+      // **bold**
+      nodes.push(<strong key={match.index}>{token.slice(2, -2)}</strong>);
+    } else if (token.startsWith('*')) {
+      // *bold*
+      nodes.push(<strong key={match.index}>{token.slice(1, -1)}</strong>);
+    } else {
+      nodes.push(token);
+    }
+
+    last = match.index + token.length;
+  }
+
+  if (last < line.length) {
+    nodes.push(line.slice(last));
+  }
+
+  return nodes;
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -196,7 +260,9 @@ export function ChatPanel({ epicId }: ChatPanelProps) {
                   wordBreak: 'break-word',
                 }}
               >
-                <Text size="sm">{m.content}</Text>
+                <Text size="sm">
+                  {m.role === 'assistant' ? renderMarkdown(m.content) : m.content}
+                </Text>
               </Box>
             </Box>
           ))}
