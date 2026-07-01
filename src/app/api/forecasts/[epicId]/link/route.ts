@@ -17,6 +17,12 @@ const CreateLinkSchema = z.object({
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD').optional(),
     scenario: z.string().default('base'),
     arr_upside_3yr: z.number().int().nonnegative().optional(),
+    arr_upside_2026: z.number().int().nonnegative().optional(),
+    arr_upside_2027: z.number().int().nonnegative().optional(),
+    arr_incremental_2027: z.number().int().nonnegative().optional(),
+    arr_incremental_2028: z.number().int().nonnegative().optional(),
+    arr_churn_reduction_2027: z.number().int().nonnegative().optional(),
+    arr_churn_reduction_2028: z.number().int().nonnegative().optional(),
 });
 
 // GET /api/forecasts/[epicId]/link
@@ -89,7 +95,7 @@ async function postHandler(
         );
     }
 
-    const { url, date, scenario, arr_upside_3yr } = parsed.data;
+    const { url, date, scenario, arr_upside_3yr, arr_upside_2026, arr_upside_2027, arr_incremental_2027, arr_incremental_2028, arr_churn_reduction_2027, arr_churn_reduction_2028 } = parsed.data;
     const adminSupabase = createAdminClient();
 
     // Look up the internal epic UUID (may not exist if Aha sync hasn't run yet)
@@ -108,6 +114,12 @@ async function postHandler(
             generation_date: date ?? new Date().toISOString().split('T')[0],
             scenario,
             arr_upside_3yr_usd: arr_upside_3yr ?? null,
+            arr_upside_2026_usd: arr_upside_2026 ?? null,
+            arr_upside_2027_usd: arr_upside_2027 ?? null,
+            arr_incremental_2027_usd: arr_incremental_2027 ?? null,
+            arr_incremental_2028_usd: arr_incremental_2028 ?? null,
+            arr_churn_reduction_2027_usd: arr_churn_reduction_2027 ?? null,
+            arr_churn_reduction_2028_usd: arr_churn_reduction_2028 ?? null,
             created_by: userEmail ?? 'api-key',
         })
         .select()

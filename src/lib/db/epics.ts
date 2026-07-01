@@ -862,6 +862,34 @@ export async function sendCriteriaAssignmentNotifications(
     const { buildCriteriaAssignmentMessage } = await import('../slack/templates');
     const { sendSlackNotification, canReceiveSlackNotification } = await import('../slack/notifications');
 
+    // Skip notifications for epics whose release has not been configured in the admin releases page.
+    // Fetch the epic's release name and check it exists in release_schedule.
+    const { data: epicRow } = await sb
+        .from('epic')
+        .select('aha_fields')
+        .eq('id', epicId)
+        .maybeSingle();
+
+    const releaseNameRaw = (epicRow?.aha_fields as any)?.standard_fields?.aha_release_name
+        ?? (epicRow?.aha_fields as any)?.standard_fields?.release?.name
+        ?? null;
+
+    if (releaseNameRaw) {
+        const { data: releaseScheduleRow } = await sb
+            .from('release_schedule')
+            .select('release_name')
+            .eq('release_name', releaseNameRaw)
+            .maybeSingle();
+
+        if (!releaseScheduleRow) {
+            console.log(
+                `⏭️  Skipping assignment notifications for epic ${epicId}: ` +
+                `release "${releaseNameRaw}" is not configured in the admin releases page.`
+            );
+            return;
+        }
+    }
+
     // Query newly created criteria with decision owner and epic info
     const { data: criteriaStatuses, error: queryError } = await sb
         .from('epic_criterion_status')
