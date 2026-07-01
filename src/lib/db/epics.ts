@@ -164,11 +164,22 @@ export async function upsertEpicFromAha(
     // First, check if epic exists
     const existing = await getEpicByAhaId(epicData.aha_id);
 
+    // If the DB already has a higher-priority tier than Aha! reports, keep it.
+    // Tier rank: TIER_1 > TIER_2 > TIER_3. This prevents Aha! syncs from
+    // overwriting a tier that was deliberately promoted via the API or UI.
+    const TIER_RANK: Record<string, number> = { TIER_1: 1, TIER_2: 2, TIER_3: 3 };
+    const ahaTier = epicData.tier;
+    const dbTier = existing?.tier ?? null;
+    const resolvedTier =
+        dbTier && ahaTier && (TIER_RANK[dbTier] ?? 99) < (TIER_RANK[ahaTier] ?? 99)
+            ? dbTier
+            : ahaTier;
+
     const upsertData: any = {
         aha_id: epicData.aha_id,
         aha_url: epicData.aha_url,
         name: epicData.name,
-        tier: epicData.tier,
+        tier: resolvedTier,
         target_launch_date: epicData.target_launch_date,
         scheduled_ga_dev_date: epicData.scheduled_ga_dev_date,
         owner_email: epicData.owner_email,
