@@ -4,7 +4,9 @@
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { google } from '@ai-sdk/google';
 import { generateObject } from 'ai';
+import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { buildAgentContext, findRelatedEntities, findRelatedEvents, type FullAgentContext } from './pendo-context';
 import type {
@@ -34,8 +36,27 @@ function getAnthropicBaseUrl(): string {
   return ANTHROPIC_API_V1;
 }
 
-// Claude Haiku 4.5 - fast and cost-effective ($1/MTok in, $5/MTok out)
-const model = createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+/**
+ * Resolve the AI model: prefer Claude with a real sk-ant- key, fall back to Gemini.
+ * Netlify's AI integration injects a proxy key that fails against api.anthropic.com.
+ */
+function resolveHeartModel(): LanguageModel | null {
+  if (!process.env.ANTHROPIC_API_KEY && process.env.CLAUDE_API_KEY) {
+    process.env.ANTHROPIC_API_KEY = process.env.CLAUDE_API_KEY;
+  }
+  const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
+  if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
+    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+  }
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
+  if (geminiKey) {
+    if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
+      process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
+    }
+    return google('gemini-2.5-flash');
+  }
+  return null;
+}
 
 // ============================================================================
 // Zod Schema for AI Output
@@ -314,14 +335,17 @@ export interface HeartAgentResult {
   dataConfidenceReason?: string;
 }
 
-function isAnthropicCreditError(error: unknown): boolean {
+function isAiCreditOrAuthError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
   return (
     message.includes('credit balance is too low') ||
     message.includes('insufficient credits') ||
     message.includes('billing') ||
-    message.includes('quota')
+    message.includes('quota') ||
+    message.includes('invalid x-api-key') ||
+    message.includes('invalid api key') ||
+    message.includes('authentication')
   );
 }
 
@@ -402,12 +426,7 @@ export async function runHeartAgent(
   epicId: string,
   options?: { userContext?: string }
 ): Promise<HeartAgentResult> {
-  const hasAnthropicKey = Boolean(process.env.ANTHROPIC_API_KEY || process.env.CLAUDE_API_KEY);
-
-  // Map CLAUDE_API_KEY to ANTHROPIC_API_KEY if needed
-  if (!process.env.ANTHROPIC_API_KEY && process.env.CLAUDE_API_KEY) {
-    process.env.ANTHROPIC_API_KEY = process.env.CLAUDE_API_KEY;
-  }
+  const model = resolveHeartModel();
   
   // Build context first so we can still produce fallback recommendations
   const context = await buildAgentContext(epicId);
@@ -430,14 +449,14 @@ export async function runHeartAgent(
     };
   }
 
-  if (!hasAnthropicKey) {
+  if (!model) {
     return {
       success: true,
       recommendations: buildHeuristicRecommendations(context),
       context,
       modelVersion: 'heuristic-fallback',
       dataConfidence: 'low',
-      dataConfidenceReason: 'Anthropic API key not configured; returned deterministic fallback recommendations.',
+      dataConfidenceReason: 'No valid AI API key configured (need ANTHROPIC_API_KEY starting with sk-ant-, or GEMINI_API_KEY); returned deterministic fallback recommendations.',
     };
   }
 
@@ -459,20 +478,20 @@ export async function runHeartAgent(
       success: true,
       recommendations: validatedRecommendations,
       context,
-      modelVersion: 'claude-haiku-4-5',
+      modelVersion: (model as any).modelId || 'ai-model',
       dataConfidence: object.dataConfidence as PendoDataConfidenceLevel | undefined,
       dataConfidenceReason: object.dataConfidenceReason,
     };
   } catch (error) {
     console.error('Error running HEART agent:', error);
-    if (isAnthropicCreditError(error)) {
+    if (isAiCreditOrAuthError(error)) {
       return {
         success: true,
         recommendations: buildHeuristicRecommendations(context),
         context,
         modelVersion: 'heuristic-fallback',
         dataConfidence: 'low',
-        dataConfidenceReason: 'Anthropic credits unavailable; returned deterministic fallback recommendations.',
+        dataConfidenceReason: 'AI API unavailable (credits/auth issue); returned deterministic fallback recommendations.',
       };
     }
     return {
