@@ -25,6 +25,7 @@ import {
     type ReleaseScheduleRow,
 } from '@/lib/release-schedule-merge';
 import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
+import { GtmGlossary } from '@/components/GtmGlossary';
 import { EpicGaDateBadge } from '@/components/EpicGaDateBadge';
 import { addCalendarDaysToYmd } from '@/lib/date-utils';
 
@@ -50,15 +51,28 @@ type DbReleaseStageRow = {
 /** GA Cohort 2 date for the UI rollout timeline. Delegates to the shared utility in lib/date-utils. */
 const getCohort2DateForUiTimeline = getCohort2DateForTimeline;
 
-const COHORT_DATE_TOOLTIP = "Date that the feature has automatically been turned on or can manually be turned on (i.e. needs to be purchased or needs to opt in). All enablement materials have been created before this date. Communications have been sent or will be sent to customers and reference this date as the date the customer will have the feature available to them.";
-function CohortDateHeaderIcon() {
+const COHORT1_TOOLTIP = "Cohort 1 is the initial rollout to approximately 10–15% of the customer base. This is the date that the feature is first turned on for a subset of customers. All enablement materials must be ready before this date.";
+const GA_TOOLTIP = "General Availability (GA) means the feature is available to ALL customers. This is the date that the feature is fully rolled out across the entire customer base.";
+function Cohort1HeaderIcon() {
     return (
         <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
             <HoverCard.Target>
                 <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
             </HoverCard.Target>
             <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
-                {COHORT_DATE_TOOLTIP}
+                {COHORT1_TOOLTIP}
+            </HoverCard.Dropdown>
+        </HoverCard>
+    );
+}
+function GaHeaderIcon() {
+    return (
+        <HoverCard width={300} shadow="md" withArrow openDelay={100} closeDelay={200}>
+            <HoverCard.Target>
+                <IconInfoCircle size={14} style={{ cursor: 'help', color: 'var(--table-header-text-platinum, var(--color-platinum, #E8E6E3))', opacity: 0.85 }} />
+            </HoverCard.Target>
+            <HoverCard.Dropdown style={{ fontSize: 13, lineHeight: 1.5 }}>
+                {GA_TOOLTIP}
             </HoverCard.Dropdown>
         </HoverCard>
     );
@@ -1525,8 +1539,10 @@ function EpicsClient({
                                     <tr>
                                         {["Name", "GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
                                             <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Orgs" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {["Cohort 1", "GA"].includes(col) ? (
-                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                {col === "Cohort 1" ? (
+                                                    <div className="flex items-center gap-1">{col}<Cohort1HeaderIcon /></div>
+                                                ) : col === "GA" ? (
+                                                    <div className="flex items-center gap-1">{col}<GaHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
                                                 ) : col === "Internal Orgs" ? (
@@ -1612,6 +1628,7 @@ function EpicsClient({
                         marginBottom: 'var(--spacing-6)',
                         margin: 0
                     }}>Releases</Title>
+                    <GtmGlossary />
                     <SegmentedControl
                         value={releasesView}
                         onChange={(v) => setReleasesView((v as 'upcoming' | 'recent' | 'all') || 'upcoming')}
@@ -2158,8 +2175,10 @@ function EpicsClient({
                                     <tr>
                                         {["Name", "GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness", "Risk"].map((col) => (
                                             <th key={col} className={`${col === "Risk" ? "px-4 py-3 text-right" : "px-4 py-3 text-left"}${["GTM Orgs", "Internal Orgs", "Cohort 1", "GA", "Status", "Readiness"].includes(col) ? " hidden md:table-cell" : ""}${col === "GTM Orgs" || col === "Internal Orgs" ? " py-4" : ""}`} style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
-                                                {["Cohort 1", "GA"].includes(col) ? (
-                                                    <div className="flex items-center gap-1">{col}<CohortDateHeaderIcon /></div>
+                                                {col === "Cohort 1" ? (
+                                                    <div className="flex items-center gap-1">{col}<Cohort1HeaderIcon /></div>
+                                                ) : col === "GA" ? (
+                                                    <div className="flex items-center gap-1">{col}<GaHeaderIcon /></div>
                                                 ) : col === "GTM Orgs" ? (
                                                     <div className="flex items-center gap-1">{col}<GtmOrgsHeaderIcon /></div>
                                                 ) : col === "Internal Orgs" ? (
@@ -2568,8 +2587,8 @@ function EpicsClient({
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
                                                     <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><GtmOrgsColumnHeader defaultTargetYmd={getGroupGtmPlannedTargetYmd(group)} /></th>
                                                     <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><InternalReadinessColumnHeader defaultTargetYmd={getGroupInternalReadinessPlannedTargetYmd(group)} /></th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<Cohort1HeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<GaHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">
@@ -2643,8 +2662,8 @@ function EpicsClient({
                                                     <th className="px-4 py-3 text-left w-100" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Name</th>
                                                     <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><GtmOrgsColumnHeader defaultTargetYmd={getGroupGtmPlannedTargetYmd(group)} /></th>
                                                     <th className="hidden md:table-cell px-4 py-4 text-left" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><InternalReadinessColumnHeader defaultTargetYmd={getGroupInternalReadinessPlannedTargetYmd(group)} /></th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<CohortDateHeaderIcon /></div></th>
-                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<CohortDateHeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">Cohort 1<Cohort1HeaderIcon /></div></th>
+                                                    <th className="hidden md:table-cell px-4 py-3 text-left w-28" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}><div className="flex items-center gap-1">GA<GaHeaderIcon /></div></th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-24" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>Status</th>
                                                     <th className="hidden md:table-cell px-4 py-3 text-left w-32" style={{ fontSize: "12px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em", color: "#6B7280" }}>
                                                         <div className="flex items-center gap-1">

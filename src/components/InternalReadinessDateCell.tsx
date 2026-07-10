@@ -145,9 +145,9 @@ export function InternalReadinessDateCell({
     );
 
   if (!editable) {
-    if (!displayText && !confirmed) return <span>-</span>;
+    if (!displayText && !confirmed) return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 70 }}>-</span>;
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, minWidth: 70 }}>
         {displayText ? dateContent : null}
         {doneControl}
       </span>
