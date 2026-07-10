@@ -6,7 +6,7 @@ import { notifications } from "@mantine/notifications";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { DelegationModal, DelegationType } from "@/components/DelegationModal";
 import { CommentsModal } from "@/components/CommentsModal";
-import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 import {
     type CriterionDueDateStageRow,
@@ -1035,10 +1035,10 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     for (const item of allItems) {
       const dueDateStr = getItemDueDate(item);
       if (dueDateStr) {
-        const dueDate = new Date(dueDateStr);
-        dueDate.setHours(0, 0, 0, 0);
-        if (dueDate < today) {
-          overdueCount++;
+        const dueDate = parseDateOnlyLocal(dueDateStr);
+        if (dueDate && dueDate < today) {
+          const isIncomplete = item.status === 'NOT_SET';
+          if (isIncomplete) overdueCount++;
         }
       }
     }
@@ -1063,9 +1063,10 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
         items: group.items.filter((item) => {
           const dueDateStr = getItemDueDate(item);
           if (!dueDateStr) return false;
-          const dueDate = new Date(dueDateStr);
-          dueDate.setHours(0, 0, 0, 0);
-          return dueDate < today;
+          const dueDate = parseDateOnlyLocal(dueDateStr);
+          if (!dueDate) return false;
+          const isIncomplete = item.status === 'NOT_SET';
+          return dueDate < today && isIncomplete;
         }),
       }))
       .filter((group) => group.items.length > 0);
@@ -1849,16 +1850,16 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               </span>
                               {(() => {
                                 const dueDateStr = getItemDueDate(item);
-                                if (!dueDateStr) return null;
-                                const d = new Date(dueDateStr);
-                                if (isNaN(d.getTime())) return null;
+                                const formatted = formatDateOnlyForDisplay(dueDateStr);
+                                if (!formatted) return null;
+                                const d = parseDateOnlyLocal(dueDateStr)!;
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
-                                d.setHours(0, 0, 0, 0);
-                                const isOverdue = d < today;
+                                const isIncomplete = item.status === 'NOT_SET';
+                                const isOverdue = d < today && isIncomplete;
                                 return (
                                   <span style={{ color: isOverdue ? '#DC2626' : '#6B7280', fontWeight: isOverdue ? 500 : 400 }}>
-                                    Due {d.toLocaleDateString()}
+                                    Due {formatted}
                                   </span>
                                 );
                               })()}
@@ -1972,23 +1973,22 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                 );
                               }
 
-                              try {
-                                const dueDate = new Date(dueDateStr);
-                                if (isNaN(dueDate.getTime())) {
-                                  console.warn('Invalid due date:', dueDateStr, 'for item:', item.id);
-                                  return (
-                                    <span style={{
-                                      fontSize: 'var(--font-size-sm)',
-                                      color: 'var(--color-gray-500)',
-                                      fontFamily: 'var(--font-body)'
-                                    }}>-</span>
-                                  );
-                                }
-
+                              const formatted = formatDateOnlyForDisplay(dueDateStr);
+                              if (!formatted) {
+                                return (
+                                  <span style={{
+                                    fontSize: 'var(--font-size-sm)',
+                                    color: 'var(--color-gray-500)',
+                                    fontFamily: 'var(--font-body)'
+                                  }}>-</span>
+                                );
+                              }
+                              {
+                                const parsed = parseDateOnlyLocal(dueDateStr)!;
                                 const today = new Date();
                                 today.setHours(0, 0, 0, 0);
-                                dueDate.setHours(0, 0, 0, 0);
-                                const isOverdue = dueDate < today;
+                                const isIncomplete = item.status === 'NOT_SET';
+                                const isOverdue = parsed < today && isIncomplete;
 
                                 return (
                                   <span style={{
@@ -1996,17 +1996,8 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                                     color: isOverdue ? "#DC2626" : "#111827",
                                     fontWeight: isOverdue ? 500 : 'normal'
                                   }}>
-                                    {dueDate.toLocaleDateString()}
+                                    {formatted}
                                   </span>
-                                );
-                              } catch (e) {
-                                console.warn('Error parsing due date:', dueDateStr, e);
-                                return (
-                                  <span style={{
-                                    fontSize: 'var(--font-size-sm)',
-                                    color: 'var(--color-gray-500)',
-                                    fontFamily: 'var(--font-body)'
-                                  }}>-</span>
                                 );
                               }
                             })()}

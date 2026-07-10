@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { IconPencil } from "@tabler/icons-react";
 import { Code, Text } from "@mantine/core";
 import { UserDisplay } from "./UserDisplay";
+import { formatDateOnlyForDisplay } from "@/lib/date-utils";
 
 type EpicFieldsSidebarProps = {
     epic: any;
@@ -313,11 +314,7 @@ export default function EpicFieldsSidebar({ epic, ahaFieldsToLoad }: EpicFieldsS
             
             // Format date strings
             if (value.match(/^\d{4}-\d{2}-\d{2}/)) {
-                try {
-                    return new Date(value).toLocaleDateString();
-                } catch {
-                    return value;
-                }
+                return formatDateOnlyForDisplay(value) || value;
             }
         }
         

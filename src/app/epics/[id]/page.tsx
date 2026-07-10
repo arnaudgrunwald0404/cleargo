@@ -1346,10 +1346,10 @@ export default function EpicDetailPage() {
             const passesMyTasks = !filterMyTasks || (currentUserEmail && item.approverEmail && item.approverEmail.toLowerCase() === currentUserEmail.toLowerCase());
 
             const dueDate = item.condition_due_date || calculateDueDateForFilter(item);
-            const due = dueDate ? new Date(dueDate) : null;
-            if (due) due.setHours(0, 0, 0, 0);
+            const due = parseDateOnlyLocal(dueDate);
+
             const status = item.status || 'NOT_SET';
-            const isIncomplete = status === 'NOT_SET' || status === 'CONDITIONAL';
+            const isIncomplete = status === 'NOT_SET';
             const isOverdue = due ? due.getTime() < today.getTime() && isIncomplete : false;
             const isDueSoon = due ? due.getTime() >= today.getTime() && due.getTime() <= fourteenDaysFromNow.getTime() && isIncomplete : false;
 

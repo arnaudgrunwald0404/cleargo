@@ -13,6 +13,7 @@ import { canRolesPerform } from "@/lib/permissions";
 import { getCachedUsers } from "@/lib/cache/usersCache";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { GATE_STAGE_DUE_OFFSET_DAYS } from "@/lib/criterion-due-date";
+import { parseDateOnlyLocal, formatDateOnlyForDisplay } from "@/lib/date-utils";
 
 type MatrixItem = {
     id: string;
@@ -1472,14 +1473,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                     // Phase end date from any item in this phase (same as Release Timeline tooltips: short date)
                     const firstItemInPhase = phaseCategories.length > 0 ? catMap[phaseCategories[0]]?.[0] : null;
                     const phaseEndDateStr = firstItemInPhase?.condition_due_date
-                        ? (() => {
-                            try {
-                                const d = new Date(firstItemInPhase.condition_due_date);
-                                return isNaN(d.getTime()) ? null : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-                            } catch {
-                                return null;
-                            }
-                        })()
+                        ? formatDateOnlyForDisplay(firstItemInPhase.condition_due_date, { month: 'short', day: 'numeric' }) || null
                         : null;
                     return (
                         <div key={phase}>
@@ -1602,19 +1596,16 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                     const dueDateStr = item.condition_due_date;
                                                                                     const dueByStage = item.due_by_stage_name?.trim() || null;
                                                                                     const truncStyle: React.CSSProperties = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
-                                                                                    if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                                                                    const formatted = formatDateOnlyForDisplay(dueDateStr);
+                                                                                    if (!formatted) {
                                                                                         return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
                                                                                     }
-                                                                                    try {
-                                                                                        const dueDate = new Date(dueDateStr);
-                                                                                        if (isNaN(dueDate.getTime())) return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
-                                                                                        const today = new Date(); today.setHours(0, 0, 0, 0); dueDate.setHours(0, 0, 0, 0);
-                                                                                        const isOverdue = dueDate < today;
-                                                                                        const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>{dueDate.toLocaleDateString()}</span>;
-                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">{content}</Tooltip> : content;
-                                                                                    } catch {
-                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
-                                                                                    }
+                                                                                    const parsed = parseDateOnlyLocal(dueDateStr)!;
+                                                                                    const today = new Date(); today.setHours(0, 0, 0, 0);
+                                                                                    const isIncomplete = item.status === 'NOT_SET';
+                                                                                    const isOverdue = parsed < today && isIncomplete;
+                                                                                    const content = <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>{formatted}</span>;
+                                                                                    return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">{content}</Tooltip> : content;
                                                                                 })()}
                                                                             </td>
                                                                             <td className="px-4 py-3 text-sm cursor-pointer" style={{ width: '100px' }} onClick={() => handleOpenComments(item)}>
@@ -1915,48 +1906,30 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 const dueDateStr = item.condition_due_date;
                                                 const dueByStage = item.due_by_stage_name?.trim() || null;
                                                 const truncStyle: React.CSSProperties = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
-                                                // Check for null, undefined, or empty string
-                                                if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                                const formatted = formatDateOnlyForDisplay(dueDateStr);
+                                                if (!formatted) {
                                                     return dueByStage ? (
                                                         <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
                                                             <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
                                                         </Tooltip>
                                                     ) : '-';
                                                 }
+                                                const parsed = parseDateOnlyLocal(dueDateStr)!;
+                                                const today = new Date();
+                                                today.setHours(0, 0, 0, 0);
+                                                const isIncomplete = item.status === 'NOT_SET';
+                                                const isOverdue = parsed < today && isIncomplete;
 
-                                                try {
-                                                    const dueDate = new Date(dueDateStr);
-                                                    // Check if date is valid
-                                                    if (isNaN(dueDate.getTime())) {
-                                                        return dueByStage ? (
-                                                            <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                                <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
-                                                            </Tooltip>
-                                                        ) : '-';
-                                                    }
-
-                                                    const today = new Date();
-                                                    today.setHours(0, 0, 0, 0);
-                                                    dueDate.setHours(0, 0, 0, 0);
-                                                    const isOverdue = dueDate < today;
-
-                                                    const content = (
-                                                        <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>
-                                                            {dueDate.toLocaleDateString()}
-                                                        </span>
-                                                    );
-                                                    return dueByStage ? (
-                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                            {content}
-                                                        </Tooltip>
-                                                    ) : content;
-                                                } catch (e) {
-                                                    return dueByStage ? (
-                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                            <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
-                                                        </Tooltip>
-                                                    ) : '-';
-                                                }
+                                                const content = (
+                                                    <span className={isOverdue ? 'text-red-600' : 'text-gray-700'} style={truncStyle}>
+                                                        {formatted}
+                                                    </span>
+                                                );
+                                                return dueByStage ? (
+                                                    <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
+                                                        {content}
+                                                    </Tooltip>
+                                                ) : content;
                                             })()}
                                         </td>
                                         <td 
@@ -2188,29 +2161,20 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     const renderDueDate = () => {
                                         const dueDateStr = item.condition_due_date;
                                         const dueByStage = item.due_by_stage_name?.trim() || null;
-                                        if (!dueDateStr || (typeof dueDateStr === 'string' && dueDateStr.trim() === '')) {
+                                        const formatted = formatDateOnlyForDisplay(dueDateStr);
+                                        if (!formatted) {
                                             return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
                                         }
-                                        
-                                        try {
-                                            const dueDate = new Date(dueDateStr);
-                                            if (isNaN(dueDate.getTime())) {
-                                                return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
-                                            }
-                                            
-                                            const today = new Date();
-                                            today.setHours(0, 0, 0, 0);
-                                            dueDate.setHours(0, 0, 0, 0);
-                                            const isOverdue = dueDate < today;
-                                            
-                                            return (
-                                                <span className={isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}>
-                                                    {dueDate.toLocaleDateString()}
-                                                </span>
-                                            );
-                                        } catch (e) {
-                                            return dueByStage ? <span className="text-gray-500">Due by {dueByStage}</span> : '-';
-                                        }
+                                        const parsed = parseDateOnlyLocal(dueDateStr)!;
+                                        const today = new Date();
+                                        today.setHours(0, 0, 0, 0);
+                                        const isIncomplete = item.status === 'NOT_SET';
+                                        const isOverdue = parsed < today && isIncomplete;
+                                        return (
+                                            <span className={isOverdue ? 'text-red-600 font-semibold' : 'text-gray-700'}>
+                                                {formatted}
+                                            </span>
+                                        );
                                     };
                                     
                                     // Render comment preview
