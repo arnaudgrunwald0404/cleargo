@@ -1,6 +1,7 @@
 import type { EpicTier } from './epics';
 
 export type LaunchStatus = 'Planning' | 'In Progress' | 'Launched' | 'Post-Launch';
+export type LaunchTier = 'TIER_1' | 'TIER_2';
 export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE';
 
 export interface Launch {
@@ -13,6 +14,8 @@ export interface Launch {
   owner_email: string | null;
   readiness_pct: number;
   schedule_id: number | null;
+  brief_url: string | null;
+  feg_url: string | null;
   archived: boolean;
   created_at: string;
   updated_at: string;
@@ -84,5 +87,7 @@ export interface UpdateLaunchDTO {
   status?: LaunchStatus;
   owner_email?: string | null;
   schedule_id?: number | null;
+  brief_url?: string | null;
+  feg_url?: string | null;
   archived?: boolean;
 }

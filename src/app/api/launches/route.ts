@@ -64,6 +64,10 @@ async function postHandler(req: NextRequest) {
             return NextResponse.json({ error: 'Name is required' }, { status: 400 });
         }
 
+        if (tier && tier !== 'TIER_1' && tier !== 'TIER_2') {
+            return NextResponse.json({ error: 'Launches must be Tier 1 or Tier 2' }, { status: 400 });
+        }
+
         // Resolve owner_id from email if provided
         let owner_id = null;
         if (owner_email) {

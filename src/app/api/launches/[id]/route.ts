@@ -66,7 +66,7 @@ async function patchHandler(
         }
 
         const body = await req.json();
-        const allowedFields = ['name', 'tier', 'target_launch_date', 'status', 'owner_email', 'schedule_id', 'archived'];
+        const allowedFields = ['name', 'tier', 'target_launch_date', 'status', 'owner_email', 'schedule_id', 'brief_url', 'feg_url', 'archived'];
         const updates: Record<string, any> = { updated_at: new Date().toISOString() };
 
         for (const key of allowedFields) {
