@@ -192,6 +192,35 @@ export async function POST(
         }
       }
 
+      // Thread participants: like Slack threads, anyone who previously commented on this
+      // criterion or was @-mentioned earlier in the thread should hear about new replies,
+      // even if the new comment doesn't re-mention them.
+      const { data: priorComments } = await supabase
+        .from('criterion_comment')
+        .select('created_by, mentioned_user_ids')
+        .eq('launch_criterion_status_id', lcsId)
+        .neq('id', comment.id);
+
+      const threadParticipantIds = new Set<string>();
+      for (const pc of priorComments || []) {
+        if (pc.created_by && pc.created_by !== commenterId) threadParticipantIds.add(pc.created_by);
+        for (const mid of pc.mentioned_user_ids || []) {
+          if (mid !== commenterId) threadParticipantIds.add(mid);
+        }
+      }
+      for (const r of recipients) threadParticipantIds.delete(r.id);
+
+      if (threadParticipantIds.size > 0) {
+        const { data: participantUsers } = await supabase
+          .from('app_user')
+          .select('id, email, first_name, last_name, name, slack_handle')
+          .in('id', [...threadParticipantIds]);
+        for (const u of participantUsers || []) {
+          if (recipients.some((r) => r.id === u.id)) continue;
+          recipients.push(toSlackUser(u));
+        }
+      }
+
       let slackNotification: { sent: boolean; recipient_count: number; error?: string } | undefined;
       if (recipients.length > 0) {
         try {

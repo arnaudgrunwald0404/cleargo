@@ -342,6 +342,82 @@ describe('POST /api/epics/[id]/criteria/[lcsId]/comments — mention notificatio
     expect(recipients.some((r: any) => r.id === COMMENTER.id)).toBe(false);
   });
 
+  it('notifies a prior thread participant on a new reply, even without a re-mention', async () => {
+    const supabase = buildMockSupabase([
+      { data: COMMENTER, error: null },
+      { data: { id: 'comment-2', comment_text: 'reply' }, error: null },
+      { data: CRITERION_STATUS(null), error: null },
+      // prior comments on this thread: Alice commented earlier (no mentions on that comment)
+      { data: [{ created_by: ALICE.id, mentioned_user_ids: null }], error: null },
+      // fetch thread participant users
+      { data: [ALICE], error: null },
+    ]);
+    createClient.mockReturnValue(supabase);
+
+    const req = makeRequest({ comment_text: 'thanks for the update', mentioned_user_ids: [] });
+    await POST(req, { params: PARAMS });
+
+    expect(mockSendSlackNotification).toHaveBeenCalledTimes(1);
+    expect(mockSendSlackNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipient: expect.objectContaining({ id: ALICE.id }),
+      })
+    );
+  });
+
+  it('notifies a user who was @-mentioned earlier in the thread, even when a later reply does not re-mention them', async () => {
+    const supabase = buildMockSupabase([
+      { data: COMMENTER, error: null },
+      { data: { id: 'comment-2', comment_text: 'reply' }, error: null },
+      { data: CRITERION_STATUS(null), error: null },
+      // prior comment: someone else mentioned Bob
+      { data: [{ created_by: 'someone-else-id', mentioned_user_ids: [BOB.id] }], error: null },
+      { data: [BOB], error: null },
+    ]);
+    createClient.mockReturnValue(supabase);
+
+    const req = makeRequest({ comment_text: 'following up', mentioned_user_ids: [] });
+    await POST(req, { params: PARAMS });
+
+    expect(mockSendSlackNotification).toHaveBeenCalledTimes(1);
+    expect(mockSendSlackNotification).toHaveBeenCalledWith(
+      expect.objectContaining({
+        recipient: expect.objectContaining({ id: BOB.id }),
+      })
+    );
+  });
+
+  it('does not double-notify a thread participant who is also the decision owner or freshly @-mentioned', async () => {
+    const supabase = buildMockSupabase([
+      { data: COMMENTER, error: null },
+      { data: [{ id: ALICE.id }], error: null },
+      { data: { id: 'comment-2' }, error: null },
+      { data: CRITERION_STATUS(OWNER), error: null },
+      { data: [ALICE], error: null },
+      // prior comments: owner and Alice already participated
+      {
+        data: [
+          { created_by: OWNER.id, mentioned_user_ids: null },
+          { created_by: ALICE.id, mentioned_user_ids: null },
+        ],
+        error: null,
+      },
+      // this call should not even be needed since threadParticipantIds is empty after dedup,
+      // but keep a safe fallback
+      { data: [], error: null },
+    ]);
+    createClient.mockReturnValue(supabase);
+
+    const req = makeRequest({ comment_text: '@Alice hello', mentioned_user_ids: [ALICE.id] });
+    await POST(req, { params: PARAMS });
+
+    expect(mockSendSlackNotification).toHaveBeenCalledTimes(1);
+    const call = mockSendSlackNotification.mock.calls[0][0] as any;
+    const recipients: any[] = call.recipients ?? (call.recipient ? [call.recipient] : []);
+    expect(recipients.filter((r: any) => r.id === OWNER.id)).toHaveLength(1);
+    expect(recipients.filter((r: any) => r.id === ALICE.id)).toHaveLength(1);
+  });
+
   it('returns 400 when comment text is empty after stripping HTML', async () => {
     const supabase = buildMockSupabase([{ data: COMMENTER, error: null }]);
     createClient.mockReturnValue(supabase);

@@ -223,6 +223,32 @@ export default function CommentsPage() {
     fetchMyEpicsUnreadCount();
   };
 
+  // Threads where I wrote a comment, or was @-mentioned by someone else — regardless
+  // of which comment in the thread matches, the WHOLE thread qualifies so it can be
+  // expanded in full from the Comments page.
+  const involvingMeLcsIds = useMemo(() => {
+    if (!currentUserId) return new Set<string>();
+    const byLcs = new Map<string, Comment[]>();
+    for (const c of comments) {
+      const list = byLcs.get(c.launch_criterion_status_id) ?? [];
+      list.push(c);
+      byLcs.set(c.launch_criterion_status_id, list);
+    }
+    const ids = new Set<string>();
+    for (const [lcsId, threadComments] of byLcs) {
+      const involved = threadComments.some(
+        (c) => c.created_by?.id === currentUserId || c.mentioned_user_ids?.includes(currentUserId)
+      );
+      if (involved) ids.add(lcsId);
+    }
+    return ids;
+  }, [comments, currentUserId]);
+
+  const involvingMeCount = useMemo(
+    () => comments.filter((c) => involvingMeLcsIds.has(c.launch_criterion_status_id)).length,
+    [comments, involvingMeLcsIds]
+  );
+
   const filteredComments = useMemo(() => {
     let result = comments;
     if (activeTab === 'unread') {
@@ -231,28 +257,13 @@ export default function CommentsPage() {
     if (selectedStatus) {
       result = result.filter((c) => c.status_at_comment === selectedStatus);
     }
-    if (threadFilter === 'mine' && currentUserId) {
-      const byLcs = new Map<string, Comment[]>();
-      for (const c of result) {
-        const list = byLcs.get(c.launch_criterion_status_id) ?? [];
-        list.push(c);
-        byLcs.set(c.launch_criterion_status_id, list);
-      }
-      const myLcsIds = new Set<string>();
-      for (const [lcsId, threadComments] of byLcs) {
-        const sorted = [...threadComments].sort(
-          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-        );
-        const iStarted = sorted[0]?.created_by?.id === currentUserId;
-        const isMentioned = threadComments.some(
-          (c) => c.mentioned_user_ids?.includes(currentUserId)
-        );
-        if (iStarted || isMentioned) myLcsIds.add(lcsId);
-      }
-      result = result.filter((c) => myLcsIds.has(c.launch_criterion_status_id));
+    if (activeTab === 'involving-me') {
+      result = result.filter((c) => involvingMeLcsIds.has(c.launch_criterion_status_id));
+    } else if (threadFilter === 'mine' && currentUserId) {
+      result = result.filter((c) => involvingMeLcsIds.has(c.launch_criterion_status_id));
     }
     return result;
-  }, [comments, activeTab, selectedStatus, threadFilter, currentUserId]);
+  }, [comments, activeTab, selectedStatus, threadFilter, currentUserId, involvingMeLcsIds]);
 
   const STATUS_OPTIONS = [
     { value: 'GO', label: 'GO' },
@@ -329,6 +340,14 @@ export default function CommentsPage() {
                   </Badge>
                 )}
               </Tabs.Tab>
+              <Tabs.Tab value="involving-me">
+                Involving Me
+                {involvingMeCount > 0 && (
+                  <Badge size="xs" variant="light" ml="xs">
+                    {involvingMeCount}
+                  </Badge>
+                )}
+              </Tabs.Tab>
               <Tabs.Tab value="all">
                 All Comments
                 {comments.length > 0 && (
@@ -346,6 +365,165 @@ export default function CommentsPage() {
                 )}
               </Tabs.Tab>
             </Tabs.List>
+
+            <Tabs.Panel value="involving-me" pt="md">
+              <Stack gap="md">
+                {/* Filters */}
+                <Group mb="lg" align="flex-end" gap="sm">
+                  <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                    Filters:
+                  </Text>
+                  <Box
+                    style={{
+                      display: 'flex',
+                      flexWrap: 'wrap',
+                      alignItems: 'flex-end',
+                      gap: '16px',
+                      padding: '8px 0',
+                    }}
+                  >
+                    <Select
+                      placeholder="All Epics"
+                      data={epics}
+                      value={selectedEpicId}
+                      onChange={(value) => setSelectedEpicId(value || '')}
+                      clearable
+                      style={{ minWidth: 200 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <Select
+                      placeholder="All Statuses"
+                      data={STATUS_OPTIONS}
+                      value={selectedStatus}
+                      onChange={(value) => setSelectedStatus(value || '')}
+                      clearable
+                      style={{ minWidth: 160 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="Start Date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    <TextInput
+                      type="date"
+                      label="End Date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.currentTarget.value)}
+                      style={{ minWidth: 150 }}
+                      styles={{
+                        input: {
+                          borderRadius: 8,
+                          border: '1px solid var(--color-gray-300)',
+                          backgroundColor: 'var(--color-gray-50)',
+                          fontFamily: 'var(--font-body)',
+                        },
+                      }}
+                    />
+                    {(selectedEpicId || selectedStatus || startDate || endDate) && (
+                      <Button
+                        variant="subtle"
+                        size="xs"
+                        onClick={() => {
+                          setSelectedEpicId('');
+                          setSelectedStatus('');
+                          setStartDate('');
+                          setEndDate('');
+                        }}
+                      >
+                        Clear Filters
+                      </Button>
+                    )}
+                  </Box>
+                </Group>
+
+                <Group mb="md" justify="space-between">
+                  <Group gap="md">
+                    <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                      Comments you wrote, or where someone tagged you — full threads shown so you can catch up on replies.
+                    </Text>
+                    <Group gap="xs">
+                      <Text size="sm" c="dimmed" style={{ fontFamily: 'var(--font-body)' }}>
+                        View:
+                      </Text>
+                      <SegmentedControl
+                        value={viewMode}
+                        onChange={(v) => setViewMode(v as 'table' | 'threads')}
+                        data={[
+                          { label: 'Table', value: 'table' },
+                          { label: 'Threads', value: 'threads' },
+                        ]}
+                        size="xs"
+                      />
+                    </Group>
+                  </Group>
+                  {filteredComments.some((c) => !c.is_read) && (
+                    <Button
+                      size="xs"
+                      variant="filled"
+                      color="blue"
+                      leftSection={<IconChecks size={14} />}
+                      onClick={() =>
+                        handleMarkRead(
+                          filteredComments.filter((c) => !c.is_read).map((c) => c.id)
+                        )
+                      }
+                    >
+                      Mark all as read
+                    </Button>
+                  )}
+                </Group>
+
+                {/* Comments List */}
+                {loading ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}>
+                    <PurpleLoader />
+                  </div>
+                ) : viewMode === 'threads' ? (
+                  <CommentsThreadList
+                    comments={filteredComments}
+                    onMarkRead={handleMarkRead}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenThread={handleOpenCommentsModal}
+                    loading={loading}
+                    previewRepliesCount={3}
+                  />
+                ) : (
+                  <CommentsList
+                    comments={filteredComments}
+                    onMarkRead={handleMarkRead}
+                    onNavigateToEpic={handleNavigateToEpic}
+                    onOpenCommentsModal={handleOpenCommentsModal}
+                    loading={loading}
+                    showBulkActions={true}
+                  />
+                )}
+              </Stack>
+            </Tabs.Panel>
 
             <Tabs.Panel value="all" pt="md">
               <Stack gap="md">

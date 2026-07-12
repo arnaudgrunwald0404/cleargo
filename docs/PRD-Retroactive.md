@@ -748,7 +748,7 @@ The epic detail timeline renders phases as colored duration bars and milestones 
 - **Comment Attachments**: Attach files to comments
 - **Comment Notifications**: Notify relevant users of new comments
 - **@Mentions**: Users can @mention someone in a comment (type @ and pick from a user list). Mentioned users are stored and shown inline in the comment text.
-- **Slack for comments**: When a comment is added, the criterion’s decision owner is notified via Slack (if the commenter is not the owner). If the comment @mentions someone other than the owner, both the owner and the mentioned user receive the same notification in a single Slack thread (multi-party DM).
+- **Slack for comments**: When a comment is added, the criterion’s decision owner is notified via Slack (if the commenter is not the owner). If the comment @mentions someone other than the owner, both the owner and the mentioned user receive the same notification in a single Slack thread (multi-party DM). **Thread participation**: like Slack threads, anyone who previously commented on the criterion or was @-mentioned earlier in the thread also receives new-reply notifications, even if the latest comment doesn't re-mention them (the commenter themself is always excluded).
 
 #### 12.2 File Attachments
 - **Criterion Attachments**: Attach files to criteria
