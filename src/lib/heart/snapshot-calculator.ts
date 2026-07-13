@@ -299,7 +299,8 @@ async function calculateMetricValue(
         if (firstPeriod > 0) {
           value = Math.min(100, (secondPeriod / firstPeriod) * 100);
         } else {
-          value = 0;
+          // No baseline activity — retention not computable yet; null → PENDING, not a misleading 0%
+          value = null;
         }
         break;
       }
