@@ -24,6 +24,7 @@ import {
   Autocomplete,
   Tabs,
   Box,
+  Popover,
 } from '@mantine/core';
 import {
   IconAlertCircle,
@@ -38,6 +39,7 @@ import {
   IconWorldShare,
   IconWorldOff,
   IconExternalLink,
+  IconInfoCircle,
 } from '@tabler/icons-react';
 import { notifications } from '@mantine/notifications';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
@@ -741,9 +743,16 @@ function HeartMetricCard({
     ? periodValue
     : (latestSnapshot && latestSnapshot.value !== null ? latestSnapshot.value : null);
 
+  // Happiness: detect "no survey yet" so a baseline score is never presented as a measured result.
+  // Raw shape differs between live fetch (nested under happinessComposite) and stored snapshots (flat).
+  const isHappiness = category.id === 'happiness' || metric?.measurement_type === 'happiness_composite_score';
+  const rawSnapshotData = (latestSnapshot?.pendo_raw_data ?? {}) as Record<string, any>;
+  const happinessRaw = (rawSnapshotData.happinessComposite ?? rawSnapshotData) as Record<string, any>;
+  const happinessNoSurvey = isHappiness && value !== null && happinessRaw.surveySource === 'frustration_only';
+
   if (value !== null) {
     // Happiness = 0–100 score (inverse of frustration); show as whole number
-    if (category.id === 'happiness' || metric?.measurement_type === 'happiness_composite_score') {
+    if (isHappiness) {
       displayValue = value.toFixed(0);
       displayUnit = ' out of 100';
     } else if (historyUnit === 'completions' || historyUnit === 'frustration') {
@@ -759,6 +768,12 @@ function HeartMetricCard({
         ? rounded.toLocaleString()
         : String(rounded);
       displayUnit = metric.measurement_type === 'events_per_user_per_week' ? 'events/user/wk' : 'events per user';
+    } else if (metric?.measurement_type === 'unique_users_count') {
+      displayValue = Math.round(value).toLocaleString();
+      displayUnit = 'unique users';
+    } else if (metric?.measurement_type === 'unique_companies_count') {
+      displayValue = Math.round(value).toLocaleString();
+      displayUnit = 'accounts';
     } else {
       displayValue = value.toFixed(0);
     }
@@ -766,15 +781,87 @@ function HeartMetricCard({
 
   // Color by target status only (HEART framework: progress toward goals, not raw trend). Strict: green = on track, red = missed target, orange = at risk; no trend-based red/green.
   const status = latestSnapshot?.status;
+  // A baseline-only happiness score is not a measurement — render it neutral, never green.
   const valueColor =
+    happinessNoSurvey ? 'gray.6' :
     status === 'ON_TRACK' ? 'green.7' :
     status === 'MISSED' ? 'red.6' :
     status === 'AT_RISK' ? 'orange.6' :
     'gray.7';
+
+  const statusLabel =
+    value === null ? null :
+    happinessNoSurvey ? null :
+    status === 'ON_TRACK' ? 'On track' :
+    status === 'AT_RISK' ? 'At risk' :
+    status === 'MISSED' ? 'Behind target' :
+    status === 'PENDING' ? 'Awaiting data' :
+    null;
+  const statusColor =
+    status === 'ON_TRACK' ? 'green' :
+    status === 'AT_RISK' ? 'orange' :
+    status === 'MISSED' ? 'red' :
+    'gray';
+
+  const targetUnitSuffix = metric?.target_unit
+    ? (metric.target_unit === '%' ? '%' : ` ${metric.target_unit}`)
+    : (metric?.measurement_type?.includes('percentage') || metric?.measurement_type?.includes('rate') ? '%' : '');
+  const targetLabel = metric?.target_value != null
+    ? `Target ${metric.target_value}${targetUnitSuffix}${metric.target_timeframe_days ? ` in ${metric.target_timeframe_days}d` : ''}`
+    : null;
+
+  const infoDescription = item.metricContext?.description || null;
+  const infoRationale = metric?.ai_rationale || null;
+  const trackingItems = item.metricContext?.trackingItems;
+  const hasInfo = Boolean(infoDescription || infoRationale || (trackingItems && trackingItems.length > 0));
+
   return (
     <Paper withBorder p="md" h="100%" radius="md" bg="white" style={{ minWidth: 0 }}>
       <Stack gap={8} h="100%" justify="space-between" style={{ minWidth: 0 }}>
-        <Text size="sm" fw={600} c="dimmed">{category.name}</Text>
+        <Group gap={6} wrap="nowrap">
+          <Text size="sm" fw={600} c="dimmed">{category.name}</Text>
+          {hasInfo && (
+            <Popover width={340} position="bottom-start" withArrow shadow="md">
+              <Popover.Target>
+                <ActionIcon variant="subtle" color="gray" size="xs" aria-label={`What ${category.name} measures`}>
+                  <IconInfoCircle size={14} />
+                </ActionIcon>
+              </Popover.Target>
+              <Popover.Dropdown p="sm">
+                <Stack gap={8}>
+                  {infoDescription && (
+                    <div>
+                      <Text size="xs" fw={600} mb={2}>What this shows</Text>
+                      <Text size="xs" c="dimmed" style={{ lineHeight: 1.45 }}>{infoDescription}</Text>
+                    </div>
+                  )}
+                  {infoRationale && (
+                    <div>
+                      <Text size="xs" fw={600} mb={2}>Why this metric</Text>
+                      <Text size="xs" c="dimmed" style={{ lineHeight: 1.45 }}>{infoRationale}</Text>
+                    </div>
+                  )}
+                  {trackingItems && trackingItems.length > 0 && (
+                    <div>
+                      <Text size="xs" fw={600} mb={2}>Tracking</Text>
+                      {trackingItems.slice(0, 5).map((t) => (
+                        <Text key={t.id} size="xs" c="dimmed">
+                          {t.name}{t.type ? ` (${t.type})` : ''}
+                        </Text>
+                      ))}
+                      {trackingItems.length > 5 && (
+                        <Text size="xs" c="dimmed">+{trackingItems.length - 5} more</Text>
+                      )}
+                    </div>
+                  )}
+                  {item.metricContext?.segmentName && (
+                    <Text size="xs" c="dimmed">Segment: {item.metricContext.segmentName}</Text>
+                  )}
+                </Stack>
+              </Popover.Dropdown>
+            </Popover>
+          )}
+        </Group>
 
         <Stack gap={4}>
           <Text size="34px" fw={700} lh={1} c={valueColor}>
@@ -785,6 +872,9 @@ function HeartMetricCard({
               {item.liveError}
             </Text>
           )}
+          {value === null && !item.liveError && (
+            <Text size="xs" c="dimmed">Awaiting data</Text>
+          )}
           {(displayUnit || (metric?.measurement_type === 'completion_rate' || metric?.measurement_type === 'success_rate') && value != null) && (
             <Group gap={6} wrap="wrap">
               {displayUnit && <Text size="sm" c="dimmed">{displayUnit}</Text>}
@@ -793,13 +883,30 @@ function HeartMetricCard({
               )}
             </Group>
           )}
+          {happinessNoSurvey && (
+            <Text size="xs" c="dimmed" style={{ lineHeight: 1.35 }}>
+              No survey responses yet — based on frustration signals only
+            </Text>
+          )}
         </Stack>
 
-        {(isPostReleaseOnly || item.metricContext?.isPageToActionRate) && (
-          <Text size="xs" c="dimmed" lineClamp={1}>
-            {[isPostReleaseOnly ? 'Post-release' : null, item.metricContext?.isPageToActionRate ? 'Page→action rate' : null].filter(Boolean).join(' · ')}
-          </Text>
-        )}
+        <Stack gap={2}>
+          {(statusLabel || targetLabel) && (
+            <Group gap={6} wrap="wrap">
+              {statusLabel && (
+                <Badge size="xs" variant="light" color={statusColor}>{statusLabel}</Badge>
+              )}
+              {targetLabel && (
+                <Text size="xs" c="dimmed">{targetLabel}</Text>
+              )}
+            </Group>
+          )}
+          {(isPostReleaseOnly || item.metricContext?.isPageToActionRate) && (
+            <Text size="xs" c="dimmed" lineClamp={1}>
+              {[isPostReleaseOnly ? 'Post-release' : null, item.metricContext?.isPageToActionRate ? 'Page→action rate' : null].filter(Boolean).join(' · ')}
+            </Text>
+          )}
+        </Stack>
       </Stack>
     </Paper>
   );

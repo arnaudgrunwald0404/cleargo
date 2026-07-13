@@ -487,13 +487,17 @@ export async function fetchLiveMetricValue(
           }),
         ]);
         
+        let retentionDescription: string;
         if (firstPeriod > 0) {
           value = Math.min(100, (secondPeriod / firstPeriod) * 100);
+          retentionDescription = `Share of usage that carried over: activity in the last ${retentionDays} days (${secondPeriod.toFixed(1)}%) vs the ${retentionDays} days before (${firstPeriod.toFixed(1)}%). ${uniqueVis.toLocaleString()} unique users in the current period.`;
         } else {
-          value = 0;
+          // No baseline activity yet — retention cannot be computed. Report "awaiting data", not an alarming 0%.
+          value = null;
+          retentionDescription = `No activity recorded in the baseline period (${retentionDays * 2}–${retentionDays} days ago), so a return rate can't be computed yet. It needs at least ${retentionDays * 2} days of usage data.`;
         }
         metricContext = {
-          description: `${uniqueVis.toLocaleString()} users returned within ${retentionDays} days (period-over-period comparison)`,
+          description: retentionDescription,
           trackingEvents: eventNames,
           segmentName: resolvedSegmentName,
           descriptionScope: measurementPeriod,
