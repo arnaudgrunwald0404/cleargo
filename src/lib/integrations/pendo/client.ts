@@ -877,7 +877,8 @@ export class PendoClient {
    */
   async getPages(): Promise<Array<{ id: string; name: string; appId: string }>> {
     try {
-      const response = await this.request('/page', { method: 'GET' });
+      // ?expand=* returns pages across all applications (consistent with getFeatures)
+      const response = await this.request('/page?expand=*', { method: 'GET' });
 
       const source: any[] = Array.isArray(response) ? response : [];
       const pages: Array<{ id: string; name: string; appId: string }> = [];

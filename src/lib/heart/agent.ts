@@ -333,6 +333,8 @@ export interface HeartAgentResult {
   // Simple confidence assessment from AI
   dataConfidence?: PendoDataConfidenceLevel;
   dataConfidenceReason?: string;
+  /** True when the raw model output contained recommendations, even if validation later removed them. */
+  rawHadRecommendations?: boolean;
 }
 
 function isAiCreditOrAuthError(error: unknown): boolean {
@@ -470,10 +472,14 @@ export async function runHeartAgent(
       schema: heartRecommendationSchema,
       prompt,
     });
-    
+    console.log('[HeartAgent] raw model recommendations:', JSON.stringify(object));
+
     // Validate event/feature/page IDs exist in context
     const validatedRecommendations = validateRecommendations(object, context.pendo.events, context.pendo.features, context.pendo.pages);
-    
+    const rawHadRecommendations = Boolean(
+      object.engagement || object.adoption || object.retention || object.taskSuccess || object.happiness
+    );
+
     return {
       success: true,
       recommendations: validatedRecommendations,
@@ -481,6 +487,7 @@ export async function runHeartAgent(
       modelVersion: (model as any).modelId || 'ai-model',
       dataConfidence: object.dataConfidence as PendoDataConfidenceLevel | undefined,
       dataConfidenceReason: object.dataConfidenceReason,
+      rawHadRecommendations,
     };
   } catch (error) {
     console.error('Error running HEART agent:', error);
@@ -506,8 +513,9 @@ export async function runHeartAgent(
 /**
  * Validate that recommended event IDs exist in the available events or features
  * eventIds can be either: (1) an event name from availableEvents, or (2) a feature id from availableFeatures
+ * Feature/page names are resolved to their ids (exported for tests).
  */
-function validateRecommendations(
+export function validateRecommendations(
   recommendations: z.infer<typeof heartRecommendationSchema>,
   availableEvents: PendoEventForAgent[],
   availableFeatures: PendoFeatureForAgent[],
@@ -516,9 +524,35 @@ function validateRecommendations(
   const eventNames = new Set(availableEvents.map(e => e.name));
   const featureIds = new Set(availableFeatures.map(f => f.id));
   const pageIds = new Set(availablePages.map(p => p.id));
-  
+  // Models (especially when the user pastes feature names as context) sometimes
+  // return feature/page NAMES instead of ids. Resolve names to ids rather than
+  // silently dropping them — a dropped id looks to the user like "AI found nothing".
+  const eventNameByLower = new Map(availableEvents.map(e => [e.name.trim().toLowerCase(), e.name]));
+  const featureIdByName = new Map(availableFeatures.map(f => [f.name.trim().toLowerCase(), f.id]));
+  const pageIdByName = new Map(availablePages.map(p => [p.name.trim().toLowerCase(), p.id]));
+
+  const resolveEventId = (raw: string): string | null => {
+    const id = raw.trim();
+    if (eventNames.has(id) || featureIds.has(id) || pageIds.has(id)) return id;
+    const lower = id.toLowerCase();
+    return eventNameByLower.get(lower) ?? featureIdByName.get(lower) ?? pageIdByName.get(lower) ?? null;
+  };
+
   const filterValidEvents = (eventIds: string[]): string[] => {
-    return eventIds.filter(id => eventNames.has(id) || featureIds.has(id) || pageIds.has(id));
+    const resolved: string[] = [];
+    const dropped: string[] = [];
+    for (const raw of eventIds) {
+      const id = resolveEventId(raw);
+      if (id) {
+        if (!resolved.includes(id)) resolved.push(id);
+      } else {
+        dropped.push(raw);
+      }
+    }
+    if (dropped.length > 0) {
+      console.warn('[HeartAgent] validateRecommendations dropped unresolvable eventIds:', dropped);
+    }
+    return resolved;
   };
   
   const result: HeartAgentRecommendation = {};

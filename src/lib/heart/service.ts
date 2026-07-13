@@ -984,11 +984,14 @@ export async function setupHeartMetricsWithAI(
       const pageNames = (pendo.pages || []).slice(0, 10).map((p) => `${p.name}`);
       availableEventNames.push(...eventNames, ...featureNames, ...pageNames);
     }
+    const error = agentResult.rawHadRecommendations
+      ? 'AI recommended Pendo events/features, but none of the recommended ids matched entities in the connected Pendo subscription, so they were discarded. This is usually transient — retry the AI setup, or use Manual setup and pick the Features directly.'
+      : 'AI could not find relevant Pendo events, features, or pages for this epic. Many product features (e.g. AI Notetaker) are tracked as Pendo Features (tagged UI elements), not track events. Try manual setup and pick from Features, or add product-area context and retry.';
     return {
       config: null as any,
       metrics: [],
       recommendations: agentResult.recommendations,
-      error: 'AI could not find relevant Pendo events, features, or pages for this epic. Many product features (e.g. AI Notetaker) are tracked as Pendo Features (tagged UI elements), not track events. Try manual setup and pick from Features, or add product-area context and retry.',
+      error,
       availableEventNames: availableEventNames.length > 0 ? availableEventNames : undefined,
     };
   }
