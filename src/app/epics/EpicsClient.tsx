@@ -28,6 +28,7 @@ import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 import { GtmGlossary } from '@/components/GtmGlossary';
 import { EpicGaDateBadge } from '@/components/EpicGaDateBadge';
 import { addCalendarDaysToYmd } from '@/lib/date-utils';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface EpicsClientProps {
     initialEpics?: Epic[];
@@ -2719,7 +2720,7 @@ function EpicsClient({
                                                                 onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
                                                                 onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
                                                             >
-                                                                {epic.name}
+                                                                {getEpicDisplayName(epic)}
                                                             </Link>
                                                         </span>
                                                         <div className="flex items-center gap-1 mt-1" style={{ flexWrap: "wrap" }}>
@@ -2858,7 +2859,7 @@ function EpicsClient({
                                                             {canArchiveEpic && (
                                                                 <Tooltip label='Archive epic. This will set "ClearGO Candidate" to "No" in Aha.'>
                                                                     <button
-                                                                        onClick={() => handleArchiveClick(epic.id, epic.name)}
+                                                                        onClick={() => handleArchiveClick(epic.id, getEpicDisplayName(epic))}
                                                                         disabled={archivingEpicId === epic.id}
                                                                         className="text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed flex items-center shrink-0"
                                                                     >

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import { IconCheck, IconX, IconChevronDown } from "@tabler/icons-react";
+import { getEpicDisplayName } from "@/lib/epicDisplayName";
 
 interface EpicRow {
     id: string;
@@ -358,7 +359,7 @@ export default function LaunchScheduleSection() {
                                 {candidateEpics.map((epic) => (
                                     <tr key={epic.id} className="hover:bg-gray-50/50">
                                         <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                                            {epic.name}
+                                            {getEpicDisplayName(epic)}
                                         </td>
                                         <td className="px-4 py-2 text-sm text-gray-600">
                                             {parseModule(epic.product_component)}

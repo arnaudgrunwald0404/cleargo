@@ -12,6 +12,7 @@ import {
     IconChevronDown,
     IconChevronRight,
 } from "@tabler/icons-react";
+import { getEpicDisplayName } from "@/lib/epicDisplayName";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -50,6 +51,7 @@ interface EpicData {
     target_launch_date: string | null;
     risk_level: string | null;
     readiness_status: string | null;
+    aha_fields?: Record<string, any> | null;
 }
 
 function formatDate(d: string | null): string {
@@ -410,7 +412,7 @@ export default function GTMLaunchDetailPage() {
                                             }
                                         >
                                             <td className="px-4 py-2 text-sm font-medium text-gray-900">
-                                                {epic.name}
+                                                {getEpicDisplayName(epic)}
                                             </td>
                                             <td className="px-4 py-2">
                                                 <span

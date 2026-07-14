@@ -28,6 +28,7 @@ import { computeStageEndDatesByStageId } from "@/lib/releaseTimeline";
 import { buildCategoryStageFallbackMap, computeCriterionDueDateYmd } from "@/lib/criterion-due-date";
 import { Cohort1DateBadge } from "@/components/Cohort1DateBadge";
 import { getEpicTimelineAnchorYmd } from "@/lib/epic-cohort1-date";
+import { getEpicDisplayName } from "@/lib/epicDisplayName";
 import { GtmAccessDateCell } from "@/components/GtmAccessDateCell";
 import { InternalReadinessDateCell } from "@/components/InternalReadinessDateCell";
 import { getEpicGtmAccessDateYmd, getEpicInternalOrgsDateYmd, getEpicTimelineStageOverrides } from "@/lib/epic-rollout-dates";
@@ -1682,7 +1683,7 @@ export default function EpicDetailPage() {
                             fontWeight: 'var(--font-weight-bold)',
                             color: 'var(--color-gray-900)',
                             marginBottom: 'var(--spacing-2)'
-                        }}>{epic.name}</h1>
+                        }}>{getEpicDisplayName(epic)}</h1>
                         <div className="flex gap-3 items-center flex-wrap">
                             {pmOwner && pmOwner.email && (
                                 <Tooltip label="Product Owner" withArrow>
@@ -2113,7 +2114,7 @@ export default function EpicDetailPage() {
                                                     suggestedItems={suggestedItems}
                                                     onActionComplete={loadData}
                                                 />
-                                                <Matrix epicId={epic.id} epicName={epic.name} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} showNotApplicable={isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)} groupByPhase={filterMyTasks} />
+                                                <Matrix epicId={epic.id} epicName={getEpicDisplayName(epic)} epicStatus={epic.status} items={filteredMatrix} onUpdate={loadData} epic={epic} showNotApplicable={isEnabled(FEATURE_NOT_APPLICABLE, featureFlags)} groupByPhase={filterMyTasks} />
                                             </>
                                         );
                                     })()}
@@ -2127,7 +2128,7 @@ export default function EpicDetailPage() {
                             {activeTab === 'talktrack' && (
                                 <TalkTrackTab
                                     epicId={epic.id}
-                                    epicName={epic.name}
+                                    epicName={getEpicDisplayName(epic)}
                                     featureRef={(() => {
                                         const ref = (epic as any)?.aha_fields?.standard_fields?.reference_num ?? epic.jira_epic_key;
                                         return ref ? (ref.startsWith("[") ? ref : `[${ref}]`) : undefined;
@@ -2146,7 +2147,7 @@ export default function EpicDetailPage() {
                                 <Stack gap="xl">
                                     <HeartDashboard
                                         epicId={epic.id}
-                                        epicName={epic.name}
+                                        epicName={getEpicDisplayName(epic)}
                                         successConfig={successConfig}
                                         canConfigureSuccessMetrics={canConfigureSuccessMetrics}
                                         onSuccessConfigRefresh={fetchSuccessData}

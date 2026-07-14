@@ -21,6 +21,7 @@ import { PurpleLoader } from '@/components/PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { useRouter } from 'next/navigation';
 import { CommentsModal } from '@/components/CommentsModal';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface Comment {
   id: string;
@@ -50,7 +51,7 @@ interface Comment {
   launch_criterion_status_id: string;
 }
 
-type EpicsResponse = Array<{ id: string; name: string }>;
+type EpicsResponse = Array<{ id: string; name: string; aha_fields?: Record<string, any> | null }>;
 
 export default function CommentsPage() {
   const router = useRouter();
@@ -122,7 +123,7 @@ export default function CommentsPage() {
           { value: '', label: 'All Epics' },
           ...epicsArray.map((epic) => ({
             value: epic.id,
-            label: epic.name,
+            label: getEpicDisplayName(epic),
           })),
         ];
         setEpics(epicOptions);

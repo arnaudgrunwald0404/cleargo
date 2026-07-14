@@ -3,6 +3,7 @@
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { Epic } from '@/types/epics';
 import Link from 'next/link';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface EpicDashboardProps {
     initialEpics: Epic[];
@@ -144,7 +145,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                                             fontWeight: 'var(--font-weight-medium)',
                                             color: 'var(--color-gray-900)',
                                             fontFamily: 'var(--font-body)'
-                                        }}>{epic.name}</div>
+                                        }}>{getEpicDisplayName(epic)}</div>
                                         {epic.product_id && (
                                             <div style={{
                                                 fontSize: 'var(--font-size-xs)',

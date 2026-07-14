@@ -15,6 +15,7 @@ import {
 } from '@mantine/core';
 import { IconMessageCircle, IconChevronDown, IconChevronUp, IconCheck } from '@tabler/icons-react';
 import { UserDisplay } from './UserDisplay';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 export interface CommentForThread {
   id: string;
@@ -29,14 +30,14 @@ export interface CommentForThread {
     last_name?: string | null;
   };
   is_read: boolean;
-  epic: { id: string; name: string } | null;
+  epic: { id: string; name: string; aha_fields?: Record<string, any> | null } | null;
   criterion: { id: string; label: string; category?: string | null } | null;
   launch_criterion_status_id: string;
 }
 
 interface ThreadGroup {
   launch_criterion_status_id: string;
-  epic: { id: string; name: string };
+  epic: { id: string; name: string; aha_fields?: Record<string, any> | null };
   criterion: { id: string; label: string };
   comments: CommentForThread[];
   lastActivityAt: string;
@@ -300,7 +301,7 @@ function ThreadCard({ thread, onMarkRead, onNavigateToEpic, onOpenThread }: Thre
                 onClick={() => onNavigateToEpic(epic.id)}
               >
                 <Text size="sm" truncate style={{ textAlign: 'left', display: 'block' }}>
-                  {epic.name}
+                  {getEpicDisplayName(epic)}
                 </Text>
               </Button>
             )}

@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { IconMessageCircle, IconCheck, IconChecks } from '@tabler/icons-react';
 import { UserDisplay } from './UserDisplay';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface Comment {
   id: string;
@@ -35,6 +36,7 @@ interface Comment {
   epic: {
     id: string;
     name: string;
+    aha_fields?: Record<string, any> | null;
   } | null;
   criterion: {
     id: string;
@@ -255,7 +257,7 @@ export function CommentsList({
                   <Table.Td>
                     <Stack gap={2} align="flex-start">
                       {comment.epic ? (
-                        <Tooltip label={comment.epic.name}>
+                        <Tooltip label={getEpicDisplayName(comment.epic)}>
                           <Button
                             variant="subtle"
                             size="xs"
@@ -270,7 +272,7 @@ export function CommentsList({
                             }}
                           >
                             <Text size="sm" truncate style={{ maxWidth: 260 }}>
-                              {comment.epic.name}
+                              {getEpicDisplayName(comment.epic)}
                             </Text>
                           </Button>
                         </Tooltip>

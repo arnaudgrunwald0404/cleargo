@@ -106,7 +106,7 @@ export async function GET(
         // 4. Get linked epics
         const { data: epics } = await supabase
             .from("epic")
-            .select("id, name, tier, status, target_launch_date, risk_level, readiness_status")
+            .select("id, name, tier, status, target_launch_date, risk_level, readiness_status, aha_fields")
             .eq("launch_ref", launchRef)
             .or("archived.is.null,archived.eq.false");
 

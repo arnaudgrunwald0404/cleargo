@@ -6,6 +6,7 @@ import { IconSearch } from '@tabler/icons-react';
 import Link from 'next/link';
 import type { Epic } from '@/types/epics';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface EpicSearchProps {
   epics?: Epic[];
@@ -102,7 +103,7 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
     
     const query = searchQuery.toLowerCase().trim();
     return epics.filter(epic => {
-      const nameMatch = epic.name.toLowerCase().includes(query);
+      const nameMatch = getEpicDisplayName(epic).toLowerCase().includes(query);
       const refMatch = getReferenceNumber(epic).toLowerCase().includes(query);
       const ownerMatch = getPMOwner(epic).toLowerCase().includes(query);
       return nameMatch || refMatch || ownerMatch;
@@ -282,7 +283,7 @@ export function EpicSearch({ epics: providedEpics, className, fetchEpics = false
                         color: 'var(--color-gray-900)'
                       }}
                     >
-                      {epic.name}
+                      {getEpicDisplayName(epic)}
                     </Text>
                     <Text
                       size="xs"

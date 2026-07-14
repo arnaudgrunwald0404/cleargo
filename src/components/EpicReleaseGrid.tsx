@@ -9,6 +9,7 @@ import type { Epic } from '@/types/epics';
 import { PurpleLoader } from './PurpleLoader';
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { fetchStreamJSON } from '@/lib/fetch-stream';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 interface Release {
   id: number;
   release_name: string;
@@ -324,7 +325,7 @@ export function EpicReleaseGrid({ className }: EpicReleaseGridProps) {
                         key={epic.id}
                         label={
                           <div>
-                            <div style={{ fontWeight: 600 }}>{epic.name}</div>
+                            <div style={{ fontWeight: 600 }}>{getEpicDisplayName(epic)}</div>
                             <div style={{ fontSize: '11px', marginTop: '4px' }}>
                               {release.release_name}
                             </div>

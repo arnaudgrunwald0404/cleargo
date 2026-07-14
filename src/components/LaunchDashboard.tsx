@@ -3,6 +3,7 @@
 import { formatDateOnlyForDisplay } from '@/lib/date-utils';
 import { Epic } from '@/types/epics';
 import Link from 'next/link';
+import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
 interface EpicDashboardProps {
     initialEpics: Epic[];
@@ -54,7 +55,7 @@ export default function EpicDashboard({ initialEpics }: EpicDashboardProps) {
                             initialEpics.map((epic) => (
                                 <tr key={epic.id} className="!bg-white hover:bg-gray-50" style={{ backgroundColor: '#FFFFFF' }}>
                                     <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm font-medium text-gray-900">{epic.name}</div>
+                                        <div className="text-sm font-medium text-gray-900">{getEpicDisplayName(epic)}</div>
                                         {epic.product_id && (
                                             <div className="text-xs text-gray-500">Product ID: {epic.product_id}</div>
                                         )}

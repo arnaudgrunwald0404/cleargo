@@ -141,6 +141,7 @@ export async function getSettings(client?: SupabaseClient): Promise<AppSettings>
             aha_fields_to_load: [
                 'dev_backlog_pod',
                 'gtm_module',
+                'gtm_name',
                 'primary_goal',
                 'modernization_effort',
                 'csm_priority',
@@ -167,6 +168,7 @@ export async function getSettings(client?: SupabaseClient): Promise<AppSettings>
         data.aha_fields_to_load = [
             'dev_backlog_pod',
             'gtm_module',
+            'gtm_name',
             'primary_goal',
             'modernization_effort',
             'csm_priority',

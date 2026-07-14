@@ -77,7 +77,8 @@ export async function GET(req: NextRequest) {
           ),
           epic:epic_id(
             id,
-            name
+            name,
+            aha_fields
           )
         )
       `)
@@ -167,6 +168,7 @@ export async function GET(req: NextRequest) {
           epic: epic ? {
             id: epic.id,
             name: epic.name,
+            aha_fields: epic.aha_fields ?? null,
           } : null,
           criterion: criterion ? {
             id: criterion.id,
