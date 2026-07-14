@@ -325,6 +325,7 @@ export default function EpicFieldsSidebar({ epic, ahaFieldsToLoad }: EpicFieldsS
         // Special cases for field labels
         const labelMap: Record<string, string> = {
             'gtm_module': 'GTM Module',
+            'gtm_name': 'GTM Name',
             'cleargo_candidate': 'ClearGO Candidate',
             'revenue_risk_analysis': 'Revenue & Risk Analysis',
             'feature_walkthrough_demo': 'Feature Walkthrough/Demo',
