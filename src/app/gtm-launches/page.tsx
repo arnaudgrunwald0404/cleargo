@@ -22,6 +22,7 @@ import {
     IconPencil,
 } from "@tabler/icons-react";
 import type { Launch } from "@/types/launches";
+import { canRolesPerform } from "@/lib/permissions";
 
 interface LaunchRow extends Launch {
     launch_epic?: Array<{
@@ -116,6 +117,24 @@ export default function GTMLaunchesPage() {
     const [launches, setLaunches] = useState<LaunchRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState("active");
+    const [canManage, setCanManage] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/me", { credentials: "include" });
+                if (res.ok) {
+                    const data = await res.json();
+                    const roles = Array.isArray(data.user?.roles)
+                        ? data.user.roles
+                        : (data.user?.role ? [data.user.role] : []);
+                    setCanManage(canRolesPerform(roles, "launches.manage"));
+                }
+            } catch {
+                // leave canManage false
+            }
+        })();
+    }, []);
 
     // Create modal
     const [createOpen, setCreateOpen] = useState(false);
@@ -234,13 +253,15 @@ export default function GTMLaunchesPage() {
                             Manage launch readiness across your product portfolio
                         </p>
                     </div>
-                    <button
-                        onClick={() => setCreateOpen(true)}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-                    >
-                        <IconPlus size={16} />
-                        New Launch
-                    </button>
+                    {canManage && (
+                        <button
+                            onClick={() => setCreateOpen(true)}
+                            className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                        >
+                            <IconPlus size={16} />
+                            New Launch
+                        </button>
+                    )}
                 </div>
 
                 {/* Filter toggle */}
@@ -333,15 +354,17 @@ export default function GTMLaunchesPage() {
                                             </td>
                                             <td className="px-5 py-3.5 text-right">
                                                 <div className="relative inline-block">
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            setMenuOpenId(menuOpenId === l.id ? null : l.id);
-                                                        }}
-                                                        className="p-1 rounded hover:bg-gray-100 transition-colors"
-                                                    >
-                                                        <IconDotsVertical size={16} className="text-gray-400" />
-                                                    </button>
+                                                    {canManage && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                setMenuOpenId(menuOpenId === l.id ? null : l.id);
+                                                            }}
+                                                            className="p-1 rounded hover:bg-gray-100 transition-colors"
+                                                        >
+                                                            <IconDotsVertical size={16} className="text-gray-400" />
+                                                        </button>
+                                                    )}
                                                     {menuOpenId === l.id && (
                                                         <div
                                                             className="absolute right-0 top-8 z-20 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1"

@@ -103,6 +103,7 @@ export default function EpicDetailPage() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [canConfigureSuccessMetrics, setCanConfigureSuccessMetrics] = useState(false);
     const [canEditAccessDates, setCanEditAccessDates] = useState(false);
+    const [canManageLaunches, setCanManageLaunches] = useState(false);
     const [releaseScheduleStagesAll, setReleaseScheduleStagesAll] = useState<any[]>([]);
     const [uiRolloutStagesAll, setUiRolloutStagesAll] = useState<any[]>([]);
     const isMobile = useMediaQuery("(max-width: 768px)");
@@ -190,6 +191,7 @@ export default function EpicDetailPage() {
                 const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
                 const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                 setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
+                setCanManageLaunches(canRolesPerform(userRoles, 'launches.manage'));
                 console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
                 setIsAdmin(adminStatus);
                 setCanConfigureSuccessMetrics(adminStatus);
@@ -1136,6 +1138,7 @@ export default function EpicDetailPage() {
                     const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                     setCanConfigureSuccessMetrics(adminStatus);
                     setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
+                    setCanManageLaunches(canRolesPerform(userRoles, 'launches.manage'));
                     console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
                     setIsAdmin(adminStatus);
                 }
@@ -1867,7 +1870,7 @@ export default function EpicDetailPage() {
                                     value: l.id,
                                     label: l.name,
                                 }))}
-                                disabled={updatingLaunch}
+                                disabled={!canManageLaunches || updatingLaunch}
                                 clearable
                                 searchable
                                 size="xs"

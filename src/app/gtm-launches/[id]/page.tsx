@@ -27,6 +27,7 @@ import {
     IconSearch,
 } from "@tabler/icons-react";
 import type { LaunchStatus } from "@/types/launches";
+import { canRolesPerform } from "@/lib/permissions";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -109,6 +110,26 @@ export default function GTMLaunchDetailPage() {
     const [loading, setLoading] = useState(true);
     const [updating, setUpdating] = useState<string | null>(null);
     const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
+    const [canManage, setCanManage] = useState(false);
+    const [canToggleTasks, setCanToggleTasks] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/me", { credentials: "include" });
+                if (res.ok) {
+                    const data = await res.json();
+                    const roles = Array.isArray(data.user?.roles)
+                        ? data.user.roles
+                        : (data.user?.role ? [data.user.role] : []);
+                    setCanManage(canRolesPerform(roles, "launches.manage"));
+                    setCanToggleTasks(canRolesPerform(roles, "launchCriteria.status.update"));
+                }
+            } catch {
+                // leave permissions false
+            }
+        })();
+    }, []);
 
     // Link epic modal
     const [linkModalOpen, setLinkModalOpen] = useState(false);
@@ -405,6 +426,7 @@ export default function GTMLaunchDetailPage() {
                             value={launch.tier || null}
                             onChange={(val) => patchLaunch("tier", val)}
                             clearable
+                            disabled={!canManage}
                         />
                         <Select
                             label="Status"
@@ -417,6 +439,7 @@ export default function GTMLaunchDetailPage() {
                             ]}
                             value={launch.status}
                             onChange={(val) => val && patchLaunch("status", val)}
+                            disabled={!canManage}
                         />
                         <DateInput
                             label="Target Launch Date"
@@ -427,6 +450,7 @@ export default function GTMLaunchDetailPage() {
                                 patchLaunch("target_launch_date", d ? d.toISOString().split("T")[0] : null);
                             }}
                             clearable
+                            disabled={!canManage}
                         />
                         <TextInput
                             label="Owner"
@@ -438,6 +462,7 @@ export default function GTMLaunchDetailPage() {
                                 const val = e.currentTarget.value.trim() || null;
                                 if (val !== launch.owner_email) patchLaunch("owner_email", val);
                             }}
+                            disabled={!canManage}
                         />
                         <div>
                             <TextInput
@@ -450,6 +475,7 @@ export default function GTMLaunchDetailPage() {
                                     const val = e.currentTarget.value.trim() || null;
                                     if (val !== launch.brief_url) patchLaunch("brief_url", val);
                                 }}
+                                disabled={!canManage}
                                 rightSection={
                                     launch.brief_url ? (
                                         <a href={launch.brief_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
@@ -470,6 +496,7 @@ export default function GTMLaunchDetailPage() {
                                     const val = e.currentTarget.value.trim() || null;
                                     if (val !== launch.feg_url) patchLaunch("feg_url", val);
                                 }}
+                                disabled={!canManage}
                                 rightSection={
                                     launch.feg_url ? (
                                         <a href={launch.feg_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
@@ -528,7 +555,7 @@ export default function GTMLaunchDetailPage() {
                                                                 item.status
                                                             )
                                                         }
-                                                        disabled={updating === item.criterion_id}
+                                                        disabled={!canToggleTasks || updating === item.criterion_id}
                                                         className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
                                                         title={`Status: ${item.status.replace(/_/g, " ")} — Click to cycle`}
                                                     >
@@ -572,13 +599,15 @@ export default function GTMLaunchDetailPage() {
                         <h2 className="text-sm font-semibold text-gray-700">
                             Linked Epics ({epics.length})
                         </h2>
-                        <button
-                            onClick={openLinkModal}
-                            className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-colors"
-                        >
-                            <IconLink size={14} />
-                            Link Epic
-                        </button>
+                        {canManage && (
+                            <button
+                                onClick={openLinkModal}
+                                className="flex items-center gap-1 text-sm text-indigo-600 hover:text-indigo-700 font-medium transition-colors"
+                            >
+                                <IconLink size={14} />
+                                Link Epic
+                            </button>
+                        )}
                     </div>
 
                     {epics.length === 0 ? (
@@ -637,16 +666,18 @@ export default function GTMLaunchDetailPage() {
                                                 {formatDate(epic.target_launch_date ?? null)}
                                             </td>
                                             <td className="px-4 py-2">
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        unlinkEpic(epic.id);
-                                                    }}
-                                                    className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
-                                                    title="Unlink epic"
-                                                >
-                                                    <IconX size={14} />
-                                                </button>
+                                                {canManage && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            unlinkEpic(epic.id);
+                                                        }}
+                                                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                                                        title="Unlink epic"
+                                                    >
+                                                        <IconX size={14} />
+                                                    </button>
+                                                )}
                                             </td>
                                         </tr>
                                     ))}
