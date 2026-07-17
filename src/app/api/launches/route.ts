@@ -85,6 +85,7 @@ async function postHandler(req: NextRequest) {
                 name: name.trim(),
                 tier: tier || null,
                 target_launch_date: target_launch_date || null,
+                status: 'Planning',
                 owner_id,
                 owner_email: owner_email?.toLowerCase() || null,
                 schedule_id: schedule_id || null,
