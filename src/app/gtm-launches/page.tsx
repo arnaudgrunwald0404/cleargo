@@ -127,7 +127,7 @@ export default function GTMLaunchesPage() {
 
     const fetchLaunches = useCallback(async () => {
         try {
-            const qs = filter === "all" ? "?include_archived=true" : "";
+            const qs = filter === "all" || filter === "archived" ? "?include_archived=true" : "";
             const res = await fetch(`/api/launches${qs}`);
             if (res.ok) {
                 const data = await res.json();

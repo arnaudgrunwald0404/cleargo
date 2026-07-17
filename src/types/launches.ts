@@ -7,7 +7,9 @@ export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE';
 export interface Launch {
   id: string;
   name: string;
-  tier: EpicTier | null;
+  // Launch tier is independent of epic tier: several TIER_3 epics can bundle
+  // into a TIER_1/TIER_2 marketing launch. Launches are only ever T1 or T2.
+  tier: LaunchTier | null;
   target_launch_date: string | null;
   status: LaunchStatus;
   owner_id: string | null;
@@ -74,7 +76,7 @@ export interface LaunchCriterionStatus {
 
 export interface CreateLaunchDTO {
   name: string;
-  tier?: EpicTier;
+  tier?: LaunchTier;
   target_launch_date?: string;
   owner_email?: string;
   schedule_id?: number;
@@ -82,7 +84,7 @@ export interface CreateLaunchDTO {
 
 export interface UpdateLaunchDTO {
   name?: string;
-  tier?: EpicTier | null;
+  tier?: LaunchTier | null;
   target_launch_date?: string | null;
   status?: LaunchStatus;
   owner_email?: string | null;

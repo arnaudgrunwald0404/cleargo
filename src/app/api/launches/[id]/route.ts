@@ -66,6 +66,9 @@ async function patchHandler(
         }
 
         const body = await req.json();
+        if ('tier' in body && body.tier !== null && body.tier !== 'TIER_1' && body.tier !== 'TIER_2') {
+            return NextResponse.json({ error: 'tier must be TIER_1 or TIER_2' }, { status: 400 });
+        }
         const allowedFields = ['name', 'tier', 'target_launch_date', 'status', 'owner_email', 'schedule_id', 'brief_url', 'feg_url', 'archived'];
         const updates: Record<string, any> = { updated_at: new Date().toISOString() };
 
