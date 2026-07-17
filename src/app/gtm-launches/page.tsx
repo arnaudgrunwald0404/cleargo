@@ -11,6 +11,7 @@ import {
     Stack,
     Group,
     SegmentedControl,
+    Menu,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
@@ -141,9 +142,6 @@ export default function GTMLaunchesPage() {
     const [formData, setFormData] = useState(EMPTY_FORM);
     const [creating, setCreating] = useState(false);
 
-    // Row action menu
-    const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
-
     const fetchLaunches = useCallback(async () => {
         try {
             const qs = filter === "all" || filter === "archived" ? "?include_archived=true" : "";
@@ -204,7 +202,6 @@ export default function GTMLaunchesPage() {
     };
 
     const handleArchiveToggle = async (launch: LaunchRow) => {
-        setMenuOpenId(null);
         const newArchived = !launch.archived;
         try {
             const res = await fetch(`/api/launches/${launch.id}`, {
@@ -353,52 +350,32 @@ export default function GTMLaunchesPage() {
                                                 {readinessBadge(l.readiness_pct)}
                                             </td>
                                             <td className="px-5 py-3.5 text-right">
-                                                <div className="relative inline-block">
-                                                    {canManage && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                setMenuOpenId(menuOpenId === l.id ? null : l.id);
-                                                            }}
-                                                            className="p-1 rounded hover:bg-gray-100 transition-colors"
-                                                        >
-                                                            <IconDotsVertical size={16} className="text-gray-400" />
-                                                        </button>
-                                                    )}
-                                                    {menuOpenId === l.id && (
-                                                        <div
-                                                            className="absolute right-0 top-8 z-20 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
+                                                {canManage && (
+                                                    <Menu position="bottom-end" width={160} shadow="md">
+                                                        <Menu.Target>
                                                             <button
-                                                                onClick={() => {
-                                                                    setMenuOpenId(null);
-                                                                    router.push(`/gtm-launches/${l.id}`);
-                                                                }}
-                                                                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                className="p-1 rounded hover:bg-gray-100 transition-colors"
                                                             >
-                                                                <IconPencil size={14} />
+                                                                <IconDotsVertical size={16} className="text-gray-400" />
+                                                            </button>
+                                                        </Menu.Target>
+                                                        <Menu.Dropdown onClick={(e) => e.stopPropagation()}>
+                                                            <Menu.Item
+                                                                leftSection={<IconPencil size={14} />}
+                                                                onClick={() => router.push(`/gtm-launches/${l.id}`)}
+                                                            >
                                                                 Edit
-                                                            </button>
-                                                            <button
+                                                            </Menu.Item>
+                                                            <Menu.Item
+                                                                leftSection={l.archived ? <IconArchiveOff size={14} /> : <IconArchive size={14} />}
                                                                 onClick={() => handleArchiveToggle(l)}
-                                                                className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                                                             >
-                                                                {l.archived ? (
-                                                                    <>
-                                                                        <IconArchiveOff size={14} />
-                                                                        Restore
-                                                                    </>
-                                                                ) : (
-                                                                    <>
-                                                                        <IconArchive size={14} />
-                                                                        Archive
-                                                                    </>
-                                                                )}
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                                {l.archived ? "Restore" : "Archive"}
+                                                            </Menu.Item>
+                                                        </Menu.Dropdown>
+                                                    </Menu>
+                                                )}
                                             </td>
                                         </tr>
                                     );
