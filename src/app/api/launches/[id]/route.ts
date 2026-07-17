@@ -5,6 +5,7 @@ import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
 import { calculateLaunchReadiness } from '@/lib/launch-readiness';
+import { launchCriterionApplies, tMinusDueDate } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +95,13 @@ async function patchHandler(
             }
         }
 
+        // Snapshot the pre-update launch so tier/date changes can sync the checklist
+        const { data: before } = await supabase
+            .from('launch')
+            .select('tier, target_launch_date')
+            .eq('id', id)
+            .single();
+
         const { data, error } = await supabase
             .from('launch')
             .update(updates)
@@ -103,6 +111,82 @@ async function patchHandler(
 
         if (error) {
             return NextResponse.json({ error: error.message }, { status: 500 });
+        }
+
+        // Tier drives the checklist: on tier change, add newly-applicable
+        // criteria and drop no-longer-applicable ones that are still untouched.
+        if (before && 'tier' in updates && data.tier !== before.tier) {
+            const { data: templates } = await supabase
+                .from('criterion')
+                .select('id, tier_applicability, default_owner_email, default_due_offset_days')
+                .eq('context', 'launch')
+                .eq('is_active', true);
+            const { data: tasks } = await supabase
+                .from('launch_criterion_status')
+                .select('id, criterion_id, status')
+                .eq('launch_id', id);
+
+            const applicableIds = new Set(
+                (templates || [])
+                    .filter((t) => launchCriterionApplies(t.tier_applicability, data.tier))
+                    .map((t) => t.id)
+            );
+            const haveIds = new Set((tasks || []).map((t) => t.criterion_id));
+
+            const toAdd = (templates || [])
+                .filter((t) => applicableIds.has(t.id) && !haveIds.has(t.id))
+                .map((t) => ({
+                    launch_id: id,
+                    criterion_id: t.id,
+                    status: 'NOT_STARTED',
+                    owner_email: t.default_owner_email || null,
+                    due_date: tMinusDueDate(data.target_launch_date, t.default_due_offset_days),
+                }));
+            if (toAdd.length > 0) {
+                await supabase.from('launch_criterion_status').insert(toAdd);
+            }
+
+            const toRemove = (tasks || [])
+                .filter((t) => !applicableIds.has(t.criterion_id) && t.status === 'NOT_STARTED')
+                .map((t) => t.id);
+            if (toRemove.length > 0) {
+                await supabase.from('launch_criterion_status').delete().in('id', toRemove);
+            }
+        }
+
+        // T-minus reflow: when the target launch date moves, recompute due dates
+        // for tasks still sitting at their derived value (or empty). Manually
+        // overridden dates are left alone.
+        if (
+            before &&
+            'target_launch_date' in updates &&
+            data.target_launch_date &&
+            data.target_launch_date !== before.target_launch_date
+        ) {
+            const { data: tasks } = await supabase
+                .from('launch_criterion_status')
+                .select('id, due_date, criterion:criterion(default_due_offset_days)')
+                .eq('launch_id', id);
+
+            const groups = new Map<string, string[]>();
+            for (const t of tasks || []) {
+                const criterion = t.criterion as unknown as { default_due_offset_days: number | null } | null;
+                const offset = criterion?.default_due_offset_days;
+                if (offset == null) continue;
+                const oldDerived = tMinusDueDate(before.target_launch_date, offset);
+                if (t.due_date !== null && t.due_date !== oldDerived) continue;
+                const newDerived = tMinusDueDate(data.target_launch_date, offset);
+                if (!newDerived || newDerived === t.due_date) continue;
+                const ids = groups.get(newDerived) || [];
+                ids.push(t.id);
+                groups.set(newDerived, ids);
+            }
+            for (const [due, ids] of groups) {
+                await supabase
+                    .from('launch_criterion_status')
+                    .update({ due_date: due })
+                    .in('id', ids);
+            }
         }
 
         return NextResponse.json(data);
