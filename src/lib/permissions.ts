@@ -289,7 +289,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "releaseStages.manage": ["PRODUCT_OPS", "CPO"],
   "releases.manage": ["PRODUCT_OPS", "CPO"],
   "launches.view": ["PMM", "CPO", "PRODUCT_OPS"],
-  "launches.manage": ["PMM", "CPO", "PRODUCT_OPS"],
+  "launches.manage": ["PMM"],
   "launchCriteria.create": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.update": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.delete": ["PMM", "CPO", "PRODUCT_OPS"],

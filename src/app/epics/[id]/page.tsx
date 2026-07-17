@@ -103,9 +103,15 @@ export default function EpicDetailPage() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [canConfigureSuccessMetrics, setCanConfigureSuccessMetrics] = useState(false);
     const [canEditAccessDates, setCanEditAccessDates] = useState(false);
+    const [canManageLaunches, setCanManageLaunches] = useState(false);
     const [releaseScheduleStagesAll, setReleaseScheduleStagesAll] = useState<any[]>([]);
     const [uiRolloutStagesAll, setUiRolloutStagesAll] = useState<any[]>([]);
     const isMobile = useMediaQuery("(max-width: 768px)");
+
+    // Launch assignment
+    const [availableLaunches, setAvailableLaunches] = useState<Array<{ id: string; name: string; tier: string | null }>>([]);
+    const [assignedLaunchId, setAssignedLaunchId] = useState<string | null>(null);
+    const [updatingLaunch, setUpdatingLaunch] = useState(false);
 
     // Memoize status options based on admin status
     const statusOptions = useMemo(() => {
@@ -185,6 +191,7 @@ export default function EpicDetailPage() {
                 const userRoles = Array.isArray(rawRoles) ? rawRoles : (rawRoles != null ? [String(rawRoles)] : []);
                 const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                 setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
+                setCanManageLaunches(canRolesPerform(userRoles, 'launches.manage'));
                 console.log('Setting isAdmin in loadData:', adminStatus, 'for roles:', userRoles);
                 setIsAdmin(adminStatus);
                 setCanConfigureSuccessMetrics(adminStatus);
@@ -1131,6 +1138,7 @@ export default function EpicDetailPage() {
                     const adminStatus = canRolesPerform(userRoles, 'settings.successMeasurement.update');
                     setCanConfigureSuccessMetrics(adminStatus);
                     setCanEditAccessDates(canRolesPerform(userRoles, 'launch.accessDates.update'));
+                    setCanManageLaunches(canRolesPerform(userRoles, 'launches.manage'));
                     console.log('Setting isAdmin:', adminStatus, 'for roles:', userRoles);
                     setIsAdmin(adminStatus);
                 }
@@ -1183,6 +1191,29 @@ export default function EpicDetailPage() {
             loadDataInProgressRef.current = false;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [id]);
+
+    // Fetch available launches and current epic's launch assignment
+    useEffect(() => {
+        if (!id) return;
+        (async () => {
+            try {
+                const [launchesRes, epicLaunchRes] = await Promise.all([
+                    fetch('/api/launches'),
+                    fetch(`/api/epics/${id}/launch`),
+                ]);
+                if (launchesRes.ok) {
+                    const data = await launchesRes.json();
+                    setAvailableLaunches((data.launches || []).filter((l: any) => !l.archived));
+                }
+                if (epicLaunchRes.ok) {
+                    const data = await epicLaunchRes.json();
+                    setAssignedLaunchId(data.launch_id || null);
+                }
+            } catch {
+                // non-critical — silently ignore
+            }
+        })();
     }, [id]);
 
     // Update threshold when epic tier changes
@@ -1573,6 +1604,47 @@ export default function EpicDetailPage() {
         }
     }
 
+    async function handleLaunchAssignment(newLaunchId: string | null) {
+        if (!id) return;
+        const prevLaunchId = assignedLaunchId;
+        setUpdatingLaunch(true);
+        setAssignedLaunchId(newLaunchId);
+
+        try {
+            if (prevLaunchId) {
+                await fetch(`/api/launches/${prevLaunchId}/epics?epic_id=${id}`, { method: 'DELETE' });
+            }
+            if (newLaunchId) {
+                const res = await fetch(`/api/launches/${newLaunchId}/epics`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ epic_id: id }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ error: 'Failed to assign launch' }));
+                    throw new Error(err.error);
+                }
+            }
+            const launchName = newLaunchId
+                ? availableLaunches.find((l) => l.id === newLaunchId)?.name
+                : null;
+            notifications.show({
+                message: launchName ? `Assigned to "${launchName}"` : 'Launch assignment removed',
+                color: 'green',
+                autoClose: 1500,
+            });
+        } catch (error: any) {
+            setAssignedLaunchId(prevLaunchId);
+            notifications.show({
+                title: 'Error',
+                message: error.message || 'Failed to update launch assignment',
+                color: 'red',
+            });
+        } finally {
+            setUpdatingLaunch(false);
+        }
+    }
+
     async function retryInstantiate() {
         if (!id) return;
         setInstantiating(true);
@@ -1790,6 +1862,21 @@ export default function EpicDetailPage() {
                                     />
                                 </Tooltip>
                             </div>
+                            <Select
+                                value={assignedLaunchId}
+                                onChange={handleLaunchAssignment}
+                                placeholder="Launch"
+                                data={availableLaunches.map((l) => ({
+                                    value: l.id,
+                                    label: l.name,
+                                }))}
+                                disabled={!canManageLaunches || updatingLaunch}
+                                clearable
+                                searchable
+                                size="xs"
+                                style={{ width: 180 }}
+                                nothingFoundMessage="No launches"
+                            />
 
                         </div>
                     </div>
