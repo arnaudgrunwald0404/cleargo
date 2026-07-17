@@ -4,6 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
+import { launchCriterionApplies, tMinusDueDate } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -97,29 +98,26 @@ async function postHandler(req: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        // Auto-instantiate launch criteria from criterion templates where context = 'launch'
+        // Auto-instantiate launch criteria from criterion templates where context = 'launch'.
+        // Tier drives the checklist: only templates applicable to the launch tier load.
         const { data: templates } = await supabase
             .from('criterion')
-            .select('id, default_owner_email, default_due_offset_days')
+            .select('id, tier_applicability, default_owner_email, default_due_offset_days')
             .eq('context', 'launch')
             .eq('is_active', true);
 
-        if (templates && templates.length > 0) {
-            const statusRows = templates.map((t) => {
-                let due_date: string | null = null;
-                if (target_launch_date && t.default_due_offset_days) {
-                    const d = new Date(target_launch_date);
-                    d.setDate(d.getDate() - t.default_due_offset_days);
-                    due_date = d.toISOString().split('T')[0];
-                }
-                return {
-                    launch_id: launch.id,
-                    criterion_id: t.id,
-                    status: 'NOT_STARTED',
-                    owner_email: t.default_owner_email || null,
-                    due_date,
-                };
-            });
+        const applicable = (templates || []).filter((t) =>
+            launchCriterionApplies(t.tier_applicability, launch.tier)
+        );
+
+        if (applicable.length > 0) {
+            const statusRows = applicable.map((t) => ({
+                launch_id: launch.id,
+                criterion_id: t.id,
+                status: 'NOT_STARTED',
+                owner_email: t.default_owner_email || null,
+                due_date: tMinusDueDate(target_launch_date, t.default_due_offset_days),
+            }));
 
             await supabase.from('launch_criterion_status').insert(statusRows);
         }
