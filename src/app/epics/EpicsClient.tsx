@@ -2839,15 +2839,44 @@ function EpicsClient({
                                                                         {epic.risk_level}
                                                                     </span>
                                                                 )}
-                                                                {(epic.criteria_red_flag_count ?? 0) > 0 && (
-                                                                    <span className="inline-flex items-center gap-0.5" aria-label={`${epic.criteria_red_flag_count} criteria with No Go`}>
-                                                                        {(epic.criteria_red_flag_names ?? Array.from({ length: epic.criteria_red_flag_count ?? 0 }, () => 'No Go criterion')).map((name, i) => (
-                                                                            <Tooltip key={i} label={name} withArrow>
-                                                                                <span className="rounded-full bg-red-500 shrink-0" style={{ width: 9, height: 9 }} aria-label={name} />
-                                                                            </Tooltip>
-                                                                        ))}
-                                                                    </span>
-                                                                )}
+                                                                {(epic.criteria_red_flag_count ?? 0) > 0 && (() => {
+                                                                    const MAX_DOTS = 3;
+                                                                    const TOOLTIP_MAX = 10;
+                                                                    const names = epic.criteria_red_flag_names ?? Array.from({ length: epic.criteria_red_flag_count ?? 0 }, () => 'No Go criterion');
+                                                                    const visible = names.slice(0, MAX_DOTS);
+                                                                    const overflowCount = names.length - visible.length;
+                                                                    const tooltipNames = names.slice(0, TOOLTIP_MAX);
+                                                                    return (
+                                                                        <Tooltip
+                                                                            withArrow
+                                                                            multiline
+                                                                            w={280}
+                                                                            label={
+                                                                                <span style={{ display: 'block', whiteSpace: 'normal' }}>
+                                                                                    {tooltipNames.map((name, i) => (
+                                                                                        <span key={i} style={{ display: 'block' }}>{name}</span>
+                                                                                    ))}
+                                                                                    {names.length > TOOLTIP_MAX && <span style={{ display: 'block' }}>…</span>}
+                                                                                </span>
+                                                                            }
+                                                                        >
+                                                                            <span className="inline-flex items-center shrink-0" aria-label={`${names.length} No Go criteria`}>
+                                                                                {visible.map((_name, i) => (
+                                                                                    <span
+                                                                                        key={i}
+                                                                                        className="rounded-full bg-red-500 shrink-0"
+                                                                                        style={{ width: 10, height: 10, border: '1.5px solid #fff', boxSizing: 'content-box', marginLeft: i === 0 ? 0 : -4 }}
+                                                                                    />
+                                                                                ))}
+                                                                                {overflowCount > 0 && (
+                                                                                    <span className="text-xs font-semibold text-red-600 shrink-0" style={{ marginLeft: 5 }}>
+                                                                                        +{overflowCount}
+                                                                                    </span>
+                                                                                )}
+                                                                            </span>
+                                                                        </Tooltip>
+                                                                    );
+                                                                })()}
                                                             </span>
                                                             {epic.aha_record_not_found && (
                                                                 <Tooltip label="Record not found in Aha." withArrow>
