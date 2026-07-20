@@ -1,9 +1,9 @@
 import { resend, EMAIL_SENDER } from './client';
-import { getLaunchStatusChangeEmail, getRiskAlertEmail, getCriteriaNudgeEmail, getGateSignoffReadyEmail } from './templates';
+import { getLaunchStatusChangeEmail, getRiskAlertEmail, getCriteriaNudgeEmail, getGateSignoffReadyEmail, getMasterApprovalReadyEmail } from './templates';
 import { logNotification } from '../slack/notifications';
 import { createAdminClient } from '@/lib/supabase/server';
 
-export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert' | 'criteria_nudge' | 'gate_signoff_ready';
+export type EmailNotificationType = 'launch_status_change' | 'launch_risk_alert' | 'criteria_nudge' | 'gate_signoff_ready' | 'master_approval_ready';
 
 export interface EmailNotificationPayload {
     type: EmailNotificationType;
@@ -133,6 +133,14 @@ export async function sendEmailNotification(payload: EmailNotificationPayload) {
                     categoryLabel: payload.metadata.category_label || '',
                     gateCriterionLabel: payload.metadata.gate_criterion_label || '',
                     completedCount: payload.metadata.completed_count || 0,
+                });
+                break;
+            case 'master_approval_ready':
+                emailContent = getMasterApprovalReadyEmail({
+                    recipientName: payload.metadata.recipient_name || '',
+                    epicName: payload.metadata.epic_name || '',
+                    epicId: payload.metadata.epic_id || '',
+                    gateCount: payload.metadata.gate_count || 0,
                 });
                 break;
             default:

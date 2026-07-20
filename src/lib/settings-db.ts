@@ -95,6 +95,10 @@ export interface AppSettings {
   pendo_dashboard_url?: string | null;
   /** Enabled feature flag keys (e.g. ai_pruning, meetings, not_applicable). Used in Settings > Other Settings. */
   feature_flags?: string[];
+  /** Emails pinged when a criterion's first comment has no @mention (I-5). The epic PM is added automatically. */
+  orphan_comment_watcher_emails?: string[];
+  /** Final Go/No-Go approver emails, notified once every department gate on an epic is signed off (I-9). */
+  master_approver_emails?: string[];
 }
 
 const DEFAULT_PENDO_APP_NAMES: Record<string, string> = {
