@@ -1136,6 +1136,11 @@ export function buildCriterionCommentOrAttachmentMessage(
         has_comment: boolean;
         has_attachment: boolean;
         comment_text?: string;
+        /**
+         * Why this recipient is being notified, so the message reads differently
+         * for a direct @mention vs. a reply in a thread you're part of (I-3).
+         */
+        reason?: 'mention' | 'thread_reply' | 'owner' | 'orphan_watch';
     },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
@@ -1143,6 +1148,19 @@ export function buildCriterionCommentOrAttachmentMessage(
     if (data.has_comment) actionTypes.push('comment');
     if (data.has_attachment) actionTypes.push('attachment');
     const actionText = actionTypes.join(' and ');
+
+    // Reason-specific header + lead line so recipients can tell at a glance
+    // why they were pinged.
+    const headerText =
+        data.reason === 'mention' ? `${theme.emojis.comment} You were mentioned`
+        : data.reason === 'thread_reply' ? `${theme.emojis.comment} New reply in your thread`
+        : data.reason === 'orphan_watch' ? `${theme.emojis.comment} New comment needs an owner`
+        : `${theme.emojis.comment} New Comment or Attachment`;
+    const leadLine =
+        data.reason === 'mention' ? `*${data.added_by_name}* mentioned you`
+        : data.reason === 'thread_reply' ? `*${data.added_by_name}* replied in a thread you're part of`
+        : data.reason === 'orphan_watch' ? `*${data.added_by_name}* left the first comment with no one @mentioned`
+        : null;
 
     const commentPreview = data.comment_text
         ? (data.comment_text.length > COMMENT_PREVIEW_MAX
@@ -1158,7 +1176,7 @@ export function buildCriterionCommentOrAttachmentMessage(
             type: 'header',
             text: {
                 type: 'plain_text',
-                text: `${theme.emojis.comment} New Comment or Attachment`,
+                text: headerText,
                 emoji: true,
             },
         },
@@ -1166,7 +1184,7 @@ export function buildCriterionCommentOrAttachmentMessage(
             type: 'section',
             text: {
                 type: 'mrkdwn',
-                text: `*${data.epic_name}*\n_${data.criterion_label}_`,
+                text: `${leadLine ? `${leadLine}\n` : ''}*${data.epic_name}*\n_${data.criterion_label}_`,
             },
         },
         {
@@ -1263,6 +1281,54 @@ export function buildGateSignoffReadyMessage(
                     {
                         type: 'button',
                         text: { type: 'plain_text', text: 'Review & Sign Off', emoji: true },
+                        style: 'primary',
+                        url: epicUrl,
+                    },
+                ],
+            },
+            { type: 'divider' },
+        ],
+    };
+}
+
+/**
+ * Master Approval Ready Notification (CLEARGO-I-9)
+ * Sent to the final approver(s) once every department gate on the epic is
+ * signed off — the point at which the release is ready for final Go/No-Go.
+ */
+export function buildMasterApprovalReadyMessage(
+    data: {
+        epic_name: string;
+        epic_id: string;
+        gate_count: number;
+    },
+    theme: SlackThemeConfig = defaultSlackTheme
+): { text: string; blocks: SlackBlock[] } {
+    const epicUrl = `${APP_URL}/epics/${data.epic_id}`;
+    return {
+        text: `All department sign-offs are complete for ${data.epic_name}. It's ready for your final Go/No-Go decision.`,
+        blocks: [
+            {
+                type: 'header',
+                text: {
+                    type: 'plain_text',
+                    text: `${theme.emojis.decision.go} Ready for final approval`,
+                    emoji: true,
+                },
+            },
+            {
+                type: 'section',
+                text: {
+                    type: 'mrkdwn',
+                    text: `*${data.epic_name}*\n\nAll ${data.gate_count} department gate${data.gate_count === 1 ? '' : 's'} have been signed off. This release is ready for your final Go/No-Go decision.`,
+                },
+            },
+            {
+                type: 'actions',
+                elements: [
+                    {
+                        type: 'button',
+                        text: { type: 'plain_text', text: 'Review & Decide', emoji: true },
                         style: 'primary',
                         url: epicUrl,
                     },

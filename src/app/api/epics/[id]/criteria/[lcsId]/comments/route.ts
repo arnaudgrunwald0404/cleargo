@@ -2,8 +2,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { sendSlackNotification } from '@/lib/slack/notifications';
+import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
+
+type NotifyReason = 'mention' | 'thread_reply' | 'owner' | 'orphan_watch';
+const REASON_RANK: Record<NotifyReason, number> = {
+  mention: 3,
+  thread_reply: 2,
+  owner: 1,
+  orphan_watch: 0,
+};
 
 // GET - Fetch all comments for a criterion
 export async function GET(
@@ -128,7 +137,9 @@ export async function POST(
           id,
           epic:epic_id (
             id,
-            name
+            name,
+            owner_email,
+            pod
           ),
           criterion:criterion_id (
             id,
@@ -175,31 +186,32 @@ export async function POST(
         name: u.name || (u.first_name && u.last_name ? `${u.first_name} ${u.last_name}` : u.first_name || u.last_name || u.email),
       });
 
-      const recipients: Array<{ id: string; email: string; slack_handle?: string; name: string }> = [];
+      // Build the recipient set, tagging each with WHY they're being notified so
+      // the Slack message reads differently per reason (I-3). Highest-ranked
+      // reason wins if someone qualifies more than one way.
+      type Recipient = { id: string; email: string; slack_handle?: string; name: string; reason: NotifyReason };
+      const byId = new Map<string, Recipient>();
+      const addRecipient = (u: { id: string; email: string; slack_handle?: string; name: string }, reason: NotifyReason) => {
+        if (!u.id || u.id === commenterId) return;
+        const existing = byId.get(u.id);
+        if (existing && REASON_RANK[existing.reason] >= REASON_RANK[reason]) return;
+        byId.set(u.id, { ...u, reason });
+      };
+
+      // Decision owner (lowest precedence — a plain "comment added" heads-up).
       if (decisionOwner && !isOwner) {
-        recipients.push(toSlackUser(decisionOwner));
-      }
-      if (validatedMentionIds.length > 0) {
-        const { data: mentionedUsers } = await supabase
-          .from('app_user')
-          .select('id, email, first_name, last_name, name, slack_handle')
-          .in('id', validatedMentionIds);
-        const ownerId = decisionOwner?.id;
-        for (const u of mentionedUsers || []) {
-          if (ownerId && u.id === ownerId) continue;
-          if (recipients.some((r) => r.id === u.id)) continue;
-          recipients.push(toSlackUser(u));
-        }
+        addRecipient(toSlackUser(decisionOwner), 'owner');
       }
 
-      // Thread participants: like Slack threads, anyone who previously commented on this
-      // criterion or was @-mentioned earlier in the thread should hear about new replies,
-      // even if the new comment doesn't re-mention them.
+      // Thread participants: anyone who previously commented on this criterion or
+      // was @-mentioned earlier in the thread hears about new replies (I-6).
       const { data: priorComments } = await supabase
         .from('criterion_comment')
         .select('created_by, mentioned_user_ids')
         .eq('launch_criterion_status_id', lcsId)
         .neq('id', comment.id);
+
+      const isFirstComment = (priorComments || []).length === 0;
 
       const threadParticipantIds = new Set<string>();
       for (const pc of priorComments || []) {
@@ -208,37 +220,84 @@ export async function POST(
           if (mid !== commenterId) threadParticipantIds.add(mid);
         }
       }
-      for (const r of recipients) threadParticipantIds.delete(r.id);
-
       if (threadParticipantIds.size > 0) {
         const { data: participantUsers } = await supabase
           .from('app_user')
           .select('id, email, first_name, last_name, name, slack_handle')
           .in('id', [...threadParticipantIds]);
-        for (const u of participantUsers || []) {
-          if (recipients.some((r) => r.id === u.id)) continue;
-          recipients.push(toSlackUser(u));
+        for (const u of participantUsers || []) addRecipient(toSlackUser(u), 'thread_reply');
+      }
+
+      // Direct @mentions (highest precedence).
+      if (validatedMentionIds.length > 0) {
+        const { data: mentionedUsers } = await supabase
+          .from('app_user')
+          .select('id, email, first_name, last_name, name, slack_handle')
+          .in('id', validatedMentionIds);
+        for (const u of mentionedUsers || []) addRecipient(toSlackUser(u), 'mention');
+      }
+
+      // I-5: a first comment with no @mention can silently die. Route it to the
+      // epic's PM plus any configured watchers (e.g. Dan) so it gets an owner.
+      if (isFirstComment && validatedMentionIds.length === 0) {
+        try {
+          const settings = await getSettings();
+          const watcherEmails = new Set<string>(
+            (settings.orphan_comment_watcher_emails || []).map((e) => e.toLowerCase())
+          );
+          const pod: string | null = epic?.pod ?? null;
+          const podMapping = settings.pod_product_manager_mapping || {};
+          if (pod) {
+            const match = Object.keys(podMapping).find((k) => k.toLowerCase() === pod.trim().toLowerCase());
+            if (match && podMapping[match]) watcherEmails.add(podMapping[match].toLowerCase());
+          }
+          if (epic?.owner_email) watcherEmails.add(String(epic.owner_email).toLowerCase());
+          watcherEmails.delete(userEmail.toLowerCase());
+
+          if (watcherEmails.size > 0) {
+            const { data: watchers } = await supabase
+              .from('app_user')
+              .select('id, email, first_name, last_name, name, slack_handle')
+              .in('email', [...watcherEmails]);
+            for (const u of watchers || []) addRecipient(toSlackUser(u), 'orphan_watch');
+          }
+        } catch (watcherErr: any) {
+          console.error('Failed to resolve orphan-comment watchers:', watcherErr?.message ?? watcherErr);
         }
       }
 
-      let slackNotification: { sent: boolean; recipient_count: number; error?: string } | undefined;
-      if (recipients.length > 0) {
+      // Send one notification per reason group so wording matches the reason.
+      const groups = new Map<NotifyReason, Recipient[]>();
+      for (const r of byId.values()) {
+        const list = groups.get(r.reason) || [];
+        list.push(r);
+        groups.set(r.reason, list);
+      }
+
+      let sentCount = 0;
+      let sendError: string | undefined;
+      for (const [reason, groupRecipients] of groups) {
         try {
           await sendSlackNotification({
             type: 'criterion_comment_or_attachment',
-            priority: 'medium',
-            ...(recipients.length === 1
-              ? { recipient: recipients[0] }
-              : { recipients }),
+            priority: reason === 'mention' ? 'high' : 'medium',
+            ...(groupRecipients.length === 1
+              ? { recipient: groupRecipients[0] }
+              : { recipients: groupRecipients }),
             launch_id: epicId,
-            metadata,
+            metadata: { ...metadata, reason },
           });
-          slackNotification = { sent: true, recipient_count: recipients.length };
-        } catch (sendError: any) {
-          console.error('Failed to send Slack notification for comment:', sendError);
-          slackNotification = { sent: false, recipient_count: recipients.length, error: sendError?.message || 'Failed to send' };
+          sentCount += groupRecipients.length;
+        } catch (err: any) {
+          console.error(`Failed to send Slack notification (${reason}) for comment:`, err);
+          sendError = err?.message || 'Failed to send';
         }
       }
+
+      const slackNotification: { sent: boolean; recipient_count: number; error?: string } | undefined =
+        byId.size > 0
+          ? { sent: sentCount > 0, recipient_count: byId.size, ...(sendError && { error: sendError }) }
+          : undefined;
       return NextResponse.json(
         { comment, ...(slackNotification && { slack_notification: slackNotification }) },
         { status: 201 }

@@ -28,6 +28,7 @@ type NotificationChannel = "email" | "slack" | "both" | "none";
 
 interface NotificationPreferences {
   gate_signoff_ready?: NotificationChannel;
+  master_approval_ready?: NotificationChannel;
   criteria_nudge?: NotificationChannel;
   criteria_assignment?: NotificationChannel;
   weekly_digest?: NotificationChannel;
@@ -61,6 +62,13 @@ const EVENT_CONFIGS: Array<{
     label: "Approval requests",
     description:
       "Notify me when all criteria in a category are complete and it’s time for my Go/No-Go decision.",
+    systemDefault: "slack",
+  },
+  {
+    key: "master_approval_ready",
+    label: "Final approval requests",
+    description:
+      "Notify me when every department gate on a release is signed off and it’s ready for my final approval.",
     systemDefault: "slack",
   },
   {
