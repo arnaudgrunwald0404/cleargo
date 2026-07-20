@@ -8,7 +8,6 @@ import { canRolesPerformWithRules } from '@/lib/permissions';
 import { trackActivityFromAction } from '@/lib/services/userActivityService';
 import { logStatusChange } from '@/lib/db/criterion-status-history';
 import { maybeNotifyGateOwnerForCategory } from '@/lib/services/gateSignoffService';
-import { maybeNotifyMasterApproversWhenGatesComplete } from '@/lib/services/masterApprovalService';
 
 export async function PATCH(
     req: NextRequest,
@@ -162,11 +161,6 @@ export async function PATCH(
         if (typeof status !== 'undefined') {
             maybeNotifyGateOwnerForCategory(id, lcsId, supabase).catch(err => {
                 console.error(`[PATCH /api/epics/${id}/criteria/${lcsId}] Gate signoff check failed:`, err?.message ?? err);
-            });
-            // I-9: if this was a gate sign-off and every gate is now decided,
-            // notify the final master approver(s).
-            maybeNotifyMasterApproversWhenGatesComplete(id, lcsId, supabase).catch(err => {
-                console.error(`[PATCH /api/epics/${id}/criteria/${lcsId}] Master approval check failed:`, err?.message ?? err);
             });
         }
 
