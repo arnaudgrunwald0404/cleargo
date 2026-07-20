@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { sendSlackNotification } from '@/lib/slack/notifications';
-import { getSettings } from '@/lib/settings-db';
 
 export const dynamic = 'force-dynamic';
 
@@ -237,32 +236,17 @@ export async function POST(
         for (const u of mentionedUsers || []) addRecipient(toSlackUser(u), 'mention');
       }
 
-      // I-5: a first comment with no @mention can silently die. Route it to the
-      // epic's PM plus any configured watchers (e.g. Dan) so it gets an owner.
-      if (isFirstComment && validatedMentionIds.length === 0) {
-        try {
-          const settings = await getSettings();
-          const watcherEmails = new Set<string>(
-            (settings.orphan_comment_watcher_emails || []).map((e) => e.toLowerCase())
-          );
-          const pod: string | null = epic?.pod ?? null;
-          const podMapping = settings.pod_product_manager_mapping || {};
-          if (pod) {
-            const match = Object.keys(podMapping).find((k) => k.toLowerCase() === pod.trim().toLowerCase());
-            if (match && podMapping[match]) watcherEmails.add(podMapping[match].toLowerCase());
-          }
-          if (epic?.owner_email) watcherEmails.add(String(epic.owner_email).toLowerCase());
-          watcherEmails.delete(userEmail.toLowerCase());
-
-          if (watcherEmails.size > 0) {
-            const { data: watchers } = await supabase
-              .from('app_user')
-              .select('id, email, first_name, last_name, name, slack_handle')
-              .in('email', [...watcherEmails]);
-            for (const u of watchers || []) addRecipient(toSlackUser(u), 'orphan_watch');
-          }
-        } catch (watcherErr: any) {
-          console.error('Failed to resolve orphan-comment watchers:', watcherErr?.message ?? watcherErr);
+      // I-5: a first comment with no @mention can silently die, so make sure the
+      // epic owner hears about it. Scoped to the owner only — no global watchers.
+      if (isFirstComment && validatedMentionIds.length === 0 && epic?.owner_email) {
+        const ownerEmail = String(epic.owner_email).toLowerCase();
+        if (ownerEmail !== userEmail.toLowerCase()) {
+          const { data: owners } = await supabase
+            .from('app_user')
+            .select('id, email, first_name, last_name, name, slack_handle')
+            .eq('email', ownerEmail)
+            .limit(1);
+          for (const u of owners || []) addRecipient(toSlackUser(u), 'orphan_watch');
         }
       }
 

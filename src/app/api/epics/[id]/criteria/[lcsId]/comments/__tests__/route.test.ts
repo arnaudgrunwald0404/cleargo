@@ -35,11 +35,6 @@ jest.mock('@/lib/api-auth', () => ({
   getAuthenticatedUserEmail: jest.fn().mockResolvedValue('commenter@example.com'),
 }));
 
-const mockGetSettings = jest.fn<() => Promise<any>>().mockResolvedValue({});
-jest.mock('@/lib/settings-db', () => ({
-  getSettings: mockGetSettings,
-}));
-
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 const COMMENTER = {
@@ -75,15 +70,6 @@ const BOB = {
   last_name: 'Jones',
   name: 'Bob Jones',
   slack_handle: 'UBOB111',
-};
-
-const DAN = {
-  id: 'dan-id',
-  email: 'dan@example.com',
-  first_name: 'Dan',
-  last_name: 'Lead',
-  name: 'Dan Lead',
-  slack_handle: 'UDAN111',
 };
 
 const CRITERION_STATUS = (
@@ -152,7 +138,6 @@ describe('POST /api/epics/[id]/criteria/[lcsId]/comments — notification routin
   beforeEach(async () => {
     jest.clearAllMocks();
     mockSendSlackNotification.mockResolvedValue(undefined);
-    mockGetSettings.mockResolvedValue({});
     ({ POST } = await import('../route'));
     ({ createClient } = await import('@/lib/supabase/server') as any);
   });
@@ -380,17 +365,13 @@ describe('POST /api/epics/[id]/criteria/[lcsId]/comments — notification routin
     expect(reasonForRecipient(OWNER.id)).toBe('thread_reply'); // participation beats plain owner
   });
 
-  it('I-5: routes an orphan first comment (no @mention) to configured watchers + epic owner', async () => {
-    mockGetSettings.mockResolvedValue({
-      orphan_comment_watcher_emails: ['dan@example.com'],
-      pod_product_manager_mapping: {},
-    });
+  it('I-5: routes an orphan first comment (no @mention) to the epic owner only', async () => {
     const supabase = buildMockSupabase([
       { data: COMMENTER, error: null },
       { data: { id: 'comment-1', comment_text: 'first!' }, error: null },
       { data: CRITERION_STATUS(null, { owner_email: 'alice@example.com' }), error: null },
       { data: [], error: null }, // priorComments (first comment)
-      { data: [DAN, ALICE], error: null }, // watcher users (dan + epic owner alice)
+      { data: [ALICE], error: null }, // epic owner lookup by email
     ]);
     createClient.mockReturnValue(supabase);
 
@@ -398,17 +379,16 @@ describe('POST /api/epics/[id]/criteria/[lcsId]/comments — notification routin
     await POST(req, { params: PARAMS });
 
     const recips = allRecipients();
-    expect(recips.map((r) => r.id).sort()).toEqual([ALICE.id, DAN.id].sort());
-    expect(reasonForRecipient(DAN.id)).toBe('orphan_watch');
+    expect(recips.map((r) => r.id)).toEqual([ALICE.id]);
+    expect(reasonForRecipient(ALICE.id)).toBe('orphan_watch');
   });
 
-  it('does NOT trigger orphan watchers when the comment has a mention', async () => {
-    mockGetSettings.mockResolvedValue({ orphan_comment_watcher_emails: ['dan@example.com'] });
+  it('does NOT route an orphan alert when the comment has a mention', async () => {
     const supabase = buildMockSupabase([
       { data: COMMENTER, error: null },
       { data: [{ id: ALICE.id }], error: null },
       { data: { id: 'comment-1' }, error: null },
-      { data: CRITERION_STATUS(null, { owner_email: 'x@example.com' }), error: null },
+      { data: CRITERION_STATUS(null, { owner_email: 'owner@example.com' }), error: null },
       { data: [], error: null }, // priorComments
       { data: [ALICE], error: null }, // mentioned users
     ]);
@@ -418,8 +398,23 @@ describe('POST /api/epics/[id]/criteria/[lcsId]/comments — notification routin
     await POST(req, { params: PARAMS });
 
     const recips = allRecipients();
-    expect(recips.some((r) => r.id === DAN.id)).toBe(false);
     expect(recips.map((r) => r.id)).toEqual([ALICE.id]);
+    expect(reasonForRecipient(ALICE.id)).toBe('mention');
+  });
+
+  it('does NOT notify the epic owner as orphan when they are the commenter', async () => {
+    const supabase = buildMockSupabase([
+      { data: COMMENTER, error: null },
+      { data: { id: 'comment-1' }, error: null },
+      { data: CRITERION_STATUS(null, { owner_email: 'commenter@example.com' }), error: null },
+      { data: [], error: null }, // priorComments (first comment)
+    ]);
+    createClient.mockReturnValue(supabase);
+
+    const req = makeRequest({ comment_text: 'noting this myself', mentioned_user_ids: [] });
+    await POST(req, { params: PARAMS });
+
+    expect(mockSendSlackNotification).not.toHaveBeenCalled();
   });
 
   it('returns 400 when comment text is empty after stripping HTML', async () => {
