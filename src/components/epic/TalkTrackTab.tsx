@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Card, Badge, Text, Textarea, Anchor, Group } from "@mantine/core";
 import { IconSparkles, IconExternalLink } from "@tabler/icons-react";
 import { Loader } from "@/components/hoberman";
+import { htmlToPlainText } from "@/lib/talkTrack/htmlToPlainText";
 
 const CLEARMAP_TALK_TRACKS_URL = "https://clearmap.netlify.app/talk_tracks";
 
@@ -105,12 +106,12 @@ export function TalkTrackTab({
         setData(json);
         onVideoAvailable?.(json.videoStatus === "ready" && !!json.videoUrl);
         const sections = json.baselineSections || {};
-        setBeforeState(sections.before_state ?? "");
-        setWhatsChanging(sections.whats_changing ?? "");
-        setWhoCaresMost(sections.who_cares_most ?? "");
-        setVisual(sections.the_visual ?? "");
-        setHowToTurnOn(sections.how_to_turn_on ?? "");
-        setTimelineRisks(getAnswerByKey(json.questions, "timeline_confidence"));
+        setBeforeState(htmlToPlainText(sections.before_state ?? ""));
+        setWhatsChanging(htmlToPlainText(sections.whats_changing ?? ""));
+        setWhoCaresMost(htmlToPlainText(sections.who_cares_most ?? ""));
+        setVisual(htmlToPlainText(sections.the_visual ?? ""));
+        setHowToTurnOn(htmlToPlainText(sections.how_to_turn_on ?? ""));
+        setTimelineRisks(htmlToPlainText(getAnswerByKey(json.questions, "timeline_confidence")));
       })
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
@@ -120,12 +121,12 @@ export function TalkTrackTab({
       .finally(() => setLoading(false));
   }, [epicRefForApi]);
 
-  const talkingPoints = data?.talkingPoints ?? [];
+  const talkingPoints = (data?.talkingPoints ?? []).map((p) => htmlToPlainText(p));
   const questions = data?.questions ?? [];
-  const targetCustomerAnswer = getAnswerByKey(questions, "target_customer");
-  const strategicValueAnswer = getAnswerByKey(questions, "strategic_value");
-  const competitiveAngleAnswer = getAnswerByKey(questions, "competitive_angle");
-  const keyInternalPoints = data?.keyInternalPoints ?? [];
+  const targetCustomerAnswer = htmlToPlainText(getAnswerByKey(questions, "target_customer"));
+  const strategicValueAnswer = htmlToPlainText(getAnswerByKey(questions, "strategic_value"));
+  const competitiveAngleAnswer = htmlToPlainText(getAnswerByKey(questions, "competitive_angle"));
+  const keyInternalPoints = (data?.keyInternalPoints ?? []).map((p) => htmlToPlainText(p));
   const videoReady = data?.videoStatus === "ready" && data?.videoUrl;
 
   if (loading) {
@@ -277,8 +278,8 @@ export function TalkTrackTab({
             The Before State (~30 sec)
           </Text>
           <Textarea
+            autosize
             minRows={2}
-            maxRows={4}
             value={beforeState}
             onChange={(e) => setBeforeState(e.target.value)}
             placeholder="Describe the previous state..."
@@ -298,8 +299,8 @@ export function TalkTrackTab({
             What&apos;s Changing & Why It Matters (~60 sec)
           </Text>
           <Textarea
+            autosize
             minRows={2}
-            maxRows={4}
             value={whatsChanging}
             onChange={(e) => setWhatsChanging(e.target.value)}
             placeholder="Explain the change and impact..."
@@ -319,8 +320,8 @@ export function TalkTrackTab({
             Who Cares Most (~30 sec)
           </Text>
           <Textarea
+            autosize
             minRows={1}
-            maxRows={3}
             value={whoCaresMost}
             onChange={(e) => setWhoCaresMost(e.target.value)}
             placeholder="Target personas and use cases..."
@@ -340,8 +341,8 @@ export function TalkTrackTab({
             The Visual (~30 sec)
           </Text>
           <Textarea
+            autosize
             minRows={2}
-            maxRows={3}
             value={visual}
             onChange={(e) => setVisual(e.target.value)}
             placeholder="Describe the visual/demo..."
@@ -361,8 +362,8 @@ export function TalkTrackTab({
             How to Turn It On / Buy It (~20 sec)
           </Text>
           <Textarea
+            autosize
             minRows={1}
-            maxRows={2}
             value={howToTurnOn}
             onChange={(e) => setHowToTurnOn(e.target.value)}
             placeholder="How to enable or purchase..."
