@@ -1001,13 +1001,18 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
     if (item.due_date && String(item.due_date).trim() !== '') {
       return String(item.due_date).trim().split('T')[0];
     }
+    const fallbackDueDate = item.condition_due_date && String(item.condition_due_date).trim() !== ''
+      ? String(item.condition_due_date).trim().split('T')[0]
+      : null;
     const releaseName = epicReleaseMap.get(item.launch.id) ?? null;
     const anchor = resolveAnchorLaunchDateFromReleaseSchedule(
       releaseName,
       releaseSchedule,
       item.launch.target_launch_date ?? null
     );
-    if (!anchor || releaseStagesFull.length === 0) return null;
+    // No release anchor available (e.g. epic has no assigned release) — fall
+    // back to the persisted due date instead of dropping the item entirely.
+    if (!anchor || releaseStagesFull.length === 0) return fallbackDueDate;
     const defaultStageId = releaseStagesFull.find((s) => s.sort_order === 1)?.id ?? releaseStagesFull[0]?.id ?? null;
     const rawRt = item.criterion?.rating_timing;
     let ratingTimingId: number | null = defaultStageId;
@@ -1016,13 +1021,14 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
       if (!Number.isNaN(n)) ratingTimingId = n;
     }
     const uiOpts = getUiFrameworkDueDateOptions(item.launch.aha_fields);
-    return computeCriterionDueDateYmd({
+    const computed = computeCriterionDueDateYmd({
       anchorYmd: anchor,
       ratingTimingId,
       allStages: releaseStagesFull,
       uiLevel: uiOpts.isUiFramework ? uiOpts.uiLevel : undefined,
       isGateCriterion: item.criterion?.gate === true,
     });
+    return computed ?? fallbackDueDate;
   };
 
   const headingStats = useMemo(() => {
