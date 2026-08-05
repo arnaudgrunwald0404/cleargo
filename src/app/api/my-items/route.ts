@@ -225,7 +225,7 @@ export async function GET(req: NextRequest) {
             const ratingTimingId =
                 rawRt != null && rawRt !== undefined ? Number(rawRt) : defaultRatingTimingId;
             const uiOpts = getUiFrameworkDueDateOptions(epicRow?.aha_fields);
-            const due_date = computeCriterionDueDateYmd({
+            const computedDueDate = computeCriterionDueDateYmd({
                 anchorYmd: anchor,
                 ratingTimingId: ratingTimingId ?? null,
                 allStages: stagesForDue,
@@ -233,6 +233,11 @@ export async function GET(req: NextRequest) {
                 isGateCriterion: item.criterion?.gate === true,
                 cohort2Date,
             });
+            // Fall back to the persisted due date (e.g. epics with no release
+            // anchor, like "Release: N/A") so criteria aren't silently dropped
+            // from overdue counts when a live anchor can't be resolved.
+            const storedDueDate = typeof row.condition_due_date === 'string' ? row.condition_due_date : null;
+            const due_date = computedDueDate ?? storedDueDate;
             return { ...row, launch: launchEnriched, due_date };
         });
 
