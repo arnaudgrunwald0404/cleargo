@@ -21,6 +21,7 @@ import Link from "next/link";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { isEnabled, FEATURE_NOT_APPLICABLE } from "@/lib/flags";
+import { getEpicDisplayName } from "@/lib/epicDisplayName";
 
 type ViewAsUser = { email: string; name: string } | null;
 
@@ -1806,7 +1807,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
                               onMouseEnter={(e) => e.currentTarget.style.textDecoration = "underline"}
                               onMouseLeave={(e) => e.currentTarget.style.textDecoration = "none"}
                             >
-                              {item.launch.name}
+                              {getEpicDisplayName(item.launch)}
                             </Link>
                             <div className="flex items-center gap-1 mt-1" style={{ flexWrap: "wrap" }}>
                               <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.launch.tier === 'TIER_1' ? 'bg-purple-100 text-purple-800' : item.launch.tier === 'TIER_2' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
@@ -2053,7 +2054,7 @@ export function HomeDashboard({ userEmail, firstName, isFirstTime = false, isSup
               opened={delegationModalOpen}
               onClose={handleCloseDelegation}
               epicId={selectedItemForDelegation.launch.id}
-              epicName={selectedItemForDelegation.launch.name}
+              epicName={getEpicDisplayName(selectedItemForDelegation.launch)}
               taskId={selectedItemForDelegation.id}
               taskLabel={selectedItemForDelegation.criterion.label}
               category={selectedItemForDelegation.criterion.category}
