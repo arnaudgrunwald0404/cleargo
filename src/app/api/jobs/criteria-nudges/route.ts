@@ -24,8 +24,21 @@ import {
     dedupeCriteriaForNotifications,
     filterCriteriaSuppressedByCategorySignoffGo,
     filterIncompleteCriteriaForNotifications,
+    isConditionalConfirmationDue,
+    isConditionalStatus,
+    isOverdueNudgeDue,
 } from '@/lib/services/criteriaNotificationFilters';
 import { normalizeStatus } from '@/lib/readiness-scoring';
+import {
+    computeEpicReleaseStatus,
+    isReleasedStatus,
+    type EpicForStatus,
+    type ReleaseScheduleDateRow,
+    type RetroForStatus,
+} from '@/lib/epic-release-status';
+
+/** Epic columns the nudge job needs to decide whether an epic still warrants reminders. */
+type NudgeEpicRow = EpicForStatus & { archived?: boolean | null };
 
 // Match Home list rules: Success Defined criterion (metrics, goals, reporting)
 const isSuccessDefinedCriterion = (c: { criterion?: { label?: string } | null }): boolean =>
@@ -317,7 +330,15 @@ export async function GET(request: NextRequest) {
             if (overdueError) {
                 console.error('Error fetching overdue criteria:', overdueError);
             } else if (overdueCriteria) {
-                allCriteria.push(...overdueCriteria.map((c: any) => ({ ...c, nudgeType: 'daily_after' })));
+                // Apply the ageing back-off so long-overdue items stop nudging daily. Conditional Go
+                // rows are exempt here — their cadence is decided by launch proximity further down.
+                const dueForNudge = shouldFilterByNudgeDate
+                    ? overdueCriteria.filter((c) => isConditionalStatus(c.status) || isOverdueNudgeDue(c, todayStr))
+                    : overdueCriteria;
+                if (dueForNudge.length !== overdueCriteria.length) {
+                    console.log(`⏳ Overdue back-off: ${overdueCriteria.length} -> ${dueForNudge.length} (aged items nudge weekly/fortnightly)`);
+                }
+                allCriteria.push(...dueForNudge.map((c: any) => ({ ...c, nudgeType: 'daily_after' })));
             }
         }
 
@@ -573,9 +594,11 @@ export async function GET(request: NextRequest) {
             console.log(`🧪 TEST MODE: Filtered ${allCriteriaFiltered.length} total criteria to ${criteriaToProcess.length} for ${testEmail}`);
         }
 
-        // Filter out criteria for epics with past release dates or released status
+        // Filter out criteria for epics that have shipped, been archived, or been cancelled.
         // Rules:
-        // - Past release date / released status → exclude ALL criteria reminders
+        // - Archived or Cancelled epic → exclude ALL criteria reminders
+        // - Shipped epic (computed status) or past release date → only "Success Defined" survives,
+        //   so post-launch metrics reminders keep working
         // - Future/today release date → include all criteria reminders
         // Shared release-date map, populated by the release date filter block below
         let sharedReleaseToDate = new Map<string, string | null>();
@@ -583,12 +606,12 @@ export async function GET(request: NextRequest) {
         if (epicIds.length > 0) {
             const { data: epicsWithReleases } = await supabase
                 .from('epic')
-                .select('id, aha_fields, status')
+                .select('id, aha_fields, status, target_launch_date, scheduled_ga_dev_date, archived')
                 .in('id', epicIds);
 
             const { data: releasesData } = await supabase
                 .from('release_schedule')
-                .select('release_name, launch_date')
+                .select('release_name, launch_date, cohort2_date')
                 .eq('archived', false);
             
             const releaseToDate = new Map<string, string | null>();
@@ -607,25 +630,65 @@ export async function GET(request: NextRequest) {
             }
             sharedReleaseToDate = releaseToDate;
 
-            // Released statuses that indicate past release
-            const releasedStatuses = ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'];
-            
-            // Filter criteria: exclude past releases and released epics
+            // Retro completion is one of the inputs to the computed release status
+            const { data: retroRows } = await supabase
+                .from('epic_retros')
+                .select('epic_id, day_marker, status')
+                .in('epic_id', epicIds);
+
+            const retrosByEpic = new Map<string, RetroForStatus[]>();
+            ((retroRows || []) as Array<RetroForStatus & { epic_id: string }>).forEach((r) => {
+                const list = retrosByEpic.get(r.epic_id) || [];
+                list.push({ day_marker: r.day_marker, status: r.status });
+                retrosByEpic.set(r.epic_id, list);
+            });
+
+            const releaseScheduleRows = (releasesData || []) as ReleaseScheduleDateRow[];
+            const epicRows = (epicsWithReleases || []) as NudgeEpicRow[];
+
+            // Once an epic is live, only "Success Defined" is still worth chasing — post-launch
+            // metrics genuinely do get filled in late. Everything else is settled by then.
+            const isStillDueAfterLaunch = (
+                c: { criterion?: { label?: string } | null; status?: string | null }
+            ): boolean => (
+                isSuccessDefinedCriterion(c) &&
+                c.status !== 'GO' &&
+                normalizeStatus(c.status) !== 'NOT_APPLICABLE'
+            );
+
+            // Filter criteria: exclude shipped, archived and cancelled epics
             const beforeFilterCount = criteriaToProcess.length;
             criteriaToProcess = criteriaToProcess.filter((c: any) => {
-                const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
+                const epic = epicRows.find((e) => e.id === c.epic_id);
                 if (!epic) {
                     return true; // Keep if epic not found (shouldn't happen)
                 }
-                
-                // Check if epic has released status
-                if (epic.status && releasedStatuses.includes(epic.status)) {
-                    return false; // Exclude criteria for released epics
+
+                // Archived epics are out of view everywhere else; never nudge for them.
+                if (epic.archived === true) {
+                    return false;
                 }
-                
+
+                // Release status is DERIVED from launch/GA dates and retro completion. epic.status
+                // only ever stores a 'Cancelled' override, so comparing it to 'Released_*' never
+                // matches and shipped epics used to nudge forever (CLEARGO-I-22).
+                const computedStatus = computeEpicReleaseStatus(
+                    epic,
+                    retrosByEpic.get(epic.id) || [],
+                    { releaseSchedule: releaseScheduleRows }
+                );
+                if (computedStatus === 'Cancelled') {
+                    return false;
+                }
+                if (isReleasedStatus(computedStatus)) {
+                    return isStillDueAfterLaunch(c);
+                }
+
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
                 if (!releaseName) {
+                    // No release means no launch date to confirm an open condition against.
+                    if (isConditionalStatus(c.status)) return false;
                     return true; // Keep if no release assigned
                 }
                 
@@ -649,6 +712,8 @@ export async function GET(request: NextRequest) {
                 }
                 
                 if (!releaseDate) {
+                    // Same as above: nothing to anchor an open condition to.
+                    if (isConditionalStatus(c.status)) return false;
                     return true; // Keep if release has no date
                 }
                 
@@ -657,11 +722,7 @@ export async function GET(request: NextRequest) {
 
                 // Past release: only notify for Success Defined criterion that is still due (not GO)
                 if (releaseDateObj < today) {
-                    return (
-                        isSuccessDefinedCriterion(c) &&
-                        c.status !== 'GO' &&
-                        normalizeStatus(c.status) !== 'NOT_APPLICABLE'
-                    );
+                    return isStillDueAfterLaunch(c);
                 }
                 
                 // Today or future: exclude items rated n/a (consistent with Home list)
@@ -669,12 +730,20 @@ export async function GET(request: NextRequest) {
                 // Suppress overdue criteria that have been past due longer than the days remaining until release.
                 // If you've missed it for longer than the release is away, daily nudges are unhelpful noise.
                 const daysUntilRelease = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                // Conditional Go is a delivered verdict, so it is not chased on the due-date
+                // schedule. It re-surfaces weekly only once launch is close enough that the open
+                // condition needs confirming.
+                if (isConditionalStatus(c.status)) {
+                    return isConditionalConfirmationDue(c, todayStr, daysUntilRelease);
+                }
+
                 const dueDateDiff = diffCalendarDaysBetweenYmd(c.condition_due_date, todayStr); // negative = overdue
                 if (dueDateDiff !== null && dueDateDiff < 0 && -dueDateDiff > daysUntilRelease) return false;
                 return true;
             });
             
-            console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
+            console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded shipped, archived, cancelled and past-release epics)`);
         }
 
         // Add missing metrics reminders for Product Managers on past releases
@@ -1033,11 +1102,16 @@ export async function GET(request: NextRequest) {
                 // Group criteria by release, then by epic within each release
                 const criteriaByRelease = new Map<string, Map<string, any[]>>();
                 const noReleaseCriteria: any[] = [];
-                
+                // Criteria that actually make it into the message. Rows dropped below (un-synced
+                // release) must not be counted in the header or stamped as notified — a phantom
+                // stamp would push the next genuine nudge out by the whole back-off interval.
+                const renderedCriteria: typeof criteria = [];
+
                 for (const c of criteria) {
                     const releaseName = epicToRelease.get(c.epic_id);
                     if (!releaseName) {
                         noReleaseCriteria.push(c);
+                        renderedCriteria.push(c);
                         continue;
                     }
 
@@ -1048,6 +1122,7 @@ export async function GET(request: NextRequest) {
                     if (!releaseToDate.has(releaseName) && !releaseToDate.has(normalizedReleaseName)) {
                         continue;
                     }
+                    renderedCriteria.push(c);
                     // Use normalized name for grouping, but try to find original name for date lookup
                     const releaseNameForGrouping = releaseToDate.has(releaseName) ? releaseName : 
                                                    (releaseToDate.has(normalizedReleaseName) ? normalizedReleaseName : releaseName);
@@ -1177,8 +1252,8 @@ export async function GET(request: NextRequest) {
                     metadata: {
                         release_groups: releaseGroups,
                         epic_groups: epicGroups, // Keep for backward compatibility
-                        total_criteria_count: criteria.length,
-                        criteria: criteria.map((c) => ({
+                        total_criteria_count: renderedCriteria.length,
+                        criteria: renderedCriteria.map((c) => ({
                             id: c.id,
                             label: c.criterion?.label || 'Unknown',
                             category: c.criterion?.category || 'Unknown',
@@ -1218,8 +1293,9 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Update last_nudge_sent_at for persisted criteria only (skip synthetic missing-metrics ids)
-                const criterionIds = criteria
+                // Update last_nudge_sent_at for the criteria actually sent, and for persisted rows
+                // only (skip synthetic missing-metrics ids).
+                const criterionIds = renderedCriteria
                     .map((c) => c.id)
                     .filter((id) => typeof id === 'string' && !id.startsWith('missing-metrics-'));
                 if (criterionIds.length > 0) {
@@ -1235,13 +1311,13 @@ export async function GET(request: NextRequest) {
 
                 notificationsSent.push({
                     assignee_email: assigneeEmail,
-                    criteria_count: criteria.length,
+                    criteria_count: renderedCriteria.length,
                     epic_count: epicGroups.length,
                 });
 
                 notificationCount++;
                 console.log(
-                    `Sent combined Slack nudge to ${assigneeEmail} for ${criteria.length} criteria across ${epicGroups.length} epics`
+                    `Sent combined Slack nudge to ${assigneeEmail} for ${renderedCriteria.length} criteria across ${epicGroups.length} epics`
                 );
             } catch (error: any) {
                 console.error(`Failed to send Slack nudge to ${assigneeEmail}:`, error);

@@ -87,6 +87,11 @@ function dueByStageSegmentTooltip(
     return `Last day of the “${stageName}” segment on the launch timeline (same rule as the Release Timeline chart).`;
 }
 
+/** No calendar date could be computed — the cell falls back to the launch stage the item is due by. */
+function dueByStageNoDateTooltip(stageName: string): string {
+    return `No date yet — this item is due by the end of the “${stageName}” stage. Give the epic a release date and a calendar date will appear here.`;
+}
+
 // Traffic light (Go/No-Go score: GO / CONDITIONAL / NO_GO / NOT_APPLICABLE)
 interface TrafficLightProps {
     currentStatus: string;
@@ -1598,7 +1603,7 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                                                     const truncStyle: React.CSSProperties = { display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
                                                                                     const formatted = formatDateOnlyForDisplay(dueDateStr);
                                                                                     if (!formatted) {
-                                                                                        return dueByStage ? <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top"><span className="text-gray-500" style={truncStyle}>{dueByStage}</span></Tooltip> : '-';
+                                                                                        return dueByStage ? <Tooltip label={dueByStageNoDateTooltip(dueByStage)} withArrow position="top"><span className="block text-gray-500" style={{ overflow: 'hidden' }}><span className="block text-[11px] uppercase tracking-wide text-gray-400 leading-tight">Due by</span><span className="block" style={truncStyle}>{dueByStage}</span></span></Tooltip> : '-';
                                                                                     }
                                                                                     const parsed = parseDateOnlyLocal(dueDateStr)!;
                                                                                     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1909,8 +1914,11 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                                 const formatted = formatDateOnlyForDisplay(dueDateStr);
                                                 if (!formatted) {
                                                     return dueByStage ? (
-                                                        <Tooltip label={dueByStageSegmentTooltip(dueByStage)} withArrow position="top">
-                                                            <span className="text-gray-500" style={truncStyle}>{dueByStage}</span>
+                                                        <Tooltip label={dueByStageNoDateTooltip(dueByStage)} withArrow position="top">
+                                                            <span className="block text-gray-500" style={{ overflow: 'hidden' }}>
+                                                                <span className="block text-[11px] uppercase tracking-wide text-gray-400 leading-tight">Due by</span>
+                                                                <span className="block" style={truncStyle}>{dueByStage}</span>
+                                                            </span>
                                                         </Tooltip>
                                                     ) : '-';
                                                 }

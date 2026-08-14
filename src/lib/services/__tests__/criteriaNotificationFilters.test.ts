@@ -3,9 +3,101 @@ import {
     dedupeCriteriaForNotifications,
     filterIncompleteCriteriaForNotifications,
     isCriterionCompleteForNotifications,
+    isConditionalConfirmationDue,
+    isConditionalStatus,
+    isOverdueNudgeDue,
+    overdueNudgeIntervalDays,
 } from '../criteriaNotificationFilters';
 
 describe('criteriaNotificationFilters', () => {
+    describe('isConditionalStatus', () => {
+        it('recognises both spellings and nothing else', () => {
+            expect(isConditionalStatus('CONDITIONAL')).toBe(true);
+            expect(isConditionalStatus('CONDITIONAL_GO')).toBe(true);
+            expect(isConditionalStatus('conditional')).toBe(true);
+            expect(isConditionalStatus('GO')).toBe(false);
+            expect(isConditionalStatus('NOT_SET')).toBe(false);
+            expect(isConditionalStatus(null)).toBe(false);
+        });
+    });
+
+    describe('isConditionalConfirmationDue', () => {
+        const today = '2026-08-14';
+
+        it('stays quiet while launch is still far off, however overdue the item is', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 60)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 15)).toBe(false);
+        });
+
+        it('asks for confirmation once launch is inside the pre-launch window', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 14)).toBe(true);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 1)).toBe(true);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 0)).toBe(true);
+        });
+
+        it('re-asks weekly rather than daily inside the window', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-13' }, today, 10)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-08' }, today, 10)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-07' }, today, 10)).toBe(true);
+        });
+
+        it('stays quiet when there is no launch date to confirm against', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, null)).toBe(false);
+        });
+
+        it('defers to the past-release rules once launch has passed', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, -1)).toBe(false);
+        });
+    });
+    describe('overdueNudgeIntervalDays', () => {
+        it('nudges daily through the first week overdue', () => {
+            expect(overdueNudgeIntervalDays(1)).toBe(1);
+            expect(overdueNudgeIntervalDays(7)).toBe(1);
+        });
+
+        it('backs off to weekly, then fortnightly, as the item ages', () => {
+            expect(overdueNudgeIntervalDays(8)).toBe(7);
+            expect(overdueNudgeIntervalDays(30)).toBe(7);
+            expect(overdueNudgeIntervalDays(31)).toBe(14);
+            expect(overdueNudgeIntervalDays(365)).toBe(14);
+        });
+    });
+
+    describe('isOverdueNudgeDue', () => {
+        const today = '2026-08-14';
+
+        it('always sends when the item has never been nudged', () => {
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-01-01', last_nudge_sent_at: null }, today)).toBe(true);
+        });
+
+        it('sends daily while an item is freshly overdue', () => {
+            // 3 days overdue, nudged yesterday -> interval is 1 day, so due again
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-08-11', last_nudge_sent_at: '2026-08-13' }, today)).toBe(true);
+        });
+
+        it('suppresses a 44-day-overdue item nudged 3 days ago (the CLEARGO-I-22 case)', () => {
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-07-01', last_nudge_sent_at: '2026-08-11' }, today)).toBe(false);
+        });
+
+        it('sends again once the fortnightly interval has elapsed', () => {
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-07-01', last_nudge_sent_at: '2026-07-31' }, today)).toBe(true);
+        });
+
+        it('suppresses a mid-aged item inside its weekly window but sends after it', () => {
+            // 20 days overdue -> weekly. Nudged 2 days ago: hold. Nudged 8 days ago: send.
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-07-25', last_nudge_sent_at: '2026-08-12' }, today)).toBe(false);
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-07-25', last_nudge_sent_at: '2026-08-06' }, today)).toBe(true);
+        });
+
+        it('defers to the other nudge windows when the item is not actually overdue', () => {
+            expect(isOverdueNudgeDue({ condition_due_date: '2026-08-20', last_nudge_sent_at: '2026-08-13' }, today)).toBe(true);
+        });
+
+        it('sends when the due date is missing or unparseable', () => {
+            expect(isOverdueNudgeDue({ condition_due_date: null, last_nudge_sent_at: '2026-08-13' }, today)).toBe(true);
+            expect(isOverdueNudgeDue({ condition_due_date: 'not-a-date', last_nudge_sent_at: '2026-08-13' }, today)).toBe(true);
+        });
+    });
     describe('isCriterionCompleteForNotifications', () => {
         it('treats GO, NO_GO, and NOT_APPLICABLE as complete', () => {
             expect(isCriterionCompleteForNotifications('GO')).toBe(true);
