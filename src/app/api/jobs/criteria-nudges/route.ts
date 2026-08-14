@@ -24,6 +24,8 @@ import {
     dedupeCriteriaForNotifications,
     filterCriteriaSuppressedByCategorySignoffGo,
     filterIncompleteCriteriaForNotifications,
+    isConditionalConfirmationDue,
+    isConditionalStatus,
     isOverdueNudgeDue,
 } from '@/lib/services/criteriaNotificationFilters';
 import { normalizeStatus } from '@/lib/readiness-scoring';
@@ -328,9 +330,10 @@ export async function GET(request: NextRequest) {
             if (overdueError) {
                 console.error('Error fetching overdue criteria:', overdueError);
             } else if (overdueCriteria) {
-                // Apply the ageing back-off so long-overdue items stop nudging daily.
+                // Apply the ageing back-off so long-overdue items stop nudging daily. Conditional Go
+                // rows are exempt here — their cadence is decided by launch proximity further down.
                 const dueForNudge = shouldFilterByNudgeDate
-                    ? overdueCriteria.filter((c) => isOverdueNudgeDue(c, todayStr))
+                    ? overdueCriteria.filter((c) => isConditionalStatus(c.status) || isOverdueNudgeDue(c, todayStr))
                     : overdueCriteria;
                 if (dueForNudge.length !== overdueCriteria.length) {
                     console.log(`⏳ Overdue back-off: ${overdueCriteria.length} -> ${dueForNudge.length} (aged items nudge weekly/fortnightly)`);
@@ -684,6 +687,8 @@ export async function GET(request: NextRequest) {
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
                 if (!releaseName) {
+                    // No release means no launch date to confirm an open condition against.
+                    if (isConditionalStatus(c.status)) return false;
                     return true; // Keep if no release assigned
                 }
                 
@@ -707,6 +712,8 @@ export async function GET(request: NextRequest) {
                 }
                 
                 if (!releaseDate) {
+                    // Same as above: nothing to anchor an open condition to.
+                    if (isConditionalStatus(c.status)) return false;
                     return true; // Keep if release has no date
                 }
                 
@@ -723,6 +730,14 @@ export async function GET(request: NextRequest) {
                 // Suppress overdue criteria that have been past due longer than the days remaining until release.
                 // If you've missed it for longer than the release is away, daily nudges are unhelpful noise.
                 const daysUntilRelease = Math.ceil((releaseDateObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                // Conditional Go is a delivered verdict, so it is not chased on the due-date
+                // schedule. It re-surfaces weekly only once launch is close enough that the open
+                // condition needs confirming.
+                if (isConditionalStatus(c.status)) {
+                    return isConditionalConfirmationDue(c, todayStr, daysUntilRelease);
+                }
+
                 const dueDateDiff = diffCalendarDaysBetweenYmd(c.condition_due_date, todayStr); // negative = overdue
                 if (dueDateDiff !== null && dueDateDiff < 0 && -dueDateDiff > daysUntilRelease) return false;
                 return true;

@@ -3,11 +3,52 @@ import {
     dedupeCriteriaForNotifications,
     filterIncompleteCriteriaForNotifications,
     isCriterionCompleteForNotifications,
+    isConditionalConfirmationDue,
+    isConditionalStatus,
     isOverdueNudgeDue,
     overdueNudgeIntervalDays,
 } from '../criteriaNotificationFilters';
 
 describe('criteriaNotificationFilters', () => {
+    describe('isConditionalStatus', () => {
+        it('recognises both spellings and nothing else', () => {
+            expect(isConditionalStatus('CONDITIONAL')).toBe(true);
+            expect(isConditionalStatus('CONDITIONAL_GO')).toBe(true);
+            expect(isConditionalStatus('conditional')).toBe(true);
+            expect(isConditionalStatus('GO')).toBe(false);
+            expect(isConditionalStatus('NOT_SET')).toBe(false);
+            expect(isConditionalStatus(null)).toBe(false);
+        });
+    });
+
+    describe('isConditionalConfirmationDue', () => {
+        const today = '2026-08-14';
+
+        it('stays quiet while launch is still far off, however overdue the item is', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 60)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 15)).toBe(false);
+        });
+
+        it('asks for confirmation once launch is inside the pre-launch window', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 14)).toBe(true);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 1)).toBe(true);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, 0)).toBe(true);
+        });
+
+        it('re-asks weekly rather than daily inside the window', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-13' }, today, 10)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-08' }, today, 10)).toBe(false);
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: '2026-08-07' }, today, 10)).toBe(true);
+        });
+
+        it('stays quiet when there is no launch date to confirm against', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, null)).toBe(false);
+        });
+
+        it('defers to the past-release rules once launch has passed', () => {
+            expect(isConditionalConfirmationDue({ last_nudge_sent_at: null }, today, -1)).toBe(false);
+        });
+    });
     describe('overdueNudgeIntervalDays', () => {
         it('nudges daily through the first week overdue', () => {
             expect(overdueNudgeIntervalDays(1)).toBe(1);
