@@ -1102,11 +1102,16 @@ export async function GET(request: NextRequest) {
                 // Group criteria by release, then by epic within each release
                 const criteriaByRelease = new Map<string, Map<string, any[]>>();
                 const noReleaseCriteria: any[] = [];
-                
+                // Criteria that actually make it into the message. Rows dropped below (un-synced
+                // release) must not be counted in the header or stamped as notified — a phantom
+                // stamp would push the next genuine nudge out by the whole back-off interval.
+                const renderedCriteria: typeof criteria = [];
+
                 for (const c of criteria) {
                     const releaseName = epicToRelease.get(c.epic_id);
                     if (!releaseName) {
                         noReleaseCriteria.push(c);
+                        renderedCriteria.push(c);
                         continue;
                     }
 
@@ -1117,6 +1122,7 @@ export async function GET(request: NextRequest) {
                     if (!releaseToDate.has(releaseName) && !releaseToDate.has(normalizedReleaseName)) {
                         continue;
                     }
+                    renderedCriteria.push(c);
                     // Use normalized name for grouping, but try to find original name for date lookup
                     const releaseNameForGrouping = releaseToDate.has(releaseName) ? releaseName : 
                                                    (releaseToDate.has(normalizedReleaseName) ? normalizedReleaseName : releaseName);
@@ -1246,8 +1252,8 @@ export async function GET(request: NextRequest) {
                     metadata: {
                         release_groups: releaseGroups,
                         epic_groups: epicGroups, // Keep for backward compatibility
-                        total_criteria_count: criteria.length,
-                        criteria: criteria.map((c) => ({
+                        total_criteria_count: renderedCriteria.length,
+                        criteria: renderedCriteria.map((c) => ({
                             id: c.id,
                             label: c.criterion?.label || 'Unknown',
                             category: c.criterion?.category || 'Unknown',
@@ -1287,8 +1293,9 @@ export async function GET(request: NextRequest) {
                     }
                 }
 
-                // Update last_nudge_sent_at for persisted criteria only (skip synthetic missing-metrics ids)
-                const criterionIds = criteria
+                // Update last_nudge_sent_at for the criteria actually sent, and for persisted rows
+                // only (skip synthetic missing-metrics ids).
+                const criterionIds = renderedCriteria
                     .map((c) => c.id)
                     .filter((id) => typeof id === 'string' && !id.startsWith('missing-metrics-'));
                 if (criterionIds.length > 0) {
@@ -1304,13 +1311,13 @@ export async function GET(request: NextRequest) {
 
                 notificationsSent.push({
                     assignee_email: assigneeEmail,
-                    criteria_count: criteria.length,
+                    criteria_count: renderedCriteria.length,
                     epic_count: epicGroups.length,
                 });
 
                 notificationCount++;
                 console.log(
-                    `Sent combined Slack nudge to ${assigneeEmail} for ${criteria.length} criteria across ${epicGroups.length} epics`
+                    `Sent combined Slack nudge to ${assigneeEmail} for ${renderedCriteria.length} criteria across ${epicGroups.length} epics`
                 );
             } catch (error: any) {
                 console.error(`Failed to send Slack nudge to ${assigneeEmail}:`, error);
