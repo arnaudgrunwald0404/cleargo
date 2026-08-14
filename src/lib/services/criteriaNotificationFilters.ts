@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { isSignoffCriterion, normalizeStatus } from '@/lib/readiness-scoring';
+import { diffCalendarDaysBetweenYmd } from '@/lib/date-utils';
 
 type CriterionShape = {
     label?: string | null;
@@ -25,6 +26,37 @@ const COMPLETE_STATUSES = new Set(['GO', 'NO_GO', 'NOT_APPLICABLE']);
 /** True when a criterion no longer needs completion reminders. */
 export function isCriterionCompleteForNotifications(status: string | null | undefined): boolean {
     return COMPLETE_STATUSES.has(normalizeStatus(status));
+}
+
+/**
+ * Escalation cap for overdue nudges. `last_nudge_sent_at` is only a same-day guard, so an item
+ * left NOT_SET/CONDITIONAL re-notified every single day indefinitely (CLEARGO-I-22). Back off as
+ * the item ages instead: daily for the first week overdue, then weekly, then fortnightly.
+ */
+const OVERDUE_NUDGE_BACKOFF: ReadonlyArray<{ overdueThroughDays: number; everyDays: number }> = [
+    { overdueThroughDays: 7, everyDays: 1 },
+    { overdueThroughDays: 30, everyDays: 7 },
+    { overdueThroughDays: Number.POSITIVE_INFINITY, everyDays: 14 },
+];
+
+/** Minimum days between nudges for an item that is `daysOverdue` past its due date. */
+export function overdueNudgeIntervalDays(daysOverdue: number): number {
+    return OVERDUE_NUDGE_BACKOFF.find((b) => daysOverdue <= b.overdueThroughDays)?.everyDays ?? 1;
+}
+
+/** True when an overdue criterion is due another nudge today, given how long it has been overdue. */
+export function isOverdueNudgeDue(
+    criterion: { condition_due_date?: string | null; last_nudge_sent_at?: string | null },
+    todayYmd: string
+): boolean {
+    if (!criterion.last_nudge_sent_at) return true; // never nudged — always send
+    const dueDiff = diffCalendarDaysBetweenYmd(criterion.condition_due_date, todayYmd);
+    if (dueDiff === null) return true;
+    const daysOverdue = -dueDiff; // diff is (due - today), so negate to get days past due
+    if (daysOverdue <= 0) return true; // not overdue; the other nudge windows own this row
+    const sinceLastDiff = diffCalendarDaysBetweenYmd(criterion.last_nudge_sent_at, todayYmd);
+    if (sinceLastDiff === null) return true;
+    return -sinceLastDiff >= overdueNudgeIntervalDays(daysOverdue);
 }
 
 /**

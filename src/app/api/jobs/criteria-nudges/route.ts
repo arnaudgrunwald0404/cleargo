@@ -24,8 +24,19 @@ import {
     dedupeCriteriaForNotifications,
     filterCriteriaSuppressedByCategorySignoffGo,
     filterIncompleteCriteriaForNotifications,
+    isOverdueNudgeDue,
 } from '@/lib/services/criteriaNotificationFilters';
 import { normalizeStatus } from '@/lib/readiness-scoring';
+import {
+    computeEpicReleaseStatus,
+    isReleasedStatus,
+    type EpicForStatus,
+    type ReleaseScheduleDateRow,
+    type RetroForStatus,
+} from '@/lib/epic-release-status';
+
+/** Epic columns the nudge job needs to decide whether an epic still warrants reminders. */
+type NudgeEpicRow = EpicForStatus & { archived?: boolean | null };
 
 // Match Home list rules: Success Defined criterion (metrics, goals, reporting)
 const isSuccessDefinedCriterion = (c: { criterion?: { label?: string } | null }): boolean =>
@@ -317,7 +328,14 @@ export async function GET(request: NextRequest) {
             if (overdueError) {
                 console.error('Error fetching overdue criteria:', overdueError);
             } else if (overdueCriteria) {
-                allCriteria.push(...overdueCriteria.map((c: any) => ({ ...c, nudgeType: 'daily_after' })));
+                // Apply the ageing back-off so long-overdue items stop nudging daily.
+                const dueForNudge = shouldFilterByNudgeDate
+                    ? overdueCriteria.filter((c) => isOverdueNudgeDue(c, todayStr))
+                    : overdueCriteria;
+                if (dueForNudge.length !== overdueCriteria.length) {
+                    console.log(`⏳ Overdue back-off: ${overdueCriteria.length} -> ${dueForNudge.length} (aged items nudge weekly/fortnightly)`);
+                }
+                allCriteria.push(...dueForNudge.map((c: any) => ({ ...c, nudgeType: 'daily_after' })));
             }
         }
 
@@ -573,9 +591,11 @@ export async function GET(request: NextRequest) {
             console.log(`🧪 TEST MODE: Filtered ${allCriteriaFiltered.length} total criteria to ${criteriaToProcess.length} for ${testEmail}`);
         }
 
-        // Filter out criteria for epics with past release dates or released status
+        // Filter out criteria for epics that have shipped, been archived, or been cancelled.
         // Rules:
-        // - Past release date / released status → exclude ALL criteria reminders
+        // - Archived or Cancelled epic → exclude ALL criteria reminders
+        // - Shipped epic (computed status) or past release date → only "Success Defined" survives,
+        //   so post-launch metrics reminders keep working
         // - Future/today release date → include all criteria reminders
         // Shared release-date map, populated by the release date filter block below
         let sharedReleaseToDate = new Map<string, string | null>();
@@ -583,12 +603,12 @@ export async function GET(request: NextRequest) {
         if (epicIds.length > 0) {
             const { data: epicsWithReleases } = await supabase
                 .from('epic')
-                .select('id, aha_fields, status')
+                .select('id, aha_fields, status, target_launch_date, scheduled_ga_dev_date, archived')
                 .in('id', epicIds);
 
             const { data: releasesData } = await supabase
                 .from('release_schedule')
-                .select('release_name, launch_date')
+                .select('release_name, launch_date, cohort2_date')
                 .eq('archived', false);
             
             const releaseToDate = new Map<string, string | null>();
@@ -607,22 +627,60 @@ export async function GET(request: NextRequest) {
             }
             sharedReleaseToDate = releaseToDate;
 
-            // Released statuses that indicate past release
-            const releasedStatuses = ['Released_Cohort_1', 'Released_GA', 'Released_Retroed'];
-            
-            // Filter criteria: exclude past releases and released epics
+            // Retro completion is one of the inputs to the computed release status
+            const { data: retroRows } = await supabase
+                .from('epic_retros')
+                .select('epic_id, day_marker, status')
+                .in('epic_id', epicIds);
+
+            const retrosByEpic = new Map<string, RetroForStatus[]>();
+            ((retroRows || []) as Array<RetroForStatus & { epic_id: string }>).forEach((r) => {
+                const list = retrosByEpic.get(r.epic_id) || [];
+                list.push({ day_marker: r.day_marker, status: r.status });
+                retrosByEpic.set(r.epic_id, list);
+            });
+
+            const releaseScheduleRows = (releasesData || []) as ReleaseScheduleDateRow[];
+            const epicRows = (epicsWithReleases || []) as NudgeEpicRow[];
+
+            // Once an epic is live, only "Success Defined" is still worth chasing — post-launch
+            // metrics genuinely do get filled in late. Everything else is settled by then.
+            const isStillDueAfterLaunch = (
+                c: { criterion?: { label?: string } | null; status?: string | null }
+            ): boolean => (
+                isSuccessDefinedCriterion(c) &&
+                c.status !== 'GO' &&
+                normalizeStatus(c.status) !== 'NOT_APPLICABLE'
+            );
+
+            // Filter criteria: exclude shipped, archived and cancelled epics
             const beforeFilterCount = criteriaToProcess.length;
             criteriaToProcess = criteriaToProcess.filter((c: any) => {
-                const epic = epicsWithReleases?.find((e: any) => e.id === c.epic_id);
+                const epic = epicRows.find((e) => e.id === c.epic_id);
                 if (!epic) {
                     return true; // Keep if epic not found (shouldn't happen)
                 }
-                
-                // Check if epic has released status
-                if (epic.status && releasedStatuses.includes(epic.status)) {
-                    return false; // Exclude criteria for released epics
+
+                // Archived epics are out of view everywhere else; never nudge for them.
+                if (epic.archived === true) {
+                    return false;
                 }
-                
+
+                // Release status is DERIVED from launch/GA dates and retro completion. epic.status
+                // only ever stores a 'Cancelled' override, so comparing it to 'Released_*' never
+                // matches and shipped epics used to nudge forever (CLEARGO-I-22).
+                const computedStatus = computeEpicReleaseStatus(
+                    epic,
+                    retrosByEpic.get(epic.id) || [],
+                    { releaseSchedule: releaseScheduleRows }
+                );
+                if (computedStatus === 'Cancelled') {
+                    return false;
+                }
+                if (isReleasedStatus(computedStatus)) {
+                    return isStillDueAfterLaunch(c);
+                }
+
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
                 if (!releaseName) {
@@ -657,11 +715,7 @@ export async function GET(request: NextRequest) {
 
                 // Past release: only notify for Success Defined criterion that is still due (not GO)
                 if (releaseDateObj < today) {
-                    return (
-                        isSuccessDefinedCriterion(c) &&
-                        c.status !== 'GO' &&
-                        normalizeStatus(c.status) !== 'NOT_APPLICABLE'
-                    );
+                    return isStillDueAfterLaunch(c);
                 }
                 
                 // Today or future: exclude items rated n/a (consistent with Home list)
@@ -674,7 +728,7 @@ export async function GET(request: NextRequest) {
                 return true;
             });
             
-            console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded past releases and released status epics)`);
+            console.log(`📅 Filtered criteria: ${beforeFilterCount} -> ${criteriaToProcess.length} (excluded shipped, archived, cancelled and past-release epics)`);
         }
 
         // Add missing metrics reminders for Product Managers on past releases

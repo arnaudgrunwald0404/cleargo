@@ -690,10 +690,10 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 - **Criteria Due Date Nudges**: Daily job (`/api/jobs/criteria-nudges`) sends Slack and email reminders for criteria based on due dates stored on `epic_criterion_status.condition_due_date` (recalculated from the release schedule anchor and rating timing as above):
   - **1 week before due date**: Reminder sent 7 days before `condition_due_date`
   - **On due date**: Reminder sent on the exact `condition_due_date`
-  - **Daily after overdue**: Daily reminders for criteria past their due date
+  - **Daily after overdue**: Reminders for criteria past their due date, on an ageing back-off — daily through the first week overdue, then weekly through day 30, then fortnightly. `last_nudge_sent_at` alone is only a same-day guard, so without this an unresolved criterion re-notified every day indefinitely (CLEARGO-I-22)
   - **Grouping**: All criteria for a user are grouped into a single message, organized by release (closest future release first), then by epic within each release, sorted by urgency
   - **Email Support**: Email notifications are sent alongside Slack notifications (if enabled in settings)
-  - **Past Release Filtering**: Criteria reminders are excluded for epics with past release dates or released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`), except for missing metrics reminders (see below)
+  - **Shipped / Archived Filtering**: Criteria reminders are excluded for archived epics, cancelled epics, and epics that have shipped — where "shipped" is the **computed** release status from `computeEpicReleaseStatus()` (launch/GA dates plus retro completion), not the stored `epic.status` column, which only ever holds a `Cancelled` override. Past release dates from `release_schedule.launch_date` are still honoured as a second signal. Once an epic is live, only the "Success Defined" criterion continues to nudge, so post-launch metrics reminders keep working (see below)
   - **Missing Metrics Reminders**: For past releases, Product Managers receive reminders about missing success metrics if:
     - Epic has no `epic_success_metrics` entries
     - `track_offline = false` in `epic_success_configs`
@@ -1388,9 +1388,12 @@ All ported from RRV with ClearGo-aligned table names:
    - Before today (if `slack_nudge_daily_after_due` enabled)
 3. System filters criteria by:
    - **Dedup & completion**: Deduplicates `(epic_id, criterion_id)` rows (prefers GO/NO_GO/N/A over stale NOT_SET duplicates), drops normalized complete statuses, and suppresses non-signoff criteria when that category’s signoff row is already GO (matches readiness signoff override).
-   - **Past Release Exclusion**: Excludes criteria for epics with:
+   - **Overdue back-off**: For the overdue window, suppresses rows nudged more recently than the ageing interval allows (daily ≤7 days overdue, weekly ≤30, fortnightly beyond) — see `isOverdueNudgeDue()` in `src/lib/services/criteriaNotificationFilters.ts`.
+   - **Shipped / Archived Exclusion**: Excludes criteria for epics that are:
+     - Archived (`epic.archived = true`) or cancelled
+     - Shipped per the **computed** release status (`computeEpicReleaseStatus()` → `Released_Cohort_1` / `Released_GA` / `Released_Retroed`), derived from launch/GA dates and retro completion. The stored `epic.status` column is **not** a reliable source here — it only ever holds a `Cancelled` override, so the previous direct comparison against `Released_*` never matched and shipped epics nudged indefinitely (CLEARGO-I-22)
      - Past release dates (from `release_schedule.launch_date`)
-     - Released status (`Released_Cohort_1`, `Released_GA`, `Released_Retroed`)
+   - **Post-launch carve-out**: For shipped or past-release epics, only the "Success Defined" criterion still nudges (and only while it is not GO or N/A), preserving success-metrics follow-up
    - **Missing Metrics Exception**: For past releases, includes "Missing Success Metrics" reminders for Product Managers if:
      - Epic has no `epic_success_metrics` entries
      - `epic_success_configs.track_offline = false`
@@ -1803,10 +1806,10 @@ All ported from RRV with ClearGo-aligned table names:
 2. **AI-Powered Stale Nudges** — ✅ **IMPLEMENTED**: The daily stale-criteria job can attach a short, context-aware AI-generated nudge to each Slack/email reminder (launch, criterion, owner, staleness). Requires Gemini API key. See §10.1–10.2, Flow 4, and `src/lib/ai/client.ts` (`generateSmartNudge`).
 
 3. **Criteria Due Date Nudges** — ✅ **IMPLEMENTED**: Daily job (`/api/jobs/criteria-nudges`) sends reminders for criteria based on due dates:
-   - **Frequency**: 1 week before, on due date, and daily after overdue
+   - **Frequency**: 1 week before, on due date, then after overdue on an ageing back-off (daily for the first week, weekly to day 30, fortnightly after)
    - **Grouping**: All criteria for a user grouped into single message, organized by release (closest future first), then by epic, sorted by urgency
    - **Channels**: Supports both Slack and email notifications (configurable per user and system-wide)
-   - **Past Release Filtering**: Excludes criteria reminders for past releases and released epics
+   - **Shipped / Archived Filtering**: Excludes criteria reminders for past releases and for archived, cancelled, or shipped epics (shipped determined by computed release status, not the stored `epic.status` column); only "Success Defined" continues to nudge post-launch
    - **Missing Metrics Reminders**: For past releases, sends "Missing Success Metrics" reminders to Product Managers when:
      - Epic has no success metrics configured (`epic_success_metrics` empty)
      - `track_offline = false` in `epic_success_configs`
