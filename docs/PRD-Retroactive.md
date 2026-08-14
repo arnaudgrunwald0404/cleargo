@@ -225,6 +225,7 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Auto-Instantiation**: Criteria automatically instantiated for new epics based on tier and ClearGO Candidate value (UI Framework-only criteria only for "Yes - UI Framework" epics)
 - **Status Definitions**: Custom definitions per criterion for what constitutes GO/CONDITIONAL/NO_GO
 - **Import/Export**: Import criteria from Excel template
+- **Seeded launch gates**: Some gate criteria are seeded by migration rather than authored in the admin UI, so they are reproducible across environments. Current examples, both in `context = 'launch'`, Phase 1: **Story Brief delivered to PMM + Product Education** at T-60 (CLEARGO-I-15) and **Final product name signed off** at T-55 (CLEARGO-I-20), the latter placed ahead of every downstream builder so naming is settled before training material, help center articles, demo environments, website copy, collateral, decks, sales plays, or campaigns are built. Note `gate` drives **readiness scoring and sign-off notification** — an unvoted or NO_GO gate caps the readiness score, blocks GO, and flags the epic at risk — it does **not** hard-block downstream tasks from being started. Seeded launch criteria apply to newly created launches; existing launches pick them up when their tier is next changed
 
 #### 2.2 Matrix Interaction
 - **Traffic Light Interface**: Visual GO (green) / CONDITIONAL (yellow) / NO_GO (red) / NOT_SET (gray) status selection
