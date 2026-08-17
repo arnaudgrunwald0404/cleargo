@@ -11,6 +11,7 @@ import {
   getEpicOwners,
 } from '@/lib/services/scorecardAlertService';
 import { getEpic } from '@/lib/epics';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 import { getEffectiveCohort1DateYmd } from '@/lib/epic-cohort1-date';
 import type { Epic } from '@/types/epics';
 
@@ -26,6 +27,10 @@ export async function GET(request: NextRequest) {
     if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // No alerts on weekends or US holidays
+    const calendarSkip = await getNotificationCalendarSkip(request);
+    if (calendarSkip) return NextResponse.json(calendarSkip);
 
     console.log('Starting scorecard alert job...');
     const startTime = Date.now();

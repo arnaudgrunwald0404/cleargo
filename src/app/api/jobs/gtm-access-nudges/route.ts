@@ -15,6 +15,7 @@ import {
   wasGtmNudgeSentRecently,
   type GtmAccessPendingEpic,
 } from '@/lib/services/gtmAccessNudgeService';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120;
@@ -38,6 +39,13 @@ export async function GET(request: NextRequest) {
         timestamp: new Date().toISOString(),
       });
     }
+
+    // Once per week, on the week's first business day (test sends still go through)
+    const calendarSkip = await getNotificationCalendarSkip(request, {
+      cadence: 'weekly',
+      force: Boolean(testEmail),
+    });
+    if (calendarSkip) return NextResponse.json(calendarSkip);
 
     console.log('Starting GTM access nudge job...');
     const startTime = Date.now();

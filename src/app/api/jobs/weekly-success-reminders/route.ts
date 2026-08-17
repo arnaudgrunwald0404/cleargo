@@ -9,6 +9,7 @@ import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
 import { getEpicsNeedingReview } from '@/lib/services/successReviewService';
 import { getSettings } from '@/lib/settings-db';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Allow up to 2 minutes for job execution
@@ -22,6 +23,10 @@ export async function GET(request: NextRequest) {
     if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Once per week, on the week's first business day (holiday Monday defers to Tuesday)
+    const calendarSkip = await getNotificationCalendarSkip(request, { cadence: 'weekly' });
+    if (calendarSkip) return NextResponse.json(calendarSkip);
 
     console.log('Starting weekly success review reminder job...');
     const startTime = Date.now();

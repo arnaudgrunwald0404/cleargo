@@ -17,6 +17,7 @@ import {
     getLastReleaseAnalytics,
     getNextReleaseAnalytics,
 } from '@/lib/services/releaseAnalyticsService';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -37,6 +38,13 @@ export async function GET(request: NextRequest) {
                 return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
             }
         }
+
+        // Once per week, on the week's first business day (manual sends still go through)
+        const calendarSkip = await getNotificationCalendarSkip(request, {
+            cadence: 'weekly',
+            force: skipValidation,
+        });
+        if (calendarSkip) return NextResponse.json(calendarSkip);
 
         const supabase = createAdminClient();
         const now = new Date();
