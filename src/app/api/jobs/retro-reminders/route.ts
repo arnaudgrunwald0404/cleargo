@@ -9,6 +9,7 @@ import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifica
 import { getEpicsWithDueRetros } from '@/lib/services/retroReminderService';
 import { buildRetroReminderMessage } from '@/lib/slack/templates/retro-reminders';
 import { getSettings } from '@/lib/settings-db';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Allow up to 2 minutes for job execution
@@ -24,6 +25,11 @@ export async function GET(request: NextRequest) {
     }
 
     const adminClient = createAdminClient();
+
+    // No reminders on weekends or US holidays
+    const calendarSkip = await getNotificationCalendarSkip(request, { client: adminClient });
+    if (calendarSkip) return NextResponse.json(calendarSkip);
+
     const settings = await getSettings(adminClient);
     const reminderDaysBefore = 3; // Default: 3 days before due date
 

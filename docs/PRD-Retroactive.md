@@ -673,6 +673,16 @@ Automations drive proactive outreach when HEART or usage signals indicate risk (
 
 ### 10. Notifications & Reminders
 
+#### 10.0 Business-Day Send Window
+Scheduled outbound notifications only reach people on **US business days** in the org timezone (`app_settings.timezone`, default `America/New_York`). Weekends and company-observed holidays are silent.
+
+- **Observed holidays** (computed, no hardcoded year tables): New Year's Day, Martin Luther King Jr. Day, Presidents' Day, Memorial Day, Juneteenth, Independence Day, Labor Day, Thanksgiving Day, Christmas Day. Fixed-date holidays shift to the nearest weekday — a Saturday holiday is observed the Friday before, a Sunday holiday the Monday after. **Columbus Day and Veterans Day are federal holidays the company works**, so they are deliberately excluded and notifications send as normal.
+- **Calendar logic**: `src/lib/business-calendar.ts` (pure, unit-tested — holiday computation, weekend checks, first-business-day-of-week). Job-facing gate: `getNotificationCalendarSkip()` in `src/lib/services/notificationCalendarService.ts`, called immediately after each job's `CRON_SECRET` check. A gated job returns `200` with `{ success: true, skipped: true, reason, date, time_zone }` so the cron log shows why nothing was sent.
+- **Daily jobs** (`criteria-nudges`, `retro-reminders`, `stale-criteria`, `escalation-alerts`, `scorecard-alerts`): skip the day entirely. Overdue nudge cadence is driven by `last_nudge_sent_at`, so a skipped day simply defers the next reminder.
+- **Weekly jobs** (`weekly-digest`, `weekly-success-reminders`, `gtm-access-nudges`): cron widened to weekdays (`0 13 * * 1-5`) and the job sends only on the **week's first business day**, so a holiday Monday defers the send to Tuesday instead of losing the week.
+- **Not affected**: notifications triggered by a person's action (criterion assignment, comments, attachments, delegation, go/no-go decisions, admin Slack/email test sends) still send immediately, any day.
+- **Overrides**: `?force=true` (or `force=1`) on the job URL, `NOTIFICATIONS_IGNORE_BUSINESS_CALENDAR=true` env, or a `test_email` / `send_directly` test send. Additional company closures (e.g. the Friday after Thanksgiving, Christmas Eve) are added via `EXTRA_NOTIFICATION_HOLIDAYS` — comma-separated `YYYY-MM-DD` or `YYYY-MM-DD:Label` entries — without a code change.
+
 #### 10.1 Email Notifications
 - **Stale Criterion Reminders**: Daily reminders for criteria not updated in staleness window (see scheduled job below; reminders may include an AI-generated personalized nudge when configured).
 - **Weekly Digest**: Summary of top launches by tier/risk
@@ -1607,6 +1617,8 @@ All ported from RRV with ClearGo-aligned table names:
 - **Modals**: Forms for status updates
 
 #### Notifications
+> All scheduled reminders below observe the business-day send window (no weekends or US holidays) — see §10.0.
+
 - **Stale Criterion Reminders**: Daily reminders (job: `/api/jobs/stale-criteria`); may include an AI-generated personalized nudge when Gemini is configured.
 - **Criteria Due Date Nudges**: Daily reminders (job: `/api/jobs/criteria-nudges`) for criteria approaching or past due dates:
   - Sent 1 week before, on due date, and daily after overdue

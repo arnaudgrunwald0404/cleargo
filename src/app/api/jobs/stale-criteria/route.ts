@@ -13,6 +13,7 @@ import {
     filterCriteriaSuppressedByCategorySignoffGo,
     filterIncompleteCriteriaForNotifications,
 } from '@/lib/services/criteriaNotificationFilters';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -26,6 +27,10 @@ export async function GET(request: NextRequest) {
         if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
+
+        // No nudges on weekends or US holidays
+        const calendarSkip = await getNotificationCalendarSkip(request);
+        if (calendarSkip) return NextResponse.json(calendarSkip);
 
         const supabase = createClient();
 

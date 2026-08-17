@@ -11,6 +11,7 @@ import { groupCriteriaByEpicDueDateAndAssignee } from '@/lib/slack/notification-
 import { buildCriteriaNudgeMessage } from '@/lib/slack/templates';
 import { getSettings } from '@/lib/settings-db';
 import { defaults } from '@/lib/settings';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 import {
     addCalendarDaysToYmd,
     diffCalendarDaysBetweenYmd,
@@ -70,9 +71,16 @@ export async function GET(request: NextRequest) {
         // Use admin client for cron jobs to bypass RLS since there's no authenticated user context
         const supabase = createAdminClient();
         const settings = await getSettings(supabase);
-        
+
         // Check for test_email query parameter to filter to a single user
         const testEmail = request.nextUrl.searchParams.get('test_email')?.toLowerCase();
+
+        // No nudges on weekends or US holidays (test sends still go through)
+        const calendarSkip = await getNotificationCalendarSkip(request, {
+            force: Boolean(testEmail),
+            client: supabase,
+        });
+        if (calendarSkip) return NextResponse.json(calendarSkip);
 
         // Get nudge frequency settings (same for Slack and Email)
         const nudge1WeekBefore = settings.slack_nudge_1_week_before ?? true;

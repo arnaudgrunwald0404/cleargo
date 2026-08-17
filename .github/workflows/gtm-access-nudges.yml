@@ -2,8 +2,9 @@ name: Weekly GTM Access Nudges
 
 on:
   schedule:
-    # Mondays 9:00 AM America/New_York (13:00 UTC)
-    - cron: '0 13 * * 1'
+    # Weekdays 9:00 AM America/New_York (13:00 UTC). The job only sends on the
+    # week's first business day, so a holiday Monday defers the digest to Tuesday.
+    - cron: '0 13 * * 1-5'
   workflow_dispatch: {}
 
 jobs:

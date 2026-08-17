@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendSlackNotification, syncUserSlackHandle } from '@/lib/slack/notifications';
 import { getEpicsNeedingEscalation } from '@/lib/services/successReviewService';
+import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 120; // Allow up to 2 minutes for job execution
@@ -21,6 +22,10 @@ export async function GET(request: NextRequest) {
     if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // No alerts on weekends or US holidays
+    const calendarSkip = await getNotificationCalendarSkip(request);
+    if (calendarSkip) return NextResponse.json(calendarSkip);
 
     console.log('Starting escalation alerts job...');
     const startTime = Date.now();

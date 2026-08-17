@@ -118,6 +118,8 @@ All external API clients use **exponential backoff retry logic** (typically 3 re
 
 Triggered via GitHub Actions cron → HTTP POST to `/api/jobs/*` endpoints, authenticated with `CRON_SECRET`.
 
+**Business-day send window:** scheduled notification jobs (`criteria-nudges`, `retro-reminders`, `stale-criteria`, `escalation-alerts`, `scorecard-alerts`, `weekly-digest`, `weekly-success-reminders`, `gtm-access-nudges`) call `getNotificationCalendarSkip()` (`src/lib/services/notificationCalendarService.ts`) right after the cron-auth check and return early on weekends and company-observed US holidays, in the org timezone (Columbus Day and Veterans Day are working days here, so they are excluded). Weekly jobs run on a weekday cron and send only on the week's first business day, so a holiday Monday defers to Tuesday. Calendar logic lives in `src/lib/business-calendar.ts`. Person-triggered notifications are not gated. Override with `?force=true`, `NOTIFICATIONS_IGNORE_BUSINESS_CALENDAR=true`, or a test send.
+
 ### Roadmap Rewind Module
 
 Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind `FEATURE_ROADMAP_REWIND` (`src/lib/flags.ts`).
@@ -189,7 +191,7 @@ Merged in from the standalone Roadmap Rewind Visualizer (RRV) app; gated behind 
 
 ### Integrations (optional per feature)
 
-`AHA_DOMAIN`, `AHA_API_TOKEN`, `AHA_ROADMAP_PIVOT_ID` (custom pivot ID for weekly Roadmap Snapshot cron — bookmarks/custom_pivots), optional `NEXT_PUBLIC_AHA_IDEAS_PORTAL_URL` (embedded ideas portal, default `https://cleargo.ideas.aha.io/`), `AHA_IDEAS_WIDGET_JWT_SECRET` (required for ideas portal JWT SSO on `/feedback`; same secret as Aha portal SSO config), `AHA_IDEAS_PORTAL_JWT_CALLBACK_URL` (Callback URL from Aha identity provider — often `*.identity.aha.io/idea_portal_provider/jwt_callback/...`), `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `RESEND_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`, `PENDO_INTEGRATION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `ROVO_API_KEY`, `CLAUDE_API_KEY` (optional — HEART agent + roadmap epic blurbs; `ANTHROPIC_API_KEY` also accepted), `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` (optional — checklist pruning and stale nudges only)
+`AHA_DOMAIN`, `AHA_API_TOKEN`, `AHA_ROADMAP_PIVOT_ID` (custom pivot ID for weekly Roadmap Snapshot cron — bookmarks/custom_pivots), optional `NEXT_PUBLIC_AHA_IDEAS_PORTAL_URL` (embedded ideas portal, default `https://cleargo.ideas.aha.io/`), `AHA_IDEAS_WIDGET_JWT_SECRET` (required for ideas portal JWT SSO on `/feedback`; same secret as Aha portal SSO config), `AHA_IDEAS_PORTAL_JWT_CALLBACK_URL` (Callback URL from Aha identity provider — often `*.identity.aha.io/idea_portal_provider/jwt_callback/...`), `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `RESEND_API_KEY`, `JIRA_API_TOKEN`, `JIRA_BASE_URL`, `PENDO_INTEGRATION_KEY`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`, `ROVO_API_KEY`, `CLAUDE_API_KEY` (optional — HEART agent + roadmap epic blurbs; `ANTHROPIC_API_KEY` also accepted), `GEMINI_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` (optional — checklist pruning and stale nudges only), `EXTRA_NOTIFICATION_HOLIDAYS` (optional — extra company closures beyond the observed set in `src/lib/business-calendar.ts`; comma-separated `YYYY-MM-DD` or `YYYY-MM-DD:Label`), `NOTIFICATIONS_IGNORE_BUSINESS_CALENDAR` (optional — set `true` to send on weekends/holidays again)
 
 ## Deployment
 
