@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import {
   buildStaleCriterionMessage,
   buildLaunchRiskAlertMessage,
@@ -87,6 +88,11 @@ function renderSlackBlocks(blocks: any[]): string {
 
 export async function GET(request: NextRequest) {
   try {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const searchParams = request.nextUrl.searchParams;
     const type = searchParams.get('type');
     const channel = searchParams.get('channel') as 'slack' | 'email';

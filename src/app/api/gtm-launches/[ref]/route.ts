@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { calculateLaunchReadiness } from "@/lib/launch-readiness";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,11 @@ export async function GET(
     { params }: { params: Promise<{ ref: string }> }
 ) {
     try {
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const { ref } = await params;
         const launchRef = decodeURIComponent(ref);
         const supabase = createClient();

@@ -23,6 +23,10 @@ Last updated: 2026-05-15
 ## 🔧 Quality / Tech Debt
 
 - [ ] **SOC2 subprocessor registration** — Supabase and Netlify need to be formally registered as SOC2 subprocessors before ClearGO expands scope. *(AJ, DM 2026-05-14)*
+- [ ] **Aha webhook signature is optional** — `/api/integrations/aha/webhook` skips verification when the `x-aha-signature` header is absent, and `app_settings.aha_webhook_secret` is currently empty, so *every* real webhook takes the skip path. Requires setting a shared secret in Aha **before** the code can hard-fail unsigned requests, or epic sync breaks. Steps in `docs/auth-known-gaps.md`. *(found 2026-08-18)*
+- [ ] **RBAC check missing on `/api/admin/audit`** — route checks authentication only and carries its own `// TODO: Add RBAC check here to ensure user is Admin/Product Ops`. Any signed-in user can read the audit log. *(found 2026-08-18)*
+- [ ] **No role gating on admin pages** — `requirePageAuth()` checks signed-in, not role, so any signed-in user can load the admin UI (writes are still held at the API layer). Restoring the old `OTHER` → `/access-pending` bounce would park 11 users until roles are assigned. See `docs/auth-known-gaps.md`. *(found 2026-08-18)*
+- [ ] **`src/proxy.ts` never runs in production** — `NEXT_DISABLE_NETLIFY_EDGE=true` means its global 300/min rate limit and CORS allowlist are inert on Netlify; only per-route `withRateLimit` applies. Either re-enable edge (and re-test the `ERR_TOO_MANY_REDIRECTS` issue from `73c5162`) or move the logic server-side. *(found 2026-08-18)*
 - [ ] **Quality pass before major feature expansion** — AJ flagged concerns about maintainability as complexity grows. Do a structured audit (test coverage, error handling, performance, code organization) before taking on large new capabilities. *(AJ, DM 2026-05-14)*
 - [ ] **Test tier changes write back to Aha!** — Verify that changing tier in ClearGO correctly writes back to Aha!. *(from TODO.md)*
 

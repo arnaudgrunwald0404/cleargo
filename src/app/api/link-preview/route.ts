@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export interface LinkPreviewData {
   url: string;
@@ -37,6 +38,11 @@ function resolveUrl(base: string, path: string): string {
 }
 
 export async function GET(request: NextRequest) {
+  const email = await getAuthenticatedUserEmail();
+  if (!email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const url = request.nextUrl.searchParams.get('url');
   if (!url) {
     return NextResponse.json({ error: 'Missing url parameter' }, { status: 400 });

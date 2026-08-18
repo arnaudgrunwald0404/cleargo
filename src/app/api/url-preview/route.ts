@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -7,6 +8,11 @@ export const dynamic = 'force-dynamic';
  * Extracts Open Graph tags, title, and description from a URL
  */
 export async function GET(req: NextRequest) {
+  const email = await getAuthenticatedUserEmail();
+  if (!email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { searchParams } = new URL(req.url);
   const url = searchParams.get('url');
 

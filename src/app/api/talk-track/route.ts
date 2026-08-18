@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 const CLEARMAP_API_URL = "https://dqqzbkmtbnigytsfycbz.supabase.co/functions/v1/epic-talk-track-api";
 
 export async function GET(request: NextRequest) {
+  const email = await getAuthenticatedUserEmail();
+  if (!email) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const epicId = request.nextUrl?.searchParams?.get("epic_id") ?? null;
   if (!epicId || typeof epicId !== "string" || !epicId.trim()) {
     return NextResponse.json(
