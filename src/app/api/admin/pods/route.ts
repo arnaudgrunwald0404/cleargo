@@ -1,9 +1,15 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sortPodsByOrder } from '@/lib/pod-utils';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 async function getHandler(req: NextRequest): Promise<NextResponse<{ error: string } | { pods: string[] }>> {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const supabase = createClient();
     // Fetch distinct pod values from epic table
     const { data, error } = await supabase

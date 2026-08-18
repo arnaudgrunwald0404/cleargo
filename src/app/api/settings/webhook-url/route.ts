@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         // Get production URL from environment variable (server-side)
         let productionUrl = process.env.NEXT_PUBLIC_APP_URL || null;
         

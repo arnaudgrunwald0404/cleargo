@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { writeFile, appendFile } from 'fs/promises';
 import { join } from 'path';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: NextRequest) {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const body = await req.json();
         const logPath = join(process.cwd(), '.cursor', 'debug.log');

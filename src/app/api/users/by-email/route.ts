@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export const dynamic = 'force-dynamic';
 
@@ -7,9 +8,9 @@ export const dynamic = 'force-dynamic';
  * GET /api/users/by-email
  * 
  * Fetches user information (name, avatar) for a list of email addresses.
- * This endpoint is designed to work without authentication to support
- * email-to-name translation in public-facing views.
- * 
+ * Requires authentication: this is a directory lookup, and every view that
+ * consumes it now sits behind the auth gate.
+ *
  * Query params:
  * - emails: comma-separated list of email addresses
  * 
@@ -18,6 +19,11 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(req: NextRequest) {
     try {
+        const requesterEmail = await getAuthenticatedUserEmail();
+        if (!requesterEmail) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { searchParams } = new URL(req.url);
         const emailsParam = searchParams.get('emails');
         

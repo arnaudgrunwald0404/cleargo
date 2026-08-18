@@ -1,10 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
     try {
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const supabase = createClient();
 
         // Fetch all non-archived epics with a launch_ref

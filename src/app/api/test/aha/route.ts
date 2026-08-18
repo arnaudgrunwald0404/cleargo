@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { getAhaClient } from '@/lib/aha/client';
 
 export async function GET(req: NextRequest) {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action') || 'list';
     const epicId = searchParams.get('epicId');

@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { getSlackClient } from '@/lib/slack/client';
 
 export const dynamic = 'force-dynamic';
@@ -75,6 +76,11 @@ async function createTestChannel(releaseName: string, inviteEmail?: string) {
 }
 
 export async function POST(request: NextRequest) {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const body = await request.json();
         const { releaseName, inviteEmail } = body;
@@ -101,6 +107,11 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const searchParams = request.nextUrl.searchParams;
         const releaseName = searchParams.get('releaseName');
