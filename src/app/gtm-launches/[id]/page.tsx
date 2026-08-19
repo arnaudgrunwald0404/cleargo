@@ -31,6 +31,7 @@ import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
 import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
 import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
+import { DetailTabs, TabCount } from "@/components/DetailTabs";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -235,6 +236,7 @@ export default function GTMLaunchDetailPage() {
     const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
     const [canManage, setCanManage] = useState(false);
     const [canToggleTasks, setCanToggleTasks] = useState(false);
+    const [tab, setTab] = useState<"overview" | "checklist" | "assets" | "epics">("overview");
 
     useEffect(() => {
         (async () => {
@@ -388,6 +390,12 @@ export default function GTMLaunchDetailPage() {
     const statuses = launch?.launch_criterion_status || [];
     const epics = (launch?.launch_epic || []).map((le) => le.epic).filter(Boolean) as EpicData[];
     const linkedEpicIds = new Set((launch?.launch_epic || []).map((le) => le.epic_id));
+
+    const checklistDone = statuses.filter((s) => s.status === "DONE").length;
+    // Assets marked NOT_APPLICABLE are excluded from the denominator: an optional
+    // asset that will not ship should not make the launch look incomplete.
+    const assetsRequired = assets.filter((a) => a.status !== "NOT_APPLICABLE").length;
+    const assetsDone = assets.filter((a) => a.status === "DONE").length;
 
     const phases = useMemo(() => {
         // A Map preserves INSERTION order, so the phase headings previously came
@@ -662,6 +670,41 @@ export default function GTMLaunchDetailPage() {
                     </div>
                 </div>
 
+                {/* Detail tabs — same strip epics use, via the shared DetailTabs */}
+                <div className="mt-6">
+                    <DetailTabs
+                        ariaLabel="Launch detail tabs"
+                        activeTab={tab}
+                        onTabChange={(t) => setTab(t as typeof tab)}
+                        tabs={[
+                            { value: "overview", label: "Overview" },
+                            {
+                                value: "checklist",
+                                label: "Checklist",
+                                badge: <TabCount>{checklistDone}/{statuses.length}</TabCount>,
+                            },
+                            {
+                                value: "assets",
+                                label: "Assets",
+                                badge: <TabCount>{assetsDone}/{assetsRequired}</TabCount>,
+                            },
+                            {
+                                value: "epics",
+                                label: "Epics",
+                                badge: <TabCount>{epics.length}</TabCount>,
+                            },
+                        ]}
+                    />
+                </div>
+                <div
+                    className="rounded-b-lg rounded-tr-lg p-5 mb-8"
+                    style={{
+                        backgroundColor: "var(--color-tab-panel-bg)",
+                        border: "1px solid var(--color-gray-900)",
+                    }}
+                    role="tabpanel"
+                >
+                {tab === "overview" && (<>
                 {/* Editable metadata card */}
                 <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -758,6 +801,40 @@ export default function GTMLaunchDetailPage() {
                     </div>
                 </div>
 
+                {/* Workback timeline — the artifact runway counted back from GA */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold text-gray-700">Workback</h2>
+                        {launch?.tier && (
+                            <span className="text-xs text-gray-400">
+                                {launch.tier === "TIER_1" ? "Tier 1 · ~8 week runway" : "Tier 2 · ~5 week runway"}
+                            </span>
+                        )}
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4">
+                        <LaunchWorkbackTimeline
+                            items={statuses
+                                .filter((s) => (s.criterion?.phase || "").startsWith("Phase 0"))
+                                .map((s) => ({
+                                    id: s.criterion_id,
+                                    label: s.criterion?.label ?? "",
+                                    status: s.status,
+                                    due_date: s.due_date,
+                                    phase: s.criterion?.phase ?? null,
+                                    sort_order: s.criterion?.sort_order ?? 0,
+                                    default_due_offset_days: s.criterion?.default_due_offset_days ?? null,
+                                    tier_offset_days: s.criterion?.tier_offset_days ?? null,
+                                }))}
+                            targetLaunchDate={launch?.target_launch_date ?? null}
+                            tier={launch?.tier ?? null}
+                            launchCreatedAt={launch?.created_at ?? null}
+                        />
+                    </div>
+                </div>
+
+                </>)}
+
+                {tab === "checklist" && (<>
                 {/* Criteria checklist by phase */}
                 {statuses.length > 0 && (
                     <div className="space-y-4 mb-8">
@@ -879,37 +956,9 @@ export default function GTMLaunchDetailPage() {
                     </div>
                 )}
 
-                {/* Workback timeline — the artifact runway counted back from GA */}
-                <div className="mb-8">
-                    <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-semibold text-gray-700">Workback</h2>
-                        {launch?.tier && (
-                            <span className="text-xs text-gray-400">
-                                {launch.tier === "TIER_1" ? "Tier 1 · ~8 week runway" : "Tier 2 · ~5 week runway"}
-                            </span>
-                        )}
-                    </div>
-                    <div className="border border-gray-200 rounded-lg p-4">
-                        <LaunchWorkbackTimeline
-                            items={statuses
-                                .filter((s) => (s.criterion?.phase || "").startsWith("Phase 0"))
-                                .map((s) => ({
-                                    id: s.criterion_id,
-                                    label: s.criterion?.label ?? "",
-                                    status: s.status,
-                                    due_date: s.due_date,
-                                    phase: s.criterion?.phase ?? null,
-                                    sort_order: s.criterion?.sort_order ?? 0,
-                                    default_due_offset_days: s.criterion?.default_due_offset_days ?? null,
-                                    tier_offset_days: s.criterion?.tier_offset_days ?? null,
-                                }))}
-                            targetLaunchDate={launch?.target_launch_date ?? null}
-                            tier={launch?.tier ?? null}
-                            launchCreatedAt={launch?.created_at ?? null}
-                        />
-                    </div>
-                </div>
+                </>)}
 
+                {tab === "assets" && (<>
                 {/* Supporting assets — Campaign Brief Part 6 */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-3">
@@ -989,6 +1038,9 @@ export default function GTMLaunchDetailPage() {
                     )}
                 </div>
 
+                </>)}
+
+                {tab === "epics" && (<>
                 {/* Linked Epics */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-3">
@@ -1081,6 +1133,8 @@ export default function GTMLaunchDetailPage() {
                             </table>
                         </div>
                     )}
+                </div>
+                </>)}
                 </div>
             </div>
 
