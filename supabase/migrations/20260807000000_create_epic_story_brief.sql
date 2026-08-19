@@ -61,27 +61,32 @@ ALTER TABLE epic_story_brief_change_log ENABLE ROW LEVEL SECURITY;
 
 -- RLS is permissive here, matching epic_ai_retro's house style; capability enforcement
 -- (storyBrief.generate / storyBrief.edit / storyBrief.ratify) lives in the API route layer.
+DROP POLICY IF EXISTS "Authenticated users can read epic_story_brief" ON epic_story_brief;
 CREATE POLICY "Authenticated users can read epic_story_brief"
   ON epic_story_brief FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert epic_story_brief" ON epic_story_brief;
 CREATE POLICY "Authenticated users can insert epic_story_brief"
   ON epic_story_brief FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can update epic_story_brief" ON epic_story_brief;
 CREATE POLICY "Authenticated users can update epic_story_brief"
   ON epic_story_brief FOR UPDATE
   TO authenticated
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Authenticated users can read epic_story_brief_change_log" ON epic_story_brief_change_log;
 CREATE POLICY "Authenticated users can read epic_story_brief_change_log"
   ON epic_story_brief_change_log FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Authenticated users can insert epic_story_brief_change_log" ON epic_story_brief_change_log;
 CREATE POLICY "Authenticated users can insert epic_story_brief_change_log"
   ON epic_story_brief_change_log FOR INSERT
   TO authenticated
