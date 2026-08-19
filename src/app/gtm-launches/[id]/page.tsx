@@ -26,7 +26,7 @@ import {
     IconX,
     IconSearch,
 } from "@tabler/icons-react";
-import type { LaunchStatus } from "@/types/launches";
+import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
 import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
 
@@ -150,6 +150,29 @@ function formatDate(d: string | null): string {
     }
 }
 
+/**
+ * Assets cycle through the same three states as checklist items, plus
+ * NOT_APPLICABLE — Part 6 marks two rows optional, and an optional asset that
+ * won't ship needs to be closed out rather than left permanently unticked.
+ */
+const ASSET_CYCLE: AssetStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
+
+function nextAssetStatus(current: AssetStatus, optional: boolean): AssetStatus {
+    if (current === "NOT_APPLICABLE") return "NOT_STARTED";
+    const i = ASSET_CYCLE.indexOf(current);
+    const next = ASSET_CYCLE[(i + 1) % ASSET_CYCLE.length];
+    // Optional assets get an extra stop after DONE so they can be marked N/A.
+    if (optional && current === "DONE") return "NOT_APPLICABLE";
+    return next;
+}
+
+function assetStatusIcon(status: AssetStatus) {
+    if (status === "DONE") return <IconCheck size={16} className="text-emerald-600" />;
+    if (status === "IN_PROGRESS") return <IconLoader2 size={16} className="text-amber-500" />;
+    if (status === "NOT_APPLICABLE") return <IconX size={16} className="text-gray-300" />;
+    return <IconCircle size={16} className="text-gray-300" />;
+}
+
 function statusIcon(status: TaskStatus) {
     if (status === "DONE")
         return <IconCheck size={16} className="text-emerald-600" />;
@@ -214,6 +237,47 @@ export default function GTMLaunchDetailPage() {
     useEffect(() => {
         fetchLaunch();
     }, [fetchLaunch]);
+
+    const [assets, setAssets] = useState<LaunchAsset[]>([]);
+    const [updatingAsset, setUpdatingAsset] = useState<string | null>(null);
+
+    const fetchAssets = useCallback(async () => {
+        try {
+            const res = await fetch(`/api/launches/${launchId}/assets`);
+            if (res.ok) {
+                const data = await res.json();
+                setAssets(data.assets || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch launch assets:", err);
+        }
+    }, [launchId]);
+
+    useEffect(() => {
+        fetchAssets();
+    }, [fetchAssets]);
+
+    const cycleAssetStatus = async (asset: LaunchAsset) => {
+        const status = nextAssetStatus(asset.status, asset.optional);
+        setUpdatingAsset(asset.id);
+        // Optimistic: the row is a single field and the request is tiny, so
+        // reverting on failure is cheaper than making the user wait.
+        setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, status } : a)));
+        try {
+            const res = await fetch(`/api/launches/${launchId}/assets`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ asset_id: asset.id, status }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+        } catch (err) {
+            console.error("Failed to update asset:", err);
+            setAssets((prev) => prev.map((a) => (a.id === asset.id ? { ...a, status: asset.status } : a)));
+            notifications.show({ color: "red", message: "Could not update that asset." });
+        } finally {
+            setUpdatingAsset(null);
+        }
+    };
 
     const statuses = launch?.launch_criterion_status || [];
     const epics = (launch?.launch_epic || []).map((le) => le.epic).filter(Boolean) as EpicData[];
@@ -658,6 +722,74 @@ export default function GTMLaunchDetailPage() {
                         })}
                     </div>
                 )}
+
+                {/* Supporting assets — Campaign Brief Part 6 */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold text-gray-700">
+                            Supporting Assets ({assets.filter((a) => a.status === "DONE").length}/
+                            {assets.filter((a) => a.status !== "NOT_APPLICABLE").length})
+                        </h2>
+                    </div>
+                    {assets.length === 0 ? (
+                        <p className="text-xs text-gray-400">
+                            No assets tracked yet. They are created with the launch.
+                        </p>
+                    ) : (
+                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+                            {assets.map((a) => (
+                                <div key={a.id} className="flex items-center gap-3 px-3 py-2">
+                                    <button
+                                        type="button"
+                                        disabled={!canToggleTasks || updatingAsset === a.id}
+                                        onClick={() => cycleAssetStatus(a)}
+                                        className="flex-shrink-0 disabled:opacity-50"
+                                        title={
+                                            canToggleTasks
+                                                ? "Click to advance status"
+                                                : "You do not have permission to change this"
+                                        }
+                                    >
+                                        {assetStatusIcon(a.status)}
+                                    </button>
+                                    <div className="min-w-0 flex-1">
+                                        <span
+                                            className={`text-sm ${
+                                                a.status === "NOT_APPLICABLE"
+                                                    ? "text-gray-400 line-through"
+                                                    : "text-gray-700"
+                                            }`}
+                                        >
+                                            {a.label}
+                                        </span>
+                                        {a.optional && (
+                                            <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-400">
+                                                Optional
+                                            </span>
+                                        )}
+                                    </div>
+                                    {a.owner_email && (
+                                        <span className="text-xs text-gray-400 flex-shrink-0 truncate max-w-[160px]">
+                                            {a.owner_email}
+                                        </span>
+                                    )}
+                                    {a.url ? (
+                                        <a
+                                            href={a.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="text-xs text-purple-600 hover:underline flex items-center gap-1 flex-shrink-0"
+                                        >
+                                            <IconExternalLink size={12} /> Open
+                                        </a>
+                                    ) : (
+                                        <span className="text-xs text-gray-300 flex-shrink-0">No link</span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
 
                 {/* Linked Epics */}
                 <div className="mb-8">

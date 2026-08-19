@@ -80,6 +80,48 @@ export interface LaunchCriterionStatus {
   criterion?: LaunchCriterion;
 }
 
+/** Status of one supporting asset. NOT_APPLICABLE closes out an optional asset. */
+export type AssetStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'NOT_APPLICABLE';
+
+/** Curated default asset list, from Part 6 of the Campaign Brief template. */
+export interface LaunchAssetTemplate {
+  id: string;
+  asset_key: string;
+  label: string;
+  description: string | null;
+  tier_applicability: string;
+  optional: boolean;
+  default_owner_email: string | null;
+  sort_order: number;
+  is_active: boolean;
+}
+
+/** One supporting asset on one launch — the Collateral Index row. */
+export interface LaunchAsset {
+  id: string;
+  launch_id: string;
+  template_id: string | null;
+  label: string;
+  status: AssetStatus;
+  owner_email: string | null;
+  /** "Where to Find It". */
+  url: string | null;
+  notes: string | null;
+  optional: boolean;
+  sort_order: number;
+  last_updated_at: string | null;
+  last_updated_by: string | null;
+  created_at: string;
+}
+
+export interface UpdateLaunchAssetDTO {
+  label?: string;
+  status?: AssetStatus;
+  owner_email?: string | null;
+  url?: string | null;
+  notes?: string | null;
+}
+
 export interface CreateLaunchDTO {
   name: string;
   tier?: LaunchTier;

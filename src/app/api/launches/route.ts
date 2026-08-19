@@ -124,6 +124,33 @@ async function postHandler(req: NextRequest) {
             await supabase.from('launch_criterion_status').insert(statusRows);
         }
 
+        // Supporting assets (Campaign Brief Part 6) instantiate the same way the
+        // checklist does, filtered by the same tier rule.
+        const { data: assetTemplates } = await supabase
+            .from('launch_asset_template')
+            .select('id, label, tier_applicability, optional, default_owner_email, sort_order')
+            .eq('is_active', true);
+
+        const applicableAssets = (assetTemplates || []).filter((t) =>
+            launchCriterionApplies(t.tier_applicability, launch.tier)
+        );
+
+        if (applicableAssets.length > 0) {
+            await supabase.from('launch_asset').insert(
+                applicableAssets.map((t) => ({
+                    launch_id: launch.id,
+                    template_id: t.id,
+                    // Copied, not joined: renaming a template must not relabel
+                    // assets on launches that already shipped.
+                    label: t.label,
+                    status: 'NOT_STARTED',
+                    owner_email: resolveCriterionOwner(t.default_owner_email, launch.owner_email),
+                    optional: t.optional,
+                    sort_order: t.sort_order,
+                }))
+            );
+        }
+
         return NextResponse.json(launch, { status: 201 });
     } catch (error: any) {
         console.error('Error in POST /api/launches:', error);
