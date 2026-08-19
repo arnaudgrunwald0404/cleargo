@@ -91,3 +91,10 @@ CREATE POLICY "Authenticated users can insert epic_story_brief_change_log"
   ON epic_story_brief_change_log FOR INSERT
   TO authenticated
   WITH CHECK (true);
+
+-- Role grants are NOT automatic in this project: 20260717000000 exists solely
+-- because the launch tables were created without them and every role got 42501
+-- "permission denied", breaking every /api/launches* endpoint. RLS above still
+-- governs row access.
+GRANT ALL ON public.epic_story_brief TO anon, authenticated, service_role;
+GRANT ALL ON public.epic_story_brief_change_log TO anon, authenticated, service_role;
