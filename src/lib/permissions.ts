@@ -44,7 +44,10 @@ export type CapabilityId =
   | "roadmap.analysis.generate"
   | "roadmap.planVsActual.arr.write"
   | "roadmap.planVsActual.gtm.write"
-  | "launch.accessDates.update";
+  | "launch.accessDates.update"
+  | "storyBrief.generate"
+  | "storyBrief.edit"
+  | "storyBrief.ratify";
 
 export type Capability = {
   id: CapabilityId;
@@ -268,6 +271,21 @@ export const CAPABILITIES: Capability[] = [
     label: "Update GTM Access Dates",
     description: "Set actual GTM access and Internal Readiness dates, mark N/A, and confirm completion on epics (PM only).",
   },
+  {
+    id: "storyBrief.generate",
+    label: "Generate Story Brief",
+    description: "Allow generating/regenerating the AI-drafted epic Story Brief.",
+  },
+  {
+    id: "storyBrief.edit",
+    label: "Edit Story Brief",
+    description: "Allow editing the AI-drafted Story Brief content before ratification.",
+  },
+  {
+    id: "storyBrief.ratify",
+    label: "Ratify Story Brief",
+    description: "Allow ratifying a Story Brief to v1.0, locking it as the record of truth for downstream teams.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -314,6 +332,9 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.planVsActual.arr.write": ["CPO", "PRODUCT_OPS", "PM"],
   "roadmap.planVsActual.gtm.write": ["CPO", "PRODUCT_OPS", "PM"],
   "launch.accessDates.update": ["PM"],
+  "storyBrief.generate": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "storyBrief.edit": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "storyBrief.ratify": ["PMM", "CPO", "PRODUCT_OPS"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

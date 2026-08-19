@@ -8,6 +8,8 @@ interface EpicDetailTabsProps {
     hasTalkTrackVideo?: boolean;
     /** When true, show Roadmap Rewind + Confidence (feature-flagged on parent). */
     showRoadmapRewind?: boolean;
+    /** When true, show the Story Brief tab (feature-flagged on parent). */
+    showStoryBrief?: boolean;
 }
 
 const baseTabs = [
@@ -23,14 +25,18 @@ export function EpicDetailTabs({
     onTabChange,
     hasTalkTrackVideo,
     showRoadmapRewind,
+    showStoryBrief,
 }: EpicDetailTabsProps) {
-    const tabs = showRoadmapRewind
-        ? [
-              ...baseTabs,
-              { value: 'rewind', label: 'Rewind' } as const,
-              { value: 'confidence', label: 'Confidence' } as const,
-          ]
-        : [...baseTabs];
+    const tabs = [
+        ...baseTabs,
+        ...(showStoryBrief ? [{ value: 'storyBrief', label: 'Story Brief' } as const] : []),
+        ...(showRoadmapRewind
+            ? [
+                  { value: 'rewind', label: 'Rewind' } as const,
+                  { value: 'confidence', label: 'Confidence' } as const,
+              ]
+            : []),
+    ];
 
     return (
         <nav 

@@ -210,6 +210,19 @@ ClearCompany runs multiple product launches and feature releases in parallel acr
 - **Owner Assignment**: Assign epic owners and decision owners
 - **Product Manager Resolution**: Automatic resolution of product manager based on epic ownership and pod mapping
 
+#### 1.6 Story Brief (AI-Assisted)
+
+Epic-scoped, AI-drafted "day-one handoff" doc from PM to PMM — the source downstream Messaging/Enablement/Campaign briefs are meant to quote. Driven by Kristin Penney (PMM) to stop launch info from degrading in translation across Aha/Jira/ClearGO; gated behind `FEATURE_STORY_BRIEF` (`src/lib/flags.ts`).
+
+- **Eight fixed sections** matching the real Story Brief template: what we're building (+ UI/workflow disruption assessment), why we prioritized it, the value story (working narrative, vignette, ROI hypothesis, platform pull-through), launch scope in/out, personas & segments, open decisions (gate items), soft commitments, downstream deliverables. Header metadata: tier, PM/PMM/Prod Ed owners, target window (announce vs. GA date), story code.
+- **Delivery validation**: cross-checks Aha (`epic.aha_fields.standard_fields`) against Jira (epic status + child-issue completion via `getJiraEpic`/`searchJiraIssues`) to catch "claimed shipped but Jira shows incomplete work" gaps before they reach the draft; degrades gracefully when Aha/Jira data is unavailable. GitHub cross-check was scoped out (no GitHub integration exists in ClearGO).
+- **Drafting input**: primarily PM-supplied notes/call transcript (`sourceNotes`), since most sections (why prioritized, value story, personas, open decisions, soft commitments) aren't derivable from Aha/Jira alone; delivery-validation facts always ground sections 1 and 4. Grounding discipline (banned marketing-phrase list, explicit `unstated_assumption` tagging, deterministic confidence recompute) follows the HEART agent's pattern rather than the looser AI retro generator.
+- **Draft → ratified workflow**: `status` draft/ratified with `brief_version` v0.1 → v1.0; ratification is blocked (400) unless every open-decision item is `resolved` or `deferred` — operationalizes the template's own rule and Kristin's two commercialization gates (naming, pricing) as an enforced gate, not just convention. Editing or regenerating a ratified brief reverts it to draft.
+- **Change / decision log**: `epic_story_brief_change_log` records every generate/edit/ratify action with an actor and a required "what changed and why" note, rendered as a visible log section (per Arnaud Grunwald's ask, since briefs revise multiple times).
+- **Data model**: `epic_story_brief` (one row per epic, `content`/`ai_draft` jsonb, `validation_snapshot`, `context_snapshot`), `epic_story_brief_change_log`. RLS permissive by design; capability enforcement (`storyBrief.generate`/`.edit`/`.ratify`) lives in the API route layer.
+- **API**: `GET/POST/PATCH /api/epics/[id]/story-brief`, `POST /api/epics/[id]/story-brief/ratify`.
+- **Non-goal (v1)**: multi-epic Launch Brief roll-up via `launch`/`launch_epic` — this feature is single-epic only; the existing launch-level "Story Brief delivered" gate criterion (`launch_criterion_status`) is a separate, unconnected mechanism today.
+
 ### 2. Readiness Matrix
 
 #### 2.1 Criteria Management
