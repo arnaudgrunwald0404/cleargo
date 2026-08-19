@@ -25,8 +25,15 @@
 -- not before it. Because the ordering and the offsets are data, resolving that
 -- argument is a row change rather than a migration.
 --
--- NOTE: the slide is titled DRAFT WORKBACK. Treat these numbers as the starting
--- position Kristin can move, not as a ratified schedule.
+-- Also seeds the commercialization gate that precedes the runway, from Kristin's
+-- "00 Launch Gate Checklist": Gate 1 naming, Gate 2 pricing/packaging, and a
+-- dateless Gate 3 beta placeholder. The Story Brief now depends on Gate 2, per
+-- that checklist ("No Story Brief starts until Naming and Pricing/Packaging are
+-- cleared") and the deck's matching guardrail.
+--
+-- NOTE: the slide is titled DRAFT WORKBACK and the gate buffer is a chosen
+-- number, not a ratified one. Treat all of these as the starting position to
+-- refine with Dan and Kristin, not as a settled schedule.
 
 ALTER TABLE public.criterion
   ADD COLUMN IF NOT EXISTS tier_offset_days jsonb;
@@ -47,13 +54,83 @@ CREATE INDEX IF NOT EXISTS idx_criterion_depends_on
 
 DO $migration$
 DECLARE
+  v_gate_phase text := 'Phase 00: Commercialization Gate';
   v_phase   text := 'Phase 0: Artifact Runway';
+  v_gate1   uuid;
+  v_gate2   uuid;
+  v_gate3   uuid;
   v_story   uuid;
   v_message uuid;
   v_enable  uuid;
   v_camp    uuid;
   v_assets  uuid;
 BEGIN
+  -- ── The commercialization gate, ahead of the runway ──────────────────────
+  -- Kristin's "00 Launch Gate Checklist": "No Story Brief starts until Naming
+  -- and Pricing/Packaging are cleared." The deck's guardrail says the same
+  -- ("Both gates cleared -> Story Brief -> Message Brief -> Enablement -> GTM"),
+  -- as does the artifact slide ("Two hard blockers before anything can be sold:
+  -- naming locked, and pricing approved by Finance + RevOps").
+  --
+  -- Phase name sorts before 'Phase 0:' because '0' < ':', so the gate renders
+  -- ahead of the runway in the admin list (ordered by phase, then sort_order).
+
+  -- Gate 1 - Naming / commercialization. Sign-off: PMM + CPO.
+  -- This is CLEARGO-I-20's existing criterion, moved ahead of the Story Brief.
+  -- I-20 placed it at T-55, which put naming AFTER the brief it is meant to
+  -- unblock; the gate checklist inverts that. Inserted here if missing, since
+  -- 20260814000000 was never applied to production either.
+  SELECT id INTO v_gate1 FROM public.criterion
+   WHERE context = 'launch' AND label = 'Final product name signed off';
+
+  IF v_gate1 IS NULL THEN
+    INSERT INTO public.criterion
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+    VALUES
+      ('Final product name signed off',
+       'Gate 1 - Naming / commercialization. Classified (enhancement / net-new / cross-module differentiator), name-or-not decision made, name type set, mapped to price-list structure, naming convention checked. A no-name outcome is a valid recorded result. Clears when the name is locked and mapped to sales structure; feeds the Story Brief header and the Message Brief. Sign-off: PMM + CPO.',
+       'Strategy', true, 'ALL', 'launch', v_gate_phase, 0, 63)
+    RETURNING id INTO v_gate1;
+  END IF;
+
+  -- Gate 2 - Pricing / packaging. Sign-off: CPO + RevOps.
+  -- ClearGo had no pricing gate at all, only a non-gate task ("Build packaging
+  -- & pricing strategy", T-50). That absence is the "even finding out IF there
+  -- is a pricing/packaging impact takes sleuthing" complaint from the deck.
+  SELECT id INTO v_gate2 FROM public.criterion
+   WHERE context = 'launch' AND label = 'Pricing and packaging cleared';
+  IF v_gate2 IS NULL THEN
+    INSERT INTO public.criterion
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+    VALUES
+      ('Pricing and packaging cleared',
+       'Gate 2 - Pricing / packaging. Model is STABLE, not in-flight: unpriced OR a changing structure (PEPM to banded, flat to credit, standalone to packaged) is a HARD BLOCKER -- a live price with a moving structure does NOT clear this gate. Also requires full-customer value established, true cost to deliver known, legal / order-form language drafted, packaging decided for BOTH clocks (existing-customer migration path and net-new target model), and systems representation ready (order form, CRM, price list). An unresolved pricing gate may enter the Story Brief for alignment, but cannot reach field enablement or GTM. Sign-off: CPO + RevOps.',
+       'Strategy', true, 'ALL', 'launch', v_gate_phase, 1, 63)
+    RETURNING id INTO v_gate2;
+  END IF;
+
+  -- Gate 3 - Beta proof gate. Deliberately DATELESS and outside the dependency
+  -- chain: three documents place beta differently. The gate checklist puts it
+  -- before the Story Brief; the deck's beta slide sequences it "Gates cleared >
+  -- Build > BETA > Full GTM launch"; the workback slide puts BETA after
+  -- Supporting Assets, just before GA. Talya Reynolds' comment on the workback
+  -- slide is open on the same question. Seeded as a non-gate so it appears on
+  -- the checklist without blocking readiness, and with no offsets so it shows no
+  -- date it cannot justify. Promote to gate=true and give it offsets once
+  -- placement is settled. T3 is excluded: the deck is unambiguous that T3 skips
+  -- beta entirely.
+  SELECT id INTO v_gate3 FROM public.criterion
+   WHERE context = 'launch' AND label = 'Beta proof gate passed';
+  IF v_gate3 IS NULL THEN
+    INSERT INTO public.criterion
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+    VALUES
+      ('Beta proof gate passed',
+       'Gate 3 - Beta proof gate (applies only where the capability runs a design-partner beta). Entry conditions met (named existing-customer design partners, success criteria agreed up front, feedback loop and NDA, scoped to a workflow). Proof 1: the claims hold up live -- the SE team can demonstrate it in a real account matching what we plan to say. Proof 2: adoption is real -- partners hit the intended workflow, backed by usage data. Proof 3: the story lands -- partners articulate the value in their own words. Net-new motion sequenced separately: clearing beta proves it for existing accounts, not for net-new. TIMING UNRESOLVED - placement relative to the Story Brief and GA is still being settled, so this carries no due date yet. Sign-off: PMM + Product + SE lead.',
+       'Readiness', false, 'TIER_1,TIER_2', 'launch', v_gate_phase, 2, NULL)
+    RETURNING id INTO v_gate3;
+  END IF;
+
   -- 1. Story Brief -- head of the chain, required at every tier.
   -- Inserted here if missing: 20260718000000 seeded it but was never applied to
   -- production, and the runway has no head without it.
@@ -143,10 +220,36 @@ BEGIN
   -- TIER_3 is carried for forward-compatibility: launches are only ever T1/T2
   -- (see src/types/launches.ts), but epics do have a TIER_3 and the deck
   -- specifies a T3 motion.
+  -- Gates sit one week ahead of the Story Brief (63/42/21 vs 56/35/14).
+  -- Kristin's checklist says "open this at ideation", which is not a date; one
+  -- week is a chosen buffer to be refined with Dan and Kristin, not a ratified
+  -- number. Editable per tier in Admin > Settings > Launch Criteria.
+  UPDATE public.criterion SET
+      phase = v_gate_phase,
+      sort_order = 0,
+      tier_offset_days = '{"TIER_1": 63, "TIER_2": 42, "TIER_3": 21}'::jsonb,
+      depends_on_criterion_id = NULL
+    WHERE id = v_gate1;
+
+  UPDATE public.criterion SET
+      phase = v_gate_phase,
+      sort_order = 1,
+      tier_offset_days = '{"TIER_1": 63, "TIER_2": 42, "TIER_3": 21}'::jsonb,
+      depends_on_criterion_id = v_gate1
+    WHERE id = v_gate2;
+
+  -- Gate 3 keeps null offsets on purpose -- see the beta timing note above.
+  UPDATE public.criterion SET
+      phase = v_gate_phase,
+      sort_order = 2,
+      tier_offset_days = NULL,
+      depends_on_criterion_id = NULL
+    WHERE id = v_gate3;
+
   UPDATE public.criterion SET
       phase = v_phase,
       tier_offset_days = '{"TIER_1": 56, "TIER_2": 35, "TIER_3": 14}'::jsonb,
-      depends_on_criterion_id = NULL
+      depends_on_criterion_id = v_gate2
     WHERE id = v_story;
 
   UPDATE public.criterion SET
