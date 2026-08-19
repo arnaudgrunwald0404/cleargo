@@ -391,7 +391,7 @@ export function StoryBriefPanel({ epicId }: StoryBriefPanelProps) {
                         />
                         <Select
                           label="Gate"
-                          data={['naming', 'pricing', 'other']}
+                          data={['naming', 'pricing', 'launch_window', 'other']}
                           value={d.gate_type}
                           disabled={!editing}
                           onChange={(v) =>
@@ -399,7 +399,7 @@ export function StoryBriefPanel({ epicId }: StoryBriefPanelProps) {
                             setDraftContent({
                               ...draftContent,
                               open_decisions: updateAt(draftContent.open_decisions, i, {
-                                gate_type: v as 'naming' | 'pricing' | 'other',
+                                gate_type: v as 'naming' | 'pricing' | 'launch_window' | 'other',
                               }),
                             })
                           }

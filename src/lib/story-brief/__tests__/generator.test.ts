@@ -171,6 +171,53 @@ describe('toStoryBriefContent', () => {
     });
     const content = toStoryBriefContent(output);
     expect(content.open_decisions.every((d) => d.status === 'open')).toBe(true);
-    expect(content.open_decisions).toHaveLength(2);
+  });
+
+  it('keeps the model-raised gates rather than replacing them', () => {
+    const output = makeOutput({
+      open_decisions: [
+        { item: 'Naming', owner: 'PMM', blocks: 'materials', gate_type: 'naming' },
+        { item: 'Pricing', owner: 'Finance', blocks: 'quoting', gate_type: 'pricing' },
+      ],
+    });
+    const content = toStoryBriefContent(output);
+    expect(content.open_decisions.find((d) => d.gate_type === 'naming')?.owner).toBe('PMM');
+    expect(content.open_decisions.find((d) => d.gate_type === 'pricing')?.owner).toBe('Finance');
+  });
+
+  it('backfills all three standing gates when the model raises none', () => {
+    // The template lists naming, pricing, and launch window as standing bullets
+    // under section 6 — silence in the PM's notes must not drop them.
+    const content = toStoryBriefContent(makeOutput({ open_decisions: [] }));
+    expect(content.open_decisions.map((d) => d.gate_type).sort()).toEqual([
+      'launch_window',
+      'naming',
+      'pricing',
+    ]);
+    expect(content.open_decisions.every((d) => d.status === 'open')).toBe(true);
+  });
+
+  it('backfills only the standing gates that are missing', () => {
+    const output = makeOutput({
+      open_decisions: [{ item: 'Pricing', owner: 'Finance', blocks: 'quoting', gate_type: 'pricing' }],
+    });
+    const types = toStoryBriefContent(output).open_decisions.map((d) => d.gate_type);
+    expect(types.filter((t) => t === 'pricing')).toHaveLength(1);
+    expect(types).toContain('naming');
+    expect(types).toContain('launch_window');
+  });
+
+  it('leaves unrelated decisions untouched while backfilling', () => {
+    const output = makeOutput({
+      open_decisions: [{ item: 'Legal review', owner: 'Legal', blocks: 'launch', gate_type: 'other' }],
+    });
+    const content = toStoryBriefContent(output);
+    expect(content.open_decisions).toHaveLength(4);
+    expect(content.open_decisions[0].item).toBe('Legal review');
+  });
+
+  it('keeps a backfilled brief unratifiable until the gates are addressed', () => {
+    const content = toStoryBriefContent(makeOutput({ open_decisions: [] }));
+    expect(isReadyToRatify(content.open_decisions)).toBe(false);
   });
 });

@@ -66,7 +66,7 @@ export const storyBriefOutputSchema = z.object({
       item: z.string(),
       owner: z.string(),
       blocks: z.string(),
-      gate_type: z.enum(['naming', 'pricing', 'other']).default('other'),
+      gate_type: z.enum(['naming', 'pricing', 'launch_window', 'other']).default('other'),
     })
   ),
   soft_commitments: z.array(z.string()).describe('"None identified" is a valid single entry.'),
@@ -190,11 +190,52 @@ export interface StoryBriefContent extends Omit<StoryBriefOutput, 'open_decision
   >;
 }
 
+/**
+ * The three gate items the Story Brief template lists as standing bullets under
+ * section 6 — they are part of the form, not findings the model discovers. If a
+ * PM's notes never mention pricing, the honest brief says "pricing undecided",
+ * not nothing: a silently absent pricing gate is exactly the "even finding out
+ * IF there is a pricing/packaging impact takes sleuthing" complaint.
+ */
+const STANDING_GATES: Array<{
+  gate_type: 'naming' | 'pricing' | 'launch_window';
+  item: string;
+  blocks: string;
+}> = [
+  {
+    gate_type: 'naming',
+    item: 'Naming: market-facing name confirmed? Internal codenames never go to market.',
+    blocks: 'Every downstream asset inherits the name, so it resolves first.',
+  },
+  {
+    gate_type: 'pricing',
+    item: 'Pricing / packaging: included, add-on, or tier?',
+    blocks: 'Messaging, quoting guidance, and campaign CTAs.',
+  },
+  {
+    gate_type: 'launch_window',
+    item: 'Launch window + channels: date and tier-appropriate channel footprint.',
+    blocks: 'Workback dates and the channel plan.',
+  },
+];
+
 export function toStoryBriefContent(output: StoryBriefOutput): StoryBriefContent {
-  return {
-    ...output,
-    open_decisions: output.open_decisions.map((d) => ({ ...d, status: 'open' as const })),
-  };
+  const decisions = output.open_decisions.map((d) => ({ ...d, status: 'open' as const }));
+
+  // Backfill any standing gate the model did not raise, so all three always
+  // appear and must be resolved or explicitly deferred before ratification.
+  for (const gate of STANDING_GATES) {
+    if (decisions.some((d) => d.gate_type === gate.gate_type)) continue;
+    decisions.push({
+      item: gate.item,
+      owner: 'Unassigned',
+      blocks: gate.blocks,
+      gate_type: gate.gate_type,
+      status: 'open' as const,
+    });
+  }
+
+  return { ...output, open_decisions: decisions };
 }
 
 // ── LLM call ────────────────────────────────────────────────────────────────────────────
@@ -243,7 +284,7 @@ Draft all 8 sections of the Story Brief:
 3. The value story — working narrative, a short vignette, an ROI hypothesis, platform pull-through.
 4. Launch scope — in / out, each row with a stated reason. If a delivery gap was detected above, it MUST appear in out_of_scope (or open_decisions) — never describe something as fully shipped when Jira shows incomplete work.
 5. Personas & segments.
-6. Open decisions (gate items) — every unresolved question blocking downstream work, with an owner. Naming and pricing decisions, if mentioned in the notes, should be tagged gate_type accordingly.
+6. Open decisions (gate items) — every unresolved question blocking downstream work, with an owner. The template carries three standing gates that must ALWAYS appear regardless of whether the notes mention them: naming (gate_type "naming"), pricing/packaging (gate_type "pricing"), and launch window + channels (gate_type "launch_window"). If the notes settle one, say what was settled; if they are silent, state that it is undecided and name who owns it. Never omit one because it was not discussed.
 7. Soft commitments & known audience expectations — "None identified" is a valid entry if nothing was mentioned.
 8. Downstream deliverables this brief feeds — the standard chain (messaging doc -> launch/campaign brief -> enablement doc), enablement plan, marketing plan.
 
