@@ -10,6 +10,7 @@ import {
     Button,
     Modal,
     Stack,
+    Group,
     ScrollArea,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
@@ -166,6 +167,45 @@ function nextAssetStatus(current: AssetStatus, optional: boolean): AssetStatus {
     return next;
 }
 
+/**
+ * launch_criterion_status.links is a free-form jsonb array; the API has always
+ * accepted it but nothing ever wrote to it, so anything could be in there.
+ * Normalise defensively rather than trusting the shape.
+ */
+function asLinkList(raw: unknown): Array<{ url: string; label?: string }> {
+    if (!Array.isArray(raw)) return [];
+    const out: Array<{ url: string; label?: string }> = [];
+    for (const entry of raw) {
+        if (typeof entry === "string") {
+            out.push({ url: entry });
+            continue;
+        }
+        if (entry && typeof entry === "object") {
+            const rec = entry as Record<string, unknown>;
+            if (typeof rec.url === "string") {
+                out.push({
+                    url: rec.url,
+                    ...(typeof rec.label === "string" ? { label: rec.label } : {}),
+                });
+            }
+        }
+    }
+    return out;
+}
+
+/** Reject anything that is not an http(s) URL — these render as clickable links. */
+function normalizeUrl(input: string): string | null {
+    const t = input.trim();
+    if (!t) return null;
+    const withScheme = /^https?:\/\//i.test(t) ? t : `https://${t}`;
+    try {
+        const u = new URL(withScheme);
+        return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+    } catch {
+        return null;
+    }
+}
+
 function assetStatusIcon(status: AssetStatus) {
     if (status === "DONE") return <IconCheck size={16} className="text-emerald-600" />;
     if (status === "IN_PROGRESS") return <IconLoader2 size={16} className="text-amber-500" />;
@@ -256,6 +296,71 @@ export default function GTMLaunchDetailPage() {
     useEffect(() => {
         fetchAssets();
     }, [fetchAssets]);
+
+    // Link editor, shared by checklist rows (links jsonb) and assets (url).
+    const [linkTarget, setLinkTarget] = useState<
+        | { kind: "criterion"; item: CriterionStatus }
+        | { kind: "asset"; item: LaunchAsset }
+        | null
+    >(null);
+    const [linkUrl, setLinkUrl] = useState("");
+    const [linkLabel, setLinkLabel] = useState("");
+    const [savingLink, setSavingLink] = useState(false);
+
+    const openLinkEditor = (
+        kind: "criterion" | "asset",
+        item: CriterionStatus | LaunchAsset
+    ) => {
+        if (kind === "criterion") {
+            const existing = asLinkList((item as CriterionStatus).links)[0];
+            setLinkUrl(existing?.url || "");
+            setLinkLabel(existing?.label || "");
+            setLinkTarget({ kind, item: item as CriterionStatus });
+        } else {
+            setLinkUrl((item as LaunchAsset).url || "");
+            setLinkLabel("");
+            setLinkTarget({ kind, item: item as LaunchAsset });
+        }
+    };
+
+    const saveLink = async () => {
+        if (!linkTarget) return;
+        const cleared = linkUrl.trim() === "";
+        const url = cleared ? null : normalizeUrl(linkUrl);
+        if (!cleared && !url) {
+            notifications.show({ color: "red", message: "That does not look like a valid web address." });
+            return;
+        }
+        setSavingLink(true);
+        try {
+            if (linkTarget.kind === "asset") {
+                const res = await fetch(`/api/launches/${launchId}/assets`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ asset_id: linkTarget.item.id, url }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                setAssets((prev) =>
+                    prev.map((a) => (a.id === linkTarget.item.id ? { ...a, url } : a))
+                );
+            } else {
+                const links = url ? [{ url, ...(linkLabel.trim() ? { label: linkLabel.trim() } : {}) }] : [];
+                const res = await fetch(`/api/launch-criteria-status/${launchId}`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ criterion_id: linkTarget.item.criterion_id, links }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                await fetchLaunch();
+            }
+            setLinkTarget(null);
+        } catch (err) {
+            console.error("Failed to save link:", err);
+            notifications.show({ color: "red", message: "Could not save that link." });
+        } finally {
+            setSavingLink(false);
+        }
+    };
 
     const cycleAssetStatus = async (asset: LaunchAsset) => {
         const status = nextAssetStatus(asset.status, asset.optional);
@@ -713,6 +818,36 @@ export default function GTMLaunchDetailPage() {
                                                             </span>
                                                         );
                                                     })()}
+                                                    {(() => {
+                                                        const links = asLinkList(item.links);
+                                                        return (
+                                                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                                {links.map((l, i) => (
+                                                                    <a
+                                                                        key={i}
+                                                                        href={l.url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-xs text-purple-600 hover:underline flex items-center gap-1"
+                                                                        title={l.url}
+                                                                    >
+                                                                        <IconExternalLink size={12} />
+                                                                        {l.label || "Link"}
+                                                                    </a>
+                                                                ))}
+                                                                {canToggleTasks && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => openLinkEditor("criterion", item)}
+                                                                        className="text-gray-300 hover:text-purple-600 transition-colors"
+                                                                        title={links.length ? "Edit links" : "Add a link"}
+                                                                    >
+                                                                        <IconLink size={14} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             ))}
                                         </div>
@@ -773,18 +908,29 @@ export default function GTMLaunchDetailPage() {
                                             {a.owner_email}
                                         </span>
                                     )}
-                                    {a.url ? (
-                                        <a
-                                            href={a.url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="text-xs text-purple-600 hover:underline flex items-center gap-1 flex-shrink-0"
-                                        >
-                                            <IconExternalLink size={12} /> Open
-                                        </a>
-                                    ) : (
-                                        <span className="text-xs text-gray-300 flex-shrink-0">No link</span>
-                                    )}
+                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        {a.url && (
+                                            <a
+                                                href={a.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-xs text-purple-600 hover:underline flex items-center gap-1"
+                                                title={a.url}
+                                            >
+                                                <IconExternalLink size={12} /> Open
+                                            </a>
+                                        )}
+                                        {canToggleTasks && (
+                                            <button
+                                                type="button"
+                                                onClick={() => openLinkEditor("asset", a)}
+                                                className="text-gray-300 hover:text-purple-600 transition-colors"
+                                                title={a.url ? "Edit link" : "Add a link"}
+                                            >
+                                                <IconLink size={14} />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -885,6 +1031,51 @@ export default function GTMLaunchDetailPage() {
                     )}
                 </div>
             </div>
+
+            {/* Link editor — checklist items store a links[] array, assets a single url */}
+            <Modal
+                opened={linkTarget !== null}
+                onClose={() => setLinkTarget(null)}
+                title={
+                    linkTarget?.kind === "asset"
+                        ? `Link for “${linkTarget.item.label}”`
+                        : `Link for “${linkTarget?.item.criterion?.label ?? ""}”`
+                }
+                centered
+            >
+                <Stack gap="sm">
+                    <TextInput
+                        label="Web address"
+                        placeholder="docs.google.com/document/d/..."
+                        description="Where this artifact lives. Leave blank to remove the link."
+                        value={linkUrl}
+                        onChange={(e) => setLinkUrl(e.currentTarget.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter" && !savingLink) saveLink();
+                        }}
+                        data-autofocus
+                    />
+                    {linkTarget?.kind === "criterion" && (
+                        <TextInput
+                            label="Label (optional)"
+                            placeholder="e.g. AGENT_Story-Brief_v0.1"
+                            value={linkLabel}
+                            onChange={(e) => setLinkLabel(e.currentTarget.value)}
+                            onKeyDown={(e) => {
+                                if (e.key === "Enter" && !savingLink) saveLink();
+                            }}
+                        />
+                    )}
+                    <Group justify="flex-end" gap="sm">
+                        <Button variant="subtle" onClick={() => setLinkTarget(null)} disabled={savingLink}>
+                            Cancel
+                        </Button>
+                        <Button onClick={saveLink} loading={savingLink}>
+                            Save
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
 
             {/* Link Epic Modal */}
             <Modal
