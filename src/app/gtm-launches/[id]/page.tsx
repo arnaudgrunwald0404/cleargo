@@ -28,6 +28,7 @@ import {
 } from "@tabler/icons-react";
 import type { LaunchStatus } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
+import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -47,12 +48,15 @@ interface CriterionStatus {
         phase: string | null;
         gate: string | null;
         sort_order: number;
+        default_due_offset_days?: number | null;
+        tier_offset_days?: Record<string, number> | null;
     };
 }
 
 interface LaunchData {
     id: string;
     name: string;
+    created_at?: string | null;
     tier: string | null;
     target_launch_date: string | null;
     readiness_pct: number;
@@ -76,6 +80,61 @@ interface EpicData {
     target_launch_date?: string | null;
     readiness_score?: number;
     readiness_status?: string | null;
+}
+
+/**
+ * Workback status for one checklist row.
+ *
+ * The stored due_date is when the artifact must be COMPLETE (its successor's
+ * start); tier_offset_days is when it must BEGIN. Showing both is what makes a
+ * compressed runway legible: per Kristin, when a release lands closer than the
+ * tier's runway needs, the sequence is compressed and already started -- the
+ * artifact predates the window, it isn't missing -- so it must not read as late.
+ */
+function workbackStatus(
+    item: CriterionStatus,
+    launch: LaunchData | null
+): { label: string; className: string; tooltip: string } | null {
+    if (!item.due_date && !item.criterion?.tier_offset_days) return null;
+
+    const startDate = tierAwareDueDate(
+        launch?.target_launch_date,
+        {
+            default_due_offset_days: item.criterion?.default_due_offset_days ?? null,
+            tier_offset_days: item.criterion?.tier_offset_days ?? null,
+        },
+        launch?.tier
+    );
+    const due = formatDate(item.due_date);
+
+    if (item.status === "DONE") {
+        return { label: `Due ${due}`, className: "text-gray-400", tooltip: "Complete" };
+    }
+
+    const state = scheduleState({
+        startDate,
+        dueDate: item.due_date,
+        today: new Date().toISOString().slice(0, 10),
+        launchCreatedAt: launch?.created_at ?? null,
+    });
+
+    const starts = startDate ? formatDate(startDate) : "—";
+    switch (state) {
+        case "compressed":
+            return {
+                label: `Compressed · due ${due}`,
+                className: "text-amber-600",
+                tooltip: `This artifact was due to start ${starts}, before the launch was created. The release landed closer than this tier's runway needs, so the sequence is compressed rather than missed.`,
+            };
+        case "upcoming":
+            return { label: `Starts ${starts}`, className: "text-gray-400", tooltip: `Due ${due}` };
+        case "late":
+            return { label: `Overdue · was due ${due}`, className: "text-red-500", tooltip: `Should have started ${starts}` };
+        case "in_window":
+            return { label: `Due ${due}`, className: "text-gray-500", tooltip: `Started ${starts}` };
+        default:
+            return null;
+    }
 }
 
 function formatDate(d: string | null): string {
@@ -578,11 +637,18 @@ export default function GTMLaunchDetailPage() {
                                                             Hard Gate
                                                         </span>
                                                     )}
-                                                    {item.due_date && (
-                                                        <span className="text-xs text-gray-400 flex-shrink-0">
-                                                            Due {formatDate(item.due_date)}
-                                                        </span>
-                                                    )}
+                                                    {(() => {
+                                                        const s = workbackStatus(item, launch);
+                                                        if (!s) return null;
+                                                        return (
+                                                            <span
+                                                                className={`text-xs flex-shrink-0 ${s.className}`}
+                                                                title={s.tooltip}
+                                                            >
+                                                                {s.label}
+                                                            </span>
+                                                        );
+                                                    })()}
                                                 </div>
                                             ))}
                                         </div>

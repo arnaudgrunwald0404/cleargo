@@ -5,7 +5,7 @@ import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
 import { calculateLaunchReadiness } from '@/lib/launch-readiness';
-import { launchCriterionApplies, tierAwareDueDate, resolveCriterionOwner, type CriterionSchedule } from '@/lib/launchCriteria';
+import { launchCriterionApplies, runwayDueDate, resolveCriterionOwner, type CriterionScheduleNode } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +28,7 @@ async function getHandler(
                 launch_epic(id, epic_id, epic:epic(id, name, tier, readiness_score, readiness_status, status, target_launch_date)),
                 launch_criterion_status(
                     id, criterion_id, status, owner_id, owner_email, due_date, notes, links, last_updated_at,
-                    criterion:criterion(id, label, description, phase, category, gate, tier_applicability, sort_order, is_active)
+                    criterion:criterion(id, label, description, phase, category, gate, tier_applicability, sort_order, is_active, default_due_offset_days, tier_offset_days)
                 )
             `)
             .eq('id', id)
@@ -118,7 +118,7 @@ async function patchHandler(
         if (before && 'tier' in updates && data.tier !== before.tier) {
             const { data: templates } = await supabase
                 .from('criterion')
-                .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days')
+                .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days, depends_on_criterion_id')
                 .eq('context', 'launch')
                 .eq('is_active', true);
             const { data: tasks } = await supabase
@@ -140,7 +140,7 @@ async function patchHandler(
                     criterion_id: t.id,
                     status: 'NOT_STARTED',
                     owner_email: resolveCriterionOwner(t.default_owner_email, data.owner_email),
-                    due_date: tierAwareDueDate(data.target_launch_date, t, data.tier),
+                    due_date: runwayDueDate(data.target_launch_date, t, templates || [], data.tier),
                 }));
             if (toAdd.length > 0) {
                 await supabase.from('launch_criterion_status').insert(toAdd);
@@ -167,18 +167,31 @@ async function patchHandler(
         const tierMoved = 'tier' in updates && !!before && data.tier !== before.tier;
 
         if (before && data.target_launch_date && (dateMoved || tierMoved)) {
-            const { data: tasks } = await supabase
-                .from('launch_criterion_status')
-                .select('id, due_date, criterion:criterion(default_due_offset_days, tier_offset_days)')
-                .eq('launch_id', id);
+            // The whole template set is needed, not just each task's own criterion:
+            // a due date is now derived from where the SUCCESSOR artifact starts,
+            // so resolving one row means looking across the runway.
+            const [{ data: tasks }, { data: allTemplates }] = await Promise.all([
+                supabase
+                    .from('launch_criterion_status')
+                    .select(
+                        'id, due_date, criterion:criterion(id, tier_applicability, default_due_offset_days, tier_offset_days, depends_on_criterion_id)'
+                    )
+                    .eq('launch_id', id),
+                supabase
+                    .from('criterion')
+                    .select('id, tier_applicability, default_due_offset_days, tier_offset_days, depends_on_criterion_id')
+                    .eq('context', 'launch')
+                    .eq('is_active', true),
+            ]);
+            const templateSet = (allTemplates || []) as CriterionScheduleNode[];
 
             const groups = new Map<string, string[]>();
             for (const t of tasks || []) {
-                const criterion = t.criterion as unknown as CriterionSchedule | null;
+                const criterion = t.criterion as unknown as CriterionScheduleNode | null;
                 if (!criterion) continue;
-                const oldDerived = tierAwareDueDate(before.target_launch_date, criterion, before.tier);
+                const oldDerived = runwayDueDate(before.target_launch_date, criterion, templateSet, before.tier);
                 if (t.due_date !== null && t.due_date !== oldDerived) continue;
-                const newDerived = tierAwareDueDate(data.target_launch_date, criterion, data.tier);
+                const newDerived = runwayDueDate(data.target_launch_date, criterion, templateSet, data.tier);
                 if (!newDerived || newDerived === t.due_date) continue;
                 const ids = groups.get(newDerived) || [];
                 ids.push(t.id);

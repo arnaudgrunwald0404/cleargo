@@ -106,11 +106,90 @@ export function normalizeTierOffsets(input: unknown): Record<string, number> | n
     return Object.keys(out).length > 0 ? out : null;
 }
 
-/** T-minus due date resolved against the launch tier. */
+/** T-minus date resolved against the launch tier. This is the artifact's START. */
 export function tierAwareDueDate(
     targetLaunchDate: string | null | undefined,
     criterion: CriterionSchedule,
     launchTier: string | null | undefined
 ): string | null {
     return tMinusDueDate(targetLaunchDate, resolveOffsetDays(criterion, launchTier));
+}
+
+/** A criterion as a node in the artifact runway. */
+export interface CriterionScheduleNode extends CriterionSchedule {
+    id: string;
+    tier_applicability?: string | null;
+    depends_on_criterion_id?: string | null;
+}
+
+/**
+ * Kristin's workback numbers are where each artifact must START, counted back
+ * from the release. A criterion, though, records a completion ("delivered",
+ * "ratified"), so its due date is the moment its successor has to begin —
+ * Story Brief is due when the Message Brief starts.
+ *
+ * A criterion with no successor keeps its own offset as the due date. That
+ * covers both the tail of the runway and all 51 pre-workback criteria, whose
+ * behaviour is therefore completely unchanged.
+ */
+export function runwayDueOffsetDays(
+    criterion: CriterionScheduleNode,
+    all: CriterionScheduleNode[],
+    launchTier: string | null | undefined
+): number | null {
+    const own = resolveOffsetDays(criterion, launchTier);
+    const successor = all.find(
+        (c) =>
+            c.depends_on_criterion_id === criterion.id &&
+            c.id !== criterion.id &&
+            launchCriterionApplies(c.tier_applicability, launchTier)
+    );
+    if (!successor) return own;
+    const successorStart = resolveOffsetDays(successor, launchTier);
+    return successorStart ?? own;
+}
+
+/** Due date for a criterion, derived from where its successor starts. */
+export function runwayDueDate(
+    targetLaunchDate: string | null | undefined,
+    criterion: CriterionScheduleNode,
+    all: CriterionScheduleNode[],
+    launchTier: string | null | undefined
+): string | null {
+    return tMinusDueDate(targetLaunchDate, runwayDueOffsetDays(criterion, all, launchTier));
+}
+
+export type ScheduleState =
+    | 'no_date'
+    /** Release landed closer than the runway needs — the window never existed. */
+    | 'compressed'
+    | 'upcoming'
+    | 'in_window'
+    | 'late';
+
+/**
+ * Kristin: "when a release date is closer than the T1 runway (as happened with
+ * 2026.8), the system should show the sequence as compressed/started rather than
+ * flagging an error — the artifact predates the window, it isn't missing."
+ *
+ * The test for that is whether the artifact was supposed to start before the
+ * launch record even existed. If so the runway never fit, and calling it late
+ * blames the team for arithmetic.
+ */
+export function scheduleState(args: {
+    startDate: string | null;
+    dueDate: string | null;
+    today: string;
+    launchCreatedAt?: string | null;
+}): ScheduleState {
+    const { startDate, dueDate, today, launchCreatedAt } = args;
+    if (!startDate && !dueDate) return 'no_date';
+
+    if (startDate && launchCreatedAt) {
+        const createdDay = launchCreatedAt.slice(0, 10);
+        if (startDate < createdDay) return 'compressed';
+    }
+    if (startDate && today < startDate) return 'upcoming';
+    if (dueDate && today > dueDate) return 'late';
+    return 'in_window';
 }

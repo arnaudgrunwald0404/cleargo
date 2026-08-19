@@ -4,7 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { launchCriterionApplies, tierAwareDueDate, resolveCriterionOwner } from '@/lib/launchCriteria';
+import { launchCriterionApplies, runwayDueDate, resolveCriterionOwner } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,7 +102,7 @@ async function postHandler(req: NextRequest) {
         // Tier drives the checklist: only templates applicable to the launch tier load.
         const { data: templates } = await supabase
             .from('criterion')
-            .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days')
+            .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days, depends_on_criterion_id')
             .eq('context', 'launch')
             .eq('is_active', true);
 
@@ -116,7 +116,9 @@ async function postHandler(req: NextRequest) {
                 criterion_id: t.id,
                 status: 'NOT_STARTED',
                 owner_email: resolveCriterionOwner(t.default_owner_email, launch.owner_email),
-                due_date: tierAwareDueDate(target_launch_date, t, launch.tier),
+                // Start date drives nothing stored yet; the due date is where the
+                // successor artifact has to begin (see runwayDueOffsetDays).
+                due_date: runwayDueDate(target_launch_date, t, templates || [], launch.tier),
             }));
 
             await supabase.from('launch_criterion_status').insert(statusRows);
