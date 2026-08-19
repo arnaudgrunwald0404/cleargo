@@ -30,6 +30,7 @@ import {
 import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
 import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
+import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -389,18 +390,38 @@ export default function GTMLaunchDetailPage() {
     const linkedEpicIds = new Set((launch?.launch_epic || []).map((le) => le.epic_id));
 
     const phases = useMemo(() => {
+        // A Map preserves INSERTION order, so the phase headings previously came
+        // out in whatever order the API happened to return rows — which is
+        // unordered. Sort first, then insert, so the groups themselves are
+        // ordered and not just the items inside them.
+        //
+        // Phase names sort correctly as strings by design: 'Phase 00:' precedes
+        // 'Phase 0:' because '0' < ':', which puts the commercialization gate
+        // ahead of the artifact runway, and single-digit phases 1-6 follow.
+        // "Uncategorized" is forced last rather than sorting under 'U'.
+        const ordered = [...statuses].sort((a, b) => {
+            const pa = a.criterion?.phase ?? "";
+            const pb = b.criterion?.phase ?? "";
+            if (pa !== pb) {
+                if (!pa) return 1;
+                if (!pb) return -1;
+                // Deliberately codepoint order, NOT localeCompare: locale
+                // collation de-prioritises punctuation and sorts
+                // "Phase 0: Artifact Runway" BEFORE "Phase 00: Commercialization
+                // Gate", which puts the runway ahead of the gate that blocks it.
+                // Raw comparison keeps ':' (0x3A) after '0' (0x30) and orders
+                // the gate first, which is the real sequence.
+                return pa < pb ? -1 : 1;
+            }
+            return (a.criterion?.sort_order ?? 0) - (b.criterion?.sort_order ?? 0);
+        });
+
         const map = new Map<string, CriterionStatus[]>();
-        for (const s of statuses) {
+        for (const s of ordered) {
             const phase = s.criterion?.phase || "Uncategorized";
             const list = map.get(phase) || [];
             list.push(s);
             map.set(phase, list);
-        }
-        for (const [, items] of map) {
-            items.sort(
-                (a, b) =>
-                    (a.criterion?.sort_order ?? 0) - (b.criterion?.sort_order ?? 0)
-            );
         }
         return map;
     }, [statuses]);
@@ -857,6 +878,37 @@ export default function GTMLaunchDetailPage() {
                         })}
                     </div>
                 )}
+
+                {/* Workback timeline — the artifact runway counted back from GA */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold text-gray-700">Workback</h2>
+                        {launch?.tier && (
+                            <span className="text-xs text-gray-400">
+                                {launch.tier === "TIER_1" ? "Tier 1 · ~8 week runway" : "Tier 2 · ~5 week runway"}
+                            </span>
+                        )}
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4">
+                        <LaunchWorkbackTimeline
+                            items={statuses
+                                .filter((s) => (s.criterion?.phase || "").startsWith("Phase 0"))
+                                .map((s) => ({
+                                    id: s.criterion_id,
+                                    label: s.criterion?.label ?? "",
+                                    status: s.status,
+                                    due_date: s.due_date,
+                                    phase: s.criterion?.phase ?? null,
+                                    sort_order: s.criterion?.sort_order ?? 0,
+                                    default_due_offset_days: s.criterion?.default_due_offset_days ?? null,
+                                    tier_offset_days: s.criterion?.tier_offset_days ?? null,
+                                }))}
+                            targetLaunchDate={launch?.target_launch_date ?? null}
+                            tier={launch?.tier ?? null}
+                            launchCreatedAt={launch?.created_at ?? null}
+                        />
+                    </div>
+                </div>
 
                 {/* Supporting assets — Campaign Brief Part 6 */}
                 <div className="mb-8">

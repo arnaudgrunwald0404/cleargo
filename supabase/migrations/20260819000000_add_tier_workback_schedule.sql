@@ -57,7 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_criterion_depends_on
 DO $migration$
 DECLARE
   v_gate_phase text := 'Phase 00: Commercialization Gate';
-  v_phase   text := 'Phase 0: Artifact Runway';
+  v_phase   text := 'Phase 01: Artifact Runway';
   v_gate1   uuid;
   v_gate2   uuid;
   v_gate3   uuid;
@@ -74,8 +74,11 @@ BEGIN
   -- as does the artifact slide ("Two hard blockers before anything can be sold:
   -- naming locked, and pricing approved by Finance + RevOps").
   --
-  -- Phase name sorts before 'Phase 0:' because '0' < ':', so the gate renders
-  -- ahead of the runway in the admin list (ordered by phase, then sort_order).
+  -- Phase names are numbered so they sort correctly under ANY collation.
+  -- 'Phase 00:' vs 'Phase 01:' compare digit-by-digit at the same offset.
+  -- Do NOT use 'Phase 0:' for the runway: both Postgres's default collation and
+  -- JS localeCompare de-prioritise punctuation and would sort it BEFORE
+  -- 'Phase 00:', putting the runway ahead of the gate that blocks it.
 
   -- Gate 1 - Naming / commercialization. Sign-off: PMM + CPO.
   -- This is CLEARGO-I-20's existing criterion, moved ahead of the Story Brief.
