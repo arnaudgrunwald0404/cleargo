@@ -96,7 +96,21 @@ BEGIN
     RETURNING id INTO v_enable;
   END IF;
 
-  -- 4. Campaign Brief -- Tier 1 only. Stub: template still pending from PMM.
+  -- 4. Campaign Brief -- the launch operating document, not a marketing artifact.
+  -- The template is 10 parts: launch identification and key dates, customer and
+  -- market, messaging drawn from the ratified messaging doc, pricing and
+  -- packaging, an 11-row stakeholder RACI, an 11-item asset checklist, GTM
+  -- motion plan by audience, a T-6 to T+60 workback calendar, success metrics,
+  -- and a risks and approval log.
+  --
+  -- TIER OPEN QUESTION: seeded TIER_1 only, following the workback slide (whose
+  -- T2 row omits "Camp") and the BOM slide (T2 = "targeted play + comms" vs T1's
+  -- "full campaign + comms"). The template itself disagrees -- it is headed
+  -- "Tier [1 / 2] Launch Brief", is subtitled "Capability Launch" which is the
+  -- deck's own name for Tier 2, and anchors its workback at "T-6 for T2; extend
+  -- for T1". If Kristin confirms it covers both tiers, change this row to
+  -- 'TIER_1,TIER_2', give it a TIER_2 offset, and repoint Supporting Assets to
+  -- depend on it (the asset checklist lives inside this document).
   SELECT id INTO v_camp FROM public.criterion
    WHERE context = 'launch' AND label = 'Campaign Brief delivered';
   IF v_camp IS NULL THEN
@@ -104,7 +118,7 @@ BEGIN
       (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
     VALUES
       ('Campaign Brief delivered',
-       'STUB -- awaiting the Campaign Brief template from PMM. Built once audience and messaging are clear; Tier 1 only, since Tier 2 runs a targeted play rather than a full campaign.',
+       'Launch operating document owned by PMM: launch identification and key dates, customer problem and proof, messaging quoted from the ratified Message Brief, pricing and packaging, stakeholder RACI, asset checklist, GTM motion plan by audience, workback calendar, success metrics, and the approval log. Locked once the approval log is signed.',
        'Enablement', false, 'TIER_1', 'launch', v_phase, 3, 21)
     RETURNING id INTO v_camp;
   END IF;
