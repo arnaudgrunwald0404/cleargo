@@ -31,6 +31,31 @@ export function tMinusDueDate(
     return d.toISOString().split('T')[0];
 }
 
+/**
+ * Placeholder owner meaning "whoever owns this launch" — resolved to the
+ * launch's own owner_email at instantiation. Kristin's artifact ownership is
+ * "PM for the Story Brief, PMM for everything downstream", and the PMM in
+ * question is always the launch owner, so the template stores intent rather
+ * than a hard-coded person who would go stale.
+ */
+export const LAUNCH_OWNER_PLACEHOLDER = '[launch owner (PMM)]';
+
+/**
+ * Resolve a criterion template's default owner against the launch.
+ * Returns null rather than leaking a placeholder string into an email column.
+ */
+export function resolveCriterionOwner(
+    defaultOwnerEmail: string | null | undefined,
+    launchOwnerEmail: string | null | undefined
+): string | null {
+    if (!defaultOwnerEmail) return null;
+    if (defaultOwnerEmail === LAUNCH_OWNER_PLACEHOLDER) return launchOwnerEmail || null;
+    // Any other bracketed placeholder (e.g. the pod-PM one) is intent, not an
+    // address — a launch bundles epics across pods, so it has no single PM.
+    if (defaultOwnerEmail.startsWith('[')) return null;
+    return defaultOwnerEmail;
+}
+
 /** The scheduling fields a criterion contributes to its own due date. */
 export interface CriterionSchedule {
     default_due_offset_days?: number | null;

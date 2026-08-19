@@ -31,9 +31,11 @@
 -- that checklist ("No Story Brief starts until Naming and Pricing/Packaging are
 -- cleared") and the deck's matching guardrail.
 --
--- NOTE: the slide is titled DRAFT WORKBACK and the gate buffer is a chosen
--- number, not a ratified one. Treat all of these as the starting position to
--- refine with Dan and Kristin, not as a settled schedule.
+-- STATUS: the per-artifact durations were confirmed by Kristin Penney on
+-- 2026-08-19 as the workback standard, so they are no longer a reading of a
+-- draft slide. The GATE buffer (63/42/21) is still a chosen number -- her
+-- checklist says "open this at ideation", which is not a date -- and beta
+-- placement is still unsettled. Refine both with Dan and Kristin.
 
 ALTER TABLE public.criterion
   ADD COLUMN IF NOT EXISTS tier_offset_days jsonb;
@@ -139,11 +141,11 @@ BEGIN
 
   IF v_story IS NULL THEN
     INSERT INTO public.criterion
-      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days, default_owner_email)
     VALUES
       ('Story Brief delivered to PMM + Product Education',
        'Day-one handoff gate: the story brief (what / why / customer value, disruption assessment) is delivered to PMM and Product Education at build kickoff, before any downstream GTM work begins.',
-       'Strategy', true, 'ALL', 'launch', v_phase, 0, 56)
+       'Strategy', true, 'ALL', 'launch', v_phase, 0, 56, '[name of pod''s product manager]')
     RETURNING id INTO v_story;
   END IF;
 
@@ -152,11 +154,11 @@ BEGIN
    WHERE context = 'launch' AND label = 'Message Brief ratified';
   IF v_message IS NULL THEN
     INSERT INTO public.criterion
-      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days, default_owner_email)
     VALUES
       ('Message Brief ratified',
        'Messaging and positioning doc ratified by PMM: naming rules, positioning statement, message house with the hero pillar marked, and the claims register. Every downstream asset quotes this document rather than restating it.',
-       'Strategy', true, 'TIER_1,TIER_2', 'launch', v_phase, 1, 42)
+       'Strategy', true, 'TIER_1,TIER_2', 'launch', v_phase, 1, 42, '[launch owner (PMM)]')
     RETURNING id INTO v_message;
   END IF;
 
@@ -165,11 +167,11 @@ BEGIN
    WHERE context = 'launch' AND label = 'Enablement Brief delivered';
   IF v_enable IS NULL THEN
     INSERT INTO public.criterion
-      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days, default_owner_email)
     VALUES
       ('Enablement Brief delivered',
        'Field Enablement Guide delivered by PMM + Product Education, quoting the ratified Message Brief. Tier 2 baseline is the 12-section template; Tier 1 adds Product Deep Dive, Persona Grid, Internal FAQ, Configuration Reference, CSM Email Guide, and Communication Timeline.',
-       'Enablement', true, 'TIER_1,TIER_2', 'launch', v_phase, 2, 28)
+       'Enablement', true, 'TIER_1,TIER_2', 'launch', v_phase, 2, 28, '[launch owner (PMM)]')
     RETURNING id INTO v_enable;
   END IF;
 
@@ -180,23 +182,20 @@ BEGIN
   -- motion plan by audience, a T-6 to T+60 workback calendar, success metrics,
   -- and a risks and approval log.
   --
-  -- TIER OPEN QUESTION: seeded TIER_1 only, following the workback slide (whose
-  -- T2 row omits "Camp") and the BOM slide (T2 = "targeted play + comms" vs T1's
-  -- "full campaign + comms"). The template itself disagrees -- it is headed
-  -- "Tier [1 / 2] Launch Brief", is subtitled "Capability Launch" which is the
-  -- deck's own name for Tier 2, and anchors its workback at "T-6 for T2; extend
-  -- for T1". If Kristin confirms it covers both tiers, change this row to
-  -- 'TIER_1,TIER_2', give it a TIER_2 offset, and repoint Supporting Assets to
-  -- depend on it (the asset checklist lives inside this document).
+  -- Applies to BOTH tiers, confirmed by Kristin 2026-08-19: she gave Campaign a
+  -- Tier 2 duration (14d), settling the apparent conflict where the workback
+  -- slide's T2 row omitted "Camp". The template agreed all along -- it is headed
+  -- "Tier [1 / 2] Launch Brief" and subtitled "Capability Launch", the deck's own
+  -- name for Tier 2.
   SELECT id INTO v_camp FROM public.criterion
    WHERE context = 'launch' AND label = 'Campaign Brief delivered';
   IF v_camp IS NULL THEN
     INSERT INTO public.criterion
-      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days, default_owner_email)
     VALUES
       ('Campaign Brief delivered',
-       'Launch operating document owned by PMM: launch identification and key dates, customer problem and proof, messaging quoted from the ratified Message Brief, pricing and packaging, stakeholder RACI, asset checklist, GTM motion plan by audience, workback calendar, success metrics, and the approval log. Locked once the approval log is signed.',
-       'Enablement', false, 'TIER_1', 'launch', v_phase, 3, 21)
+       'Launch operating document owned by PMM with Growth/Marketing: launch identification and key dates, customer problem and proof, messaging quoted from the ratified Message Brief, pricing and packaging, stakeholder RACI, asset checklist, GTM motion plan by audience, workback calendar, success metrics, and the approval log. Locked once the approval log is signed.',
+       'Enablement', false, 'TIER_1,TIER_2', 'launch', v_phase, 3, 21, '[launch owner (PMM)]')
     RETURNING id INTO v_camp;
   END IF;
 
@@ -205,18 +204,20 @@ BEGIN
    WHERE context = 'launch' AND label = 'Supporting Assets delivered';
   IF v_assets IS NULL THEN
     INSERT INTO public.criterion
-      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days)
+      (label, description, category, gate, tier_applicability, context, phase, sort_order, default_due_offset_days, default_owner_email)
     VALUES
       ('Supporting Assets delivered',
        'Vignettes, demo video, and proof points handed to Sales Consultants / SEs. The SE reality-check is the earliest signal that the claims upstream are grounded.',
-       'Enablement', false, 'TIER_1,TIER_2', 'launch', v_phase, 4, 14)
+       'Enablement', false, 'TIER_1,TIER_2', 'launch', v_phase, 4, 14, '[launch owner (PMM)]')
     RETURNING id INTO v_assets;
   END IF;
 
   -- Per-tier lead times, straight from the workback slide.
-  --   T1 ~8wk (56d) -> Story 56, Msg 42, Enable 28, Camp 21, Assets 14
-  --   T2 ~5wk (35d) -> Story 35, Msg 28, Enable 21,          Assets 14
-  --   T3 ~2wk (14d) -> Story (light) 14 only; T3 ships as a release note, no beta.
+  --   T1 (~8wk) -> Story 56, Msg 42, Enable 28, Camp 21, Assets 14
+  --   T2 (~5wk) -> Story 35, Msg 28, Enable 21, Camp 14, Assets  7
+  --   T3 (~2wk) -> Story (light) 14 only; T3 ships as a release note, no beta.
+  -- Confirmed by Kristin Penney 2026-08-19 as the workback standard. Each number
+  -- is the point the artifact must START, counted back from the release date.
   -- TIER_3 is carried for forward-compatibility: launches are only ever T1/T2
   -- (see src/types/launches.ts), but epics do have a TIER_3 and the deck
   -- specifies a T3 motion.
@@ -266,15 +267,16 @@ BEGIN
 
   UPDATE public.criterion SET
       phase = v_phase,
-      tier_offset_days = '{"TIER_1": 21}'::jsonb,
+      tier_offset_days = '{"TIER_1": 21, "TIER_2": 14}'::jsonb,
       depends_on_criterion_id = v_enable
     WHERE id = v_camp;
 
-  -- Assets depends on Enablement, not Campaign: Campaign is Tier 1 only, so a
-  -- Tier 2 launch would otherwise depend on a criterion it never instantiates.
+  -- Assets now depends on Campaign rather than Enablement: with Campaign
+  -- confirmed for both tiers, it is the true predecessor, and the Campaign
+  -- Brief's own asset checklist is what Supporting Assets delivers against.
   UPDATE public.criterion SET
       phase = v_phase,
-      tier_offset_days = '{"TIER_1": 14, "TIER_2": 14}'::jsonb,
-      depends_on_criterion_id = v_enable
+      tier_offset_days = '{"TIER_1": 14, "TIER_2": 7}'::jsonb,
+      depends_on_criterion_id = v_camp
     WHERE id = v_assets;
 END $migration$;

@@ -4,7 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { launchCriterionApplies, tierAwareDueDate } from '@/lib/launchCriteria';
+import { launchCriterionApplies, tierAwareDueDate, resolveCriterionOwner } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -115,7 +115,7 @@ async function postHandler(req: NextRequest) {
                 launch_id: launch.id,
                 criterion_id: t.id,
                 status: 'NOT_STARTED',
-                owner_email: t.default_owner_email || null,
+                owner_email: resolveCriterionOwner(t.default_owner_email, launch.owner_email),
                 due_date: tierAwareDueDate(target_launch_date, t, launch.tier),
             }));
 

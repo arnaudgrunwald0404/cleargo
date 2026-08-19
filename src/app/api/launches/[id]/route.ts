@@ -5,7 +5,7 @@ import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
 import { calculateLaunchReadiness } from '@/lib/launch-readiness';
-import { launchCriterionApplies, tierAwareDueDate, type CriterionSchedule } from '@/lib/launchCriteria';
+import { launchCriterionApplies, tierAwareDueDate, resolveCriterionOwner, type CriterionSchedule } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -139,7 +139,7 @@ async function patchHandler(
                     launch_id: id,
                     criterion_id: t.id,
                     status: 'NOT_STARTED',
-                    owner_email: t.default_owner_email || null,
+                    owner_email: resolveCriterionOwner(t.default_owner_email, data.owner_email),
                     due_date: tierAwareDueDate(data.target_launch_date, t, data.tier),
                 }));
             if (toAdd.length > 0) {
