@@ -52,6 +52,12 @@ export interface LaunchCriterion {
   tier_applicability: string;
   default_owner_email: string | null;
   default_due_offset_days: number | null;
+  // Per-tier T-minus override, e.g. { TIER_1: 56, TIER_2: 35 }. Lead time scales
+  // with tier in the GTM workback, so one scalar cannot serve T1 and T2.
+  // Falls back to default_due_offset_days when the launch tier has no entry.
+  tier_offset_days: Record<string, number> | null;
+  // Predecessor in the artifact runway (Story -> Message -> Enablement -> ...).
+  depends_on_criterion_id: string | null;
   sort_order: number;
   is_active: boolean;
   context: 'launch';

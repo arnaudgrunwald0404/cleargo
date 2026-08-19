@@ -5,7 +5,7 @@ import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
 import { calculateLaunchReadiness } from '@/lib/launch-readiness';
-import { launchCriterionApplies, tMinusDueDate } from '@/lib/launchCriteria';
+import { launchCriterionApplies, tierAwareDueDate, type CriterionSchedule } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -118,7 +118,7 @@ async function patchHandler(
         if (before && 'tier' in updates && data.tier !== before.tier) {
             const { data: templates } = await supabase
                 .from('criterion')
-                .select('id, tier_applicability, default_owner_email, default_due_offset_days')
+                .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days')
                 .eq('context', 'launch')
                 .eq('is_active', true);
             const { data: tasks } = await supabase
@@ -140,7 +140,7 @@ async function patchHandler(
                     criterion_id: t.id,
                     status: 'NOT_STARTED',
                     owner_email: t.default_owner_email || null,
-                    due_date: tMinusDueDate(data.target_launch_date, t.default_due_offset_days),
+                    due_date: tierAwareDueDate(data.target_launch_date, t, data.tier),
                 }));
             if (toAdd.length > 0) {
                 await supabase.from('launch_criterion_status').insert(toAdd);
@@ -154,28 +154,31 @@ async function patchHandler(
             }
         }
 
-        // T-minus reflow: when the target launch date moves, recompute due dates
-        // for tasks still sitting at their derived value (or empty). Manually
-        // overridden dates are left alone.
-        if (
-            before &&
+        // T-minus reflow: recompute due dates for tasks still sitting at their
+        // derived value (or empty). Manually overridden dates are left alone.
+        //
+        // Both the launch date AND the tier can move a derived date now: lead
+        // time scales with tier (T1 ~8wk vs T2 ~5wk for the same artifact), so a
+        // T1 -> T2 retier compresses the whole workback even when GA is fixed.
+        const dateMoved =
             'target_launch_date' in updates &&
-            data.target_launch_date &&
-            data.target_launch_date !== before.target_launch_date
-        ) {
+            !!before &&
+            data.target_launch_date !== before.target_launch_date;
+        const tierMoved = 'tier' in updates && !!before && data.tier !== before.tier;
+
+        if (before && data.target_launch_date && (dateMoved || tierMoved)) {
             const { data: tasks } = await supabase
                 .from('launch_criterion_status')
-                .select('id, due_date, criterion:criterion(default_due_offset_days)')
+                .select('id, due_date, criterion:criterion(default_due_offset_days, tier_offset_days)')
                 .eq('launch_id', id);
 
             const groups = new Map<string, string[]>();
             for (const t of tasks || []) {
-                const criterion = t.criterion as unknown as { default_due_offset_days: number | null } | null;
-                const offset = criterion?.default_due_offset_days;
-                if (offset == null) continue;
-                const oldDerived = tMinusDueDate(before.target_launch_date, offset);
+                const criterion = t.criterion as unknown as CriterionSchedule | null;
+                if (!criterion) continue;
+                const oldDerived = tierAwareDueDate(before.target_launch_date, criterion, before.tier);
                 if (t.due_date !== null && t.due_date !== oldDerived) continue;
-                const newDerived = tMinusDueDate(data.target_launch_date, offset);
+                const newDerived = tierAwareDueDate(data.target_launch_date, criterion, data.tier);
                 if (!newDerived || newDerived === t.due_date) continue;
                 const ids = groups.get(newDerived) || [];
                 ids.push(t.id);

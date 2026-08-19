@@ -4,7 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { launchCriterionApplies, tMinusDueDate } from '@/lib/launchCriteria';
+import { launchCriterionApplies, tierAwareDueDate } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -102,7 +102,7 @@ async function postHandler(req: NextRequest) {
         // Tier drives the checklist: only templates applicable to the launch tier load.
         const { data: templates } = await supabase
             .from('criterion')
-            .select('id, tier_applicability, default_owner_email, default_due_offset_days')
+            .select('id, tier_applicability, default_owner_email, default_due_offset_days, tier_offset_days')
             .eq('context', 'launch')
             .eq('is_active', true);
 
@@ -116,7 +116,7 @@ async function postHandler(req: NextRequest) {
                 criterion_id: t.id,
                 status: 'NOT_STARTED',
                 owner_email: t.default_owner_email || null,
-                due_date: tMinusDueDate(target_launch_date, t.default_due_offset_days),
+                due_date: tierAwareDueDate(target_launch_date, t, launch.tier),
             }));
 
             await supabase.from('launch_criterion_status').insert(statusRows);

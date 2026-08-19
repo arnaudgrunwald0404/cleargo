@@ -82,6 +82,25 @@ export default function LaunchCriteriaManager() {
         return email;
     }
 
+    /**
+     * Lead time reads as "T1 56d · T2 35d" when the criterion overrides per tier,
+     * and falls back to the single offset otherwise — so the workback criteria are
+     * distinguishable at a glance from the 52 that still use one scalar.
+     */
+    function formatLeadTime(c: {
+        tier_offset_days?: Record<string, number> | null;
+        default_due_offset_days?: number | null;
+    }): string {
+        const perTier = c.tier_offset_days;
+        if (perTier && typeof perTier === "object") {
+            const parts = ["TIER_1", "TIER_2"]
+                .filter((t) => typeof perTier[t] === "number")
+                .map((t) => `${t === "TIER_1" ? "T1" : "T2"} ${perTier[t]}d`);
+            if (parts.length > 0) return parts.join(" · ");
+        }
+        return c.default_due_offset_days != null ? `${c.default_due_offset_days}d` : "—";
+    }
+
     function formatTierLabel(tier: any): string {
         if (!tier) return "All";
         if (Array.isArray(tier)) {
@@ -242,7 +261,7 @@ export default function LaunchCriteriaManager() {
                                             {formatOwner(c.default_owner_email)}
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-600 tabular-nums">
-                                            {c.default_due_offset_days != null ? `${c.default_due_offset_days}d` : "—"}
+                                            {formatLeadTime(c)}
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-center">
                                             <svg className="w-5 h-5 text-gray-400 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -342,6 +361,8 @@ function EditDrawer({
                     sort_order: item.sort_order ?? 0,
                     default_owner_email: item.default_owner_email || "",
                     default_due_offset_days: item.default_due_offset_days ?? "",
+                    offset_tier_1: item.tier_offset_days?.TIER_1 ?? "",
+                    offset_tier_2: item.tier_offset_days?.TIER_2 ?? "",
                 });
             } else {
                 setPatch({
@@ -353,6 +374,8 @@ function EditDrawer({
                     sort_order: launchCriteria.length,
                     default_owner_email: "",
                     default_due_offset_days: "",
+                    offset_tier_1: "",
+                    offset_tier_2: "",
                 });
             }
         }
@@ -387,6 +410,14 @@ function EditDrawer({
             default_owner_email: patch.default_owner_email || null,
             default_due_offset_days: patch.default_due_offset_days !== "" ? Number(patch.default_due_offset_days) : null,
         };
+
+        // Per-tier lead times. Sent only when at least one is set, so criteria
+        // that just use the single fallback offset keep tier_offset_days null.
+        const tierOffsets: Record<string, number> = {};
+        if (patch.offset_tier_1 !== "" && patch.offset_tier_1 != null) tierOffsets.TIER_1 = Number(patch.offset_tier_1);
+        if (patch.offset_tier_2 !== "" && patch.offset_tier_2 != null) tierOffsets.TIER_2 = Number(patch.offset_tier_2);
+        payload.tier_offset_days = Object.keys(tierOffsets).length > 0 ? tierOffsets : null;
+
         onSave(payload);
     };
 
@@ -552,10 +583,36 @@ function EditDrawer({
                         value={patch.default_due_offset_days !== "" ? Number(patch.default_due_offset_days) : undefined}
                         onChange={(v) => setPatch({ ...patch, default_due_offset_days: v ?? "" })}
                         placeholder="e.g., 14 = due 14 days before launch"
-                        description="How many days before launch date this should be completed"
+                        description="Fallback used when the tier has no override below"
                         allowDecimal={false}
                         min={0}
                     />
+
+                    <Text size="sm" fw={500} mt="xs">
+                        Per-tier lead time (optional)
+                    </Text>
+                    <Text size="xs" c="dimmed" mt={-8}>
+                        Tier 1 runs a ~8-week workback and Tier 2 ~5 weeks, so the same artifact is
+                        due at different times. Leave blank to use the fallback above.
+                    </Text>
+                    <Group grow>
+                        <NumberInput
+                            label="Tier 1 — days prior"
+                            value={patch.offset_tier_1 !== "" ? Number(patch.offset_tier_1) : undefined}
+                            onChange={(v) => setPatch({ ...patch, offset_tier_1: v ?? "" })}
+                            placeholder="e.g., 56"
+                            allowDecimal={false}
+                            min={0}
+                        />
+                        <NumberInput
+                            label="Tier 2 — days prior"
+                            value={patch.offset_tier_2 !== "" ? Number(patch.offset_tier_2) : undefined}
+                            onChange={(v) => setPatch({ ...patch, offset_tier_2: v ?? "" })}
+                            placeholder="e.g., 35"
+                            allowDecimal={false}
+                            min={0}
+                        />
+                    </Group>
                 </Stack>
             </div>
             <div

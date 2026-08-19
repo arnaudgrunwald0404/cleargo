@@ -4,6 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
+import { normalizeTierOffsets } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,7 +29,8 @@ async function patchHandler(
         const body = await req.json();
         const allowedFields = [
             'label', 'description', 'phase', 'gate', 'tier_applicability',
-            'sort_order', 'is_active', 'default_owner_email', 'default_due_offset_days'
+            'sort_order', 'is_active', 'default_owner_email', 'default_due_offset_days',
+            'depends_on_criterion_id'
         ];
         const updates: Record<string, any> = {};
 
@@ -36,6 +38,11 @@ async function patchHandler(
             if (key in body) {
                 updates[key] = body[key];
             }
+        }
+
+        // Per-tier offsets are sanitized rather than passed straight into jsonb.
+        if ('tier_offset_days' in body) {
+            updates.tier_offset_days = normalizeTierOffsets(body.tier_offset_days);
         }
 
         if (Object.keys(updates).length === 0) {

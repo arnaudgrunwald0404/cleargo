@@ -4,6 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
+import { normalizeTierOffsets } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,7 +63,8 @@ async function postHandler(req: NextRequest) {
         const body = await req.json();
         const {
             label, description, phase, gate, tier_applicability, sort_order,
-            default_owner_email, default_due_offset_days
+            default_owner_email, default_due_offset_days, tier_offset_days,
+            depends_on_criterion_id
         } = body;
 
         if (!label?.trim()) {
@@ -81,6 +83,8 @@ async function postHandler(req: NextRequest) {
                 sort_order: sort_order ?? 0,
                 default_owner_email: default_owner_email || null,
                 default_due_offset_days: default_due_offset_days ?? null,
+                tier_offset_days: normalizeTierOffsets(tier_offset_days),
+                depends_on_criterion_id: depends_on_criterion_id || null,
                 is_active: true,
             })
             .select()
