@@ -5,6 +5,19 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
+import { getSlackClient } from '@/lib/slack/client';
+import {
+    FLAG_INTERVIEW_ACTION,
+    FLAG_INTERVIEW_CALLBACK,
+    MAX_QUESTIONS_PER_MODAL,
+    buildFlagInterviewModal,
+    parseFlagInterviewSubmission,
+} from '@/lib/slack/templates/story-brief-interview';
+import {
+    loadOpenInterview,
+    markFlagsAsked,
+    recordFlagAnswers,
+} from '@/lib/story-brief/interview';
 import type { SlackInteractionPayload } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
@@ -59,6 +72,10 @@ async function handleBlockActions(payload: SlackInteractionPayload) {
 
     for (const action of actions) {
         switch (action.action_id) {
+            case FLAG_INTERVIEW_ACTION:
+                await openFlagInterview(payload, action.value);
+                break;
+
             case 'update_criterion':
                 // User clicked "Update Status" button
                 // TODO: Open modal or redirect to launch detail
@@ -80,14 +97,92 @@ async function handleBlockActions(payload: SlackInteractionPayload) {
     return NextResponse.json({ ok: true });
 }
 
+/**
+ * Open the gap-only interview for the brief named on the button.
+ *
+ * Slack expires a trigger_id in ~3 seconds, so this reads the flags and opens
+ * the view with nothing else in between. Marking them asked happens after the
+ * view is up: a failure to record that is not worth losing the modal over.
+ */
+async function openFlagInterview(payload: SlackInteractionPayload, value?: string) {
+    let briefId: string | null = null;
+    try {
+        briefId = JSON.parse(value || '{}').briefId ?? null;
+    } catch {
+        briefId = null;
+    }
+    if (!briefId) {
+        console.error('story brief interview: button carried no briefId');
+        return;
+    }
+
+    const interview = await loadOpenInterview(briefId);
+    if (!interview) return;
+
+    const client = getSlackClient();
+
+    // Nothing left to ask. Say so rather than opening an empty modal — a PM who
+    // clicks a stale button should learn the queue is clear.
+    if (interview.flags.length === 0) {
+        await client.openView(payload.trigger_id, {
+            type: 'modal',
+            title: { type: 'plain_text', text: 'Nothing to answer' },
+            close: { type: 'plain_text', text: 'Close' },
+            blocks: [
+                {
+                    type: 'section',
+                    text: {
+                        type: 'mrkdwn',
+                        text: `Every open question on *${interview.target.epicName}* has been answered.`,
+                    },
+                },
+            ],
+        });
+        return;
+    }
+
+    await client.openView(
+        payload.trigger_id,
+        buildFlagInterviewModal(interview.target, interview.flags)
+    );
+
+    await markFlagsAsked(
+        interview.flags.slice(0, MAX_QUESTIONS_PER_MODAL).map((f) => f.id)
+    );
+}
+
 async function handleViewSubmission(payload: SlackInteractionPayload) {
-    // TODO: Handle modal form submissions
-    console.log('View submission:', payload.view);
+    const callbackId = payload.view?.callback_id;
+
+    if (callbackId === FLAG_INTERVIEW_CALLBACK) {
+        const parsed = parseFlagInterviewSubmission(payload.view);
+        if (!parsed.briefId) {
+            console.error('story brief interview: submission carried no briefId');
+            return NextResponse.json({ ok: true });
+        }
+
+        const answeredBy = payload.user?.id || 'slack';
+        const { saved, remaining } = await recordFlagAnswers(
+            parsed.briefId,
+            parsed.answers,
+            answeredBy
+        );
+        console.log(
+            `story brief interview: saved ${saved} answer(s), ${remaining} still open`,
+            parsed.briefId
+        );
+        // Empty 200 closes the modal. Slack shows an error banner if we send
+        // anything it does not recognise, so keep the body minimal.
+        return NextResponse.json({});
+    }
+
+    console.log('Unhandled view submission:', callbackId);
     return NextResponse.json({ ok: true });
 }
 
 async function handleViewClosed(payload: SlackInteractionPayload) {
-    // TODO: Handle modal closures
-    console.log('View closed');
+    // Flags stay `asked`, not reverted to `open`: the question was put to the
+    // person, they chose to come back to it, and the button still works.
+    console.log('View closed:', payload.view?.callback_id);
     return NextResponse.json({ ok: true });
 }
