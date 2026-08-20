@@ -29,15 +29,11 @@ import {
 } from "@tabler/icons-react";
 import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
-import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
 import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
 import { DetailTabs, TabCount } from "@/components/DetailTabs";
-import {
-    computeLaunchReadiness,
-    isGating,
-    VERDICT_CLASS,
-    VERDICT_LABEL,
-} from "@/lib/launch-readiness";
+import { LaunchChecklistTable } from "@/components/launch/LaunchChecklistTable";
+import { UserDisplay } from "@/components/UserDisplay";
+import { computeLaunchReadiness, VERDICT_CLASS, VERDICT_LABEL } from "@/lib/launch-readiness";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -91,61 +87,6 @@ interface EpicData {
     target_launch_date?: string | null;
     readiness_score?: number;
     readiness_status?: string | null;
-}
-
-/**
- * Workback status for one checklist row.
- *
- * The stored due_date is when the artifact must be COMPLETE (its successor's
- * start); tier_offset_days is when it must BEGIN. Showing both is what makes a
- * compressed runway legible: per Kristin, when a release lands closer than the
- * tier's runway needs, the sequence is compressed and already started -- the
- * artifact predates the window, it isn't missing -- so it must not read as late.
- */
-function workbackStatus(
-    item: CriterionStatus,
-    launch: LaunchData | null
-): { label: string; className: string; tooltip: string } | null {
-    if (!item.due_date && !item.criterion?.tier_offset_days) return null;
-
-    const startDate = tierAwareDueDate(
-        launch?.target_launch_date,
-        {
-            default_due_offset_days: item.criterion?.default_due_offset_days ?? null,
-            tier_offset_days: item.criterion?.tier_offset_days ?? null,
-        },
-        launch?.tier
-    );
-    const due = formatDate(item.due_date);
-
-    if (item.status === "DONE") {
-        return { label: `Due ${due}`, className: "text-gray-400", tooltip: "Complete" };
-    }
-
-    const state = scheduleState({
-        startDate,
-        dueDate: item.due_date,
-        today: new Date().toISOString().slice(0, 10),
-        launchCreatedAt: launch?.created_at ?? null,
-    });
-
-    const starts = startDate ? formatDate(startDate) : "—";
-    switch (state) {
-        case "compressed":
-            return {
-                label: `Compressed · due ${due}`,
-                className: "text-amber-600",
-                tooltip: `This artifact was due to start ${starts}, before the launch was created. The release landed closer than this tier's runway needs, so the sequence is compressed rather than missed.`,
-            };
-        case "upcoming":
-            return { label: `Starts ${starts}`, className: "text-gray-400", tooltip: `Due ${due}` };
-        case "late":
-            return { label: `Overdue · was due ${due}`, className: "text-red-500", tooltip: `Should have started ${starts}` };
-        case "in_window":
-            return { label: `Due ${due}`, className: "text-gray-500", tooltip: `Started ${starts}` };
-        default:
-            return null;
-    }
 }
 
 function formatDate(d: string | null): string {
@@ -223,13 +164,14 @@ function assetStatusIcon(status: AssetStatus) {
     return <IconCircle size={16} className="text-gray-300" />;
 }
 
-function statusIcon(status: TaskStatus) {
-    if (status === "DONE")
-        return <IconCheck size={16} className="text-emerald-600" />;
-    if (status === "IN_PROGRESS")
-        return <IconLoader2 size={16} className="text-amber-500" />;
-    return <IconCircle size={16} className="text-gray-300" />;
-}
+/** Column-header styling shared with the epic criteria table. */
+const TH_STYLE: React.CSSProperties = {
+    fontSize: "12px",
+    fontWeight: 600,
+    textTransform: "uppercase",
+    letterSpacing: "0.05em",
+    color: "#6B7280",
+};
 
 const STATUS_CYCLE: TaskStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
@@ -332,16 +274,6 @@ export default function GTMLaunchDetailPage() {
                 value: u.email,
                 label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
             })),
-        [users]
-    );
-
-    const displayOwner = useCallback(
-        (email: string | null) => {
-            if (!email) return null;
-            const u = users.find((x) => x.email?.toLowerCase() === email.toLowerCase());
-            const name = u ? `${u.first_name || ""} ${u.last_name || ""}`.trim() : "";
-            return name || email;
-        },
         [users]
     );
 
@@ -966,7 +898,7 @@ export default function GTMLaunchDetailPage() {
                 </>)}
 
                 {tab === "checklist" && (<>
-                {/* Criteria checklist by phase */}
+                {/* Readiness checklist — same table shape epics use for criteria */}
                 {statuses.length > 0 && (
                     <div className="space-y-4 mb-8">
                         <h2 className="text-sm font-semibold text-gray-700">Readiness Checklist</h2>
@@ -989,9 +921,7 @@ export default function GTMLaunchDetailPage() {
                                             ) : (
                                                 <IconChevronDown size={18} className="text-gray-400" />
                                             )}
-                                            <span className="text-sm font-semibold text-gray-800">
-                                                {phase}
-                                            </span>
+                                            <span className="text-sm font-medium text-gray-900">{phase}</span>
                                         </div>
                                         <span className="text-xs text-gray-400">
                                             {phDone}/{items.length} done
@@ -999,112 +929,26 @@ export default function GTMLaunchDetailPage() {
                                     </button>
 
                                     {!isCollapsed && (
-                                        <div className="border-t border-gray-100 divide-y divide-gray-100">
-                                            {items.map((item) => (
-                                                <div
-                                                    key={item.criterion_id}
-                                                    className="flex items-center gap-3 px-5 py-2.5 hover:bg-gray-50/50 transition-colors"
-                                                >
-                                                    <button
-                                                        onClick={() =>
-                                                            handleToggleStatus(
-                                                                item.criterion_id,
-                                                                item.status
-                                                            )
-                                                        }
-                                                        disabled={!canToggleTasks || updating === item.criterion_id}
-                                                        className="flex-shrink-0 p-0.5 rounded hover:bg-gray-100 transition-colors disabled:opacity-50"
-                                                        title={`Status: ${item.status.replace(/_/g, " ")} — Click to cycle`}
-                                                    >
-                                                        {statusIcon(item.status)}
-                                                    </button>
-                                                    <div className="flex-1 min-w-0">
-                                                        <span
-                                                            className={`text-sm ${item.status === "DONE" ? "text-gray-400 line-through" : "text-gray-900"}`}
-                                                        >
-                                                            {item.criterion?.label}
-                                                        </span>
-                                                        {item.criterion?.description && (
-                                                            <p className="text-xs text-gray-400 truncate mt-0.5">
-                                                                {item.criterion.description}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                    {isGating(item.criterion?.gate) && (
-                                                        <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500 bg-red-50 px-1.5 py-0.5 rounded flex-shrink-0">
-                                                            Hard Gate
-                                                        </span>
-                                                    )}
-                                                    {(() => {
-                                                        const owner = displayOwner(item.owner_email);
-                                                        if (!canToggleTasks && !owner) return null;
-                                                        return (
-                                                            <button
-                                                                type="button"
-                                                                disabled={!canToggleTasks}
-                                                                onClick={() => {
-                                                                    setAssignEmail(item.owner_email);
-                                                                    setAssignTarget(item);
-                                                                }}
-                                                                className={`text-xs flex-shrink-0 truncate max-w-[150px] rounded px-1.5 py-0.5 transition-colors ${
-                                                                    owner
-                                                                        ? "text-gray-600 hover:bg-gray-100"
-                                                                        : "text-gray-300 hover:bg-gray-100 hover:text-purple-600"
-                                                                } disabled:hover:bg-transparent`}
-                                                                title={
-                                                                    owner
-                                                                        ? `Assigned to ${item.owner_email}`
-                                                                        : "Unassigned — click to assign"
-                                                                }
-                                                            >
-                                                                {owner ?? "Assign"}
-                                                            </button>
-                                                        );
-                                                    })()}
-                                                    {(() => {
-                                                        const s = workbackStatus(item, launch);
-                                                        if (!s) return null;
-                                                        return (
-                                                            <span
-                                                                className={`text-xs flex-shrink-0 ${s.className}`}
-                                                                title={s.tooltip}
-                                                            >
-                                                                {s.label}
-                                                            </span>
-                                                        );
-                                                    })()}
-                                                    {(() => {
-                                                        const links = asLinkList(item.links);
-                                                        return (
-                                                            <div className="flex items-center gap-1.5 flex-shrink-0">
-                                                                {links.map((l, i) => (
-                                                                    <a
-                                                                        key={i}
-                                                                        href={l.url}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="text-xs text-purple-600 hover:underline flex items-center gap-1"
-                                                                        title={l.url}
-                                                                    >
-                                                                        <IconExternalLink size={12} />
-                                                                        {l.label || "Link"}
-                                                                    </a>
-                                                                ))}
-                                                                {canToggleTasks && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => openLinkEditor("criterion", item)}
-                                                                        className="text-gray-300 hover:text-purple-600 transition-colors"
-                                                                        title={links.length ? "Edit links" : "Add a link"}
-                                                                    >
-                                                                        <IconLink size={14} />
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            ))}
+                                        <div className="border-t border-gray-100">
+                                            <LaunchChecklistTable
+                                                rows={items}
+                                                users={users}
+                                                targetLaunchDate={launch?.target_launch_date ?? null}
+                                                tier={launch?.tier ?? null}
+                                                launchCreatedAt={launch?.created_at ?? null}
+                                                canEdit={canToggleTasks}
+                                                busyId={updating}
+                                                onCycleStatus={(row) =>
+                                                    handleToggleStatus(row.criterion_id, row.status)
+                                                }
+                                                onAssign={(row) => {
+                                                    setAssignEmail(row.owner_email);
+                                                    setAssignTarget(row as CriterionStatus);
+                                                }}
+                                                onEditLinks={(row) =>
+                                                    openLinkEditor("criterion", row as CriterionStatus)
+                                                }
+                                            />
                                         </div>
                                     )}
                                 </div>
@@ -1116,12 +960,11 @@ export default function GTMLaunchDetailPage() {
                 </>)}
 
                 {tab === "assets" && (<>
-                {/* Supporting assets — Campaign Brief Part 6 */}
+                {/* Supporting assets - Campaign Brief Part 6, same table shape */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-sm font-semibold text-gray-700">
-                            Supporting Assets ({assets.filter((a) => a.status === "DONE").length}/
-                            {assets.filter((a) => a.status !== "NOT_APPLICABLE").length})
+                            Supporting Assets ({assetsDone}/{assetsRequired})
                         </h2>
                     </div>
                     {assets.length === 0 ? (
@@ -1129,68 +972,96 @@ export default function GTMLaunchDetailPage() {
                             No assets tracked yet. They are created with the launch.
                         </p>
                     ) : (
-                        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
-                            {assets.map((a) => (
-                                <div key={a.id} className="flex items-center gap-3 px-3 py-2">
-                                    <button
-                                        type="button"
-                                        disabled={!canToggleTasks || updatingAsset === a.id}
-                                        onClick={() => cycleAssetStatus(a)}
-                                        className="flex-shrink-0 disabled:opacity-50"
-                                        title={
-                                            canToggleTasks
-                                                ? "Click to advance status"
-                                                : "You do not have permission to change this"
-                                        }
-                                    >
-                                        {assetStatusIcon(a.status)}
-                                    </button>
-                                    <div className="min-w-0 flex-1">
-                                        <span
-                                            className={`text-sm ${
-                                                a.status === "NOT_APPLICABLE"
-                                                    ? "text-gray-400 line-through"
-                                                    : "text-gray-700"
-                                            }`}
-                                        >
-                                            {a.label}
-                                        </span>
-                                        {a.optional && (
-                                            <span className="ml-2 text-[10px] uppercase tracking-wider text-gray-400">
-                                                Optional
-                                            </span>
-                                        )}
-                                    </div>
-                                    {a.owner_email && (
-                                        <span className="text-xs text-gray-400 flex-shrink-0 truncate max-w-[160px]">
-                                            {a.owner_email}
-                                        </span>
-                                    )}
-                                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                                        {a.url && (
-                                            <a
-                                                href={a.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="text-xs text-purple-600 hover:underline flex items-center gap-1"
-                                                title={a.url}
-                                            >
-                                                <IconExternalLink size={12} /> Open
-                                            </a>
-                                        )}
-                                        {canToggleTasks && (
-                                            <button
-                                                type="button"
-                                                onClick={() => openLinkEditor("asset", a)}
-                                                className="text-gray-300 hover:text-purple-600 transition-colors"
-                                                title={a.url ? "Edit link" : "Add a link"}
-                                            >
-                                                <IconLink size={14} />
-                                            </button>
-                                        )}
-                                    </div>
-                                </div>
-                            ))}
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                            <table
+                                className="min-w-full table-fixed w-full"
+                                style={{ borderCollapse: "collapse", minWidth: "700px" }}
+                            >
+                                <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                    <tr>
+                                        <th className="px-4 py-3 text-left font-medium" style={TH_STYLE}>Asset</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "90px" }}>Status</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "170px" }}>Accountable</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "160px" }}>Where to Find It</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {assets.map((a) => {
+                                        const owner = users.find(
+                                            (u) => (u.email || "").toLowerCase() === (a.owner_email || "").toLowerCase()
+                                        );
+                                        const struck = a.status === "DONE" || a.status === "NOT_APPLICABLE";
+                                        return (
+                                            <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/60">
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={struck ? "text-sm text-gray-400 line-through" : "text-sm text-gray-900"}>
+                                                            {a.label}
+                                                        </span>
+                                                        {a.optional && (
+                                                            <span className="text-[10px] uppercase tracking-wider text-gray-400 flex-shrink-0">
+                                                                Optional
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 align-middle" style={{ width: "90px" }}>
+                                                    <button
+                                                        type="button"
+                                                        disabled={!canToggleTasks || updatingAsset === a.id}
+                                                        onClick={() => cycleAssetStatus(a)}
+                                                        className="p-0.5 rounded hover:bg-gray-100 disabled:opacity-50"
+                                                        title={a.status.replace(/_/g, " ") + " - click to cycle"}
+                                                    >
+                                                        {assetStatusIcon(a.status)}
+                                                    </button>
+                                                </td>
+                                                <td className="px-4 py-3 align-middle" style={{ width: "170px" }}>
+                                                    {a.owner_email ? (
+                                                        <UserDisplay
+                                                            email={a.owner_email}
+                                                            firstName={owner?.first_name}
+                                                            lastName={owner?.last_name}
+                                                            size="xs"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm text-gray-500">-</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm align-middle" style={{ width: "160px" }}>
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        {a.url && (
+                                                            <a
+                                                                href={a.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-purple-600 hover:underline flex items-center gap-1 truncate"
+                                                                title={a.url}
+                                                            >
+                                                                <IconExternalLink size={12} className="flex-shrink-0" />
+                                                                <span className="truncate">Open</span>
+                                                            </a>
+                                                        )}
+                                                        {canToggleTasks && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openLinkEditor("asset", a)}
+                                                                className="p-1 rounded hover:bg-gray-100 text-gray-400 flex-shrink-0"
+                                                                title={a.url ? "Edit link" : "Add a link"}
+                                                            >
+                                                                <IconLink size={14} />
+                                                            </button>
+                                                        )}
+                                                        {!canToggleTasks && !a.url && (
+                                                            <span className="text-sm text-gray-500">-</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
                         </div>
                     )}
                 </div>
