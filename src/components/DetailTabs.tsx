@@ -34,7 +34,13 @@ export function DetailTabs({ tabs, activeTab, onTabChange, ariaLabel }: DetailTa
                 gap: 0,
                 marginBottom: 0,
                 paddingBottom: 0,
-                overflowX: "auto",
+                // No overflow rule on purpose. Setting overflowX alone makes the
+                // other axis compute from 'visible' to 'auto', and the active
+                // tab's marginBottom: -1px (the overhang that merges it into the
+                // panel below) makes the content a pixel taller than the nav --
+                // enough to raise a vertical scrollbar on the right of the strip.
+                // Clipping it with overflowY: 'hidden' would eat that overhang
+                // and leave a hairline across the active tab instead.
             }}
             aria-label={ariaLabel}
             role="tablist"
