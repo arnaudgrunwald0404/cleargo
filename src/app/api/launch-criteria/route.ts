@@ -4,7 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { normalizeTierOffsets } from '@/lib/launchCriteria';
+import { normalizeTierOffsets, normalizeGate, normalizeTierApplicability } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -78,8 +78,8 @@ async function postHandler(req: NextRequest) {
                 description: description || null,
                 context: 'launch',
                 phase: phase || null,
-                gate: gate || null,
-                tier_applicability: tier_applicability || null,
+                gate: normalizeGate(gate),
+                tier_applicability: normalizeTierApplicability(tier_applicability),
                 sort_order: sort_order ?? 0,
                 default_owner_email: default_owner_email || null,
                 default_due_offset_days: default_due_offset_days ?? null,

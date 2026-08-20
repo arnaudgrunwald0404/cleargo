@@ -8,6 +8,8 @@ import {
   LAUNCH_OWNER_PLACEHOLDER,
   runwayDueOffsetDays,
   scheduleState,
+  normalizeGate,
+  normalizeTierApplicability,
 } from '../launchCriteria';
 
 describe('launchCriterionApplies', () => {
@@ -283,5 +285,56 @@ describe('normalizeTierOffsets', () => {
     expect(normalizeTierOffsets(null)).toBeNull();
     expect(normalizeTierOffsets('nope')).toBeNull();
     expect(normalizeTierOffsets([56, 35])).toBeNull();
+  });
+});
+
+describe('normalizeGate', () => {
+  it('accepts the legacy hard/soft strings the admin UI sends', () => {
+    // criterion.gate is boolean; sending 'hard' fails the write with 22P02
+    // "invalid input syntax for type boolean", which silently broke every save
+    // from Admin > Settings > Launch Criteria.
+    expect(normalizeGate('hard')).toBe(true);
+    expect(normalizeGate('soft')).toBe(false);
+  });
+
+  it('passes booleans through', () => {
+    expect(normalizeGate(true)).toBe(true);
+    expect(normalizeGate(false)).toBe(false);
+  });
+
+  it('defaults to non-gating for anything unrecognised', () => {
+    expect(normalizeGate(null)).toBe(false);
+    expect(normalizeGate(undefined)).toBe(false);
+    expect(normalizeGate({})).toBe(false);
+    expect(normalizeGate('nonsense')).toBe(false);
+  });
+});
+
+describe('normalizeTierApplicability', () => {
+  it('collapses the array the admin UI sends into stored comma-separated text', () => {
+    expect(normalizeTierApplicability(['TIER_1'])).toBe('TIER_1');
+    expect(normalizeTierApplicability(['TIER_1', 'TIER_2'])).toBe('TIER_1,TIER_2');
+  });
+
+  it('drops unknown tiers rather than storing them', () => {
+    expect(normalizeTierApplicability(['TIER_1', 'TIER_9'])).toBe('TIER_1');
+  });
+
+  it('falls back to ALL for empty or unusable input', () => {
+    expect(normalizeTierApplicability([])).toBe('ALL');
+    expect(normalizeTierApplicability(['NOPE'])).toBe('ALL');
+    expect(normalizeTierApplicability('')).toBe('ALL');
+    expect(normalizeTierApplicability(null)).toBe('ALL');
+  });
+
+  it('keeps an already-valid string', () => {
+    expect(normalizeTierApplicability('ALL')).toBe('ALL');
+    expect(normalizeTierApplicability('TIER_1,TIER_2')).toBe('TIER_1,TIER_2');
+  });
+
+  it('round-trips with launchCriterionApplies', () => {
+    const stored = normalizeTierApplicability(['TIER_2']);
+    expect(launchCriterionApplies(stored, 'TIER_2')).toBe(true);
+    expect(launchCriterionApplies(stored, 'TIER_1')).toBe(false);
   });
 });

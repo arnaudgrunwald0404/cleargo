@@ -106,6 +106,38 @@ export function normalizeTierOffsets(input: unknown): Record<string, number> | n
     return Object.keys(out).length > 0 ? out : null;
 }
 
+/**
+ * criterion.gate is a boolean column, but the admin UI has always round-tripped
+ * 'hard'/'soft' strings. Passing those through fails the write with 22P02
+ * (invalid input syntax for type boolean), so coerce at the API boundary.
+ */
+export function normalizeGate(input: unknown): boolean {
+    if (typeof input === 'boolean') return input;
+    if (typeof input === 'string') {
+        const v = input.trim().toLowerCase();
+        return v === 'hard' || v === 'true' || v === 't' || v === '1' || v === 'yes';
+    }
+    return false;
+}
+
+/**
+ * criterion.tier_applicability is text -- 'ALL' or a comma-separated tier list --
+ * but the admin UI sends an array. Normalise both shapes to the stored form.
+ */
+export function normalizeTierApplicability(input: unknown): string {
+    if (Array.isArray(input)) {
+        const tiers = input
+            .map((t) => String(t).trim().toUpperCase())
+            .filter((t) => (OFFSET_TIER_KEYS as readonly string[]).includes(t));
+        return tiers.length > 0 ? tiers.join(',') : 'ALL';
+    }
+    if (typeof input === 'string') {
+        const v = input.trim();
+        return v === '' ? 'ALL' : v.toUpperCase();
+    }
+    return 'ALL';
+}
+
 /** T-minus date resolved against the launch tier. This is the artifact's START. */
 export function tierAwareDueDate(
     targetLaunchDate: string | null | undefined,

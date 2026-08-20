@@ -4,7 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
 import { resolveRole } from '@/lib/roles';
-import { normalizeTierOffsets } from '@/lib/launchCriteria';
+import { normalizeTierOffsets, normalizeGate, normalizeTierApplicability } from '@/lib/launchCriteria';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +27,12 @@ async function patchHandler(
         }
 
         const body = await req.json();
+        // 'gate' and 'tier_applicability' are deliberately NOT in this list: the
+        // admin UI sends 'hard'/'soft' for a boolean column and an array for a
+        // text one, so passing them through fails the write with 22P02. They are
+        // coerced below instead.
         const allowedFields = [
-            'label', 'description', 'phase', 'gate', 'tier_applicability',
+            'label', 'description', 'phase',
             'sort_order', 'is_active', 'default_owner_email', 'default_due_offset_days',
             'depends_on_criterion_id'
         ];
@@ -38,6 +42,11 @@ async function patchHandler(
             if (key in body) {
                 updates[key] = body[key];
             }
+        }
+
+        if ('gate' in body) updates.gate = normalizeGate(body.gate);
+        if ('tier_applicability' in body) {
+            updates.tier_applicability = normalizeTierApplicability(body.tier_applicability);
         }
 
         // Per-tier offsets are sanitized rather than passed straight into jsonb.
