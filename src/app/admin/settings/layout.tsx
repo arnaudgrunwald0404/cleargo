@@ -84,7 +84,6 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
 
                 {/* ── Launches Management ── */}
                 <li><span className={sectionLabelStyle}>Launches Management</span></li>
-                <li><Link {...linkProps("/admin/settings/launch-schedule", isActive("/admin/settings/launch-schedule"))}>Launch Schedule</Link></li>
                 <li><Link {...linkProps("/admin/settings/launch-criteria", isActive("/admin/settings/launch-criteria"))}>Launch Criteria</Link></li>
 
                 {/* ── Misc ── */}
