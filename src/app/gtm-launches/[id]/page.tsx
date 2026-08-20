@@ -308,6 +308,72 @@ export default function GTMLaunchDetailPage() {
         fetchAssets();
     }, [fetchAssets]);
 
+    // Assignable users. /api/users is reachable by PMM/PM/ENG/PRODUCT for exactly
+    // this kind of delegate dropdown, so a launch owner can assign checklist work.
+    const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null }>>([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/users", { credentials: "include" });
+                if (res.ok) {
+                    const data = await res.json();
+                    setUsers((data.users || []).filter((u: { email?: string }) => !!u.email));
+                }
+            } catch {
+                // A missing user list only costs the picker; the page still works.
+            }
+        })();
+    }, []);
+
+    const userOptions = useMemo(
+        () =>
+            users.map((u) => ({
+                value: u.email,
+                label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
+            })),
+        [users]
+    );
+
+    const displayOwner = useCallback(
+        (email: string | null) => {
+            if (!email) return null;
+            const u = users.find((x) => x.email?.toLowerCase() === email.toLowerCase());
+            const name = u ? `${u.first_name || ""} ${u.last_name || ""}`.trim() : "";
+            return name || email;
+        },
+        [users]
+    );
+
+    // Assignee editor for checklist rows. owner_email has always been on the row
+    // and accepted by the PATCH endpoint; nothing ever rendered a control for it.
+    const [assignTarget, setAssignTarget] = useState<CriterionStatus | null>(null);
+    const [assignEmail, setAssignEmail] = useState<string | null>(null);
+    const [savingAssign, setSavingAssign] = useState(false);
+
+    const saveAssignee = async () => {
+        if (!assignTarget) return;
+        setSavingAssign(true);
+        try {
+            const res = await fetch(`/api/launch-criteria-status/${launchId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    criterion_id: assignTarget.criterion_id,
+                    owner_email: assignEmail,
+                }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            await fetchLaunch();
+            setAssignTarget(null);
+        } catch (err) {
+            console.error("Failed to assign:", err);
+            notifications.show({ color: "red", message: "Could not save that assignee." });
+        } finally {
+            setSavingAssign(false);
+        }
+    };
+
     // Link editor, shared by checklist rows (links jsonb) and assets (url).
     const [linkTarget, setLinkTarget] = useState<
         | { kind: "criterion"; item: CriterionStatus }
@@ -970,6 +1036,32 @@ export default function GTMLaunchDetailPage() {
                                                         </span>
                                                     )}
                                                     {(() => {
+                                                        const owner = displayOwner(item.owner_email);
+                                                        if (!canToggleTasks && !owner) return null;
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                disabled={!canToggleTasks}
+                                                                onClick={() => {
+                                                                    setAssignEmail(item.owner_email);
+                                                                    setAssignTarget(item);
+                                                                }}
+                                                                className={`text-xs flex-shrink-0 truncate max-w-[150px] rounded px-1.5 py-0.5 transition-colors ${
+                                                                    owner
+                                                                        ? "text-gray-600 hover:bg-gray-100"
+                                                                        : "text-gray-300 hover:bg-gray-100 hover:text-purple-600"
+                                                                } disabled:hover:bg-transparent`}
+                                                                title={
+                                                                    owner
+                                                                        ? `Assigned to ${item.owner_email}`
+                                                                        : "Unassigned — click to assign"
+                                                                }
+                                                            >
+                                                                {owner ?? "Assign"}
+                                                            </button>
+                                                        );
+                                                    })()}
+                                                    {(() => {
                                                         const s = workbackStatus(item, launch);
                                                         if (!s) return null;
                                                         return (
@@ -1202,6 +1294,38 @@ export default function GTMLaunchDetailPage() {
                 </>)}
                 </div>
             </div>
+
+            {/* Assignee picker for checklist rows */}
+            <Modal
+                opened={assignTarget !== null}
+                onClose={() => setAssignTarget(null)}
+                title={`Assign “${assignTarget?.criterion?.label ?? ""}”`}
+                centered
+            >
+                <Stack gap="sm">
+                    <Select
+                        label="Assignee"
+                        placeholder="Search people..."
+                        description="Leave empty to unassign."
+                        data={userOptions}
+                        value={assignEmail}
+                        onChange={setAssignEmail}
+                        searchable
+                        clearable
+                        nothingFoundMessage="No matching user"
+                        comboboxProps={{ withinPortal: true }}
+                        data-autofocus
+                    />
+                    <Group justify="flex-end" gap="sm">
+                        <Button variant="subtle" onClick={() => setAssignTarget(null)} disabled={savingAssign}>
+                            Cancel
+                        </Button>
+                        <Button onClick={saveAssignee} loading={savingAssign}>
+                            Save
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
 
             {/* Link editor — checklist items store a links[] array, assets a single url */}
             <Modal
