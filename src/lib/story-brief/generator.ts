@@ -18,6 +18,7 @@
 import { z } from 'zod';
 import { resolveDefaultModel } from '@/lib/ai/resolve-model';
 import { assembleStoryBriefContext, type StoryBriefContext } from './context';
+import { renderHarvestForPrompt } from './harvest';
 
 // ── Structured output schema — mirrors the real Story Brief template exactly ──────────────
 
@@ -27,6 +28,8 @@ const claimSourceEnum = z.enum([
   'jira_epic_status',
   'jira_child_issue',
   'source_notes',
+  'epic_comment',
+  'meeting_transcript',
   'unstated_assumption',
 ]);
 
@@ -111,7 +114,12 @@ export function postProcessGrounding(
   context: StoryBriefContext,
   sourceNotes?: string
 ): StoryBriefOutput {
-  const referenceText = [context.validation.aha_description, sourceNotes]
+  const referenceText = [
+    context.validation.aha_description,
+    sourceNotes,
+    ...context.harvest.comments.map((c) => `${c.text} ${c.movement_cause || ''}`),
+    ...context.harvest.transcripts.map((t) => t.text),
+  ]
     .filter(Boolean)
     .join('\n')
     .toLowerCase();
@@ -257,6 +265,7 @@ export async function generateStoryBrief(
   const { generateObject } = await import('ai');
   const context = await assembleStoryBriefContext(epicId);
   const { epic, validation } = context;
+  const harvestBlock = renderHarvestForPrompt(context.harvest);
 
   const { object } = await generateObject({
     model,
@@ -274,8 +283,11 @@ You are drafting a Story Brief — the single day-one PM-to-PMM handoff document
 - Delivery gap detected: ${validation.gap_detected}${validation.gap_description ? ` — ${validation.gap_description}` : ''}
 - Target launch date: ${epic.target_launch_date || '(not set)'} | GA date: ${epic.scheduled_ga_dev_date || '(not set)'}
 
-## PM's notes / call transcript (primary source for sections 2, 3, 5, 6, 7 — none of that is derivable from Aha/Jira)
-${sourceNotes?.trim() || '(none provided — draft best-effort from the grounding facts above only, and flag heavily in open_flags for any section you cannot support)'}
+## What ClearGo already knows (cite as "epic_comment" or "meeting_transcript")
+${harvestBlock || '(nothing recorded in ClearGo for this epic)'}
+
+## PM's notes / call transcript (richest source for sections 2, 3, 5, 6, 7 — none of that is derivable from Aha/Jira)
+${sourceNotes?.trim() || '(none provided — use the grounding facts and ClearGo history above, and flag in open_flags anything you still cannot support)'}
 
 ## Instructions
 Draft all 8 sections of the Story Brief:
@@ -289,7 +301,10 @@ Draft all 8 sections of the Story Brief:
 8. Downstream deliverables this brief feeds — the standard chain (messaging doc -> launch/campaign brief -> enablement doc), enablement plan, marketing plan.
 
 ## Grounding rules — critical
-- Every claim in what_we_are_building, why_we_prioritized_it, and value_story must cite a source. If you cannot ground a statement in the facts or notes above, tag it "unstated_assumption" and duplicate it into open_flags instead of asserting it as fact.
+- Every claim in what_we_are_building, why_we_prioritized_it, and value_story must cite a source. If you cannot ground a statement in the facts, ClearGo history, or notes above, tag it "unstated_assumption" and duplicate it into open_flags instead of asserting it as fact.
+- ClearGo comments are first-class evidence, not colour. A comment recording a release movement and its cause is the best available answer for why timing changed or scope was cut — cite it as "epic_comment" rather than treating the question as unanswered.
+- Comments are a HISTORICAL record, each true only as of its own timestamp. Dates quoted inside a comment ("GA1: Feb 19") are what was believed then, and are frequently superseded by a later comment or simply stale. Never restate a date from a comment as the current plan: the authoritative dates are the target launch and GA dates in the grounding facts above. Use comments for WHY, not for WHEN.
+- Dates and commitments quoted inside comments ARE relevant to section 7: an ETA that was communicated and then moved is a known audience expectation. Record it as what was previously communicated, attributed and dated, not as the current plan.
 - Never use unearned marketing language (e.g. "seamless," "revolutionary," "game-changing," "best-in-class," "10x," "cutting-edge") unless that literal phrase already appears in the Aha description or the notes.
 - Be specific and concrete. Prefer "no update yet" over inventing plausible-sounding detail.
 `,

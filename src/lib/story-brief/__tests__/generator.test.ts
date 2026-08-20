@@ -41,6 +41,7 @@ function makeContext(overrides: Partial<DeliveryValidationResult> = {}): StoryBr
       status: 'Pre_Release',
     },
     validation: makeValidation(overrides),
+    harvest: { comments: [], transcripts: [], empty: true },
   };
 }
 
