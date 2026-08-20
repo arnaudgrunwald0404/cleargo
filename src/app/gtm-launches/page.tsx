@@ -191,6 +191,30 @@ export default function GTMLaunchesPage() {
         })();
     }, []);
 
+    const [users, setUsers] = useState<Array<{ email: string; first_name?: string | null; last_name?: string | null }>>([]);
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/users", { credentials: "include" });
+                if (res.ok) {
+                    const data = await res.json();
+                    setUsers((data.users || []).filter((u: { email?: string }) => !!u.email));
+                }
+            } catch {
+                // Without the list the owner can be set later on the detail page.
+            }
+        })();
+    }, []);
+
+    const userOptions = useMemo(
+        () =>
+            users.map((u) => ({
+                value: u.email,
+                label: `${u.first_name || ""} ${u.last_name || ""}`.trim() || u.email,
+            })),
+        [users]
+    );
+
     const releaseOptions = useMemo(
         () =>
             releases
@@ -487,11 +511,16 @@ export default function GTMLaunchesPage() {
                             onChange={(val) => setFormData({ ...formData, target_launch_date: val as Date | null })}
                             clearable
                         />
-                        <TextInput
-                            label="Owner Email"
-                            placeholder="owner@clearcompany.com"
-                            value={formData.owner_email}
-                            onChange={(e) => setFormData({ ...formData, owner_email: e.currentTarget.value })}
+                        <Select
+                            label="Owner"
+                            placeholder="Search people..."
+                            description="PMM accountable for this launch. Every downstream artifact defaults to them."
+                            data={userOptions}
+                            value={formData.owner_email || null}
+                            onChange={(val) => setFormData({ ...formData, owner_email: val || "" })}
+                            searchable
+                            clearable
+                            nothingFoundMessage="No matching user"
                         />
                         <Group justify="flex-end" mt="sm">
                             <Button variant="default" onClick={() => { setCreateOpen(false); setFormData(EMPTY_FORM); }}>

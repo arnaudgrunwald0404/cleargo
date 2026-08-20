@@ -11,6 +11,7 @@ import {
     Modal,
     Stack,
     Group,
+    Textarea,
     ScrollArea,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
@@ -333,6 +334,37 @@ export default function GTMLaunchDetailPage() {
             notifications.show({ color: "red", message: "Could not save that assignee." });
         } finally {
             setSavingAssign(false);
+        }
+    };
+
+    // Notes editor. launch_criterion_status.notes has been accepted by the PATCH
+    // endpoint since March with nothing rendering it -- the same gap as links and
+    // assignees. Epic criteria put threaded comments in this column; a launch
+    // criterion carries a single note, so this stays a plain text field.
+    const [notesTarget, setNotesTarget] = useState<CriterionStatus | null>(null);
+    const [notesDraft, setNotesDraft] = useState("");
+    const [savingNotes, setSavingNotes] = useState(false);
+
+    const saveNotes = async () => {
+        if (!notesTarget) return;
+        setSavingNotes(true);
+        try {
+            const res = await fetch(`/api/launch-criteria-status/${launchId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    criterion_id: notesTarget.criterion_id,
+                    notes: notesDraft.trim() || null,
+                }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            await fetchLaunch();
+            setNotesTarget(null);
+        } catch (err) {
+            console.error("Failed to save note:", err);
+            notifications.show({ color: "red", message: "Could not save that note." });
+        } finally {
+            setSavingNotes(false);
         }
     };
 
@@ -863,16 +895,19 @@ export default function GTMLaunchDetailPage() {
                             clearable
                             disabled={!canManage}
                         />
-                        <TextInput
+                        <Select
                             label="Owner"
                             size="sm"
-                            placeholder="owner@clearcompany.com"
-                            defaultValue={launch.owner_email || ""}
-                            key={`owner-${launch.owner_email}`}
-                            onBlur={(e) => {
-                                const val = e.currentTarget.value.trim() || null;
+                            placeholder="Search people..."
+                            description="PMM accountable for this launch. Every downstream artifact defaults to them."
+                            data={userOptions}
+                            value={launch.owner_email}
+                            onChange={(val) => {
                                 if (val !== launch.owner_email) patchLaunch("owner_email", val);
                             }}
+                            searchable
+                            clearable
+                            nothingFoundMessage="No matching user"
                             disabled={!canManage}
                         />
                         <div>
@@ -1004,6 +1039,10 @@ export default function GTMLaunchDetailPage() {
                                                 onEditLinks={(row) =>
                                                     openLinkEditor("criterion", row as CriterionStatus)
                                                 }
+                                                onEditNotes={(row) => {
+                                                    setNotesDraft((row as CriterionStatus).notes || "");
+                                                    setNotesTarget(row as CriterionStatus);
+                                                }}
                                             />
                                         </div>
                                     )}
@@ -1221,6 +1260,36 @@ export default function GTMLaunchDetailPage() {
                 </>)}
                 </div>
             </div>
+
+            {/* Note editor for checklist rows */}
+            <Modal
+                opened={notesTarget !== null}
+                onClose={() => setNotesTarget(null)}
+                title={`Note on \u201c${notesTarget?.criterion?.label ?? ""}\u201d`}
+                centered
+            >
+                <Stack gap="sm">
+                    <Textarea
+                        label="Note"
+                        placeholder="Context, blockers, who you are waiting on..."
+                        description="Visible to anyone who can see this launch. Clear it to remove."
+                        value={notesDraft}
+                        onChange={(e) => setNotesDraft(e.currentTarget.value)}
+                        autosize
+                        minRows={3}
+                        maxRows={10}
+                        data-autofocus
+                    />
+                    <Group justify="flex-end" gap="sm">
+                        <Button variant="subtle" onClick={() => setNotesTarget(null)} disabled={savingNotes}>
+                            Cancel
+                        </Button>
+                        <Button onClick={saveNotes} loading={savingNotes}>
+                            Save
+                        </Button>
+                    </Group>
+                </Stack>
+            </Modal>
 
             {/* Assignee picker for checklist rows */}
             <Modal

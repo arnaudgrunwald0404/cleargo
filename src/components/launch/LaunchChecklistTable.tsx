@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Tooltip } from "@mantine/core";
-import { IconArrowsRightLeft, IconCheck, IconCircle, IconExternalLink, IconLink, IconLoader2 } from "@tabler/icons-react";
+import { IconArrowsRightLeft, IconCheck, IconCircle, IconExternalLink, IconLink, IconLoader2, IconMessageCircle } from "@tabler/icons-react";
 import { UserDisplay } from "@/components/UserDisplay";
 import { isGating } from "@/lib/launch-readiness";
 import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
@@ -24,6 +24,7 @@ export interface ChecklistRow {
     status: LaunchTaskStatus;
     owner_email: string | null;
     due_date: string | null;
+    notes: string | null;
     links: unknown;
     criterion: {
         id: string;
@@ -55,6 +56,7 @@ interface Props {
     onCycleStatus: (row: ChecklistRow) => void;
     onAssign: (row: ChecklistRow) => void;
     onEditLinks: (row: ChecklistRow) => void;
+    onEditNotes: (row: ChecklistRow) => void;
 }
 
 const TH: React.CSSProperties = {
@@ -163,13 +165,14 @@ export function LaunchChecklistTable({
     onCycleStatus,
     onAssign,
     onEditLinks,
+    onEditNotes,
 }: Props) {
     const userFor = (email: string | null) =>
         email ? users.find((u) => u.email?.toLowerCase() === email.toLowerCase()) : undefined;
 
     return (
         <div className="overflow-x-auto">
-            <table className="min-w-full table-fixed w-full" style={{ borderCollapse: "collapse", minWidth: "760px" }}>
+            <table className="min-w-full table-fixed w-full" style={{ borderCollapse: "collapse", minWidth: "900px" }}>
                 <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
                     <tr>
                         <th className="px-4 py-3 text-left font-medium" style={TH}>Task</th>
@@ -177,6 +180,7 @@ export function LaunchChecklistTable({
                         <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "170px" }}>Accountable</th>
                         <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "150px" }}>Due On</th>
                         <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "150px" }}>Links</th>
+                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH, width: "140px" }}>Notes</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -296,6 +300,32 @@ export function LaunchChecklistTable({
                                             <span className="text-sm text-gray-500">-</span>
                                         )}
                                     </div>
+                                </td>
+
+                                <td className="px-4 py-3 text-sm align-middle" style={{ width: "140px" }}>
+                                    {canEdit ? (
+                                        <button
+                                            type="button"
+                                            onClick={() => onEditNotes(row)}
+                                            className="flex items-center gap-1 min-w-0 text-left w-full group"
+                                            title={row.notes || "Add a note"}
+                                        >
+                                            {row.notes ? (
+                                                <>
+                                                    <IconMessageCircle size={14} className="text-purple-600 flex-shrink-0" />
+                                                    <span className="truncate text-gray-600">{row.notes}</span>
+                                                </>
+                                            ) : (
+                                                <span className="text-gray-400 group-hover:text-purple-600">Add a note</span>
+                                            )}
+                                        </button>
+                                    ) : row.notes ? (
+                                        <span className="truncate block text-gray-600" title={row.notes}>
+                                            {row.notes}
+                                        </span>
+                                    ) : (
+                                        <span className="text-sm text-gray-500">-</span>
+                                    )}
                                 </td>
                             </tr>
                         );
