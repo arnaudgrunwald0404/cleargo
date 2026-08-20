@@ -191,6 +191,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -205,6 +207,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -234,6 +238,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: r.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -249,6 +255,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: r.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -294,6 +302,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             await logNotification({
                 user_id: r.id,
                 launch_id: payload.launch_id,
+                gtm_launch_id: payload.gtm_launch_id,
+                criterion_id: payload.criterion_id,
                 type: payload.type,
                 payload: logPayload,
                 delivery_channel: 'slack',
@@ -309,6 +319,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -353,6 +365,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: payload.recipient?.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -373,6 +387,13 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
 
         // Build message based on notification type
         switch (payload.type) {
+            case 'launch_artifact': {
+                if (!payload.metadata) throw new Error('Missing metadata for launch_artifact');
+                const { buildLaunchArtifactMessage } = await import('./templates/launch-artifacts');
+                message = buildLaunchArtifactMessage(payload.metadata as any);
+                break;
+            }
+
             case 'stale_criterion':
                 if (!payload.metadata) throw new Error('Missing metadata for stale_criterion');
                 message = buildStaleCriterionMessage(payload.metadata as any, theme);
@@ -514,6 +535,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -536,6 +559,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',

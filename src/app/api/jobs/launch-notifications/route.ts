@@ -1,20 +1,24 @@
 /**
  * Launch artifact notifications: state-transition driven, one message per artifact.
  *
- * Deliberately does NOT use sendSlackNotification, for two reasons:
- *  - it returns void, so there is no slack_ts to store, and without that the
- *    next transition cannot edit the existing message and has to post a new one;
- *  - its `launch_id` parameter means an EPIC id (legacy naming from
- *    0018_rename_launch_to_epic.sql) and it hard-skips when that epic's release
- *    is unsynced, which would silently drop every launch notification.
- * So this talks to the Slack client directly and logs with the real
- * notification_log.launch_id / .criterion_id columns.
+ * Delivery goes through sendSlackNotification like every other notification
+ * type, so it lands in the ClearGO Launch Console DM of the single person it
+ * applies to and inherits handle sync, the per-user opt-out and skip logging.
+ * This job only decides WHAT to say and to WHOM.
+ *
+ * Two notes on the seams it uses:
+ *  - it passes gtm_launch_id, not launch_id. The latter means an EPIC id
+ *    (legacy from 0018_rename_launch_to_epic.sql) and carries a hard skip when
+ *    that epic's release is unsynced, which would drop every launch message.
+ *  - editing an existing message goes direct to the Slack client, because
+ *    sendSlackNotification only posts. The ts comes from notification_log,
+ *    written by the send on an earlier pass.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient } from '@/lib/slack/client';
-import { canReceiveSlackNotification, logNotification } from '@/lib/slack/notifications';
+import { logNotification, sendSlackNotification } from '@/lib/slack/notifications';
 import { getNotificationCalendarSkip } from '@/lib/services/notificationCalendarService';
 import {
     LAUNCH_NOTIFY_TYPE,
@@ -35,6 +39,31 @@ interface CriterionJoin {
     depends_on_criterion_id: string | null;
     default_due_offset_days: number | null;
     tier_offset_days: Record<string, number> | null;
+}
+
+/**
+ * Build the SlackUser sendSlackNotification expects. It syncs a missing handle
+ * from the email itself, so an app_user row is enough; the fallback covers an
+ * owner who is not in app_user at all.
+ */
+async function resolveRecipient(
+    supabase: ReturnType<typeof createAdminClient>,
+    email: string
+): Promise<{ id: string; email: string; name: string; slack_handle?: string }> {
+    const { data } = await supabase
+        .from('app_user')
+        .select('id, email, first_name, last_name, slack_handle')
+        .eq('email', email.toLowerCase())
+        .maybeSingle();
+
+    const name =
+        [data?.first_name, data?.last_name].filter(Boolean).join(' ') || email;
+    return {
+        id: data?.id || email,
+        email: data?.email || email,
+        name,
+        slack_handle: data?.slack_handle || undefined,
+    };
 }
 
 export async function GET(request: NextRequest) {
@@ -132,40 +161,39 @@ export async function GET(request: NextRequest) {
             });
         }
 
-        const slack = getSlackClient();
         let sent = 0;
         let edited = 0;
-        let skipped = 0;
         const failures: Array<{ label: string; error: string }> = [];
 
         for (const action of actions) {
             try {
-                if (!(await canReceiveSlackNotification(action.recipientEmail))) {
-                    skipped++;
-                    continue;
-                }
-
-                const copy = describeAction(action);
-                const blocks = [
-                    {
-                        type: 'section',
-                        text: { type: 'mrkdwn', text: `*${copy.text}*\n${copy.detail}` },
-                    },
-                ];
+                const metadata = {
+                    kind: action.kind,
+                    launch_id: action.launchId,
+                    launch_name: action.launchName,
+                    label: action.label,
+                    start_date: action.startDate,
+                    due_date: action.dueDate,
+                    blocking: action.blocking,
+                };
 
                 if (action.editExisting) {
-                    // One message per artifact for its whole life: the earlier
-                    // note is rewritten rather than joined by a new one.
-                    await slack.updateMessage(
+                    // One message per artifact for its whole life: rewrite the
+                    // note already in the DM rather than adding another.
+                    const { buildLaunchArtifactMessage } = await import(
+                        '@/lib/slack/templates/launch-artifacts'
+                    );
+                    const built = buildLaunchArtifactMessage(metadata);
+                    await getSlackClient().updateMessage(
                         action.editExisting.slack_channel,
                         action.editExisting.slack_ts,
-                        { text: copy.text, blocks }
+                        { text: built.text, blocks: built.blocks as never }
                     );
                     await logNotification({
                         gtm_launch_id: action.launchId,
                         criterion_id: action.criterionId,
                         type: LAUNCH_NOTIFY_TYPE,
-                        payload: { kind: action.kind, label: action.label, edited: true },
+                        payload: { ...metadata, edited: true },
                         delivery_channel: 'slack',
                         status: 'sent',
                         slack_ts: action.editExisting.slack_ts,
@@ -175,47 +203,27 @@ export async function GET(request: NextRequest) {
                     continue;
                 }
 
-                const user = await slack.getUserByEmail(action.recipientEmail);
-                const slackUserId = user?.user?.id;
-                if (!slackUserId) {
-                    skipped++;
-                    continue;
-                }
-                const dm = await slack.openConversation(slackUserId);
-                const posted = await slack.postMessage({ channel: dm, text: copy.text, blocks });
-
-                await logNotification({
+                const recipient = await resolveRecipient(supabase, action.recipientEmail);
+                await sendSlackNotification({
+                    type: LAUNCH_NOTIFY_TYPE,
+                    priority: action.kind === 'gate_blocking' ? 'high' : 'medium',
+                    recipient,
                     gtm_launch_id: action.launchId,
                     criterion_id: action.criterionId,
-                    type: LAUNCH_NOTIFY_TYPE,
-                    payload: { kind: action.kind, label: action.label, blocking: action.blocking },
-                    delivery_channel: 'slack',
-                    status: 'sent',
-                    slack_ts: posted.ts,
-                    slack_channel: dm,
+                    metadata,
                 });
                 sent++;
 
                 // A blocking gate is the only thing that reaches anyone beyond
-                // the owner, and it threads off the original so it stays in context.
+                // the owner, and it names the owner so the reader knows who to chase.
                 for (const escalate of action.escalateTo) {
-                    if (!(await canReceiveSlackNotification(escalate))) continue;
-                    const eu = await slack.getUserByEmail(escalate);
-                    const eid = eu?.user?.id;
-                    if (!eid) continue;
-                    const edm = await slack.openConversation(eid);
-                    await slack.postMessage({
-                        channel: edm,
-                        text: copy.text,
-                        blocks: [
-                            {
-                                type: 'section',
-                                text: {
-                                    type: 'mrkdwn',
-                                    text: `*${copy.text}*\n${copy.detail}\n_Owner: ${action.recipientEmail}_`,
-                                },
-                            },
-                        ],
+                    await sendSlackNotification({
+                        type: LAUNCH_NOTIFY_TYPE,
+                        priority: 'high',
+                        recipient: await resolveRecipient(supabase, escalate),
+                        gtm_launch_id: action.launchId,
+                        criterion_id: action.criterionId,
+                        metadata: { ...metadata, owner_email: action.recipientEmail },
                     });
                 }
             } catch (err: unknown) {
@@ -235,7 +243,6 @@ export async function GET(request: NextRequest) {
             planned: actions.length,
             sent,
             edited,
-            skipped,
             failed: failures.length,
             failures,
         });
