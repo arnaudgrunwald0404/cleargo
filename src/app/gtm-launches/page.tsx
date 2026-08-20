@@ -21,6 +21,7 @@ import {
     IconArchive,
     IconArchiveOff,
     IconPencil,
+    IconSearch,
 } from "@tabler/icons-react";
 import type { Launch } from "@/types/launches";
 import { canRolesPerform } from "@/lib/permissions";
@@ -31,6 +32,41 @@ interface LaunchRow extends Launch {
         epic_id: string;
         epic?: { id: string; name: string; tier: string; status: string };
     }>;
+}
+
+/** Clickable column header. Shows the arrow only on the active sort column. */
+function SortableTh({
+    label,
+    sortKey,
+    active,
+    asc,
+    onSort,
+    width,
+}: {
+    label: string;
+    sortKey: SortKey;
+    active: SortKey;
+    asc: boolean;
+    onSort: (k: SortKey) => void;
+    width?: string;
+}) {
+    const isActive = active === sortKey;
+    return (
+        <th
+            className={`px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider ${width || ""}`}
+        >
+            <button
+                type="button"
+                onClick={() => onSort(sortKey)}
+                className="inline-flex items-center gap-1 uppercase tracking-wider hover:text-gray-900 transition-colors"
+            >
+                {label}
+                <span className={isActive ? "text-gray-900" : "text-transparent"} aria-hidden>
+                    {asc ? "\u2191" : "\u2193"}
+                </span>
+            </button>
+        </th>
+    );
 }
 
 function formatDate(d: string | null): string {
@@ -111,6 +147,18 @@ function readinessBadge(pct: number) {
     );
 }
 
+/** Filter-control styling copied from the epics filter bar so the two match. */
+const FILTER_INPUT_STYLES = {
+    input: {
+        borderRadius: 8,
+        border: "1px solid var(--color-gray-300)",
+        backgroundColor: "var(--color-gray-50)",
+        fontFamily: "var(--font-body)",
+    },
+} as const;
+
+type SortKey = "name" | "tier" | "status" | "target_launch_date" | "readiness_pct";
+
 const EMPTY_FORM = {
     name: "",
     tier: "",
@@ -150,6 +198,23 @@ export default function GTMLaunchesPage() {
     }, []);
 
     // Create modal
+    const [search, setSearch] = useState("");
+    const [tierFilter, setTierFilter] = useState<string>("ALL");
+    const [statusFilter, setStatusFilter] = useState<string>("ALL");
+    const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
+    const [sortKey, setSortKey] = useState<SortKey>("target_launch_date");
+    const [sortAsc, setSortAsc] = useState(true);
+
+    const toggleSort = (key: SortKey) => {
+        if (key === sortKey) {
+            setSortAsc((v) => !v);
+        } else {
+            setSortKey(key);
+            // Dates read best oldest-first; everything else A-Z / low-first.
+            setSortAsc(true);
+        }
+    };
+
     const [createOpen, setCreateOpen] = useState(false);
     const [formData, setFormData] = useState(EMPTY_FORM);
     const [creating, setCreating] = useState(false);
@@ -287,11 +352,48 @@ export default function GTMLaunchesPage() {
         }
     };
 
-    const displayedLaunches = filter === "archived"
-        ? launches.filter((l) => l.archived)
-        : filter === "active"
-            ? launches.filter((l) => !l.archived)
-            : launches;
+    const ownerOptions = useMemo(() => {
+        const emails = Array.from(
+            new Set(launches.map((l) => l.owner_email).filter((e): e is string => !!e))
+        );
+        return emails.map((email) => {
+            const u = users.find((x) => x.email?.toLowerCase() === email.toLowerCase());
+            const name = u ? `${u.first_name || ""} ${u.last_name || ""}`.trim() : "";
+            return { value: email, label: name || email };
+        });
+    }, [launches, users]);
+
+    const displayedLaunches = useMemo(() => {
+        const byArchived =
+            filter === "archived"
+                ? launches.filter((l) => l.archived)
+                : filter === "active"
+                  ? launches.filter((l) => !l.archived)
+                  : launches;
+
+        const filtered = byArchived.filter((l) => {
+            if (search && !l.name.toLowerCase().includes(search.toLowerCase())) return false;
+            if (tierFilter !== "ALL" && (l.tier ?? "") !== tierFilter) return false;
+            if (statusFilter !== "ALL" && l.status !== statusFilter) return false;
+            if (ownerFilter !== "ALL" && (l.owner_email ?? "") !== ownerFilter) return false;
+            return true;
+        });
+
+        const dir = sortAsc ? 1 : -1;
+        return [...filtered].sort((a, b) => {
+            if (sortKey === "readiness_pct") {
+                return ((a.readiness_pct ?? 0) - (b.readiness_pct ?? 0)) * dir;
+            }
+            const av = a[sortKey];
+            const bv = b[sortKey];
+            // Missing values sort last regardless of direction, so an undated
+            // launch never displaces a dated one at the top of the list.
+            if (!av && !bv) return 0;
+            if (!av) return 1;
+            if (!bv) return -1;
+            return String(av).localeCompare(String(bv)) * dir;
+        });
+    }, [launches, filter, search, tierFilter, statusFilter, ownerFilter, sortKey, sortAsc]);
 
     return (
         <main className="min-h-screen" style={{ background: "var(--color-platinum)" }}>
@@ -326,8 +428,8 @@ export default function GTMLaunchesPage() {
                     )}
                 </div>
 
-                {/* Filter toggle */}
-                <div className="mb-4">
+                {/* Filters — same controls and styling as the epics filter bar */}
+                <div className="mb-4 flex flex-wrap items-center gap-3">
                     <SegmentedControl
                         value={filter}
                         onChange={setFilter}
@@ -338,6 +440,66 @@ export default function GTMLaunchesPage() {
                             { label: "All", value: "all" },
                         ]}
                     />
+                    <TextInput
+                        placeholder="Search launches..."
+                        value={search}
+                        onChange={(e) => setSearch(e.currentTarget.value)}
+                        leftSection={<IconSearch size={14} />}
+                        style={{ minWidth: 220 }}
+                        styles={FILTER_INPUT_STYLES}
+                    />
+                    <Select
+                        placeholder="Tier"
+                        value={tierFilter}
+                        onChange={(v) => setTierFilter(v || "ALL")}
+                        data={[
+                            { value: "ALL", label: "All Tiers" },
+                            { value: "TIER_1", label: "Tier 1" },
+                            { value: "TIER_2", label: "Tier 2" },
+                        ]}
+                        style={{ minWidth: 130 }}
+                        styles={FILTER_INPUT_STYLES}
+                    />
+                    <Select
+                        placeholder="Status"
+                        value={statusFilter}
+                        onChange={(v) => setStatusFilter(v || "ALL")}
+                        data={[
+                            { value: "ALL", label: "All Statuses" },
+                            { value: "Planning", label: "Planning" },
+                            { value: "In Progress", label: "In Progress" },
+                            { value: "Launched", label: "Launched" },
+                            { value: "Post-Launch", label: "Post-Launch" },
+                        ]}
+                        style={{ minWidth: 150 }}
+                        styles={FILTER_INPUT_STYLES}
+                    />
+                    <Select
+                        placeholder="Owner"
+                        value={ownerFilter}
+                        onChange={(v) => setOwnerFilter(v || "ALL")}
+                        data={[{ value: "ALL", label: "All Owners" }, ...ownerOptions]}
+                        searchable
+                        style={{ minWidth: 170 }}
+                        styles={FILTER_INPUT_STYLES}
+                    />
+                    {(search || tierFilter !== "ALL" || statusFilter !== "ALL" || ownerFilter !== "ALL") && (
+                        <Button
+                            variant="subtle"
+                            size="xs"
+                            onClick={() => {
+                                setSearch("");
+                                setTierFilter("ALL");
+                                setStatusFilter("ALL");
+                                setOwnerFilter("ALL");
+                            }}
+                        >
+                            Clear
+                        </Button>
+                    )}
+                    <span className="text-xs text-gray-400 ml-auto">
+                        {displayedLaunches.length} of {launches.length}
+                    </span>
                 </div>
 
                 {/* Table */}
@@ -362,21 +524,11 @@ export default function GTMLaunchesPage() {
                         <table className="min-w-full divide-y divide-gray-200">
                             <thead className="bg-gray-50">
                                 <tr>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                        Launch
-                                    </th>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">
-                                        Tier
-                                    </th>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">
-                                        Status
-                                    </th>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">
-                                        Target Date
-                                    </th>
-                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">
-                                        Readiness
-                                    </th>
+                                    <SortableTh label="Launch" sortKey="name" active={sortKey} asc={sortAsc} onSort={toggleSort} />
+                                    <SortableTh label="Tier" sortKey="tier" active={sortKey} asc={sortAsc} onSort={toggleSort} width="w-24" />
+                                    <SortableTh label="Status" sortKey="status" active={sortKey} asc={sortAsc} onSort={toggleSort} width="w-32" />
+                                    <SortableTh label="Target Date" sortKey="target_launch_date" active={sortKey} asc={sortAsc} onSort={toggleSort} width="w-36" />
+                                    <SortableTh label="Readiness" sortKey="readiness_pct" active={sortKey} asc={sortAsc} onSort={toggleSort} width="w-44" />
                                     <th className="px-5 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
                                         <span className="sr-only">Actions</span>
                                     </th>
