@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { PurpleLoader } from "@/components/PurpleLoader";
 import {
@@ -111,7 +111,19 @@ function readinessBadge(pct: number) {
     );
 }
 
-const EMPTY_FORM = { name: "", tier: "", target_launch_date: null as Date | null, owner_email: "" };
+const EMPTY_FORM = {
+    name: "",
+    tier: "",
+    target_launch_date: null as Date | null,
+    owner_email: "",
+    schedule_id: null as string | null,
+};
+
+interface ReleaseOption {
+    id: number;
+    release_name: string;
+    launch_date: string | null;
+}
 
 export default function GTMLaunchesPage() {
     const router = useRouter();
@@ -162,6 +174,34 @@ export default function GTMLaunchesPage() {
         fetchLaunches();
     }, [fetchLaunches]);
 
+    // A launch anchors to a release: the whole workback counts back from that
+    // release date, so picking the release is what sets the schedule.
+    const [releases, setReleases] = useState<ReleaseOption[]>([]);
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/releases");
+                if (res.ok) {
+                    const rows = await res.json();
+                    setReleases(Array.isArray(rows) ? rows : []);
+                }
+            } catch {
+                // Without the list the date can still be typed by hand.
+            }
+        })();
+    }, []);
+
+    const releaseOptions = useMemo(
+        () =>
+            releases
+                .filter((r) => r.launch_date)
+                .map((r) => ({
+                    value: String(r.id),
+                    label: `${r.release_name} — ${formatDate(r.launch_date)}`,
+                })),
+        [releases]
+    );
+
     const handleCreate = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!formData.name.trim()) {
@@ -176,6 +216,7 @@ export default function GTMLaunchesPage() {
                 body.target_launch_date = formData.target_launch_date.toISOString().split("T")[0];
             }
             if (formData.owner_email) body.owner_email = formData.owner_email;
+            if (formData.schedule_id) body.schedule_id = Number(formData.schedule_id);
 
             const res = await fetch("/api/launches", {
                 method: "POST",
@@ -413,9 +454,35 @@ export default function GTMLaunchesPage() {
                             onChange={(val) => setFormData({ ...formData, tier: val || "" })}
                             clearable
                         />
+                        <Select
+                            label="Release"
+                            placeholder="Anchor this launch to a release"
+                            description="Sets the target date, which the whole workback counts back from."
+                            data={releaseOptions}
+                            value={formData.schedule_id}
+                            onChange={(val) => {
+                                const rel = releases.find((r) => String(r.id) === val);
+                                setFormData({
+                                    ...formData,
+                                    schedule_id: val,
+                                    // Selecting a release fills the date in; clearing it
+                                    // leaves whatever was there to be edited by hand.
+                                    target_launch_date: rel?.launch_date
+                                        ? new Date(`${rel.launch_date}T00:00:00`)
+                                        : formData.target_launch_date,
+                                });
+                            }}
+                            searchable
+                            clearable
+                        />
                         <DateInput
                             label="Target Launch Date"
                             placeholder="Pick a date"
+                            description={
+                                formData.schedule_id
+                                    ? "Taken from the release above; override if this launch lands off-cycle."
+                                    : undefined
+                            }
                             value={formData.target_launch_date}
                             onChange={(val) => setFormData({ ...formData, target_launch_date: val as Date | null })}
                             clearable

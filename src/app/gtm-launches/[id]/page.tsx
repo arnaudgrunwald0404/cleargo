@@ -66,6 +66,7 @@ interface LaunchData {
     created_at?: string | null;
     tier: string | null;
     target_launch_date: string | null;
+    schedule_id?: number | null;
     readiness_pct: number;
     status: LaunchStatus;
     owner_email: string | null;
@@ -249,6 +250,35 @@ export default function GTMLaunchDetailPage() {
     useEffect(() => {
         fetchAssets();
     }, [fetchAssets]);
+
+    // Releases this launch can anchor to. The workback counts back from the
+    // release date, so re-anchoring reflows every derived due date server-side.
+    const [releases, setReleases] = useState<Array<{ id: number; release_name: string; launch_date: string | null }>>([]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await fetch("/api/releases");
+                if (res.ok) {
+                    const rows = await res.json();
+                    setReleases(Array.isArray(rows) ? rows : []);
+                }
+            } catch {
+                // Without the list the date remains editable directly.
+            }
+        })();
+    }, []);
+
+    const releaseOptions = useMemo(
+        () =>
+            releases
+                .filter((r) => r.launch_date)
+                .map((r) => ({
+                    value: String(r.id),
+                    label: `${r.release_name} — ${formatDate(r.launch_date)}`,
+                })),
+        [releases]
+    );
 
     // Assignable users. /api/users is reachable by PMM/PM/ENG/PRODUCT for exactly
     // this kind of delegate dropdown, so a launch owner can assign checklist work.
@@ -465,16 +495,21 @@ export default function GTMLaunchDetailPage() {
     }, [statuses]);
 
     // Inline field save
-    const patchLaunch = async (field: string, value: any) => {
+    const patchLaunchFields = async (fields: Record<string, unknown>) => {
         try {
             const res = await fetch(`/api/launches/${launchId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ [field]: value }),
+                body: JSON.stringify(fields),
             });
             if (res.ok) {
                 const updated = await res.json();
                 setLaunch((prev) => prev ? { ...prev, ...updated } : prev);
+                // A moved anchor or date reflows derived due dates server-side,
+                // so the checklist has to be re-read rather than patched locally.
+                if ("schedule_id" in fields || "target_launch_date" in fields || "tier" in fields) {
+                    await fetchLaunch();
+                }
                 notifications.show({ message: "Updated", color: "teal", autoClose: 1500 });
             } else {
                 notifications.show({ title: "Error", message: "Failed to save", color: "red" });
@@ -483,6 +518,8 @@ export default function GTMLaunchDetailPage() {
             notifications.show({ title: "Error", message: "Failed to save", color: "red" });
         }
     };
+
+    const patchLaunch = (field: string, value: unknown) => patchLaunchFields({ [field]: value });
 
     const handleToggleStatus = useCallback(
         async (criterionId: string, currentStatus: TaskStatus) => {
@@ -795,6 +832,25 @@ export default function GTMLaunchDetailPage() {
                             value={launch.status}
                             onChange={(val) => val && patchLaunch("status", val)}
                             disabled={!canManage}
+                        />
+                        <Select
+                            label="Release"
+                            placeholder="Anchor to a release"
+                            data={releaseOptions}
+                            value={launch.schedule_id ? String(launch.schedule_id) : null}
+                            onChange={(val) => {
+                                const rel = releases.find((r) => String(r.id) === val);
+                                // Sent together: the reflow keys off the new target date,
+                                // so splitting these would reflow twice off a stale one.
+                                patchLaunchFields({
+                                    schedule_id: val ? Number(val) : null,
+                                    ...(rel?.launch_date ? { target_launch_date: rel.launch_date } : {}),
+                                });
+                            }}
+                            searchable
+                            clearable
+                            disabled={!canManage}
+                            size="sm"
                         />
                         <DateInput
                             label="Target Launch Date"
