@@ -32,6 +32,12 @@ import { canRolesPerform } from "@/lib/permissions";
 import { scheduleState, tierAwareDueDate } from "@/lib/launchCriteria";
 import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
 import { DetailTabs, TabCount } from "@/components/DetailTabs";
+import {
+    computeLaunchReadiness,
+    isGating,
+    VERDICT_CLASS,
+    VERDICT_LABEL,
+} from "@/lib/launch-readiness";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
 
@@ -49,7 +55,9 @@ interface CriterionStatus {
         label: string;
         description: string | null;
         phase: string | null;
-        gate: string | null;
+        // The column is boolean; the admin UI still round-trips 'hard'/'soft'
+        // strings, so both shapes reach the client. Use isGating(), never ===.
+        gate: boolean | string | null;
         sort_order: number;
         default_due_offset_days?: number | null;
         tier_offset_days?: Record<string, number> | null;
@@ -387,11 +395,35 @@ export default function GTMLaunchDetailPage() {
         }
     };
 
-    const statuses = launch?.launch_criterion_status || [];
+    // Memoised because it feeds three useMemo hooks: launch?.launch_criterion_status
+    // returns a fresh array reference on every render, which would defeat all of them.
+    const statuses = useMemo(
+        () => launch?.launch_criterion_status || [],
+        [launch?.launch_criterion_status]
+    );
     const epics = (launch?.launch_epic || []).map((le) => le.epic).filter(Boolean) as EpicData[];
     const linkedEpicIds = new Set((launch?.launch_epic || []).map((le) => le.epic_id));
 
     const checklistDone = statuses.filter((s) => s.status === "DONE").length;
+
+    const readiness = useMemo(
+        () =>
+            computeLaunchReadiness({
+                items: statuses.map((s) => ({
+                    id: s.criterion_id,
+                    label: s.criterion?.label ?? "",
+                    status: s.status,
+                    due_date: s.due_date,
+                    gate: s.criterion?.gate ?? null,
+                    default_due_offset_days: s.criterion?.default_due_offset_days ?? null,
+                    tier_offset_days: s.criterion?.tier_offset_days ?? null,
+                })),
+                targetLaunchDate: launch?.target_launch_date ?? null,
+                tier: launch?.tier ?? null,
+                launchCreatedAt: launch?.created_at ?? null,
+            }),
+        [statuses, launch?.target_launch_date, launch?.tier, launch?.created_at]
+    );
     // Assets marked NOT_APPLICABLE are excluded from the denominator: an optional
     // asset that will not ship should not make the launch look incomplete.
     const assetsRequired = assets.filter((a) => a.status !== "NOT_APPLICABLE").length;
@@ -705,6 +737,39 @@ export default function GTMLaunchDetailPage() {
                     role="tabpanel"
                 >
                 {tab === "overview" && (<>
+                {/* Readiness verdict — same vocabulary the epic model uses */}
+                <div
+                    className={`rounded-lg border px-4 py-3 mb-5 ${VERDICT_CLASS[readiness.verdict]}`}
+                >
+                    <div className="flex items-center justify-between gap-4 flex-wrap">
+                        <div className="flex items-baseline gap-3">
+                            <span className="text-sm font-semibold">
+                                {VERDICT_LABEL[readiness.verdict]}
+                            </span>
+                            <span className="text-xs opacity-80">
+                                {readiness.readinessPct}% ready · {readiness.gatesDone}/
+                                {readiness.gatesTotal} gates cleared
+                            </span>
+                        </div>
+                        <span className="text-[11px] opacity-70">
+                            Gates count triple; in-progress counts half.
+                        </span>
+                    </div>
+
+                    {readiness.blockers.length > 0 && (
+                        <div className="mt-2 text-xs">
+                            <span className="font-medium">Blocking:</span>{" "}
+                            {readiness.blockers.map((b) => b.label).join(" · ")}
+                        </div>
+                    )}
+                    {readiness.blockers.length === 0 && readiness.atRisk.length > 0 && (
+                        <div className="mt-2 text-xs">
+                            <span className="font-medium">Needs attention now:</span>{" "}
+                            {readiness.atRisk.map((a) => a.label).join(" · ")}
+                        </div>
+                    )}
+                </div>
+
                 {/* Editable metadata card */}
                 <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -899,7 +964,7 @@ export default function GTMLaunchDetailPage() {
                                                             </p>
                                                         )}
                                                     </div>
-                                                    {item.criterion?.gate === "hard" && (
+                                                    {isGating(item.criterion?.gate) && (
                                                         <span className="text-[10px] font-semibold uppercase tracking-wider text-red-500 bg-red-50 px-1.5 py-0.5 rounded flex-shrink-0">
                                                             Hard Gate
                                                         </span>
