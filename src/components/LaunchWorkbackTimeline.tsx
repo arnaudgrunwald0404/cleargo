@@ -2,6 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Tooltip } from "@mantine/core";
+import { useMediaQuery } from "@mantine/hooks";
 import { scheduleState, tierAwareDueDate, type ScheduleState } from "@/lib/launchCriteria";
 
 /**
@@ -79,6 +80,7 @@ export function LaunchWorkbackTimeline({
     today,
 }: Props) {
     const todayStr = today ?? new Date().toISOString().slice(0, 10);
+    const isMobile = useMediaQuery("(max-width: 768px)");
 
     const rows = useMemo(() => {
         if (!targetLaunchDate) return [];
@@ -118,6 +120,62 @@ export function LaunchWorkbackTimeline({
     }
     if (rows.length === 0) {
         return <p className="text-xs text-gray-400">No dated artifacts on this launch yet.</p>;
+    }
+
+    // Mobile gets a vertical stack rather than a squeezed track, matching how
+    // ReleaseStagesChart splits its layouts: a 70-day span across a phone width
+    // renders every bar as an unreadable sliver.
+    if (isMobile) {
+        return (
+            <div className="flex flex-col">
+                {todayStr < rows[0].start && (
+                    <div className="flex items-center gap-3 pb-2">
+                        <span
+                            className="flex-shrink-0"
+                            style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--color-copper)" }}
+                        />
+                        <span
+                            className="text-[11px] font-bold uppercase tracking-wider"
+                            style={{ color: "var(--color-copper)" }}
+                        >
+                            Today · {fmt(todayStr)}
+                        </span>
+                    </div>
+                )}
+                {rows.map((r) => (
+                    <div key={r.id} className="flex items-start gap-3 py-2 border-b border-gray-100 last:border-b-0">
+                        <span
+                            className="flex-shrink-0"
+                            style={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: 2,
+                                marginTop: 4,
+                                backgroundColor: STATE_COLOR[r.state],
+                            }}
+                        />
+                        <div className="min-w-0 flex-1">
+                            <div className="text-sm text-gray-800">{r.label}</div>
+                            <div className="text-xs text-gray-500">
+                                {fmt(r.start)} – {fmt(r.due)} · {STATE_LABEL[r.state].split(" — ")[0]}
+                            </div>
+                        </div>
+                    </div>
+                ))}
+                <div className="flex items-center gap-3 pt-2">
+                    <span
+                        className="flex-shrink-0"
+                        style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: "var(--color-cast-iron)" }}
+                    />
+                    <span
+                        className="text-[11px] font-bold uppercase tracking-wider"
+                        style={{ color: "var(--color-cast-iron)" }}
+                    >
+                        GA · {fmt(targetLaunchDate)}
+                    </span>
+                </div>
+            </div>
+        );
     }
 
     // The window spans the earliest start through GA, widened to include today
