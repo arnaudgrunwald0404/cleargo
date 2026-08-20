@@ -45,7 +45,18 @@ function safePayload(payload: any): Record<string, unknown> | null {
  */
 export async function logNotification(data: {
     user_id?: string;
+    /**
+     * LEGACY NAME: writes to notification_log.epic_id. Predates
+     * 0018_rename_launch_to_epic.sql, when epics were called launches. Every
+     * existing caller passes an EPIC id. Do not pass a GTM launch id here --
+     * the FK to epic(id) would reject it and the fallback below nulls both keys,
+     * silently losing the row's identity. Use gtm_launch_id instead.
+     */
     launch_id?: string;
+    /** A real GTM launch (public.launch). Maps to notification_log.launch_id. */
+    gtm_launch_id?: string;
+    /** Checklist item this concerns, so nudges dedupe per artifact. */
+    criterion_id?: string;
     type: string;
     payload: any;
     delivery_channel: string;
@@ -68,6 +79,8 @@ export async function logNotification(data: {
     const row = {
         user_id: data.user_id || null,
         epic_id: data.launch_id || null,
+        launch_id: data.gtm_launch_id || null,
+        criterion_id: data.criterion_id || null,
         type: data.type,
         payload: safePayload(data.payload),
         delivery_channel: data.delivery_channel,
@@ -83,7 +96,7 @@ export async function logNotification(data: {
     if (error) {
         console.error('notification_log insert failed:', error.code, error.message, error.details);
         if (error.code === '23503' || error.code === '23502') {
-            const fallback = { ...row, user_id: null, epic_id: null };
+            const fallback = { ...row, user_id: null, epic_id: null, launch_id: null, criterion_id: null };
             const { error: retryError } = await supabase.from('notification_log').insert(fallback);
             if (retryError) {
                 console.error('notification_log retry (without FKs) also failed:', retryError.code, retryError.message);
