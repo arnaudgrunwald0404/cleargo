@@ -448,37 +448,3 @@ export async function deleteLaunchCriterion(id: string) {
   return res.json().catch(() => ({}));
 }
 
-// ── Launch Schedule ──────────────────────────────────────────────────────────
-
-export async function getLaunchSchedule(includeArchived: boolean = false) {
-  const url = includeArchived ? "/api/launch-schedule?include_archived=true" : "/api/launch-schedule";
-  const res = await fetchWithRateLimit(url, { maxRetries: 1 });
-  if (!res.ok) return { schedules: [] };
-  return res.json();
-}
-
-export async function addLaunchScheduleEntry(payload: { release_name: string; launch_date?: string }) {
-  const res = await fetch("/api/launch-schedule", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to add launch schedule entry");
-  return res.json();
-}
-
-export async function updateLaunchScheduleEntry(id: number, payload: Record<string, any>) {
-  const res = await fetch(`/api/launch-schedule/${id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to update launch schedule entry");
-  return res.json();
-}
-
-export async function deleteLaunchScheduleEntry(id: number) {
-  const res = await fetch(`/api/launch-schedule/${id}`, { method: "DELETE" });
-  if (!res.ok) throw new Error("Failed to delete launch schedule entry");
-  return res.json().catch(() => ({}));
-}
