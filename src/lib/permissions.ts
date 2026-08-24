@@ -44,7 +44,8 @@ export type CapabilityId =
   | "roadmap.analysis.generate"
   | "roadmap.planVsActual.arr.write"
   | "roadmap.planVsActual.gtm.write"
-  | "launch.accessDates.update";
+  | "launch.accessDates.update"
+  | "paprico.manage";
 
 export type Capability = {
   id: CapabilityId;
@@ -268,6 +269,11 @@ export const CAPABILITIES: Capability[] = [
     label: "Update GTM Access Dates",
     description: "Set actual GTM access and Internal Readiness dates, mark N/A, and confirm completion on epics (PM only).",
   },
+  {
+    id: "paprico.manage",
+    label: "Manage PaPriCo",
+    description: "Create PaPriCo meetings, edit agenda items, record decisions, publish agendas, and configure gating criteria. Reading the PaPriCo report is open to all authenticated users.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -314,6 +320,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.planVsActual.arr.write": ["CPO", "PRODUCT_OPS", "PM"],
   "roadmap.planVsActual.gtm.write": ["CPO", "PRODUCT_OPS", "PM"],
   "launch.accessDates.update": ["PM"],
+  "paprico.manage": ["PRODUCT_OPS", "CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;
