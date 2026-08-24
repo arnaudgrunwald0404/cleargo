@@ -184,10 +184,14 @@ export async function computeAgendaForMeeting(
     const statusByPair = new Map(statusRows.map((s) => [`${s.epic_id}:${s.criterion_id}`, s.status]));
     const lookaheadByCriterion = new Map(gating.map((g) => [g.criterion_id, g.lookahead_days ?? defaultLookahead]));
 
-    // 1. Auto-close open release items whose criterion is now complete for the epic.
+    // 1. Auto-close release items whose criterion is now complete for the epic.
+    //    Only proposed/on_agenda/deferred close themselves (spec §4) — blocked and
+    //    decided items keep their state for the room to see.
+    const AUTO_CLOSABLE = new Set(['proposed', 'on_agenda', 'deferred']);
     const noteText = autoCloseNote(today);
     const toClose = openItems.filter((item) => {
         if (item.source !== 'release' || !item.epic_id || !item.criterion_id) return false;
+        if (!AUTO_CLOSABLE.has(item.status)) return false;
         return isCriterionStatusComplete(statusByPair.get(`${item.epic_id}:${item.criterion_id}`));
     });
     if (toClose.length > 0) {

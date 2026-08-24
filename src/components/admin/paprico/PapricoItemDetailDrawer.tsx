@@ -170,19 +170,42 @@ export default function PapricoItemDetailDrawer({ itemId, meetingId, canWrite, o
                         {item.system_notes && (
                             <div className="whitespace-pre-line text-gray-500">{item.system_notes}</div>
                         )}
-                        {links.length > 0 && (
-                            <div>
-                                Links:{" "}
-                                {links.map((l, i) => (
-                                    <span key={`${l.url}-${i}`}>
-                                        {i > 0 && " · "}
-                                        <Anchor href={l.url} target="_blank" rel="noopener noreferrer" size="sm">
-                                            {l.label}
-                                        </Anchor>
-                                    </span>
-                                ))}
-                            </div>
-                        )}
+                        <div>
+                            Links:{" "}
+                            {links.length === 0 && <span className="text-gray-400">none</span>}
+                            {links.map((l, i) => (
+                                <span key={`${l.url}-${i}`}>
+                                    {i > 0 && " · "}
+                                    <Anchor href={l.url} target="_blank" rel="noopener noreferrer" size="sm">
+                                        {l.label}
+                                    </Anchor>
+                                    {canWrite && (
+                                        <button
+                                            type="button"
+                                            aria-label={`Remove link ${l.label}`}
+                                            className="ml-0.5 text-gray-400 hover:text-red-600"
+                                            onClick={() => patchItem({ links: links.filter((_, j) => j !== i) })}
+                                        >
+                                            ×
+                                        </button>
+                                    )}
+                                </span>
+                            ))}
+                            {canWrite && (
+                                <button
+                                    type="button"
+                                    className="ml-2 text-indigo-600 hover:text-indigo-800 text-xs"
+                                    onClick={() => {
+                                        const url = window.prompt("Link URL (submission deck, spreadsheet, Slack thread…)");
+                                        if (!url?.trim()) return;
+                                        const label = window.prompt("Link label") || url.trim();
+                                        void patchItem({ links: [...links, { label: label.trim(), url: url.trim() }] });
+                                    }}
+                                >
+                                    + add link
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     {canWrite && item.status !== "closed" && (
