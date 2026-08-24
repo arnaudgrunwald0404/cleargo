@@ -81,6 +81,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                 <li><Link {...linkProps("/admin/settings/releases", isActive("/admin/settings/releases"))}>Release Schedule</Link></li>
                 <li><Link {...linkProps("/admin/settings/criteria", isActive("/admin/settings/criteria"))}>Release Criteria</Link></li>
                 <li><Link {...linkProps("/admin/settings/release-stages", isActive("/admin/settings/release-stages"))}>Release Stages</Link></li>
+                <li><Link {...linkProps("/admin/settings/paprico", isActive("/admin/settings/paprico"))}>PaPriCo</Link></li>
 
                 {/* ── Launches Management ── */}
                 <li><span className={sectionLabelStyle}>Launches Management</span></li>
