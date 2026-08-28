@@ -43,31 +43,24 @@ jobs:
         with:
           version: latest
 
-      # MUST be the first Supabase step. GitHub runners have no IPv6, and a direct
-      # Postgres connection is IPv6-only -- any command that connects before this
-      # dies with "IPv6 is not supported on your current network". `link` sets up
-      # the IPv4 pooler connection that every later step reuses.
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_DEV }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
-
+      # Connect with an explicit pooler connection string rather than `supabase
+      # link`. link calls the Management API, which needs a personal access token
+      # with privileges in the project's organisation -- and development and
+      # production live in DIFFERENT Supabase orgs, so no single token covers both.
+      # --db-url talks only to Postgres: no Management API, no org membership, and
+      # the pooler host is IPv4 (runners have no IPv6).
       - name: Show pending migrations
-        run: supabase migration list --linked
+        run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
 
       # --include-all is load bearing: migration history predates this workflow and
       # has gaps, so pending files can sort BELOW the newest recorded version and
       # would otherwise be skipped in silence. --yes because there is no TTY.
       - name: Push migrations
-        run: supabase db push --include-all --yes
+        run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
 
   production:
     name: Apply to production
@@ -87,30 +80,20 @@ jobs:
         with:
           version: latest
 
-      # See the note in the development job: link must come first, no IPv6 on runners.
-      - name: Link project
-        run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_PROD }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
-
+      # See the note in the development job: --db-url avoids the Management API.
       - name: Show pending migrations
-        run: supabase migration list --linked
+        run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
 
       # Prints the exact statements that would run against live production data
       # before anything is applied. Read this step before trusting the next one.
       - name: Dry run
-        run: supabase db push --include-all --dry-run --yes
+        run: supabase db push --include-all --dry-run --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
 
       - name: Push migrations
-        run: supabase db push --include-all --yes
+        run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
