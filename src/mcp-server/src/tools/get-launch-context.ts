@@ -27,7 +27,7 @@ export async function getLaunchContext(args: Record<string, unknown>): Promise<u
     .from('launch')
     .select(`
       *,
-      launch_epic(id, epic_id, epic:epic(id, name, tier, status, description, aha_id, aha_url))
+      launch_epic(id, epic_id, epic:epic(id, name, tier, status))
     `)
     .eq('id', parsed.data.launchId)
     .single();
