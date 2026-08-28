@@ -52,7 +52,7 @@ jobs:
       - name: Show pending migrations
         run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL_DEV }}
 
       # --include-all is load bearing: migration history predates this workflow and
       # has gaps, so pending files can sort BELOW the newest recorded version and
@@ -60,7 +60,7 @@ jobs:
       - name: Push migrations
         run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL_DEV }}
 
   production:
     name: Apply to production
@@ -84,16 +84,16 @@ jobs:
       - name: Show pending migrations
         run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
 
       # Prints the exact statements that would run against live production data
       # before anything is applied. Read this step before trusting the next one.
       - name: Dry run
         run: supabase db push --include-all --dry-run --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
 
       - name: Push migrations
         run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
