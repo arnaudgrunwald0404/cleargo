@@ -75,7 +75,8 @@ export interface EpicEnrichment {
     successMetrics?: {
         definitionOfSuccess?: string;
         analyticsEnablement?: string;
-        reach?: string;
+        // scalar() can return a number, same as modifiedRice and wsjf above.
+        reach?: string | number;
     };
 
     /** Dependencies and cross-functional context. */
@@ -286,11 +287,17 @@ function scalar(value: unknown): string | number | null {
 }
 
 /** Drop null/undefined entries from an object. */
-function filterNulls<T extends Record<string, unknown>>(obj: T): Partial<T> {
-    const result: Partial<T> = {};
+// The return type strips null/undefined because that is exactly what this does at
+// runtime. Declaring Partial<T> kept the nulls in the type, so assigning the result
+// to a field typed `string | undefined` failed under strict null checks even though
+// no null could ever reach it.
+type WithoutNulls<T> = Partial<{ [K in keyof T]: NonNullable<T[K]> }>;
+
+function filterNulls<T extends Record<string, unknown>>(obj: T): WithoutNulls<T> {
+    const result: WithoutNulls<T> = {};
     for (const [key, value] of Object.entries(obj)) {
         if (value != null && value !== '') {
-            result[key] = value;
+            result[key as keyof T] = value as NonNullable<T[keyof T]>;
         }
     }
     return result;
