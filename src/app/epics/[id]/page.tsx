@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { Epic } from "@/types/epics";
+import { LaunchHoldBanner, type LaunchHoldInfo } from "@/components/LaunchHoldBadge";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
@@ -18,7 +19,7 @@ import { EpicDetailTabs } from "@/components/EpicDetailTabs";
 import { epicDetailCache } from "@/lib/cache/epic-detail-cache";
 import { canRolesPerform } from "@/lib/permissions";
 import { AIPruneReviewBanner } from "@/components/epic/AIPruneReviewBanner";
-import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE, FEATURE_ROADMAP_REWIND } from "@/lib/flags";
+import { isEnabled, FEATURE_AI_PRUNING, FEATURE_NOT_APPLICABLE, FEATURE_ROADMAP_REWIND, FEATURE_STORY_BRIEF } from "@/lib/flags";
 import { useFeatureFlags } from "@/contexts/FeatureFlagsContext";
 import { ReleaseStagesChart } from "@/components/admin/ReleaseStagesChart";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
@@ -40,6 +41,7 @@ import { EpicRoadmapConfidencePanel } from "@/components/epic/EpicRoadmapConfide
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
 const RetroPageContent = lazy(() => import("@/components/epic/RetroPageContent").then(m => ({ default: m.RetroPageContent })));
+const StoryBriefPanel = lazy(() => import("@/components/epic/StoryBriefPanel").then(m => ({ default: m.StoryBriefPanel })));
 
 /** Coerce criterion rating_timing to number — Supabase/JSON may return string; Map keys for stage ids are numbers. */
 function normalizeRatingTimingId(raw: unknown): number | null {
@@ -50,6 +52,13 @@ function normalizeRatingTimingId(raw: unknown): number | null {
 }
 
 export default function EpicDetailPage() {
+    /**
+     * Launch Hold: this epic ships before the launch it belongs to without RevOps
+     * clearance. Fetched separately from the epic so a failure here degrades to
+     * "no banner" rather than breaking the page.
+     */
+    const [launchHold, setLaunchHold] = useState<LaunchHoldInfo | null>(null);
+
     const params = useParams();
     const id = params?.id as string | undefined;
     const { flags: featureFlags } = useFeatureFlags();
@@ -1156,6 +1165,25 @@ export default function EpicDetailPage() {
     const lastFetchedEpicIdRef = useRef<string | null>(null);
     const epicIdString = useMemo(() => epic?.id ? String(epic.id) : null, [epic?.id]);
 
+    useEffect(() => {
+        if (!epicIdString) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/epics/launch-holds");
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setLaunchHold(data.holds?.[epicIdString] ?? null);
+            } catch {
+                // A missing hold is not worth surfacing an error for.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [epicIdString]);
+
+
     // Success data is now fetched in parallel with initial load, so we don't need a separate useEffect
     // The fetchSuccessData function is kept for manual refresh scenarios (e.g., when user clicks refresh button)
 
@@ -1699,6 +1727,7 @@ export default function EpicDetailPage() {
 
     const showRoadmapRewind =
         isEnabled(FEATURE_ROADMAP_REWIND, featureFlags) && Boolean(epic?.aha_id);
+    const showStoryBrief = isEnabled(FEATURE_STORY_BRIEF, featureFlags);
 
     const tabOptions = [
         { value: "readiness", label: "Readiness" },
@@ -1706,6 +1735,7 @@ export default function EpicDetailPage() {
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
         { value: "retro", label: "Retro" },
+        ...(showStoryBrief ? [{ value: "storyBrief", label: "Story Brief" }] : []),
         ...(showRoadmapRewind
             ? [
                   { value: "rewind", label: "Rewind" },
@@ -1746,6 +1776,8 @@ export default function EpicDetailPage() {
                         }}
                     >← Back to Epics</Link>
                 </div>
+
+                {launchHold && <LaunchHoldBanner hold={launchHold} />}
 
                 <div className="epic-detail-title-row flex flex-wrap justify-between items-center gap-4 mb-2">
                     <div className="flex-1 min-w-0">
@@ -2043,6 +2075,7 @@ export default function EpicDetailPage() {
                             onTabChange={(value) => setActiveTab(value)}
                             hasTalkTrackVideo={hasTalkTrackVideo}
                             showRoadmapRewind={showRoadmapRewind}
+                            showStoryBrief={showStoryBrief}
                         />
                     )}
                     {!isMobile && matrix.length > 0 && activeTab === "readiness" && (
@@ -2124,6 +2157,7 @@ export default function EpicDetailPage() {
                         <Tabs.Tab value="adoption">Success Metrics</Tabs.Tab>
                         <Tabs.Tab value="scorecard">Scorecard</Tabs.Tab>
                         <Tabs.Tab value="retro">Retro</Tabs.Tab>
+                        {showStoryBrief && <Tabs.Tab value="storyBrief">Story Brief</Tabs.Tab>}
                         {showRoadmapRewind && <Tabs.Tab value="rewind">Rewind</Tabs.Tab>}
                         {showRoadmapRewind && <Tabs.Tab value="confidence">Confidence</Tabs.Tab>}
                     </Tabs.List>
@@ -2264,6 +2298,15 @@ export default function EpicDetailPage() {
                         )}
                     </Tabs.Panel>
 
+                    {showStoryBrief && (
+                        <Tabs.Panel value="storyBrief" pt="md" style={{ padding: 'var(--spacing-4)' }}>
+                            {activeTab === 'storyBrief' && (
+                                <Suspense fallback={<PurpleLoader size="md" />}>
+                                    <StoryBriefPanel epicId={epic.id} />
+                                </Suspense>
+                            )}
+                        </Tabs.Panel>
+                    )}
                     {showRoadmapRewind && epic?.aha_id && (
                         <Tabs.Panel value="rewind" pt="md" style={{ padding: 'var(--spacing-4)' }}>
                             {activeTab === 'rewind' && (

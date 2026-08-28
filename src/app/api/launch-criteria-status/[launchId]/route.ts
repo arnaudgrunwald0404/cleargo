@@ -65,6 +65,17 @@ async function patchHandler(
             return NextResponse.json({ error: 'criterion_id is required' }, { status: 400 });
         }
 
+        // Scoping a checklist row out of a launch is narrower than ticking it.
+        if (
+            status === 'NOT_APPLICABLE' &&
+            !canRolesPerformWithRules(roles, 'launch.markNotApplicable', rules)
+        ) {
+            return NextResponse.json(
+                { error: 'Only PMM can mark a checklist row as not applicable.' },
+                { status: 403 }
+            );
+        }
+
         // Resolve owner_id if email provided
         let owner_id: string | null = undefined as any;
         if ('owner_email' in body) {

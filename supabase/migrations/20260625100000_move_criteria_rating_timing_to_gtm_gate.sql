@@ -1,3 +1,23 @@
+-- criterion.rating_timing exists as text in some environments and bigint in
+-- others (development was text, production bigint). release_stages.id is bigint,
+-- so the comparison below fails with "operator does not exist: text = bigint"
+-- unless the column is normalised first. Idempotent: only alters when still text,
+-- and every value is a numeric string, so the cast is lossless.
+DO $ratingtype$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public'
+       AND table_name   = 'criterion'
+       AND column_name  = 'rating_timing'
+       AND data_type    = 'text'
+  ) THEN
+    ALTER TABLE public.criterion
+      ALTER COLUMN rating_timing TYPE bigint
+      USING NULLIF(btrim(rating_timing), '')::bigint;
+  END IF;
+END $ratingtype$;
+
 -- Align criterion due dates with Go/No-Go: move rating_timing from Internal Readiness
 -- to GTM Access and Prep (gate stage). Internal Readiness remains a timeline phase
 -- for operational tracking (Internal Orgs column), not criterion readiness deadlines.

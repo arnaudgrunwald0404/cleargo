@@ -1,0 +1,40 @@
+-- Bookkeeping record. Intentionally a no-op. Runs nowhere but development,
+-- where it is already recorded; on any other database it does nothing.
+--
+-- 2026-08-28: the development database's migration history claimed 15
+-- migrations were applied whose effects were absent, so `db push` skipped them
+-- permanently. Their history rows were deleted so a push re-runs them.
+--
+-- Pass 1 -- tables that did not exist at all in development:
+--   20250104000000  success_measurement_schema      -> epic_scorecards, epic_retros
+--   20250105000000  manual_metric_values
+--   20250105000001  add_epic_success_reviews
+--   20250112000000  add_criterion_attachments       -> criterion_attachment
+--   20250112000001  add_criterion_comments          -> criterion_comment
+--   20250113000000  fix_criterion_comment_table
+--   20260213000000  (see below)                     -> user_activity
+--   20260217000000  add_comment_read_status
+--
+-- One of those was outright corrupt: version 20260213000000 was recorded as
+-- 'pendo_api_cache', a duplicate of 20260213000001, squatting on the slot
+-- belonging to add_user_activity_tracking. That single bad row is the whole
+-- reason user_activity was never created in development.
+--
+-- Pass 2 -- later migrations that ALTER the tables above. These were still
+-- marked applied, so without clearing them too the recreated tables would come
+-- back malformed:
+--   20250114000000  add_comment_attachments         -> criterion_attachment.comment_id
+--   20250115000000  fix_criterion_attachment_foreign_key
+--   20260119000000  add_status_tracking_to_comments -> criterion_comment
+--   20260129110000  add_not_applicable_to_criterion_comment
+--   20260207100000  add_comment_mentioned_user_ids
+--   20260210100003  criterion_comment_updated_at
+--   20260122000003  remove_adoption_benchmarks      -> drops epic_scorecards.benchmark_comparison,
+--                                                      which 20250104000000 recreates
+--
+-- Production was NOT touched: its history for all 15 is accurate and the tables
+-- are present and correct there. This file exists so the repair tool's own
+-- migration row has a matching file rather than becoming another untracked
+-- orphan, and so its version -- higher than every other migration here -- does
+-- not turn a plain `supabase db push` into a silent no-op.
+SELECT 1;

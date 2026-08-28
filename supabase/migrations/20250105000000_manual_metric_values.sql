@@ -28,10 +28,12 @@ CREATE INDEX IF NOT EXISTS idx_manual_metric_values_metric
 
 ALTER TABLE public.manual_metric_values ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.manual_metric_values;
 CREATE POLICY "Allow read access to authenticated users" ON public.manual_metric_values
   FOR SELECT
   USING (auth.role() = 'authenticated');
 
+DROP POLICY IF EXISTS "Allow write access to PMs and admins" ON public.manual_metric_values;
 CREATE POLICY "Allow write access to PMs and admins" ON public.manual_metric_values
   FOR INSERT
   WITH CHECK (
@@ -44,6 +46,7 @@ CREATE POLICY "Allow write access to PMs and admins" ON public.manual_metric_val
     )
   );
 
+DROP POLICY IF EXISTS "Allow update access to PMs and admins" ON public.manual_metric_values;
 CREATE POLICY "Allow update access to PMs and admins" ON public.manual_metric_values
   FOR UPDATE
   USING (
@@ -56,6 +59,7 @@ CREATE POLICY "Allow update access to PMs and admins" ON public.manual_metric_va
     )
   );
 
+DROP POLICY IF EXISTS "Allow delete access to admins" ON public.manual_metric_values;
 CREATE POLICY "Allow delete access to admins" ON public.manual_metric_values
   FOR DELETE
   USING (

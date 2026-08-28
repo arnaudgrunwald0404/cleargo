@@ -45,7 +45,18 @@ function safePayload(payload: any): Record<string, unknown> | null {
  */
 export async function logNotification(data: {
     user_id?: string;
+    /**
+     * LEGACY NAME: writes to notification_log.epic_id. Predates
+     * 0018_rename_launch_to_epic.sql, when epics were called launches. Every
+     * existing caller passes an EPIC id. Do not pass a GTM launch id here --
+     * the FK to epic(id) would reject it and the fallback below nulls both keys,
+     * silently losing the row's identity. Use gtm_launch_id instead.
+     */
     launch_id?: string;
+    /** A real GTM launch (public.launch). Maps to notification_log.launch_id. */
+    gtm_launch_id?: string;
+    /** Checklist item this concerns, so nudges dedupe per artifact. */
+    criterion_id?: string;
     type: string;
     payload: any;
     delivery_channel: string;
@@ -68,6 +79,8 @@ export async function logNotification(data: {
     const row = {
         user_id: data.user_id || null,
         epic_id: data.launch_id || null,
+        launch_id: data.gtm_launch_id || null,
+        criterion_id: data.criterion_id || null,
         type: data.type,
         payload: safePayload(data.payload),
         delivery_channel: data.delivery_channel,
@@ -83,7 +96,7 @@ export async function logNotification(data: {
     if (error) {
         console.error('notification_log insert failed:', error.code, error.message, error.details);
         if (error.code === '23503' || error.code === '23502') {
-            const fallback = { ...row, user_id: null, epic_id: null };
+            const fallback = { ...row, user_id: null, epic_id: null, launch_id: null, criterion_id: null };
             const { error: retryError } = await supabase.from('notification_log').insert(fallback);
             if (retryError) {
                 console.error('notification_log retry (without FKs) also failed:', retryError.code, retryError.message);
@@ -178,6 +191,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -192,6 +207,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id || payload.recipients?.[0]?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -221,6 +238,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: r.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -236,6 +255,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: r.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -281,6 +302,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
             await logNotification({
                 user_id: r.id,
                 launch_id: payload.launch_id,
+                gtm_launch_id: payload.gtm_launch_id,
+                criterion_id: payload.criterion_id,
                 type: payload.type,
                 payload: logPayload,
                 delivery_channel: 'slack',
@@ -296,6 +319,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -340,6 +365,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 await logNotification({
                     user_id: payload.recipient?.id,
                     launch_id: payload.launch_id,
+                    gtm_launch_id: payload.gtm_launch_id,
+                    criterion_id: payload.criterion_id,
                     type: payload.type,
                     payload: payload.metadata,
                     delivery_channel: 'slack',
@@ -360,6 +387,13 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
 
         // Build message based on notification type
         switch (payload.type) {
+            case 'launch_artifact': {
+                if (!payload.metadata) throw new Error('Missing metadata for launch_artifact');
+                const { buildLaunchArtifactMessage } = await import('./templates/launch-artifacts');
+                message = buildLaunchArtifactMessage(payload.metadata as any);
+                break;
+            }
+
             case 'stale_criterion':
                 if (!payload.metadata) throw new Error('Missing metadata for stale_criterion');
                 message = buildStaleCriterionMessage(payload.metadata as any, theme);
@@ -480,6 +514,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildGateSignoffReadyMessage(payload.metadata as any, theme);
                 break;
 
+            case 'story_brief_review':
+                if (!payload.metadata) throw new Error('Missing metadata for story_brief_review');
+                const { buildStoryBriefReviewMessage } = await import('./templates/story-brief-review');
+                message = buildStoryBriefReviewMessage(payload.metadata as any);
+                break;
+
             default:
                 throw new Error(`Unknown notification type: ${payload.type}`);
         }
@@ -501,6 +541,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',
@@ -523,6 +565,8 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
         await logNotification({
             user_id: payload.recipient?.id,
             launch_id: payload.launch_id,
+            gtm_launch_id: payload.gtm_launch_id,
+            criterion_id: payload.criterion_id,
             type: payload.type,
             payload: payload.metadata,
             delivery_channel: 'slack',

@@ -8,6 +8,12 @@ import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackEventPayload } from '@/types/slack';
 import { getSlackClient } from '@/lib/slack/client';
 import { hasCleargoAgentKey } from '@/lib/ai/cleargoAgent';
+import {
+    buildArtifactBlocks,
+    buildStoryBriefQuestionBlocks,
+    buildUnassignedBlocks,
+} from '@/lib/slack/templates/launch-home';
+import { loadLaunchHomeWork, loadHomeBriefs } from '@/lib/services/launchHomeService';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
@@ -283,6 +289,34 @@ async function handleAppHomeOpened(event: any) {
 
             blocks.push({ type: 'divider' });
 
+            // GTM launch work. The home tab has only ever known about epics, so
+            // a PMM carrying artifacts on the launch table saw nothing here.
+            // Failures degrade to a missing section rather than an error view.
+            try {
+                const work = await loadLaunchHomeWork(appUser.email);
+                blocks.push(...buildArtifactBlocks(work.artifacts, APP_URL));
+                const gaps = buildUnassignedBlocks(work.unassigned, APP_URL);
+                if (gaps.length > 0) {
+                    blocks.push({ type: 'divider' });
+                    blocks.push(...gaps);
+                }
+            } catch (err) {
+                console.error('home: launch artifacts unavailable', err);
+            }
+
+            try {
+                const briefs = await loadHomeBriefs(appUser.email);
+                const briefBlocks = buildStoryBriefQuestionBlocks(briefs);
+                if (briefBlocks.length > 0) {
+                    blocks.push({ type: 'divider' });
+                    blocks.push(...briefBlocks);
+                }
+            } catch (err) {
+                console.error('home: story brief questions unavailable', err);
+            }
+
+            blocks.push({ type: 'divider' });
+
             // Add action buttons
             blocks.push({
                 type: 'actions',
@@ -304,6 +338,15 @@ async function handleAppHomeOpened(event: any) {
                             emoji: true,
                         },
                         url: `${APP_URL}/epics`,
+                    },
+                    {
+                        type: 'button',
+                        text: {
+                            type: 'plain_text',
+                            text: 'GTM Launches',
+                            emoji: true,
+                        },
+                        url: `${APP_URL}/gtm-launches`,
                     },
                 ],
             });

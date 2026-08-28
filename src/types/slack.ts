@@ -3,6 +3,7 @@
  */
 
 export type SlackNotificationType =
+    | 'launch_artifact'
     | 'stale_criterion'
     | 'launch_risk_alert'
     | 'go_no_go_decision'
@@ -19,7 +20,8 @@ export type SlackNotificationType =
     | 'success_review_reminder'
     | 'criterion_comment_or_attachment'
     | 'gate_signoff_ready'
-    | 'gtm_access_nudge';
+    | 'gtm_access_nudge'
+    | 'story_brief_review';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 
@@ -42,7 +44,10 @@ export interface SlackNotificationPayload {
     /** When set, send one message to all (e.g. MPDM). Used for criterion_comment_or_attachment with owner + mentioned. */
     recipients?: SlackUser[];
     channel?: string;
+    /** LEGACY: an EPIC id. See logNotification for why the name is wrong. */
     launch_id?: string;
+    /** A real GTM launch (public.launch). */
+    gtm_launch_id?: string;
     criterion_id?: string;
     metadata?: Record<string, any>;
 }

@@ -79,7 +79,12 @@
       "Bash(npm test *)",
       "Bash(npx jest *)",
       "Bash(git pull *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "mcp__claude_ai_Aha__find_project",
+      "mcp__claude_ai_Aha__read_records",
+      "mcp__claude_ai_Aha__read_attachments",
+      "Bash(git rev-list *)",
+      "Bash(git log *)"
     ]
   }
 }

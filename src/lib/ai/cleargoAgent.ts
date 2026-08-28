@@ -53,7 +53,7 @@ function resolveModel(): LanguageModel {
   // Only use Claude with a real Anthropic key — Netlify's AI integration injects a proxy
   // key that starts with something other than sk-ant- and fails against api.anthropic.com
   if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
-    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5');
   }
   return google('gemini-2.5-flash');
 }

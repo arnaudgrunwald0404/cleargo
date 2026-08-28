@@ -61,3 +61,8 @@ node_modules/
 # bulk import scratch (RRV → ClearGo dumps; never commit)
 /tmp/
 
+# MCP server build output & dependencies
+src/mcp-server/dist/
+src/mcp-server/node_modules/
+src/mcp-server/package-lock.json
+

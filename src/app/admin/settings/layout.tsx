@@ -72,6 +72,7 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
                             <li><Link {...linkPropsSm("/admin/settings/integrations/pendo", isActive("/admin/settings/integrations/pendo"))}>Pendo</Link></li>
 <li><Link {...linkPropsSm("/admin/settings/integrations/email", isActive("/admin/settings/integrations/email"))}>Email</Link></li>
                             <li><Link {...linkPropsSm("/admin/settings/integrations/rovo", isActive("/admin/settings/integrations/rovo"))}>Rovo</Link></li>
+                            <li><Link {...linkPropsSm("/admin/settings/integrations/google", isActive("/admin/settings/integrations/google"))}>Google</Link></li>
                         </ul>
                     )}
                 </li>
@@ -84,7 +85,6 @@ function SettingsNav({ onNavigate }: { onNavigate?: () => void }) {
 
                 {/* ── Launches Management ── */}
                 <li><span className={sectionLabelStyle}>Launches Management</span></li>
-                <li><Link {...linkProps("/admin/settings/launch-schedule", isActive("/admin/settings/launch-schedule"))}>Launch Schedule</Link></li>
                 <li><Link {...linkProps("/admin/settings/launch-criteria", isActive("/admin/settings/launch-criteria"))}>Launch Criteria</Link></li>
 
                 {/* ── Misc ── */}
