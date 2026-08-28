@@ -7,8 +7,7 @@ name: Supabase Migrations
 # confirmation phrase. The `environment: production` below is a second gate that
 # currently does nothing -- the repo has no environments and creating one needs
 # admin rights, which we do not have. If a repo admin later creates a
-# "production" environment with required reviewers, that gate activates on its
-# own with no change here.
+# "production" environment with required reviewers, that gate activates on its own.
 on:
   push:
     branches:
@@ -44,17 +43,10 @@ jobs:
         with:
           version: latest
 
-      # --include-all is load bearing: migration history predates this workflow
-      # and has gaps, so pending files sort BELOW the newest recorded version
-      # and would otherwise be skipped in silence.
-      - name: Show pending migrations
-        run: supabase migration list --project-ref "$SUPABASE_PROJECT_ID"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_DEV }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
-
-      # `db push` has no --project-ref: it acts on the linked project, so link first.
+      # MUST be the first Supabase step. GitHub runners have no IPv6, and a direct
+      # Postgres connection is IPv6-only -- any command that connects before this
+      # dies with "IPv6 is not supported on your current network". `link` sets up
+      # the IPv4 pooler connection that every later step reuses.
       - name: Link project
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
         env:
@@ -62,6 +54,15 @@ jobs:
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_DEV }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
 
+      - name: Show pending migrations
+        run: supabase migration list --linked
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_DEV }}
+
+      # --include-all is load bearing: migration history predates this workflow and
+      # has gaps, so pending files can sort BELOW the newest recorded version and
+      # would otherwise be skipped in silence. --yes because there is no TTY.
       - name: Push migrations
         run: supabase db push --include-all --yes
         env:
@@ -86,21 +87,18 @@ jobs:
         with:
           version: latest
 
-      # Review this list before the push step runs. These migrations carry DML
-      # against live production rows, not just DDL.
-      - name: Show pending migrations
-        run: supabase migration list --project-ref "$SUPABASE_PROJECT_ID"
-        env:
-          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-          SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_PROD }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
-
-      # `db push` has no --project-ref: it acts on the linked project, so link first.
+      # See the note in the development job: link must come first, no IPv6 on runners.
       - name: Link project
         run: supabase link --project-ref "$SUPABASE_PROJECT_ID" --yes
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_ID_PROD }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
+
+      - name: Show pending migrations
+        run: supabase migration list --linked
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD_PROD }}
 
       # Prints the exact statements that would run against live production data
