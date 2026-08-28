@@ -1065,11 +1065,8 @@ export default function GTMLaunchDetailPage() {
                                 placeholder="Target launch date"
                                 size="xs"
                                 style={{ width: 170 }}
-                                value={launch.target_launch_date ? new Date(launch.target_launch_date + "T00:00:00") : null}
-                                onChange={(val) => {
-                                    const d = val as Date | null;
-                                    patchLaunch("target_launch_date", d ? d.toISOString().split("T")[0] : null);
-                                }}
+                                value={launch.target_launch_date}
+                                onChange={(val) => patchLaunch("target_launch_date", val || null)}
                                 clearable
                                 disabled={!canManage}
                             />
