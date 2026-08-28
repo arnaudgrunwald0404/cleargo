@@ -49,10 +49,28 @@ jobs:
       # production live in DIFFERENT Supabase orgs, so no single token covers both.
       # --db-url talks only to Postgres: no Management API, no org membership, and
       # the pooler host is IPv4 (runners have no IPv6).
+      # A missing secret expands to an empty string with no warning, and the CLI
+      # then falls back to a local socket and fails with a confusing
+      # "host=/var/run/postgresql user=runner" error that looks like a network
+      # problem. Fail loudly and specifically instead.
+      - name: Check connection string is set
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::${SECRET_NAME} is empty or not set. Add it as a repository secret using the Session pooler string (port 5432)."
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            *pooler.supabase.com*) ;;
+            *) echo "::error::${SECRET_NAME} is not a pooler host. GitHub runners have no IPv6, so the direct db.<ref>.supabase.co endpoint cannot work. Use the Session pooler string (port 5432)." ; exit 1 ;;
+          esac
+        env:
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL_DEV }}
+          SECRET_NAME: CLEARGO_DATABASE_URL_DEV
+
       - name: Show pending migrations
         run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL_DEV }}
 
       # --include-all is load bearing: migration history predates this workflow and
       # has gaps, so pending files can sort BELOW the newest recorded version and
@@ -60,7 +78,7 @@ jobs:
       - name: Push migrations
         run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_DEV }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL_DEV }}
 
   production:
     name: Apply to production
@@ -81,19 +99,37 @@ jobs:
           version: latest
 
       # See the note in the development job: --db-url avoids the Management API.
+      # A missing secret expands to an empty string with no warning, and the CLI
+      # then falls back to a local socket and fails with a confusing
+      # "host=/var/run/postgresql user=runner" error that looks like a network
+      # problem. Fail loudly and specifically instead.
+      - name: Check connection string is set
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "::error::${SECRET_NAME} is empty or not set. Add it as a repository secret using the Session pooler string (port 5432)."
+            exit 1
+          fi
+          case "$SUPABASE_DB_URL" in
+            *pooler.supabase.com*) ;;
+            *) echo "::error::${SECRET_NAME} is not a pooler host. GitHub runners have no IPv6, so the direct db.<ref>.supabase.co endpoint cannot work. Use the Session pooler string (port 5432)." ; exit 1 ;;
+          esac
+        env:
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
+          SECRET_NAME: CLEARGO_DATABASE_URL
+
       - name: Show pending migrations
         run: supabase migration list --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
 
       # Prints the exact statements that would run against live production data
       # before anything is applied. Read this step before trusting the next one.
       - name: Dry run
         run: supabase db push --include-all --dry-run --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
 
       - name: Push migrations
         run: supabase db push --include-all --yes --db-url "$SUPABASE_DB_URL"
         env:
-          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL_PROD }}
+          SUPABASE_DB_URL: ${{ secrets.CLEARGO_DATABASE_URL }}
