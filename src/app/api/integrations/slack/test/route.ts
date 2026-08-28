@@ -4,11 +4,17 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { sendSlackNotification } from '@/lib/slack/notifications';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
+    const email = await getAuthenticatedUserEmail();
+    if (!email) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     try {
         const body = await request.json();
         const { type, testData } = body;

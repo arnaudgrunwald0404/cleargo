@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 
 const FILENAME = "criteria-import-template.csv";
 
@@ -13,6 +14,11 @@ const TEMPLATE_CSV = `Category,Label,Decision Owner Email,Ready By,GO Definition
 UX & Research,Example Criterion,[name of pod's product manager],GTM Access,Definition for GO status.,Definition for CONDITIONAL GO.,Definition for NO GO.,true,false,ALL`;
 
 export async function GET() {
+  const email = await getAuthenticatedUserEmail();
+  if (!email) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   return new NextResponse(TEMPLATE_CSV, {
     status: 200,
     headers: {

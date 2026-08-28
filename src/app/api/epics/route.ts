@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createEpic, getEpics } from '@/lib/epics';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 export const dynamic = 'force-dynamic';
 
 async function getHandler(req: NextRequest) {
     try {
-        // AUTH DISABLED: Skip auth check, just fetch epics
+        // getEpics() reads via the service role key and bypasses RLS, so this
+        // check is the only thing protecting the epic list.
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const epics = await getEpics();
         console.log('API /epics: Returning', Array.isArray(epics) ? epics.length : 'not an array', 'epics');
         return NextResponse.json(epics);

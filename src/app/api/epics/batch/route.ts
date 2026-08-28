@@ -1,9 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getAuthenticatedUserEmail } from '@/lib/api-auth';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 
 async function handler(req: NextRequest) {
     try {
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+
         const { ids } = await req.json();
         
         if (!Array.isArray(ids) || ids.length === 0) {

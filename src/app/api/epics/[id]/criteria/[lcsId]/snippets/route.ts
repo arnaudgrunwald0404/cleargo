@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 import { createClient } from "@/lib/supabase/server";
 
 export async function POST(
@@ -7,6 +8,11 @@ export async function POST(
 ) {
     try {
         const { id, lcsId } = await params;
+        const email = await getAuthenticatedUserEmail();
+        if (!email) {
+            return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+        }
+
         const supabase = createClient();
         const body = await request.json();
         const { snippet_id } = body;

@@ -78,9 +78,14 @@ export async function proxy(request: NextRequest) {
     // Update session and check authentication
     const response = await updateSession(request);
     
-    // Auth redirect is handled by server-rendered pages (e.g. page.tsx, epics/page.tsx), not here.
-    // Redirecting in Edge middleware can cause ERR_TOO_MANY_REDIRECTS on Netlify when the Edge
-    // runtime doesn't see the same cookies as the Node server.
+    // Auth redirect deliberately does NOT live here. Two reasons:
+    //  1. netlify.toml sets NEXT_DISABLE_NETLIFY_EDGE=true, so this file does not execute in
+    //     production at all — a gate here would protect local dev only. (The rate limiting and
+    //     CORS handling above are likewise inert in production; per-route withRateLimit still runs.)
+    //  2. Redirecting from the Edge runtime previously caused ERR_TOO_MANY_REDIRECTS on Netlify,
+    //     because the Edge runtime did not see the same cookies as the Node server.
+    // The real gate is requirePageAuth(), called from a layout.tsx in each protected segment.
+    // See src/lib/auth/requirePageAuth.ts.
 
     // Apply CORS headers
     const allowedOrigins = [

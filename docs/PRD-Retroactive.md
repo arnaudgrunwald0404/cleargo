@@ -1696,6 +1696,13 @@ All ported from RRV with ClearGo-aligned table names:
 - **Token Refresh**: Automatic token refresh
 - **Logout**: `/api/auth/signout` endpoint
 
+#### Route Protection
+- **Pages**: `requirePageAuth()` (`src/lib/auth/requirePageAuth.ts`) runs in a `layout.tsx` at each protected top-level segment — `(dashboard)`, `(settings)`, `access-pending`, `account`, `admin`, `epics`, `feedback`, `gtm-launches`, `my-items`, `portfolio`, `releases`, `test`. Unauthenticated requests get a 307 to `/login?redirect=<segment>`. `/` gates inside `src/app/page.tsx`.
+- **Public pages**: `/login`, `/auth/*`, `/reset-password`, `/setup-password`, `/logout`.
+- **Not enforced in `src/proxy.ts`**: Netlify builds with `NEXT_DISABLE_NETLIFY_EDGE=true`, so `proxy.ts` does not execute in production. Its rate limiting and CORS handling are inert there; per-route `withRateLimit` still applies. Any gate placed in `proxy.ts` would protect local dev only.
+- **API routes**: each route checks `getAuthenticatedUserEmail()` (or an equivalent — `CRON_SECRET` for jobs, `X-ClearGo-Key` for machine endpoints, Slack/Aha signature verification for webhooks). Routes reading via the service role key bypass RLS entirely, so the in-route check is the only protection.
+- **Authentication only, not authorization**: `requirePageAuth()` does not check role, so any signed-in user can load any page including the admin UI; role enforcement lives in the API routes. Sign-up is domain-locked to `@clearcompany.com`, so this is an internal-only exposure. Known gaps and their remediation steps are tracked in `docs/auth-known-gaps.md`.
+
 ### Authorization (RBAC)
 
 #### Roles
