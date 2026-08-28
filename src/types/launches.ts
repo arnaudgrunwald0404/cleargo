@@ -1,8 +1,25 @@
 import type { EpicTier } from './epics';
 
-export type LaunchStatus = 'Planning' | 'In Progress' | 'Launched' | 'Post-Launch';
+/**
+ * Status lives with its computation (see src/lib/launch-status.ts), the same way
+ * EpicReleaseStatus does. Re-exported here so the many existing
+ * `from '@/types/launches'` imports keep resolving.
+ */
+export type {
+  LaunchStatus,
+  ComputedLaunchStatus,
+  ManualOnlyLaunchStatus,
+} from '@/lib/launch-status';
+import type { LaunchStatus, ComputedLaunchStatus } from '@/lib/launch-status';
+
 export type LaunchTier = 'TIER_1' | 'TIER_2';
-export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE';
+/**
+ * NOT_APPLICABLE exists because the Beta proof gate is "if applicable" (Kristin's
+ * 00 Launch Gate Checklist, Gate 3). Without it, a capability that runs no beta
+ * carries a gate that can never be closed once anything depends on it.
+ * launch_asset had this fourth state from the start; the checklist did not.
+ */
+export type TaskStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'NOT_APPLICABLE';
 
 export interface Launch {
   id: string;
@@ -11,7 +28,12 @@ export interface Launch {
   // into a TIER_1/TIER_2 marketing launch. Launches are only ever T1 or T2.
   tier: LaunchTier | null;
   target_launch_date: string | null;
+  /** Effective status: the override when pinned, otherwise derived from dates. */
   status: LaunchStatus;
+  /** The pinned value, or null when the launch tracks its dates automatically. */
+  status_override: LaunchStatus | null;
+  /** What the dates say, whether or not an override is currently hiding it. */
+  computed_status: ComputedLaunchStatus;
   owner_id: string | null;
   owner_email: string | null;
   readiness_pct: number;
@@ -83,7 +105,67 @@ export interface LaunchCriterionStatus {
 /** Status of one supporting asset. NOT_APPLICABLE closes out an optional asset. */
 export type AssetStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'NOT_APPLICABLE';
 
-/** Curated default asset list, from Part 6 of the Campaign Brief template. */
+/**
+ * One checklist item inside a gate. A gate in ClearGO used to be a single row
+ * with a single owner; the process documents model it as a set of items each
+ * owned by a different function, so the items are records in their own right and
+ * the gate's status is derived from them (gateStatusFromItems).
+ */
+export interface CriterionItemTemplate {
+  id: string;
+  criterion_id: string;
+  item_key: string;
+  label: string;
+  description: string | null;
+  /** check = gates clearance; decision = a named answer; source = a named link. */
+  kind: 'check' | 'decision' | 'source';
+  /** DecisionOwnerRole; the function accountable for this item specifically. */
+  owner_role: string | null;
+  default_owner_email: string | null;
+  optional: boolean;
+  sort_order: number;
+  is_active: boolean;
+}
+
+/** A gate item instantiated on one launch. */
+export interface LaunchCriterionItem {
+  id: string;
+  launch_id: string;
+  item_id: string;
+  label: string;
+  kind?: 'check' | 'decision' | 'source';
+  status: TaskStatus;
+  owner_email: string | null;
+  notes: string | null;
+  /** The checklist's SOURCE OF TRUTH links, same shape as a criterion's links. */
+  links: unknown;
+  optional: boolean;
+  sort_order: number;
+  last_updated_at: string | null;
+  /** Joined from criterion_item; not stored on the instance. */
+  owner_role?: string | null;
+  description?: string | null;
+  criterion_id?: string;
+}
+
+/**
+ * One co-signature on a gate. The checklist ends every gate with two or three
+ * named functions and a "Name: ___ Date: ___" line; a single decision owner per
+ * criterion could never represent that.
+ */
+export interface LaunchCriterionSignoff {
+  id: string;
+  launch_id: string;
+  criterion_id: string;
+  role: string;
+  signer_user_id: string | null;
+  signer_name: string | null;
+  signer_email: string | null;
+  signed_at: string;
+  notes: string | null;
+}
+
+/** Curated default asset list, from Part 6 of the Marketing Brief template. */
 export interface LaunchAssetTemplate {
   id: string;
   asset_key: string;
@@ -134,7 +216,8 @@ export interface UpdateLaunchDTO {
   name?: string;
   tier?: LaunchTier | null;
   target_launch_date?: string | null;
-  status?: LaunchStatus;
+  /** null clears the override and returns the launch to date-derived status. */
+  status?: LaunchStatus | null;
   owner_email?: string | null;
   schedule_id?: number | null;
   brief_url?: string | null;

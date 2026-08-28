@@ -2,8 +2,12 @@
   "name": "@cleargo/mcp-server",
   "version": "0.1.0",
   "description": "ClearGO MCP server — manage launch artifacts from Claude Desktop",
-  "private": true,
   "type": "module",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "license": "UNLICENSED",
   "main": "dist/server.js",
   "bin": {
     "cleargo-mcp": "dist/server.js"

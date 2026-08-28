@@ -26,6 +26,11 @@ const updateSchema = z.object({
   rating_timing: z.number().int().nullable().optional(),
   ui_framework_only: z.boolean().optional(),
   data_sources: z.array(dataSourceSchema).max(5).nullable().optional(),
+  // Ownership by function. DecisionOwnerRole has existed in src/types/criteria.ts
+  // since the beginning with no column to store it.
+  decision_owner_role: z.string().nullable().optional(),
+  required_signoff_roles: z.array(z.string()).max(6).nullable().optional(),
+  blocked_by_criterion_id: z.string().uuid().nullable().optional(),
 });
 
 function forbid() {

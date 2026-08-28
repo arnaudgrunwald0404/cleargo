@@ -5,17 +5,26 @@
  * Exposes launch artifact management as MCP tools over stdio transport.
  * Callable from Claude Desktop, Claude Code, or any MCP client.
  *
- * Tools:
+ * Read tools:
  *   list-launches        — List active launches
  *   search-launches      — Search launches by name
  *   get-launch           — Fetch launch details (criteria, assets, epics)
  *   list-artifacts       — List artifacts for a launch
  *   get-artifact         — Read artifact content (ai_draft + flags)
  *   get-launch-context   — Gather all context for drafting
+ *   diff-artifact        — Compare two generations of an artifact
+ *
+ * Write tools:
  *   update-artifact      — Edit ai_draft content (full or targeted)
  *   draft-artifact       — Trigger AI agent to draft an artifact
+ *   draft-section        — Re-draft a single section (focused full pipeline)
  *   review-artifact      — Approve / request changes / submit for review
  *   ensure-artifacts     — Ensure artifact rows + Google Docs exist
+ *   answer-flags         — Answer open interview flags
+ *
+ * Conversational tools:
+ *   artifact-chat        — Multi-turn conversation about an artifact
+ *   explain-claim        — Explain grounding behind a specific claim
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -31,6 +40,11 @@ import { updateArtifact } from './tools/update-artifact.js';
 import { draftArtifact } from './tools/draft-artifact.js';
 import { reviewArtifact } from './tools/review-artifact.js';
 import { ensureArtifacts } from './tools/ensure-artifacts.js';
+import { answerFlags } from './tools/answer-flags.js';
+import { explainClaim } from './tools/explain-claim.js';
+import { diffArtifact } from './tools/diff-artifact.js';
+import { draftSection } from './tools/draft-section.js';
+import { artifactChat } from './tools/artifact-chat.js';
 
 // ── Server setup ────────────────────────────────────────────────────────────
 
@@ -193,6 +207,103 @@ server.tool(
   },
   async ({ launchId }) => {
     const result = await ensureArtifacts({ launchId });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+// ── Conversational tools ────────────────────────────────────────────────────
+
+server.tool(
+  'answer-flags',
+  'Answer one or more open interview flags on an artifact. Flags are questions the AI raised during drafting because it could not ground a claim. Supports single-flag mode (flagKey + answer) or bulk mode (answers array).',
+  {
+    launchId: z.string().describe('The launch ID'),
+    artifactType: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief'])
+      .describe('The artifact type'),
+    flagKey: z.string().optional().describe('Answer a single flag by its flag_key. Mutually exclusive with answers.'),
+    answer: z.string().optional().describe('Answer for the single flag (max 5,000 chars)'),
+    answers: z
+      .array(z.object({ flagKey: z.string(), answer: z.string().max(5000) }))
+      .optional()
+      .describe('Array of { flagKey, answer } pairs. Mutually exclusive with flagKey/answer.'),
+  },
+  async ({ launchId, artifactType, flagKey, answer, answers }) => {
+    const result = await answerFlags({ launchId, artifactType, flagKey, answer, answers });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  'explain-claim',
+  'Look up a claim in an artifact and explain its grounding: source type, whether it is grounded, and what evidence supports it. Answers "how do you know that?" questions.',
+  {
+    launchId: z.string().describe('The launch ID'),
+    artifactType: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief'])
+      .describe('The artifact type'),
+    claim: z.string().describe('Partial or full text of the claim to look up'),
+  },
+  async ({ launchId, artifactType, claim }) => {
+    const result = await explainClaim({ launchId, artifactType, claim });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  'diff-artifact',
+  'Compare two generations of an artifact and return a structured diff: sections added, removed, or modified. Useful for reviewing what changed between drafts.',
+  {
+    launchId: z.string().describe('The launch ID'),
+    artifactType: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief'])
+      .describe('The artifact type'),
+    fromGeneration: z.number().optional().describe('Starting generation (defaults to current - 1)'),
+    toGeneration: z.number().optional().describe('Ending generation (defaults to current)'),
+  },
+  async ({ launchId, artifactType, fromGeneration, toGeneration }) => {
+    const result = await diffArtifact({ launchId, artifactType, fromGeneration, toGeneration });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  'draft-section',
+  'Re-draft a single section of an artifact. Sends a targeted change request through the full AI pipeline (context loading, grounding checks) so consistency is preserved. More focused than draft-artifact, more thorough than update-artifact.',
+  {
+    launchId: z.string().describe('The launch ID'),
+    artifactType: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief'])
+      .describe('The artifact type'),
+    section: z.string().describe('The section key to re-draft (e.g., value_story, message_house, objection_handling)'),
+    instructions: z.string().optional().describe('Specific instructions for this section (max 5,000 chars)'),
+    sourceNotes: z.string().optional().describe('Additional context or research to inform this section (max 20,000 chars)'),
+  },
+  async ({ launchId, artifactType, section, instructions, sourceNotes }) => {
+    const result = await draftSection({ launchId, artifactType, section, instructions, sourceNotes });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
+  }
+);
+
+server.tool(
+  'artifact-chat',
+  'Multi-turn conversational interface for working with launch artifacts. Ask questions, get reviews, or request summaries. Read-only — use update-artifact or draft-section for edits.',
+  {
+    launchId: z.string().describe('The launch ID'),
+    artifactType: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief'])
+      .describe('The artifact type'),
+    message: z.string().describe('Your question, request, or comment about the artifact'),
+    mode: z.enum(['question', 'review', 'summary', 'free']).optional()
+      .describe('Mode: question (ask about content), review (structured critique), summary (high-level state), free (open-ended)'),
+  },
+  async ({ launchId, artifactType, message, mode }) => {
+    const result = await artifactChat({ launchId, artifactType, message, mode });
     return {
       content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
     };

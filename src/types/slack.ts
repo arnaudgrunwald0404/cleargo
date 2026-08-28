@@ -20,7 +20,8 @@ export type SlackNotificationType =
     | 'success_review_reminder'
     | 'criterion_comment_or_attachment'
     | 'gate_signoff_ready'
-    | 'gtm_access_nudge';
+    | 'gtm_access_nudge'
+    | 'story_brief_review';
 
 export type SlackMessagePriority = 'low' | 'medium' | 'high' | 'urgent';
 

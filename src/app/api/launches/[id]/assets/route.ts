@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 const ASSET_STATUSES = ['NOT_STARTED', 'IN_PROGRESS', 'DONE', 'NOT_APPLICABLE'] as const;
 
-/** Supporting assets for one launch — the Campaign Brief Part 6 checklist. */
+/** Supporting assets for one launch — the Marketing Brief Part 6 checklist. */
 async function getHandler(
     req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
@@ -126,6 +126,17 @@ async function patchHandler(
         }
         if (body.status && !ASSET_STATUSES.includes(body.status)) {
             return NextResponse.json({ error: `status must be one of ${ASSET_STATUSES.join(', ')}` }, { status: 400 });
+        }
+
+        // Deciding an asset will not ship is a scoping call rather than a status
+        // tick, so it carries its own permission: PMM and SUPERADMIN only. This
+        // replaces the previous rule, where the `optional` flag decided who could
+        // say it -- which meant anyone who could tick, could also scope out.
+        if (body.status === 'NOT_APPLICABLE' && !canRolesPerformWithRules(roles, 'launch.markNotApplicable', rules)) {
+            return NextResponse.json(
+                { error: 'Only PMM can mark an asset as not applicable.' },
+                { status: 403 }
+            );
         }
 
         const updates: Record<string, any> = { last_updated_at: new Date().toISOString() };

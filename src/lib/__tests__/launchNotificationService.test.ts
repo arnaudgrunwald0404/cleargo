@@ -66,12 +66,33 @@ describe('planLaunchNotifications', () => {
     expect(actions[0].kind).toBe('overdue');
   });
 
-  it('never reports a compressed artifact as overdue', () => {
+  it('never reports a compressed artifact as overdue while its window is open', () => {
     // Kristin's rule: the release landed closer than the runway needs, so the
     // window never existed and nobody missed it.
     const items = [crit({ criterion_id: 'a', due_date: '2026-08-13', tier_offset_days: { TIER_2: 42 } })];
     const actions = plan(launch(items, { created_at: '2026-08-19T09:00:00Z' }));
     expect(actions[0].kind).toBe('window_open');
+    // And it quotes the re-granted date, never one from before the launch existed.
+    expect(actions[0].dueDate).toBe('2026-08-26');
+  });
+
+  it('escalates a compressed artifact to overdue once the re-granted window closes', () => {
+    // Same impossible runway, but the launch has existed since July — the owner
+    // has had well over the allowed window, so this is a real miss now.
+    const items = [crit({ criterion_id: 'a', due_date: '2026-08-13', tier_offset_days: { TIER_2: 42 } })];
+    const actions = plan(launch(items, { created_at: '2026-07-01T09:00:00Z' }));
+    expect(actions[0].kind).toBe('overdue');
+  });
+
+  it('still escalates a compressed gate that is blocking, once it is genuinely late', () => {
+    const items = [
+      crit({ criterion_id: 'gate', label: 'Pricing cleared', gate: true, due_date: '2026-08-06', tier_offset_days: { TIER_2: 42 } }),
+      crit({ criterion_id: 'story', label: 'Story Brief', depends_on_criterion_id: 'gate', due_date: '2026-08-27', tier_offset_days: { TIER_2: 35 } }),
+    ];
+    const actions = plan(launch(items, { created_at: '2026-07-01T09:00:00Z' }));
+    const gate = actions.find((a) => a.criterionId === 'gate')!;
+    expect(gate.kind).toBe('gate_blocking');
+    expect(gate.blocking).toEqual(['Story Brief']);
   });
 
   it('escalates a gate that is blocking, and names what it holds up', () => {

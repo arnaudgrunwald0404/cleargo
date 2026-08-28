@@ -2,6 +2,8 @@
  * Launch checklist helpers shared by the /api/launches routes.
  */
 
+import { addCalendarDaysToYmd, diffCalendarDaysBetweenYmd } from './date-utils';
+
 /**
  * Launch-context criteria use 'ALL' or a comma-separated tier list
  * (e.g. 'TIER_1,TIER_2') for tier_applicability. A launch with no tier
@@ -170,15 +172,23 @@ export function runwayDueOffsetDays(
     launchTier: string | null | undefined
 ): number | null {
     const own = resolveOffsetDays(criterion, launchTier);
-    const successor = all.find(
-        (c) =>
-            c.depends_on_criterion_id === criterion.id &&
-            c.id !== criterion.id &&
-            launchCriterionApplies(c.tier_applicability, launchTier)
-    );
-    if (!successor) return own;
-    const successorStart = resolveOffsetDays(successor, launchTier);
-    return successorStart ?? own;
+
+    // Several rows may depend on the same predecessor -- the naming gate now
+    // precedes both pricing and the Story Brief. `find` would take whichever the
+    // query happened to return first, making the due date depend on row order.
+    // The due date is when the FIRST successor starts, i.e. the largest T-minus.
+    const successorStarts = all
+        .filter(
+            (c) =>
+                c.depends_on_criterion_id === criterion.id &&
+                c.id !== criterion.id &&
+                launchCriterionApplies(c.tier_applicability, launchTier)
+        )
+        .map((c) => resolveOffsetDays(c, launchTier))
+        .filter((d): d is number => d != null);
+
+    if (successorStarts.length === 0) return own;
+    return Math.max(...successorStarts);
 }
 
 /** Due date for a criterion, derived from where its successor starts. */
@@ -191,35 +201,159 @@ export function runwayDueDate(
     return tMinusDueDate(targetLaunchDate, runwayDueOffsetDays(criterion, all, launchTier));
 }
 
+/** Status of one gate checklist item, mirroring launch_criterion_item.status. */
+export type GateItemStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE' | 'NOT_APPLICABLE';
+
+/**
+ * What a gate item is.
+ *
+ * `check` is a ☐ line. `decision` is a named DECISION OF RECORD answer and
+ * `source` a named SOURCE OF TRUTH link — both document the decision rather than
+ * making it, so neither holds the gate open. Each gate's CLEARS WHEN clause is
+ * written purely in terms of its checkboxes.
+ */
+export type GateItemKind = 'check' | 'decision' | 'source';
+
+/**
+ * A gate's status, derived from the items inside it.
+ *
+ * Kristin's 00 Launch Gate Checklist models a gate as a set of checklist items
+ * owned by different functions -- Beta alone spans PM, SE, UX, PMM and RevOps --
+ * so the gate itself is never voted on directly. It clears when every item that
+ * applies has cleared.
+ *
+ * NOT_APPLICABLE items are ignored rather than counted as done, so a gate is only
+ * reported NOT_APPLICABLE when every one of its items is. That matters for Beta:
+ * a capability that runs no beta should read "does not apply", not "complete".
+ *
+ * An empty item list returns null so callers keep whatever status the gate row
+ * already carries -- a gate that has not been decomposed yet still works.
+ */
+export function gateStatusFromItems(
+    items: ReadonlyArray<{ status: GateItemStatus; kind?: GateItemKind | null }>
+): GateItemStatus | null {
+    // Only the checkboxes decide clearance. A row with no kind is a checkbox:
+    // `kind` defaults to 'check' in the schema and is absent on older payloads.
+    const checks = items.filter((i) => (i.kind ?? 'check') === 'check');
+    if (checks.length === 0) return null;
+
+    const applicable = checks.filter((i) => i.status !== 'NOT_APPLICABLE');
+    if (applicable.length === 0) return 'NOT_APPLICABLE';
+
+    if (applicable.every((i) => i.status === 'DONE')) return 'DONE';
+    if (applicable.some((i) => i.status === 'DONE' || i.status === 'IN_PROGRESS')) {
+        return 'IN_PROGRESS';
+    }
+    return 'NOT_STARTED';
+}
+
 export type ScheduleState =
     | 'no_date'
-    /** Release landed closer than the runway needs — the window never existed. */
+    /**
+     * The runway never fit — the artifact was due to start before the launch
+     * record existed — and the fair window measured from creation is still open.
+     */
     | 'compressed'
     | 'upcoming'
     | 'in_window'
     | 'late';
 
 /**
+ * True when the artifact was supposed to start before the launch record even
+ * existed. The runway never fit, so on day one nobody had missed anything.
+ *
  * Kristin: "when a release date is closer than the T1 runway (as happened with
  * 2026.8), the system should show the sequence as compressed/started rather than
  * flagging an error — the artifact predates the window, it isn't missing."
+ */
+export function runwayWasCompressed(args: {
+    startDate: string | null;
+    launchCreatedAt?: string | null;
+}): boolean {
+    const { startDate, launchCreatedAt } = args;
+    if (!startDate || !launchCreatedAt) return false;
+    return startDate < launchCreatedAt.slice(0, 10);
+}
+
+/**
+ * Floor on the re-granted window. The last artifact in a dependency chain has no
+ * successor, so `runwayDueOffsetDays` falls back to its own offset and its
+ * designed window is zero days long. Without a floor that artifact would read
+ * overdue the day after a compressed launch was created, which is the opposite
+ * of the point: a launch appearing with its runway already spent gives the owner
+ * at least a week before anything is called a miss.
+ */
+export const COMPRESSED_MIN_GRACE_DAYS = 7;
+
+/**
+ * The date a compressed artifact is genuinely late after.
  *
- * The test for that is whether the artifact was supposed to start before the
- * launch record even existed. If so the runway never fit, and calling it late
- * blames the team for arithmetic.
+ * "Not the team's fault at creation" is not the same as "never late". A
+ * compressed artifact gets the window it was designed to have (never less than
+ * COMPRESSED_MIN_GRACE_DAYS), counted from the day the launch record appeared —
+ * and GA is the hard wall, since nothing is merely compressed once the thing has
+ * shipped.
+ *
+ * Null when there is no deadline to shift (no due date, or nothing to measure
+ * from), which leaves compression open-ended: without a due date there is no
+ * miss to report.
+ */
+export function compressedGraceDueDate(args: {
+    startDate: string | null;
+    dueDate: string | null;
+    launchCreatedAt?: string | null;
+    targetLaunchDate?: string | null;
+}): string | null {
+    const { startDate, dueDate, launchCreatedAt, targetLaunchDate } = args;
+    if (!startDate || !dueDate || !launchCreatedAt) return null;
+    const windowDays = diffCalendarDaysBetweenYmd(dueDate, startDate);
+    if (windowDays == null) return null;
+    const grace = addCalendarDaysToYmd(
+        launchCreatedAt.slice(0, 10),
+        Math.max(COMPRESSED_MIN_GRACE_DAYS, windowDays)
+    );
+    if (!grace) return null;
+    const ga = targetLaunchDate?.slice(0, 10);
+    return ga && grace > ga ? ga : grace;
+}
+
+/**
+ * The date lateness is actually measured against: the stored due date normally,
+ * grace-shifted when the runway was compressed. Use this wherever a message or
+ * a cell says "due" or "overdue since", so a compressed artifact is never held
+ * to a date that fell before its launch existed.
+ */
+export function effectiveDueDate(args: {
+    startDate: string | null;
+    dueDate: string | null;
+    launchCreatedAt?: string | null;
+    targetLaunchDate?: string | null;
+}): string | null {
+    if (!runwayWasCompressed(args)) return args.dueDate;
+    return compressedGraceDueDate(args) ?? args.dueDate;
+}
+
+/**
+ * Compression explains an impossible window; it does not excuse it forever.
+ * Inside the fair window from creation the artifact reads compressed and nobody
+ * is blamed for arithmetic. Past it, it is late like anything else — otherwise
+ * `startDate < createdDay` is a permanent condition that mutes a real miss for
+ * the life of the launch, keeps a dead gate out of the blockers list, and stops
+ * the nudges after a single "your window is open".
  */
 export function scheduleState(args: {
     startDate: string | null;
     dueDate: string | null;
     today: string;
     launchCreatedAt?: string | null;
+    targetLaunchDate?: string | null;
 }): ScheduleState {
-    const { startDate, dueDate, today, launchCreatedAt } = args;
+    const { startDate, dueDate, today } = args;
     if (!startDate && !dueDate) return 'no_date';
 
-    if (startDate && launchCreatedAt) {
-        const createdDay = launchCreatedAt.slice(0, 10);
-        if (startDate < createdDay) return 'compressed';
+    if (runwayWasCompressed(args)) {
+        const grace = compressedGraceDueDate(args);
+        return !grace || today <= grace ? 'compressed' : 'late';
     }
     if (startDate && today < startDate) return 'upcoming';
     if (dueDate && today > dueDate) return 'late';

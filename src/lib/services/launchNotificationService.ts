@@ -12,7 +12,7 @@
  */
 
 import { isGating } from '../launch-readiness';
-import { resolveOffsetDays, scheduleState, tMinusDueDate } from '../launchCriteria';
+import { effectiveDueDate, resolveOffsetDays, scheduleState, tMinusDueDate } from '../launchCriteria';
 
 export const LAUNCH_NOTIFY_TYPE = 'launch_artifact';
 
@@ -122,6 +122,15 @@ export function planLaunchNotifications(args: {
                 dueDate: item.due_date,
                 today,
                 launchCreatedAt: launch.created_at ?? null,
+                targetLaunchDate: launch.target_launch_date,
+            });
+            // What the message means by "due": grace-shifted when the runway was
+            // compressed, so a DM never quotes a date from before the launch existed.
+            const dueDate = effectiveDueDate({
+                startDate,
+                dueDate: item.due_date,
+                launchCreatedAt: launch.created_at ?? null,
+                targetLaunchDate: launch.target_launch_date,
             });
             if (state === 'no_date' || state === 'upcoming') continue;
 
@@ -145,9 +154,10 @@ export function planLaunchNotifications(args: {
 
             const kinds: LaunchNotifyKind[] = [];
             if (state === 'late') {
-                // A blocked gate is the only thing that escalates. 'compressed'
-                // never counts as late: the window closed before the launch
-                // existed, so nobody missed it.
+                // A blocked gate is the only thing that escalates. A compressed
+                // artifact reaches here only after its fair window from launch
+                // creation has closed -- until then it is 'compressed' and the
+                // owner is not chased for arithmetic they did not cause.
                 kinds.push(gating && blocked.length > 0 ? 'gate_blocking' : 'overdue');
             } else if (state === 'in_window' || state === 'compressed') {
                 kinds.push(predecessorDone ? 'window_open' : 'unblocked');
@@ -171,7 +181,7 @@ export function planLaunchNotifications(args: {
                     label: item.label,
                     recipientEmail,
                     startDate,
-                    dueDate: item.due_date,
+                    dueDate,
                     blocking: blocked,
                     escalateTo:
                         kind === 'gate_blocking' && launch.owner_email &&

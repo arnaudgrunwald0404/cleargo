@@ -54,8 +54,7 @@ export async function validateEpicDelivery(
 
   const ahaFields = epic.aha_fields as Record<string, unknown> | null | undefined;
   const standardFields = ahaFields?.standard_fields as Record<string, unknown> | undefined;
-  const ahaDescriptionRaw = (standardFields?.description as string | null | undefined) ?? null;
-  const aha_description = ahaDescriptionRaw ? stripHtml(ahaDescriptionRaw) : null;
+  const aha_description = extractAhaDescription(standardFields?.description);
   const aha_workflow_status = (standardFields?.workflow_status as string | null | undefined) ?? null;
   const aha_available = Boolean(standardFields);
 
@@ -190,6 +189,37 @@ function buildGapDescription(args: {
 
 function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, '').trim();
+}
+
+/**
+ * Aha's `description` is NOT a plain string. The API returns a note object --
+ * `{ id, body, created_at, ... }` -- and which shape reaches us depends on how
+ * the epic was synced. Passing the object straight to stripHtml threw
+ * "html.replace is not a function" and killed the whole draft.
+ *
+ * Returns null for anything unrecognised rather than stringifying it: an
+ * unparseable description should read as "no description available", never as
+ * "[object Object]" quoted into a customer-facing brief.
+ */
+export function extractAhaDescription(raw: unknown): string | null {
+  if (typeof raw === 'string') {
+    const text = stripHtml(raw);
+    return text || null;
+  }
+
+  if (raw && typeof raw === 'object') {
+    const rec = raw as Record<string, unknown>;
+    // `body` is Aha's own field name; the others are shapes seen in the wild.
+    for (const key of ['body', 'html_body', 'text', 'description']) {
+      const value = rec[key];
+      if (typeof value === 'string') {
+        const text = stripHtml(value);
+        if (text) return text;
+      }
+    }
+  }
+
+  return null;
 }
 
 function errorMessage(err: unknown): string {

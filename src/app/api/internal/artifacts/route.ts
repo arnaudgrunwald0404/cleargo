@@ -6,7 +6,8 @@
  * user.
  *
  * POST /api/internal/artifacts
- *   { action: 'draft' | 'ensure', launchId: string, artifact_type?: string, source_notes?: string }
+ *   { action: 'draft' | 'draft_section' | 'ensure', launchId: string, artifact_type?: string,
+ *     source_notes?: string, section?: string, change_request_note?: string }
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
@@ -42,10 +43,12 @@ function authenticateMcp(request: NextRequest): boolean {
 }
 
 const BodySchema = z.object({
-  action: z.enum(['draft', 'ensure']).default('ensure'),
+  action: z.enum(['draft', 'draft_section', 'ensure']).default('ensure'),
   launchId: z.string(),
   artifact_type: z.enum(['gate_checklist', 'story_brief', 'messaging_brief', 'enablement_guide', 'marketing_brief']).optional(),
   source_notes: z.string().max(20_000).optional(),
+  section: z.string().optional(),
+  change_request_note: z.string().max(5000).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -80,6 +83,44 @@ export async function POST(request: NextRequest) {
       );
 
       return NextResponse.json(draft, { status: draft.warnings.length > 0 ? 207 : 200 });
+    }
+
+    if (body.action === 'draft_section') {
+      if (!body.artifact_type) {
+        return NextResponse.json(
+          { error: 'artifact_type is required when drafting' },
+          { status: 400 }
+        );
+      }
+
+      console.log(
+        `[internal/artifacts] Drafting section "${body.section}" of ${body.artifact_type} for launch ${body.launchId}`
+      );
+
+      // Section-level draft reuses the full pipeline with a targeted change request.
+      // Write the change_request_note to the row so draftArtifact picks it up.
+      if (body.change_request_note?.trim()) {
+        await admin
+          .from('launch_artifact')
+          .update({ change_request_note: body.change_request_note.trim() })
+          .eq('launch_id', body.launchId)
+          .eq('artifact_type', body.artifact_type);
+      }
+
+      const draft = await draftArtifact(
+        body.launchId,
+        body.artifact_type,
+        {
+          sourceNotes: body.source_notes,
+          actorEmail: process.env.MCP_ACTOR_EMAIL?.trim() || 'mcp-server@cleargo.local',
+        },
+        admin
+      );
+
+      return NextResponse.json(
+        { ...draft, section: body.section },
+        { status: draft.warnings.length > 0 ? 207 : 200 }
+      );
     }
 
     // action === 'ensure'

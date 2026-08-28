@@ -27,7 +27,7 @@ function resolveAnthropicApiKey(): string | undefined {
  * On 404 (retired model id), try the next — mirrors RRV’s fallback behavior.
  */
 const CARD_DESCRIPTION_MODEL_FALLBACK = [
-  'claude-haiku-4-5-20251001',
+  'claude-haiku-4-5',
   'claude-3-haiku-20240307',
   'claude-sonnet-4-5-20250929',
 ] as const;

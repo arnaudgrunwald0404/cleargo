@@ -12,12 +12,22 @@ export type CriterionCategory =
 
 export type TierApplicability = "ALL" | "TIER_1_ONLY" | "TIER_1_AND_2" | "TIER_2_ONLY" | "TIER_3_ONLY";
 
+/**
+ * Accountable function for a criterion or a gate item.
+ *
+ * UX, SE and LEGAL were added for Kristin's 00 Launch Gate Checklist, which
+ * assigns items to all three and had nowhere to put them: Beta Proof 2 is
+ * behavioural evidence (the same thing UX owns as "Behavioral Baseline
+ * Established" on the epic matrix), Proof 1 is explicitly an SE reality-check,
+ * and Gate 2 needs order-form language drafted.
+ */
 export type DecisionOwnerRole =
   | "CPO"
   | "CSM"
   | "ENG"
   | "IMPL"
   | "LEARNING"
+  | "LEGAL"
   | "OTHER"
   | "PM"
   | "PMM"
@@ -25,8 +35,10 @@ export type DecisionOwnerRole =
   | "PRODUCT_OPS"
   | "REV_OPS"
   | "SALES"
+  | "SE"
   | "SECURITY"
-  | "SUPPORT";
+  | "SUPPORT"
+  | "UX";
 
 export type DataSourceType = "aha_field" | "aha_description_part" | "url" | "jira_jql" | "success_metrics_defined" | "forecast";
 

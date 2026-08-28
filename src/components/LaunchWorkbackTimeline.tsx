@@ -52,7 +52,7 @@ const STATE_COLOR: Record<ScheduleState | "done", string> = {
 
 const STATE_LABEL: Record<ScheduleState | "done", string> = {
     done: "Delivered",
-    compressed: "Compressed — the window closed before this launch existed",
+    compressed: "Compressed — the window closed before this launch existed, and the runway allowed since is still open",
     late: "Overdue",
     in_window: "In progress window",
     upcoming: "Not started yet",
@@ -103,6 +103,7 @@ export function LaunchWorkbackTimeline({
                               dueDate: it.due_date,
                               today: todayStr,
                               launchCreatedAt: launchCreatedAt ?? null,
+                              targetLaunchDate,
                           });
                 return { ...it, start, due: it.due_date, state };
             })

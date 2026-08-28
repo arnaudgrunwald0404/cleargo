@@ -8,6 +8,7 @@
 
 import { createAdminClient } from '@/lib/supabase/server';
 import {
+    effectiveDueDate,
     normalizeGate,
     runwayDueDate,
     scheduleState,
@@ -15,6 +16,7 @@ import {
     type CriterionScheduleNode,
 } from '@/lib/launchCriteria';
 import type { HomeArtifact, HomeBrief, UnassignedGroup } from '@/lib/slack/templates/launch-home';
+import { isLaunchWorkSuspended } from '@/lib/launch-status';
 
 interface CriterionJoin {
     id: string;
@@ -53,7 +55,7 @@ export async function loadLaunchHomeWork(
     const { data, error } = await supabase
         .from('launch')
         .select(
-            `id, name, tier, target_launch_date, owner_email, created_at,
+            `id, name, tier, target_launch_date, status, owner_email, created_at,
              launch_criterion_status(
                criterion_id, status, owner_email, due_date,
                criterion:criterion(id, label, gate, depends_on_criterion_id,
@@ -72,6 +74,11 @@ export async function loadLaunchHomeWork(
     const unassigned: UnassignedGroup[] = [];
 
     for (const launch of (data || []) as Array<Record<string, unknown>>) {
+        // A launch someone put On Hold or Cancelled stops asking for work. Its
+        // criteria still exist and still have due dates, so without this the
+        // App Home would keep nagging about a launch that is not happening.
+        if (isLaunchWorkSuspended(launch)) continue;
+
         const statuses = (launch.launch_criterion_status as Array<Record<string, unknown>>) || [];
         const launchOwner = ((launch.owner_email as string | null) || '').toLowerCase();
         const tier = (launch.tier as string | null) ?? null;
@@ -130,6 +137,13 @@ export async function loadLaunchHomeWork(
             const dueDate =
                 (s.due_date as string | null) || runwayDueDate(ga, node, nodes, tier);
 
+            const window = {
+                startDate,
+                dueDate,
+                launchCreatedAt: (launch.created_at as string | null) ?? null,
+                targetLaunchDate: ga,
+            };
+
             out.push({
                 launchId: launch.id as string,
                 launchName: (launch.name as string) || 'Untitled launch',
@@ -137,12 +151,8 @@ export async function loadLaunchHomeWork(
                 status,
                 startDate,
                 dueDate,
-                scheduleState: scheduleState({
-                    startDate,
-                    dueDate,
-                    today,
-                    launchCreatedAt: (launch.created_at as string | null) ?? null,
-                }),
+                lateSince: effectiveDueDate(window),
+                scheduleState: scheduleState({ ...window, today }),
                 gate: normalizeGate(c.gate),
                 blocking: pendingDependents.get(c.id) || [],
             });

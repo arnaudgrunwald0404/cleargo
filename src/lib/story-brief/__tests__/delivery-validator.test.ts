@@ -14,7 +14,7 @@ jest.mock('@/lib/jira/resolve-and-cache-epic-key', () => ({
 
 const { getJiraEpic, searchJiraIssues } = require('@/lib/jira/client');
 const { resolveAndCacheJiraEpicKey } = require('@/lib/jira/resolve-and-cache-epic-key');
-const { validateEpicDelivery } = require('../delivery-validator');
+const { validateEpicDelivery, extractAhaDescription } = require('../delivery-validator');
 import type { EpicForValidation } from '../delivery-validator';
 
 const mockSupabase: any = {};
@@ -138,4 +138,36 @@ describe('validateEpicDelivery', () => {
     expect(result.aha_description).toBeNull();
     expect(result.gap_detected).toBe(false);
   });
+});
+
+describe('extractAhaDescription', () => {
+    it('strips tags from a plain HTML string', () => {
+        expect(extractAhaDescription('<p>Ships <b>Q3</b></p>')).toBe('Ships Q3');
+    });
+
+    it('reads the body out of an Aha note object', () => {
+        // The real shape from Aha: description is a note, not a string. Passing
+        // this object to stripHtml threw "html.replace is not a function" and
+        // killed the entire draft for every epic in the launch.
+        expect(extractAhaDescription({ id: '123', body: '<p>Ships Q3</p>' })).toBe('Ships Q3');
+    });
+
+    it('falls back through the other shapes seen in the wild', () => {
+        expect(extractAhaDescription({ html_body: '<i>Beta only</i>' })).toBe('Beta only');
+        expect(extractAhaDescription({ text: 'Plain text' })).toBe('Plain text');
+    });
+
+    it('returns null rather than stringifying an unrecognised shape', () => {
+        // "[object Object]" quoted into a customer-facing brief is far worse
+        // than an honest absence.
+        expect(extractAhaDescription({ unexpected: 42 })).toBeNull();
+        expect(extractAhaDescription([1, 2, 3])).toBeNull();
+        expect(extractAhaDescription(null)).toBeNull();
+        expect(extractAhaDescription(undefined)).toBeNull();
+        expect(extractAhaDescription(42)).toBeNull();
+    });
+
+    it('treats a tags-only description as absent', () => {
+        expect(extractAhaDescription('<p></p>')).toBeNull();
+    });
 });

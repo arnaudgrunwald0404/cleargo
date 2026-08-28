@@ -28,6 +28,7 @@ import {
     type NotifyLaunch,
     type PriorNotification,
 } from '@/lib/services/launchNotificationService';
+import { isLaunchWorkSuspended } from '@/lib/launch-status';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
         const { data: launchRows, error: launchError } = await supabase
             .from('launch')
             .select(
-                `id, name, tier, target_launch_date, owner_email, created_at,
+                `id, name, tier, target_launch_date, status, owner_email, created_at,
                  launch_criterion_status(
                    criterion_id, status, owner_email, due_date,
                    criterion:criterion(id, label, gate, depends_on_criterion_id,
@@ -106,7 +107,14 @@ export async function GET(request: NextRequest) {
             return NextResponse.json({ success: false, error: launchError.message }, { status: 500 });
         }
 
-        const launches: NotifyLaunch[] = (launchRows || []).map((l: Record<string, unknown>) => ({
+        // A launch put On Hold or Cancelled stops generating notifications. Its
+        // criteria keep their due dates, so without this filter a shelved launch
+        // would carry on nudging owners about artifacts nobody needs.
+        const liveLaunchRows = (launchRows || []).filter(
+            (l: Record<string, unknown>) => !isLaunchWorkSuspended(l)
+        );
+
+        const launches: NotifyLaunch[] = liveLaunchRows.map((l: Record<string, unknown>) => ({
             id: l.id as string,
             name: l.name as string,
             tier: (l.tier as string | null) ?? null,

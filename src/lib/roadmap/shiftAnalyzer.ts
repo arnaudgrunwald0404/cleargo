@@ -26,7 +26,7 @@ function resolveAnthropicApiKey(): string | undefined {
 }
 
 /** Bump when prompt or model identity changes meaningfully. */
-export const SHIFT_ANALYSIS_MODEL_ID = 'claude-haiku-4-5-20251001';
+export const SHIFT_ANALYSIS_MODEL_ID = 'claude-haiku-4-5';
 export const SHIFT_ANALYSIS_PROMPT_VERSION = '5';
 
 function planVsActualPeriodModeHelp(periodType: string): string {

@@ -30,7 +30,7 @@ export function getAnthropicBaseUrl(): string {
  * Netlify's AI integration injects a proxy key that fails against api.anthropic.com.
  */
 export function resolveDefaultModel(
-  claudeModel: string = 'claude-haiku-4-5-20251001',
+  claudeModel: string = 'claude-haiku-4-5',
   geminiModel: string = 'gemini-2.5-flash'
 ): LanguageModel | null {
   if (!process.env.ANTHROPIC_API_KEY && process.env.CLAUDE_API_KEY) {

@@ -23,7 +23,7 @@ import type {
  * Netlify's AI integration injects a proxy key that fails against api.anthropic.com.
  */
 function resolveHeartModel(): LanguageModel | null {
-  return resolveDefaultModel('claude-haiku-4-5-20251001', 'gemini-2.5-flash');
+  return resolveDefaultModel('claude-haiku-4-5', 'gemini-2.5-flash');
 }
 
 // ============================================================================

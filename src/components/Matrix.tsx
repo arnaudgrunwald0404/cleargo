@@ -264,6 +264,28 @@ const getAvatarColor = (email: string) => {
     return colors[Math.abs(hash) % colors.length];
 };
 
+/**
+ * The x/y counter the launch checklist's phase headers carry, brought over so
+ * both surfaces answer "how far along is this group" the same way.
+ *
+ * GO counts as done. NOT_APPLICABLE leaves the denominator rather than counting
+ * as done, so a group whose remaining rows are all inapplicable reads x/x
+ * instead of stalling below it; a not-required row (UI Framework levels) is out
+ * of the count entirely, matching how the readiness score already treats both.
+ */
+function groupProgress(
+    items: MatrixItem[],
+    showNotApplicable: boolean
+): { done: number; total: number } {
+    const counted = items.filter(
+        (i) => !i.notRequired && !(showNotApplicable && i.status === 'NOT_APPLICABLE')
+    );
+    return {
+        done: counted.filter((i) => i.status === 'GO').length,
+        total: counted.length,
+    };
+}
+
 type Props = {
     epicId: string;
     epicName: string;
@@ -1493,6 +1515,15 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                     {phase}
                                     {phaseEndDateStr && <span className="font-normal text-gray-500 ml-1.5">(by {phaseEndDateStr})</span>}
                                 </span>
+                                {(() => {
+                                    const { done, total } = groupProgress(
+                                        phaseCategories.flatMap((c) => catMap[c] ?? []),
+                                        showNotApplicable
+                                    );
+                                    return total > 0 ? (
+                                        <span className="ml-auto text-xs text-gray-400">{done}/{total} done</span>
+                                    ) : null;
+                                })()}
                             </div>
                             {!phaseCollapsed && phaseCategories.map((cat) => {
                                 const phaseCatKey = phaseCategoryCollapseKey(phase, cat);
@@ -1518,6 +1549,12 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                         <div className="flex items-center gap-2 pl-6 md:pl-10 pr-3 md:pr-6 py-2 cursor-pointer select-none hover:bg-gray-50 transition-colors" onClick={() => toggleCategory(phaseCatKey)}>
                                             <span className="text-gray-500">{collapsed ? <IconChevronRight size={18} /> : <IconChevronDown size={18} />}</span>
                                             <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={3}>{cat}</span>
+                                            {(() => {
+                                                const { done, total } = groupProgress(allItems, showNotApplicable);
+                                                return total > 0 ? (
+                                                    <span className="ml-auto text-xs text-gray-400">{done}/{total} done</span>
+                                                ) : null;
+                                            })()}
                                         </div>
                                         {!collapsed && (
                                             <div className="pl-3 md:pl-6 pr-3 md:pr-6 pb-6">
@@ -1718,6 +1755,12 @@ function Matrix({ epicId, epicName, epicStatus, items, onUpdate, epic, showNotAp
                                 )}
                             </span>
                             <span className="text-sm font-semibold text-gray-900" role="heading" aria-level={3}>{cat}</span>
+                            {(() => {
+                                const { done, total } = groupProgress(allItems, showNotApplicable);
+                                return total > 0 ? (
+                                    <span className="ml-auto text-xs text-gray-400">{done}/{total} done</span>
+                                ) : null;
+                            })()}
                         </div>
                         {!collapsed && (
                             <div className="px-3 md:px-6 pb-6">

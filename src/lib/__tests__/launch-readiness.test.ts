@@ -88,6 +88,46 @@ describe('computeLaunchReadiness', () => {
     expect(r.atRisk.map((a) => a.id)).toEqual(['gate']);
   });
 
+  it('leaves an inapplicable gate out of the count entirely', () => {
+    // Beta on a capability that runs no beta. Not a blocker, not at risk, and not
+    // credited as done either -- it should not flatter the score.
+    const r = computeLaunchReadiness({
+      ...base,
+      items: [
+        item({ id: 'beta', gate: true, status: 'NOT_APPLICABLE', due_date: '2026-08-06', tier_offset_days: { TIER_2: 42 } }),
+        item({ id: 'real', gate: true, status: 'DONE', due_date: '2026-08-27', tier_offset_days: { TIER_2: 35 } }),
+      ],
+    });
+    expect(r.gatesTotal).toBe(1);
+    expect(r.gatesDone).toBe(1);
+    expect(r.itemsTotal).toBe(1);
+    expect(r.blockers).toHaveLength(0);
+    expect(r.atRisk).toHaveLength(0);
+    expect(r.readinessPct).toBe(100);
+  });
+
+  it('does not let an inapplicable row raise the score', () => {
+    // One real gate outstanding. N/A must not read as progress.
+    const r = computeLaunchReadiness({
+      ...base,
+      items: [
+        item({ id: 'beta', gate: true, status: 'NOT_APPLICABLE', tier_offset_days: { TIER_2: 42 } }),
+        item({ id: 'real', gate: true, status: 'NOT_STARTED', due_date: '2026-08-27', tier_offset_days: { TIER_2: 35 } }),
+      ],
+    });
+    expect(r.readinessPct).toBe(0);
+    expect(r.gatesTotal).toBe(1);
+  });
+
+  it('is NOT_EVALUATED when every row is inapplicable', () => {
+    const r = computeLaunchReadiness({
+      ...base,
+      items: [item({ id: 'beta', gate: true, status: 'NOT_APPLICABLE' })],
+    });
+    expect(r.verdict).toBe('NOT_EVALUATED');
+    expect(r.itemsTotal).toBe(0);
+  });
+
   it('is AT_RISK for a gate currently inside its window', () => {
     const r = computeLaunchReadiness({
       ...base,

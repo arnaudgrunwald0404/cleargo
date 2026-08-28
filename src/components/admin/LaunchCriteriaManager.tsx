@@ -592,7 +592,7 @@ function EditDrawer({
                         Per-tier lead time (optional)
                     </Text>
                     <Text size="xs" c="dimmed" mt={-8}>
-                        Tier 1 runs a ~8-week workback and Tier 2 ~5 weeks, so the same artifact is
+                        Tier 1 runs a ~15-week workback and Tier 2 ~11 weeks, so the same artifact is
                         due at different times. Leave blank to use the fallback above.
                     </Text>
                     <Group grow>

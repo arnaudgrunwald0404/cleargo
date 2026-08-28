@@ -18,6 +18,26 @@ import {
     markFlagsAsked,
     recordFlagAnswers,
 } from '@/lib/story-brief/interview';
+import {
+    ARTIFACT_APPROVE_ACTION,
+    ARTIFACT_CHANGES_ACTION,
+    ARTIFACT_ANSWER_ACTION,
+    ARTIFACT_CHANGES_CALLBACK,
+    ARTIFACT_ANSWER_CALLBACK,
+    MAX_QUESTIONS_PER_MODAL as ARTIFACT_MAX_QUESTIONS,
+    buildArtifactInterviewModal,
+    buildChangeRequestModal,
+    parseArtifactSubmission,
+    type ArtifactReviewTarget,
+} from '@/lib/slack/templates/artifact-review';
+import {
+    loadArtifactInterview,
+    markArtifactFlagsAsked,
+    recordArtifactFlagAnswers,
+} from '@/lib/artifacts/flags';
+import { approveArtifact, requestArtifactChanges } from '@/lib/artifacts/reviewService';
+import { resolveActorFromSlack } from '@/lib/artifacts/slackActor';
+import { ARTIFACT_LABEL } from '@/types/artifacts';
 import type { SlackInteractionPayload } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
@@ -74,6 +94,22 @@ async function handleBlockActions(payload: SlackInteractionPayload) {
         switch (action.action_id) {
             case FLAG_INTERVIEW_ACTION:
                 await openFlagInterview(payload, action.value);
+                break;
+
+            case ARTIFACT_APPROVE_ACTION:
+                await handleArtifactApproval(payload, action.value);
+                break;
+
+            case ARTIFACT_CHANGES_ACTION:
+                await openChangeRequest(payload, action.value);
+                break;
+
+            case ARTIFACT_ANSWER_ACTION:
+                await openArtifactInterview(payload, action.value);
+                break;
+
+            // A url button does not dispatch, but Slack still posts the action.
+            case 'launch_artifact_open_doc':
                 break;
 
             case 'update_criterion':
@@ -151,6 +187,137 @@ async function openFlagInterview(payload: SlackInteractionPayload, value?: strin
     );
 }
 
+/** Read the artifact identifiers a button carries. */
+function parseArtifactButton(value?: string): ArtifactReviewTarget | null {
+    try {
+        const parsed = JSON.parse(value || '{}');
+        if (!parsed.artifactId) return null;
+        return {
+            artifactId: parsed.artifactId,
+            launchId: parsed.launchId,
+            launchName: parsed.launchName ?? 'Launch',
+            artifactType: parsed.artifactType,
+        };
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Approve from Slack.
+ *
+ * The button carries a confirm dialog, so by the time this runs the reviewer
+ * has said yes twice. Replaces the original message rather than adding to it —
+ * a decided artifact should not keep offering Approve.
+ */
+async function handleArtifactApproval(payload: SlackInteractionPayload, value?: string) {
+    const target = parseArtifactButton(value);
+    if (!target) {
+        console.error('artifact approve: button carried no artifactId');
+        return;
+    }
+
+    const actor = await resolveActorFromSlack(payload.user?.id);
+    if (!actor.allowedToApprove) {
+        await respondInChannel(
+            payload,
+            actor.email
+                ? `:lock: ${actor.email} does not have permission to approve launch documents.`
+                : ':lock: I could not match your Slack account to a ClearGO user.'
+        );
+        return;
+    }
+
+    try {
+        const result = await approveArtifact(target.artifactId, {
+            email: actor.email!,
+            name: actor.name,
+        });
+        const label = ARTIFACT_LABEL[result.artifact.artifact_type];
+
+        const lines = [`:white_check_mark: *${label}* approved — now v1.0.`];
+        if (result.criterionMarkedDone) lines.push('Its readiness criterion is marked done.');
+        if (result.signoffRecorded) lines.push('Your sign-off is recorded on the gate.');
+        if (result.unblocked) lines.push(`Next up: *${ARTIFACT_LABEL[result.unblocked]}*.`);
+        for (const w of result.warnings) lines.push(`:warning: ${w}`);
+
+        await replaceMessage(payload, lines.join('\n'));
+    } catch (err) {
+        console.error('artifact approve failed', err);
+        await respondInChannel(
+            payload,
+            `:x: Could not approve: ${err instanceof Error ? err.message : 'unknown error'}`
+        );
+    }
+}
+
+/** Open the change-request modal. Nothing between reading and views.open. */
+async function openChangeRequest(payload: SlackInteractionPayload, value?: string) {
+    const target = parseArtifactButton(value);
+    if (!target) return;
+    await getSlackClient().openView(payload.trigger_id, buildChangeRequestModal(target));
+}
+
+/** Open the interview for an artifact's ungrounded claims. */
+async function openArtifactInterview(payload: SlackInteractionPayload, value?: string) {
+    const target = parseArtifactButton(value);
+    if (!target) return;
+
+    const interview = await loadArtifactInterview(target.artifactId);
+    const client = getSlackClient();
+
+    if (!interview || interview.flags.length === 0) {
+        await client.openView(payload.trigger_id, {
+            type: 'modal',
+            title: { type: 'plain_text', text: 'Nothing to answer' },
+            close: { type: 'plain_text', text: 'Close' },
+            blocks: [
+                {
+                    type: 'section',
+                    text: { type: 'mrkdwn', text: 'Every open question on this document has been answered.' },
+                },
+            ],
+        });
+        return;
+    }
+
+    await client.openView(
+        payload.trigger_id,
+        buildArtifactInterviewModal(
+            { ...target, launchName: interview.launchName },
+            interview.flags
+        )
+    );
+
+    // After the view is up: losing this is not worth losing the modal over.
+    await markArtifactFlagsAsked(
+        interview.flags.slice(0, ARTIFACT_MAX_QUESTIONS).map((f) => f.id)
+    );
+}
+
+/** Replace the review message once a decision is made. */
+async function replaceMessage(payload: SlackInteractionPayload, text: string) {
+    const channel = payload.channel?.id;
+    const ts = payload.message?.ts;
+    if (!channel || !ts) return;
+    try {
+        await getSlackClient().updateMessage(channel, ts, { text, blocks: [] });
+    } catch (err) {
+        console.error('could not update review message', err);
+    }
+}
+
+/** Say something back when the action could not proceed. */
+async function respondInChannel(payload: SlackInteractionPayload, text: string) {
+    const channel = payload.channel?.id;
+    if (!channel) return;
+    try {
+        await getSlackClient().postMessage({ channel, text });
+    } catch (err) {
+        console.error('could not respond in channel', err);
+    }
+}
+
 async function handleViewSubmission(payload: SlackInteractionPayload) {
     const callbackId = payload.view?.callback_id;
 
@@ -173,6 +340,45 @@ async function handleViewSubmission(payload: SlackInteractionPayload) {
         );
         // Empty 200 closes the modal. Slack shows an error banner if we send
         // anything it does not recognise, so keep the body minimal.
+        return NextResponse.json({});
+    }
+
+    if (callbackId === ARTIFACT_CHANGES_CALLBACK) {
+        const parsed = parseArtifactSubmission(payload.view);
+        if (!parsed.artifactId || !parsed.reason) {
+            // Slack renders this under the input rather than closing the modal.
+            return NextResponse.json({
+                response_action: 'errors',
+                errors: { change_request: 'Say what needs to change — the next draft is written from this.' },
+            });
+        }
+
+        const actor = await resolveActorFromSlack(payload.user?.id);
+        try {
+            await requestArtifactChanges(parsed.artifactId, parsed.reason, actor.email ?? 'slack');
+        } catch (err) {
+            return NextResponse.json({
+                response_action: 'errors',
+                errors: {
+                    change_request: err instanceof Error ? err.message : 'Could not record the change request.',
+                },
+            });
+        }
+        return NextResponse.json({});
+    }
+
+    if (callbackId === ARTIFACT_ANSWER_CALLBACK) {
+        const parsed = parseArtifactSubmission(payload.view);
+        if (!parsed.artifactId) {
+            console.error('artifact interview: submission carried no artifactId');
+            return NextResponse.json({ ok: true });
+        }
+        const { saved, remaining } = await recordArtifactFlagAnswers(
+            parsed.artifactId,
+            parsed.answers,
+            payload.user?.id || 'slack'
+        );
+        console.log(`artifact interview: saved ${saved}, ${remaining} still open`, parsed.artifactId);
         return NextResponse.json({});
     }
 

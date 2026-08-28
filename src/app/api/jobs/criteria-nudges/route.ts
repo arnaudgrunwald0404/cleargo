@@ -29,6 +29,10 @@ import {
     isConditionalStatus,
     isOverdueNudgeDue,
 } from '@/lib/services/criteriaNotificationFilters';
+import {
+    attachDerivedDueDates,
+    daysUntilDue,
+} from '@/lib/services/derivedCriterionDueDates';
 import { normalizeStatus } from '@/lib/readiness-scoring';
 import {
     computeEpicReleaseStatus,
@@ -347,6 +351,114 @@ export async function GET(request: NextRequest) {
                     console.log(`⏳ Overdue back-off: ${overdueCriteria.length} -> ${dueForNudge.length} (aged items nudge weekly/fortnightly)`);
                 }
                 allCriteria.push(...dueForNudge.map((c: any) => ({ ...c, nudgeType: 'daily_after' })));
+            }
+        }
+
+        // ---------------------------------------------------------------------
+        // Stage-derived deadlines.
+        //
+        // Everything above keys off condition_due_date, which only exists once
+        // someone has recorded a Conditional Go condition. But epic criteria have
+        // a real derived deadline: computeCriterionDueDateYmd turns rating_timing
+        // (the release stage a criterion must be ready by) into a date, and the
+        // epic page, My Items and HomeDashboard all display it. This job was the
+        // only consumer ignoring it, so those dates were shown and never chased.
+        //
+        // Rows already collected above are skipped — an explicit condition date
+        // wins, and nothing should be nudged twice in one pass.
+        // ---------------------------------------------------------------------
+        {
+            const alreadyCollected = new Set(allCriteria.map((c: any) => c.id));
+
+            const { data: undatedCriteria, error: undatedError } = await supabase
+                .from('epic_criterion_status')
+                .select(
+                    `
+                    id,
+                    epic_id,
+                    criterion_id,
+                    decision_owner_id,
+                    condition_due_date,
+                    status,
+                    last_nudge_sent_at,
+                    criterion:criterion_id (
+                        label,
+                        category,
+                        gate,
+                        rating_timing
+                    ),
+                    epic:epic_id (
+                        name,
+                        aha_fields,
+                        target_launch_date
+                    ),
+                    decision_owner:decision_owner_id (
+                        id,
+                        email,
+                        first_name,
+                        last_name,
+                        slack_handle
+                    )
+                `
+                )
+                .is('condition_due_date', null)
+                .in('status', ['NOT_SET', 'CONDITIONAL'])
+                .not('decision_owner_id', 'is', null);
+
+            if (undatedError) {
+                console.error('Error fetching stage-dated criteria:', undatedError);
+            } else if (undatedCriteria && undatedCriteria.length > 0) {
+                const withDates = await attachDerivedDueDates(
+                    supabase,
+                    undatedCriteria.filter((c: any) => !alreadyCollected.has(c.id)) as any
+                );
+
+                let dueToday = 0;
+                let overdue = 0;
+                for (const row of withDates) {
+                    const days = daysUntilDue(row.dueDate, todayStr);
+                    if (days == null) continue;
+
+                    // Same three windows the condition-dated path uses, so the
+                    // message a stakeholder gets does not depend on which kind of
+                    // date drove it.
+                    let nudgeType: string | null = null;
+                    if (nudge1WeekBefore && days === 7) nudgeType = 'week_before';
+                    else if (nudgeOnDueDate && days === 0) nudgeType = 'on_due_date';
+                    else if (nudgeDailyAfter && days < 0) nudgeType = 'daily_after';
+                    if (!nudgeType) continue;
+
+                    // Reuse the ageing back-off rather than nudging daily forever.
+                    if (
+                        nudgeType === 'daily_after' &&
+                        shouldFilterByNudgeDate &&
+                        !isConditionalStatus(row.status) &&
+                        !isOverdueNudgeDue({ ...row, condition_due_date: row.dueDate } as any, todayStr)
+                    ) {
+                        continue;
+                    }
+                    if (
+                        nudgeType !== 'daily_after' &&
+                        shouldFilterByNudgeDate &&
+                        (row as any).last_nudge_sent_at &&
+                        (row as any).last_nudge_sent_at >= todayStr
+                    ) {
+                        continue;
+                    }
+
+                    if (nudgeType === 'daily_after') overdue += 1;
+                    else dueToday += 1;
+
+                    // condition_due_date is what the templates read for "due", so
+                    // the derived date is surfaced through the same field.
+                    allCriteria.push({ ...row, condition_due_date: row.dueDate, nudgeType });
+                }
+
+                if (dueToday || overdue) {
+                    console.log(
+                        `📅 Stage-derived deadlines: ${dueToday} approaching/due, ${overdue} overdue`
+                    );
+                }
             }
         }
 

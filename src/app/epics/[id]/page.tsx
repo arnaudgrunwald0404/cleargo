@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef, useCallback, useMemo, lazy, Suspense } from "react";
 import { Epic } from "@/types/epics";
+import { LaunchHoldBanner, type LaunchHoldInfo } from "@/components/LaunchHoldBadge";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useMediaQuery } from "@mantine/hooks";
@@ -51,6 +52,13 @@ function normalizeRatingTimingId(raw: unknown): number | null {
 }
 
 export default function EpicDetailPage() {
+    /**
+     * Launch Hold: this epic ships before the launch it belongs to without RevOps
+     * clearance. Fetched separately from the epic so a failure here degrades to
+     * "no banner" rather than breaking the page.
+     */
+    const [launchHold, setLaunchHold] = useState<LaunchHoldInfo | null>(null);
+
     const params = useParams();
     const id = params?.id as string | undefined;
     const { flags: featureFlags } = useFeatureFlags();
@@ -1157,6 +1165,25 @@ export default function EpicDetailPage() {
     const lastFetchedEpicIdRef = useRef<string | null>(null);
     const epicIdString = useMemo(() => epic?.id ? String(epic.id) : null, [epic?.id]);
 
+    useEffect(() => {
+        if (!epicIdString) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch("/api/epics/launch-holds");
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setLaunchHold(data.holds?.[epicIdString] ?? null);
+            } catch {
+                // A missing hold is not worth surfacing an error for.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [epicIdString]);
+
+
     // Success data is now fetched in parallel with initial load, so we don't need a separate useEffect
     // The fetchSuccessData function is kept for manual refresh scenarios (e.g., when user clicks refresh button)
 
@@ -1749,6 +1776,8 @@ export default function EpicDetailPage() {
                         }}
                     >← Back to Epics</Link>
                 </div>
+
+                {launchHold && <LaunchHoldBanner hold={launchHold} />}
 
                 <div className="epic-detail-title-row flex flex-wrap justify-between items-center gap-4 mb-2">
                     <div className="flex-1 min-w-0">

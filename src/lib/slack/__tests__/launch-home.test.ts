@@ -91,6 +91,24 @@ describe('describeArtifactState', () => {
         expect(text.toLowerCase()).not.toContain('overdue');
     });
 
+    it('quotes lateSince rather than a due date from before the launch existed', () => {
+        // A compressed artifact that has now run past its re-granted window. The
+        // stored due date predates the launch, so naming it would be nonsense.
+        const text = describeArtifactState(
+            art({ label: 'x', scheduleState: 'late', dueDate: '2026-07-08', lateSince: '2026-08-15' })
+        );
+        expect(text).toBe('Overdue since 2026-08-15');
+    });
+
+    it('names the date a compressed artifact is actually held to', () => {
+        const text = describeArtifactState(
+            art({ label: 'x', scheduleState: 'compressed', lateSince: '2026-08-15' })
+        );
+        expect(text).toContain('before this launch existed');
+        expect(text).toContain('due 2026-08-15');
+        expect(text.toLowerCase()).not.toContain('overdue');
+    });
+
     it('gives the start date for upcoming work', () => {
         expect(describeArtifactState(art({ label: 'x', scheduleState: 'upcoming', startDate: '2026-09-05' }))).toBe(
             'Starts 2026-09-05'

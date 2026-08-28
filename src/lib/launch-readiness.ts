@@ -73,6 +73,18 @@ export function isGating(gate: boolean | string | null | undefined): boolean {
   return gate === true || gate === 'hard';
 }
 
+/**
+ * True when a row needs no further work.
+ *
+ * NOT_APPLICABLE counts as settled but is NOT the same as done: an inapplicable
+ * row is excluded from the readiness denominator entirely rather than credited as
+ * complete. Otherwise a launch that runs no beta would score higher than one that
+ * ran a beta and passed it.
+ */
+export function isSettled(status: TaskStatus): boolean {
+  return status === 'DONE' || status === 'NOT_APPLICABLE';
+}
+
 export function computeLaunchReadiness({
   items,
   targetLaunchDate,
@@ -82,9 +94,11 @@ export function computeLaunchReadiness({
 }: LaunchReadinessInput): LaunchReadinessResult {
   const todayStr = today ?? new Date().toISOString().slice(0, 10);
 
-  const gatesTotal = items.filter(i => isGating(i.gate)).length;
-  const gatesDone = items.filter(i => isGating(i.gate) && i.status === 'DONE').length;
-  const itemsDone = items.filter(i => i.status === 'DONE').length;
+  // An inapplicable row is not part of the score at all, in either direction.
+  const applicable = items.filter(i => i.status !== 'NOT_APPLICABLE');
+  const gatesTotal = applicable.filter(i => isGating(i.gate)).length;
+  const gatesDone = applicable.filter(i => isGating(i.gate) && i.status === 'DONE').length;
+  const itemsDone = applicable.filter(i => i.status === 'DONE').length;
 
   const empty: LaunchReadinessResult = {
     readinessPct: 0,
@@ -93,16 +107,16 @@ export function computeLaunchReadiness({
     atRisk: [],
     gatesTotal,
     gatesDone,
-    itemsTotal: items.length,
+    itemsTotal: applicable.length,
     itemsDone,
   };
-  if (items.length === 0) return empty;
+  if (applicable.length === 0) return empty;
 
   // Weighted completion: a gate is worth GATING_WEIGHT_MULTIPLIER ordinary items,
   // so clearing 3 gates moves the number more than ticking 3 release-note tasks.
   let weight = 0;
   let earned = 0;
-  for (const i of items) {
+  for (const i of applicable) {
     const w = isGating(i.gate) ? GATING_WEIGHT_MULTIPLIER : 1;
     weight += w;
     if (i.status === 'DONE') earned += w;
@@ -120,13 +134,14 @@ export function computeLaunchReadiness({
   let nonGateLate = false;
 
   for (const item of items) {
-    if (item.status === 'DONE') continue;
+    if (isSettled(item.status)) continue;
     const startDate = tMinusDueDate(targetLaunchDate, resolveOffsetDays(item, tier));
     const state = scheduleState({
       startDate,
       dueDate: item.due_date,
       today: todayStr,
       launchCreatedAt: launchCreatedAt ?? null,
+      targetLaunchDate,
     });
 
     if (!isGating(item.gate)) {
@@ -134,9 +149,11 @@ export function computeLaunchReadiness({
       continue;
     }
 
-    // A gate whose window has passed is a hard block. 'compressed' is
-    // deliberately NOT a blocker: the window never existed, so the team cannot
-    // have missed it -- that is at-risk, not no-go.
+    // A gate whose window has passed is a hard block. 'compressed' is not a
+    // blocker: the window never existed, so the team cannot have missed it --
+    // that is at-risk, not no-go. It stops being compressed once the fair window
+    // from launch creation closes (see scheduleState), so a gate that is simply
+    // never done still lands here as a blocker rather than sitting amber.
     if (state === 'late') {
       blockers.push({ id: item.id, label: item.label, due_date: item.due_date });
     } else if (state === 'in_window' || state === 'compressed') {
@@ -163,7 +180,7 @@ export function computeLaunchReadiness({
     atRisk,
     gatesTotal,
     gatesDone,
-    itemsTotal: items.length,
+    itemsTotal: applicable.length,
     itemsDone,
   };
 }

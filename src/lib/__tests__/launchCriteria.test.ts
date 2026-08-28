@@ -8,6 +8,8 @@ import {
   LAUNCH_OWNER_PLACEHOLDER,
   runwayDueOffsetDays,
   scheduleState,
+  effectiveDueDate,
+  gateStatusFromItems,
   normalizeGate,
   normalizeTierApplicability,
 } from '../launchCriteria';
@@ -142,7 +144,7 @@ describe('the confirmed workback standard', () => {
     { artifact: 'Story Brief', TIER_1: 56, TIER_2: 35 },
     { artifact: 'Message Brief', TIER_1: 42, TIER_2: 28 },
     { artifact: 'Enablement Brief', TIER_1: 28, TIER_2: 21 },
-    { artifact: 'Campaign Brief', TIER_1: 21, TIER_2: 14 },
+    { artifact: 'Marketing Brief', TIER_1: 21, TIER_2: 14 },
     { artifact: 'Supporting Assets', TIER_1: 14, TIER_2: 7 },
   ];
 
@@ -227,24 +229,144 @@ describe('runwayDueOffsetDays', () => {
   });
 });
 
+describe('runwayDueOffsetDays with a fan-out', () => {
+  // The naming gate now precedes both pricing and the Story Brief, so one row has
+  // two successors. Before the fix this used `find`, so the due date depended on
+  // whatever order the query returned.
+  const nodes = [
+    { id: 'name', tier_offset_days: { TIER_1: 105 }, default_due_offset_days: 105 },
+    { id: 'pricing', depends_on_criterion_id: 'name', tier_offset_days: { TIER_1: 98 }, default_due_offset_days: 98 },
+    { id: 'story', depends_on_criterion_id: 'name', tier_offset_days: { TIER_1: 91 }, default_due_offset_days: 91 },
+  ];
+
+  it('is due when the FIRST successor starts, not an arbitrary one', () => {
+    expect(runwayDueOffsetDays(nodes[0], nodes, 'TIER_1')).toBe(98);
+  });
+
+  it('gives the same answer whatever order the rows arrive in', () => {
+    const reversed = [nodes[0], nodes[2], nodes[1]];
+    expect(runwayDueOffsetDays(nodes[0], reversed, 'TIER_1')).toBe(
+      runwayDueOffsetDays(nodes[0], nodes, 'TIER_1')
+    );
+  });
+
+  it('ignores a successor that does not apply to this tier', () => {
+    const tiered = [
+      nodes[0],
+      { ...nodes[1], tier_applicability: 'TIER_2_ONLY' },
+      nodes[2],
+    ];
+    // Pricing is filtered out, so the Story Brief becomes the first successor.
+    expect(runwayDueOffsetDays(tiered[0], tiered, 'TIER_1')).toBe(91);
+  });
+});
+
+describe('gateStatusFromItems', () => {
+  const item = (status: string) => ({ status: status as never });
+
+  it('clears the gate only when every applicable item is done', () => {
+    expect(gateStatusFromItems([item('DONE'), item('DONE')])).toBe('DONE');
+    expect(gateStatusFromItems([item('DONE'), item('NOT_STARTED')])).toBe('IN_PROGRESS');
+  });
+
+  it('is in progress as soon as one item moves', () => {
+    expect(gateStatusFromItems([item('IN_PROGRESS'), item('NOT_STARTED')])).toBe('IN_PROGRESS');
+  });
+
+  it('is not started when nothing has moved', () => {
+    expect(gateStatusFromItems([item('NOT_STARTED'), item('NOT_STARTED')])).toBe('NOT_STARTED');
+  });
+
+  it('ignores inapplicable items rather than counting them as done', () => {
+    // Beta with no design partners: three items N/A, two still real.
+    expect(gateStatusFromItems([item('NOT_APPLICABLE'), item('DONE')])).toBe('DONE');
+    expect(gateStatusFromItems([item('NOT_APPLICABLE'), item('NOT_STARTED')])).toBe('NOT_STARTED');
+  });
+
+  it('reports the whole gate inapplicable only when every item is', () => {
+    // A capability that runs no beta: "does not apply", never "complete".
+    expect(gateStatusFromItems([item('NOT_APPLICABLE'), item('NOT_APPLICABLE')])).toBe('NOT_APPLICABLE');
+  });
+
+  it('returns null for a gate that has no items, so its own status stands', () => {
+    expect(gateStatusFromItems([])).toBeNull();
+  });
+});
+
 describe('scheduleState', () => {
   it('calls it compressed when the window closed before the launch existed', () => {
-    // Kristin's 2026.8 case: release lands closer than the T1 runway needs.
+    // Kristin's 2026.8 case: release lands closer than the T1 runway needs. The
+    // original 14-day window is re-granted from creation, so 08-15 is the date
+    // that actually counts.
     expect(
       scheduleState({
         startDate: '2026-06-24',
         dueDate: '2026-07-08',
-        today: '2026-08-19',
+        today: '2026-08-14',
         launchCreatedAt: '2026-08-01T09:00:00Z',
       })
     ).toBe('compressed');
   });
 
-  it('prefers compressed over late — the artifact predates the window, it is not missing', () => {
-    const args = { startDate: '2026-06-24', dueDate: '2026-06-30', today: '2026-08-19' };
+  it('prefers compressed over late while the window allowed since creation is open', () => {
+    const args = { startDate: '2026-06-24', dueDate: '2026-06-30', today: '2026-08-05' };
+    // 6-day window, floored to 7 and re-granted from 08-01 -> 08-08.
     expect(scheduleState({ ...args, launchCreatedAt: '2026-08-01T09:00:00Z' })).toBe('compressed');
     // Same dates, but the launch existed in time — that really is late.
     expect(scheduleState({ ...args, launchCreatedAt: '2026-06-01T09:00:00Z' })).toBe('late');
+  });
+
+  it('stops excusing a compressed artifact once its re-granted window closes', () => {
+    // The runway never fit, but 08-19 is well past the window allowed from
+    // creation (08-08). Compression explains the impossible dates; it does not
+    // mute the miss for the life of the launch.
+    expect(
+      scheduleState({
+        startDate: '2026-06-24',
+        dueDate: '2026-06-30',
+        today: '2026-08-19',
+        launchCreatedAt: '2026-08-01T09:00:00Z',
+      })
+    ).toBe('late');
+  });
+
+  it('never grants compression grace past GA', () => {
+    // 60-day window re-granted from 08-01 would land after the launch. Nothing
+    // is merely compressed once the thing has shipped.
+    const args = {
+      startDate: '2026-05-01',
+      dueDate: '2026-06-30',
+      launchCreatedAt: '2026-08-01T09:00:00Z',
+      targetLaunchDate: '2026-08-25',
+    };
+    expect(scheduleState({ ...args, today: '2026-08-25' })).toBe('compressed');
+    expect(scheduleState({ ...args, today: '2026-08-26' })).toBe('late');
+    // Without a GA to clamp to, the full 60 days apply.
+    expect(scheduleState({ ...args, targetLaunchDate: null, today: '2026-08-26' })).toBe('compressed');
+  });
+
+  it('floors the re-granted window so a chain-terminal artifact is not instantly late', () => {
+    // No successor means due === start, a zero-length designed window. That must
+    // not flip to overdue the day after the launch was created.
+    const args = {
+      startDate: '2026-08-06',
+      dueDate: '2026-08-06',
+      launchCreatedAt: '2026-08-18T09:00:00Z',
+    };
+    expect(scheduleState({ ...args, today: '2026-08-19' })).toBe('compressed');
+    expect(scheduleState({ ...args, today: '2026-08-25' })).toBe('compressed');
+    expect(scheduleState({ ...args, today: '2026-08-26' })).toBe('late');
+  });
+
+  it('leaves a dateless compressed artifact compressed — no due date, no miss', () => {
+    expect(
+      scheduleState({
+        startDate: '2026-06-24',
+        dueDate: null,
+        today: '2026-12-01',
+        launchCreatedAt: '2026-08-01T09:00:00Z',
+      })
+    ).toBe('compressed');
   });
 
   it('reports upcoming, in-window and late across the artifact window', () => {
@@ -263,6 +385,40 @@ describe('scheduleState', () => {
 
   it('does not claim compression when the launch creation date is unknown', () => {
     expect(scheduleState({ startDate: '2026-06-24', dueDate: '2026-06-30', today: '2026-08-19' })).toBe('late');
+  });
+});
+
+describe('effectiveDueDate', () => {
+  it('passes the stored due date straight through when the runway fit', () => {
+    expect(
+      effectiveDueDate({
+        startDate: '2026-09-01',
+        dueDate: '2026-09-15',
+        launchCreatedAt: '2026-08-01T09:00:00Z',
+      })
+    ).toBe('2026-09-15');
+  });
+
+  it('re-grants the designed window from launch creation when compressed', () => {
+    // 14-day window, launch created 08-01 -> the date that counts is 08-15.
+    expect(
+      effectiveDueDate({
+        startDate: '2026-06-24',
+        dueDate: '2026-07-08',
+        launchCreatedAt: '2026-08-01T09:00:00Z',
+      })
+    ).toBe('2026-08-15');
+  });
+
+  it('clamps the re-granted window to GA', () => {
+    expect(
+      effectiveDueDate({
+        startDate: '2026-05-01',
+        dueDate: '2026-06-30',
+        launchCreatedAt: '2026-08-01T09:00:00Z',
+        targetLaunchDate: '2026-08-25',
+      })
+    ).toBe('2026-08-25');
   });
 });
 

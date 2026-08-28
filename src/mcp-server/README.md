@@ -4,7 +4,9 @@ Manage GTM launch artifacts from Claude Desktop (or any MCP client).
 
 ## What it does
 
-Exposes 10 MCP tools that let you manage launch artifacts conversationally:
+Exposes 15 MCP tools across three categories:
+
+### Read tools
 
 | Tool | Description |
 |---|---|
@@ -14,69 +16,113 @@ Exposes 10 MCP tools that let you manage launch artifacts conversationally:
 | `list-artifacts` | List artifacts for a launch |
 | `get-artifact` | Read artifact content (ai_draft + flags) |
 | `get-launch-context` | Gather all context for drafting |
+| `diff-artifact` | Compare two generations of an artifact |
+
+### Write tools
+
+| Tool | Description |
+|---|---|
 | `update-artifact` | Edit ai_draft content (full or targeted) |
 | `draft-artifact` | Trigger AI agent to draft an artifact |
+| `draft-section` | Re-draft a single section (focused full pipeline) |
 | `review-artifact` | Approve / request changes / submit for review |
 | `ensure-artifacts` | Ensure artifact rows + Google Docs exist |
+| `answer-flags` | Answer open interview flags |
 
-## Prerequisites
+### Conversational tools
 
-- Node.js 18+
-- The ClearGO app running (locally or in production)
-- Supabase service-role key
-- `MCP_SECRET` — a shared secret for MCP ↔ API auth
+| Tool | Description |
+|---|---|
+| `artifact-chat` | Multi-turn conversation about an artifact (question/review/summary/free) |
+| `explain-claim` | Explain grounding behind a specific claim |
 
-## Setup
+---
 
-### 1. Install dependencies
+## Installation
+
+### For external users (recommended)
+
+Install the published NPM package globally:
+
+```bash
+npm install -g @cleargo/mcp-server
+```
+
+### For developers (source)
 
 ```bash
 cd src/mcp-server
 npm install
-```
-
-### 2. Configure environment
-
-The server loads `.env` from the ClearGO project root automatically. Ensure these are set:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-MCP_SECRET=your-shared-secret
-CLEARGO_APP_URL=http://localhost:3000    # or your production URL
-MCP_ACTOR_EMAIL=mcp-server@cleargo.local # optional
-```
-
-### 3. Build
-
-```bash
 npm run build
 ```
 
-### 4. Configure Claude Desktop
+---
 
-Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on Mac, `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+## Configuration
+
+The server reads credentials from `~/.cleargo/.env`. Create that file with the values your ClearGo admin provides:
+
+```bash
+mkdir -p ~/.cleargo   # macOS/Linux
+mkdir $HOME\.cleargo  # PowerShell on Windows
+
+# Then edit ~/.cleargo/.env :
+cat > ~/.cleargo/.env << 'EOF'
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+MCP_SECRET=your-shared-secret
+CLEARGO_APP_URL=https://app.cleargo.app    # or your dev URL
+MCP_ACTOR_EMAIL=mcp-server@cleargo.local   # optional
+EOF
+```
+
+> **Note:** The `MCP_SECRET` is only needed for AI draft triggers. Read operations and direct artifact writes work without it.
+
+### What each variable does
+
+| Variable | Required | Description |
+|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Yes | Your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Yes | Service-role key (bypasses RLS) |
+| `MCP_SECRET` | No | Shared secret for AI draft triggers |
+| `CLEARGO_APP_URL` | No | ClearGO app URL (default: `https://app.cleargo.app`) |
+| `MCP_ACTOR_EMAIL` | No | Identifies the service account for capability checks |
+
+---
+
+## Claude Desktop Setup
+
+Add the server to your Claude Desktop config:
+
+**macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
+**Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+
+```json
+{
+  "mcpServers": {
+    "cleargo": {
+      "command": "cleargo-mcp"
+    }
+  }
+}
+```
+
+If you installed from source (not the NPM package), use:
 
 ```json
 {
   "mcpServers": {
     "cleargo": {
       "command": "node",
-      "args": ["C:/path/to/cleargo/src/mcp-server/dist/server.js"],
-      "env": {
-        "NEXT_PUBLIC_SUPABASE_URL": "https://your-project.supabase.co",
-        "SUPABASE_SERVICE_ROLE_KEY": "your-service-role-key",
-        "MCP_SECRET": "your-shared-secret",
-        "CLEARGO_APP_URL": "http://localhost:3000"
-      }
+      "args": ["/path/to/mcp-server/dist/server.js"]
     }
   }
 }
 ```
 
-### 5. Restart Claude Desktop
+Restart Claude Desktop. The server connects over stdio and starts automatically when you open a conversation.
 
-The server connects over stdio. Claude Desktop will start it automatically when you open a conversation.
+---
 
 ## Architecture
 

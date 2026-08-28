@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { useRouter } from "next/navigation";
-import { PurpleLoader } from "@/components/PurpleLoader";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
     Modal,
     TextInput,
@@ -12,8 +11,12 @@ import {
     Group,
     SegmentedControl,
     Menu,
+    Collapse,
+    Badge,
+    ActionIcon,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
+import { useMediaQuery } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
     IconPlus,
@@ -22,8 +25,11 @@ import {
     IconArchiveOff,
     IconPencil,
     IconSearch,
+    IconFilter,
+    IconX,
 } from "@tabler/icons-react";
 import type { Launch } from "@/types/launches";
+import { LAUNCH_STATUSES } from "@/lib/launch-status";
 import { canRolesPerform } from "@/lib/permissions";
 
 interface LaunchRow extends Launch {
@@ -104,12 +110,22 @@ function tierBadge(tier: string | null) {
     );
 }
 
+/** Shared by the desktop and mobile filter bars. */
+const STATUS_FILTER_OPTIONS = [
+    { value: "ALL", label: "All Statuses" },
+    ...LAUNCH_STATUSES.map((value) => ({ value, label: value })),
+];
+
 function statusBadge(status: string) {
     const styles: Record<string, string> = {
         Planning: "bg-gray-100 text-gray-700",
         "In Progress": "bg-amber-100 text-amber-800",
         Launched: "bg-emerald-100 text-emerald-800",
         "Post-Launch": "bg-indigo-100 text-indigo-800",
+        // The two states the calendar cannot produce read as interruptions, not
+        // as points on the runway, so neither borrows a lifecycle colour.
+        "On Hold": "bg-orange-100 text-orange-800",
+        Cancelled: "bg-red-100 text-red-800",
     };
     const cls = styles[status] || "bg-gray-100 text-gray-700";
     return (
@@ -173,11 +189,16 @@ interface ReleaseOption {
     launch_date: string | null;
 }
 
-export default function GTMLaunchesPage() {
+export default function GtmLaunchesClient() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isMobile = useMediaQuery("(max-width: 768px)");
+    const [filtersExpanded, setFiltersExpanded] = useState(false);
     const [launches, setLaunches] = useState<LaunchRow[]>([]);
     const [loading, setLoading] = useState(true);
-    const [filter, setFilter] = useState("active");
+    // Seeded from the query string so a filtered view is a shareable link, the
+    // way /epics treats its release selection.
+    const [filter, setFilter] = useState(() => searchParams.get("scope") ?? "active");
     const [canManage, setCanManage] = useState(false);
 
     useEffect(() => {
@@ -197,13 +218,41 @@ export default function GTMLaunchesPage() {
         })();
     }, []);
 
-    // Create modal
-    const [search, setSearch] = useState("");
-    const [tierFilter, setTierFilter] = useState<string>("ALL");
-    const [statusFilter, setStatusFilter] = useState<string>("ALL");
-    const [ownerFilter, setOwnerFilter] = useState<string>("ALL");
+    const [search, setSearch] = useState(() => searchParams.get("q") ?? "");
+    const [tierFilter, setTierFilter] = useState<string>(() => searchParams.get("tier") ?? "ALL");
+    const [statusFilter, setStatusFilter] = useState<string>(() => searchParams.get("status") ?? "ALL");
+    const [ownerFilter, setOwnerFilter] = useState<string>(() => searchParams.get("owner") ?? "ALL");
     const [sortKey, setSortKey] = useState<SortKey>("target_launch_date");
     const [sortAsc, setSortAsc] = useState(true);
+
+    const anyFilterActive =
+        !!search ||
+        tierFilter !== "ALL" ||
+        statusFilter !== "ALL" ||
+        ownerFilter !== "ALL";
+
+    const clearFilters = useCallback(() => {
+        setSearch("");
+        setTierFilter("ALL");
+        setStatusFilter("ALL");
+        setOwnerFilter("ALL");
+    }, []);
+
+    // One writer for the query string. replace() rather than push() so filtering
+    // does not stack a dozen history entries between the user and the page they
+    // arrived from.
+    useEffect(() => {
+        const qs = new URLSearchParams();
+        if (filter !== "active") qs.set("scope", filter);
+        if (search) qs.set("q", search);
+        if (tierFilter !== "ALL") qs.set("tier", tierFilter);
+        if (statusFilter !== "ALL") qs.set("status", statusFilter);
+        if (ownerFilter !== "ALL") qs.set("owner", ownerFilter);
+        const next = qs.toString();
+        if (next !== searchParams.toString()) {
+            router.replace(next ? `/gtm-launches?${next}` : "/gtm-launches", { scroll: false });
+        }
+    }, [filter, search, tierFilter, statusFilter, ownerFilter, router, searchParams]);
 
     const toggleSort = (key: SortKey) => {
         if (key === sortKey) {
@@ -299,7 +348,7 @@ export default function GTMLaunchesPage() {
         }
         setCreating(true);
         try {
-            const body: Record<string, any> = { name: formData.name.trim() };
+            const body: Record<string, unknown> = { name: formData.name.trim() };
             if (formData.tier) body.tier = formData.tier;
             if (formData.target_launch_date) {
                 body.target_launch_date = formData.target_launch_date.toISOString().split("T")[0];
@@ -363,15 +412,21 @@ export default function GTMLaunchesPage() {
         });
     }, [launches, users]);
 
-    const displayedLaunches = useMemo(() => {
-        const byArchived =
+    // The archive scope alone. The stat cards count this rather than the fully
+    // filtered set: a card that changed its own numbers when you clicked it would
+    // be useless as a way back out.
+    const scopedLaunches = useMemo(
+        () =>
             filter === "archived"
                 ? launches.filter((l) => l.archived)
                 : filter === "active"
                   ? launches.filter((l) => !l.archived)
-                  : launches;
+                  : launches,
+        [launches, filter]
+    );
 
-        const filtered = byArchived.filter((l) => {
+    const displayedLaunches = useMemo(() => {
+        const filtered = scopedLaunches.filter((l) => {
             if (search && !l.name.toLowerCase().includes(search.toLowerCase())) return false;
             if (tierFilter !== "ALL" && (l.tier ?? "") !== tierFilter) return false;
             if (statusFilter !== "ALL" && l.status !== statusFilter) return false;
@@ -393,7 +448,7 @@ export default function GTMLaunchesPage() {
             if (!bv) return -1;
             return String(av).localeCompare(String(bv)) * dir;
         });
-    }, [launches, filter, search, tierFilter, statusFilter, ownerFilter, sortKey, sortAsc]);
+    }, [scopedLaunches, search, tierFilter, statusFilter, ownerFilter, sortKey, sortAsc]);
 
     return (
         <main className="min-h-screen" style={{ background: "var(--color-platinum)" }}>
@@ -428,7 +483,9 @@ export default function GTMLaunchesPage() {
                     )}
                 </div>
 
-                {/* Filters — same controls and styling as the epics filter bar */}
+                {/* Filters — same controls and styling as the epics filter bar, and
+                    the same mobile treatment: collapsed behind a button that says
+                    whether anything is currently filtering the list. */}
                 <div className="mb-4 flex flex-wrap items-center gap-3">
                     <SegmentedControl
                         value={filter}
@@ -440,73 +497,192 @@ export default function GTMLaunchesPage() {
                             { label: "All", value: "all" },
                         ]}
                     />
-                    <TextInput
-                        placeholder="Search launches..."
-                        value={search}
-                        onChange={(e) => setSearch(e.currentTarget.value)}
-                        leftSection={<IconSearch size={14} />}
-                        style={{ minWidth: 220 }}
-                        styles={FILTER_INPUT_STYLES}
-                    />
-                    <Select
-                        placeholder="Tier"
-                        value={tierFilter}
-                        onChange={(v) => setTierFilter(v || "ALL")}
-                        data={[
-                            { value: "ALL", label: "All Tiers" },
-                            { value: "TIER_1", label: "Tier 1" },
-                            { value: "TIER_2", label: "Tier 2" },
-                        ]}
-                        style={{ minWidth: 130 }}
-                        styles={FILTER_INPUT_STYLES}
-                    />
-                    <Select
-                        placeholder="Status"
-                        value={statusFilter}
-                        onChange={(v) => setStatusFilter(v || "ALL")}
-                        data={[
-                            { value: "ALL", label: "All Statuses" },
-                            { value: "Planning", label: "Planning" },
-                            { value: "In Progress", label: "In Progress" },
-                            { value: "Launched", label: "Launched" },
-                            { value: "Post-Launch", label: "Post-Launch" },
-                        ]}
-                        style={{ minWidth: 150 }}
-                        styles={FILTER_INPUT_STYLES}
-                    />
-                    <Select
-                        placeholder="Owner"
-                        value={ownerFilter}
-                        onChange={(v) => setOwnerFilter(v || "ALL")}
-                        data={[{ value: "ALL", label: "All Owners" }, ...ownerOptions]}
-                        searchable
-                        style={{ minWidth: 170 }}
-                        styles={FILTER_INPUT_STYLES}
-                    />
-                    {(search || tierFilter !== "ALL" || statusFilter !== "ALL" || ownerFilter !== "ALL") && (
+                    {isMobile ? (
                         <Button
-                            variant="subtle"
+                            variant="default"
                             size="xs"
-                            onClick={() => {
-                                setSearch("");
-                                setTierFilter("ALL");
-                                setStatusFilter("ALL");
-                                setOwnerFilter("ALL");
-                            }}
+                            leftSection={<IconFilter size={14} />}
+                            onClick={() => setFiltersExpanded((v) => !v)}
+                            rightSection={
+                                anyFilterActive ? (
+                                    <Badge size="xs" circle color="indigo">
+                                        on
+                                    </Badge>
+                                ) : null
+                            }
                         >
-                            Clear
+                            Filters
                         </Button>
+                    ) : (
+                        <>
+                        <TextInput
+                            placeholder="Search launches..."
+                            value={search}
+                            onChange={(e) => setSearch(e.currentTarget.value)}
+                            leftSection={<IconSearch size={14} />}
+                            rightSection={
+                                search ? (
+                                    <ActionIcon
+                                        variant="subtle"
+                                        color="gray"
+                                        size="sm"
+                                        onClick={() => setSearch("")}
+                                        aria-label="Clear search"
+                                    >
+                                        <IconX size={14} />
+                                    </ActionIcon>
+                                ) : null
+                            }
+                            style={{ minWidth: 220 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Tier"
+                            value={tierFilter}
+                            onChange={(v) => setTierFilter(v || "ALL")}
+                            data={[
+                                { value: "ALL", label: "All Tiers" },
+                                { value: "TIER_1", label: "Tier 1" },
+                                { value: "TIER_2", label: "Tier 2" },
+                            ]}
+                            style={{ minWidth: 130 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Status"
+                            value={statusFilter}
+                            onChange={(v) => setStatusFilter(v || "ALL")}
+                            data={STATUS_FILTER_OPTIONS}
+                            style={{ minWidth: 150 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Owner"
+                            value={ownerFilter}
+                            onChange={(v) => setOwnerFilter(v || "ALL")}
+                            data={[{ value: "ALL", label: "All Owners" }, ...ownerOptions]}
+                            searchable
+                            style={{ minWidth: 170 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        {anyFilterActive && (
+                            <Button
+                                variant="subtle"
+                                size="xs"
+                                color="red"
+                                leftSection={<IconX size={14} />}
+                                onClick={clearFilters}
+                            >
+                                Clear Filters
+                            </Button>
+                        )}
+                        </>
                     )}
                     <span className="text-xs text-gray-400 ml-auto">
-                        {displayedLaunches.length} of {launches.length}
+                        {displayedLaunches.length} of {scopedLaunches.length}
                     </span>
                 </div>
 
+                {isMobile && (
+                    <Collapse in={filtersExpanded}>
+                        <div className="mb-4 flex flex-wrap items-center gap-3">
+                        <TextInput
+                            placeholder="Search launches..."
+                            value={search}
+                            onChange={(e) => setSearch(e.currentTarget.value)}
+                            leftSection={<IconSearch size={14} />}
+                            rightSection={
+                                search ? (
+                                    <ActionIcon
+                                        variant="subtle"
+                                        color="gray"
+                                        size="sm"
+                                        onClick={() => setSearch("")}
+                                        aria-label="Clear search"
+                                    >
+                                        <IconX size={14} />
+                                    </ActionIcon>
+                                ) : null
+                            }
+                            style={{ minWidth: 220 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Tier"
+                            value={tierFilter}
+                            onChange={(v) => setTierFilter(v || "ALL")}
+                            data={[
+                                { value: "ALL", label: "All Tiers" },
+                                { value: "TIER_1", label: "Tier 1" },
+                                { value: "TIER_2", label: "Tier 2" },
+                            ]}
+                            style={{ minWidth: 130 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Status"
+                            value={statusFilter}
+                            onChange={(v) => setStatusFilter(v || "ALL")}
+                            data={STATUS_FILTER_OPTIONS}
+                            style={{ minWidth: 150 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        <Select
+                            placeholder="Owner"
+                            value={ownerFilter}
+                            onChange={(v) => setOwnerFilter(v || "ALL")}
+                            data={[{ value: "ALL", label: "All Owners" }, ...ownerOptions]}
+                            searchable
+                            style={{ minWidth: 170 }}
+                            styles={FILTER_INPUT_STYLES}
+                        />
+                        {anyFilterActive && (
+                            <Button
+                                variant="subtle"
+                                size="xs"
+                                color="red"
+                                leftSection={<IconX size={14} />}
+                                onClick={clearFilters}
+                            >
+                                Clear Filters
+                            </Button>
+                        )}
+                        </div>
+                    </Collapse>
+                )}
+
                 {/* Table */}
                 {loading ? (
-                    <div className="flex items-center justify-center py-16 gap-2 text-gray-500">
-                        <PurpleLoader size="sm" />
-                        <span>Loading launches...</span>
+                    /* A skeleton rather than a spinner: the column widths match the
+                       real table, so nothing jumps when the rows arrive. */
+                    <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                        <table className="min-w-full divide-y divide-gray-200">
+                            <thead className="bg-gray-50">
+                                <tr>
+                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Launch</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Tier</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-32">Status</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-36">Target Date</th>
+                                    <th className="px-5 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-44">Readiness</th>
+                                    <th className="px-5 py-3 w-16"><span className="sr-only">Actions</span></th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200">
+                                {[1, 2, 3, 4, 5].map((i) => (
+                                    <tr key={i}>
+                                        <td className="px-5 py-3.5">
+                                            <div className="h-4 bg-gray-200 rounded animate-pulse" style={{ width: "60%" }} />
+                                            <div className="h-3 bg-gray-100 rounded animate-pulse mt-1.5" style={{ width: "35%" }} />
+                                        </td>
+                                        <td className="px-5 py-3.5 w-24"><div className="h-5 bg-gray-200 rounded-full animate-pulse w-14" /></td>
+                                        <td className="px-5 py-3.5 w-32"><div className="h-5 bg-gray-200 rounded-full animate-pulse w-20" /></td>
+                                        <td className="px-5 py-3.5 w-36"><div className="h-4 bg-gray-200 rounded animate-pulse w-24" /></td>
+                                        <td className="px-5 py-3.5 w-44"><div className="h-4 bg-gray-200 rounded animate-pulse w-32" /></td>
+                                        <td className="px-5 py-3.5 w-16" />
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 ) : displayedLaunches.length === 0 ? (
                     <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">

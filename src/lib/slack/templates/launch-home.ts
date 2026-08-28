@@ -25,6 +25,12 @@ export interface HomeArtifact {
     status: 'NOT_STARTED' | 'IN_PROGRESS' | 'DONE';
     startDate: string | null;
     dueDate: string | null;
+    /**
+     * The date lateness is measured from — the due date normally, grace-shifted
+     * when the runway was compressed. Quoted instead of `dueDate` so an overdue
+     * line never names a date from before the launch existed.
+     */
+    lateSince?: string | null;
     scheduleState: ScheduleState;
     gate: boolean;
     /** Artifacts waiting on this one. Only meaningful for a gate. */
@@ -76,8 +82,9 @@ export function sortHomeArtifacts(items: HomeArtifact[]): HomeArtifact[] {
 const STATE_ICON: Record<ScheduleState, string> = {
     late: '🔴',
     in_window: '🟢',
-    // Not a failure: the release landed closer than the runway needs, so the
-    // window never existed and nobody missed it.
+    // Not a failure yet: the release landed closer than the runway needs, so the
+    // window never existed. Once the fair window from launch creation closes it
+    // becomes 'late' like anything else.
     compressed: '🟠',
     upcoming: '⚪',
     no_date: '⚪',
@@ -85,12 +92,16 @@ const STATE_ICON: Record<ScheduleState, string> = {
 
 export function describeArtifactState(item: HomeArtifact): string {
     switch (item.scheduleState) {
-        case 'late':
-            return item.dueDate ? `Overdue since ${item.dueDate}` : 'Overdue';
+        case 'late': {
+            const since = item.lateSince ?? item.dueDate;
+            return since ? `Overdue since ${since}` : 'Overdue';
+        }
         case 'in_window':
             return item.dueDate ? `Open now · due ${item.dueDate}` : 'Open now';
         case 'compressed':
-            return 'Window closed before this launch existed — start as soon as you can';
+            return item.lateSince
+                ? `Window closed before this launch existed — start now, due ${item.lateSince}`
+                : 'Window closed before this launch existed — start as soon as you can';
         case 'upcoming':
             return item.startDate ? `Starts ${item.startDate}` : 'Not started';
         case 'no_date':

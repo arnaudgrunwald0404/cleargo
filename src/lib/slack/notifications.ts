@@ -514,6 +514,12 @@ export async function sendSlackNotification(payload: SlackNotificationPayload): 
                 message = buildGateSignoffReadyMessage(payload.metadata as any, theme);
                 break;
 
+            case 'story_brief_review':
+                if (!payload.metadata) throw new Error('Missing metadata for story_brief_review');
+                const { buildStoryBriefReviewMessage } = await import('./templates/story-brief-review');
+                message = buildStoryBriefReviewMessage(payload.metadata as any);
+                break;
+
             default:
                 throw new Error(`Unknown notification type: ${payload.type}`);
         }

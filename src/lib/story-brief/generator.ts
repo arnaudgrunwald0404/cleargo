@@ -257,7 +257,7 @@ export async function generateStoryBrief(
   epicId: string,
   sourceNotes?: string
 ): Promise<GenerateStoryBriefResult> {
-  const model = resolveDefaultModel('claude-haiku-4-5-20251001', 'gemini-2.5-flash');
+  const model = resolveDefaultModel('claude-haiku-4-5', 'gemini-2.5-flash');
   if (!model) {
     throw new Error('No AI model configured (set CLAUDE_API_KEY/ANTHROPIC_API_KEY or GEMINI_API_KEY)');
   }

@@ -27,6 +27,7 @@ import {
 import { Cohort1DateBadge } from '@/components/Cohort1DateBadge';
 import { GtmGlossary } from '@/components/GtmGlossary';
 import { EpicGaDateBadge } from '@/components/EpicGaDateBadge';
+import { LaunchHoldPill, type LaunchHoldInfo } from '@/components/LaunchHoldBadge';
 import { addCalendarDaysToYmd } from '@/lib/date-utils';
 import { getEpicDisplayName } from '@/lib/epicDisplayName';
 
@@ -207,6 +208,30 @@ function EpicsClient({
     /** Stable for effect deps — `searchParams` object identity can change every render in App Router. */
     const epicsSearchQueryString = searchParams.toString();
     const [epics, setEpics] = useState<Epic[]>(initialEpics);
+    /**
+     * Epics on Launch Hold: shipping before the launch they belong to, without
+     * RevOps clearance. One batch call for the whole list rather than a per-row
+     * lookup, and a failure degrades to no pills rather than breaking the list.
+     */
+    const [launchHolds, setLaunchHolds] = useState<Record<string, LaunchHoldInfo>>({});
+
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/epics/launch-holds');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setLaunchHolds(data.holds || {});
+            } catch {
+                // Holds are a warning layer; the list stands without them.
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     const [currentUserEmail, setCurrentUserEmail] = useState<string>('');
     const [products, setProducts] = useState<any[]>([]);
     const [releaseSchedule, setReleaseSchedule] = useState<Array<{ release_name: string; launch_date: string | null; archived?: boolean; aha_epic_count?: number | null }>>(
@@ -2811,6 +2836,9 @@ function EpicsClient({
                                                     </td>
                                                     <td className="hidden md:table-cell px-4 py-3 whitespace-nowrap w-24" style={{ padding: "12px 16px" }}>
                                                         <div className="flex flex-col gap-1 items-center">
+                                                            {launchHolds[String(epic.id)] && (
+                                                                <LaunchHoldPill hold={launchHolds[String(epic.id)]} />
+                                                            )}
                                                             {epic.readiness_status ? (
                                                                 <span className={`text-xs font-medium ${
                                                                     epic.readiness_status === 'GO' ? 'text-green-700 font-semibold' : 'text-gray-700'

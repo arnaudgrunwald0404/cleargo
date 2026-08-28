@@ -11,42 +11,56 @@ import {
     Modal,
     Stack,
     Group,
-    Textarea,
     ScrollArea,
+    Tooltip,
+    Badge,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { notifications } from "@mantine/notifications";
-import {
-    IconArrowLeft,
-    IconCheck,
-    IconCircle,
-    IconLoader2,
-    IconChevronDown,
-    IconChevronRight,
-    IconExternalLink,
-    IconLink,
-    IconX,
-    IconSearch,
-} from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconCheck, IconChevronDown, IconChevronRight, IconCircle, IconExternalLink, IconLink, IconInfoCircle, IconLoader2, IconSearch, IconX } from "@tabler/icons-react";
 import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
+import { LAUNCH_STATUSES } from "@/lib/launch-status";
 import { canRolesPerform } from "@/lib/permissions";
+import {
+    findEpicDateConflicts,
+    describeEpicDateConflicts,
+} from "@/lib/launchEpicDateConflicts";
 import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
 import { DetailTabs, TabCount } from "@/components/DetailTabs";
-import { LaunchChecklistTable } from "@/components/launch/LaunchChecklistTable";
+import { LaunchChecklistTable, type LaunchCriterionDetailSection } from "@/components/launch/LaunchChecklistTable";
+import { LaunchCriterionDetailModal, type LaunchCriterionPatch } from "@/components/launch/LaunchCriterionDetailModal";
+import {
+    anyLaunchChecklistFilterActive,
+    filterLaunchChecklistRows,
+    type LaunchChecklistFilters,
+} from "@/lib/launchChecklistFilters";
 import { UserDisplay } from "@/components/UserDisplay";
-import { computeLaunchReadiness, VERDICT_CLASS, VERDICT_LABEL } from "@/lib/launch-readiness";
+import { computeLaunchReadiness, isGating, VERDICT_CLASS, VERDICT_LABEL } from "@/lib/launch-readiness";
 
-type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE";
+type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE" | "NOT_APPLICABLE";
 
 interface CriterionStatus {
     id: string;
     launch_id: string;
     criterion_id: string;
     status: TaskStatus;
+    /** Set by the API when a gate's status comes from its items rather than a tick. */
+    status_source?: "items" | "direct";
+    /** Checklist items inside this gate, each owned by its own function. */
+    items?: Array<{
+        id: string;
+        label: string;
+        status: TaskStatus;
+        owner_email: string | null;
+        owner_role: string | null;
+        description: string | null;
+        optional: boolean;
+        sort_order: number;
+    }>;
     owner_email: string | null;
     due_date: string | null;
     notes: string | null;
-    links: any;
+    links: unknown;
     criterion: {
         id: string;
         label: string;
@@ -69,7 +83,12 @@ interface LaunchData {
     target_launch_date: string | null;
     schedule_id?: number | null;
     readiness_pct: number;
+    /** Effective status: the override when pinned, otherwise derived from dates. */
     status: LaunchStatus;
+    /** null means the launch tracks its target date automatically. */
+    status_override?: LaunchStatus | null;
+    /** What the dates say, shown as the "Auto" option's current value. */
+    computed_status?: LaunchStatus;
     owner_email: string | null;
     brief_url: string | null;
     feg_url: string | null;
@@ -111,13 +130,66 @@ function formatDate(d: string | null): string {
  */
 const ASSET_CYCLE: AssetStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
-function nextAssetStatus(current: AssetStatus, optional: boolean): AssetStatus {
+/**
+ * Deciding that something does not apply is a scoping call, not a status tick, so
+ * the extra NOT_APPLICABLE stop after DONE belongs to whoever holds
+ * launch.markNotApplicable (PMM, plus SUPERADMIN implicitly) rather than to
+ * whichever rows happen to be flagged `optional`.
+ *
+ * `optional` stays as a hint about which rows commonly do not apply — it is shown
+ * as a badge — but it no longer decides who may say so.
+ */
+function nextAssetStatus(current: AssetStatus, canMarkNotApplicable: boolean): AssetStatus {
     if (current === "NOT_APPLICABLE") return "NOT_STARTED";
+    if (current === "DONE" && canMarkNotApplicable) return "NOT_APPLICABLE";
     const i = ASSET_CYCLE.indexOf(current);
-    const next = ASSET_CYCLE[(i + 1) % ASSET_CYCLE.length];
-    // Optional assets get an extra stop after DONE so they can be marked N/A.
-    if (optional && current === "DONE") return "NOT_APPLICABLE";
-    return next;
+    return ASSET_CYCLE[(i + 1) % ASSET_CYCLE.length];
+}
+
+/**
+ * Soonest due first, undated last. Only matters where a list is truncated: the
+ * names that survive should be the ones with the least time left.
+ */
+function byDueDate<T extends { due_date: string | null }>(rows: T[]): T[] {
+    return [...rows].sort((a, b) => {
+        if (a.due_date && b.due_date) return a.due_date.localeCompare(b.due_date);
+        if (a.due_date) return -1;
+        if (b.due_date) return 1;
+        return 0;
+    });
+}
+
+/** Enough to see the shape of the problem without reading a paragraph. */
+const MAX_NAMED_BLOCKERS = 3;
+
+/**
+ * The five launch artifacts: Story Brief, Message Brief, Field Enablement Guide,
+ * Marketing Brief, Supporting Assets. They live in `launch_criterion_status` like
+ * every other checklist row -- that is what drives readiness -- so the Assets
+ * tab lists them rather than duplicating them, and "Where to Find It" edits the
+ * same `links` array the checklist does.
+ *
+ * Replaces the old pair of `brief_url` / `feg_url` columns on the Overview tab,
+ * which gave two of the five a URL and the other three nowhere to go.
+ */
+const ARTIFACT_PHASE_PREFIX = "Phase 01";
+
+/**
+ * Display names. The seeded labels are sentence-length status statements
+ * ("Enablement Brief delivered"), which read as noise in a table whose whole
+ * point is "here is the artifact and here is its link".
+ */
+const ARTIFACT_DISPLAY_NAME: Record<string, string> = {
+    "Story Brief delivered to PMM + Product Education": "Story Brief",
+    "Message Brief ratified": "Message Brief",
+    "Enablement Brief delivered": "Field Enablement Guide",
+    "Marketing Brief delivered": "Marketing Brief",
+    "Campaign Brief delivered": "Marketing Brief",
+    "Supporting Assets delivered": "Supporting Assets",
+};
+
+function artifactDisplayName(label: string): string {
+    return ARTIFACT_DISPLAY_NAME[label] ?? label;
 }
 
 /**
@@ -147,6 +219,13 @@ function asLinkList(raw: unknown): Array<{ url: string; label?: string }> {
 }
 
 /** Reject anything that is not an http(s) URL — these render as clickable links. */
+/** The chips, in the order the epic readiness tab lists them. */
+const CHECKLIST_FILTERS: Array<{ key: keyof LaunchChecklistFilters; label: string }> = [
+    { key: "myTasks", label: "My tasks" },
+    { key: "overdue", label: "Overdue" },
+    { key: "dueSoon", label: "Due soon" },
+];
+
 function normalizeUrl(input: string): string | null {
     const t = input.trim();
     if (!t) return null;
@@ -177,6 +256,17 @@ const TH_STYLE: React.CSSProperties = {
 
 const STATUS_CYCLE: TaskStatus[] = ["NOT_STARTED", "IN_PROGRESS", "DONE"];
 
+/**
+ * NOT_APPLICABLE is never reached by clicking a gate. It arrives either because
+ * every item inside the gate is N/A (the Beta gate on a capability that runs no
+ * beta) or because the roll-up found no epics to reflect. Clicking from there
+ * returns to the start of the cycle, the way an optional asset does.
+ */
+function nextCriterionStatus(current: TaskStatus): TaskStatus {
+    if (current === "NOT_APPLICABLE") return "NOT_STARTED";
+    return STATUS_CYCLE[(STATUS_CYCLE.indexOf(current) + 1) % STATUS_CYCLE.length];
+}
+
 export default function GTMLaunchDetailPage() {
     const params = useParams();
     const router = useRouter();
@@ -187,8 +277,25 @@ export default function GTMLaunchDetailPage() {
     const [updating, setUpdating] = useState<string | null>(null);
     const [collapsedPhases, setCollapsedPhases] = useState<Set<string>>(new Set());
     const [canManage, setCanManage] = useState(false);
+    const [canSetStatus, setCanSetStatus] = useState(false);
+    const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+    // Same three chips the epic readiness tab carries. With ~17 gates and ~39
+    // items, "what is mine" was previously unanswerable without reading it all.
+    const [filters, setFilters] = useState<LaunchChecklistFilters>({
+        myTasks: false,
+        overdue: false,
+        dueSoon: false,
+    });
     const [canToggleTasks, setCanToggleTasks] = useState(false);
-    const [tab, setTab] = useState<"overview" | "checklist" | "assets" | "epics">("overview");
+    const [canMarkNA, setCanMarkNA] = useState(false);
+    // Checklist leads: it is the work. The old default was an Overview tab whose
+    // contents now live in the page header.
+    const [tab, setTab] = useState<"checklist" | "assets" | "epics">("checklist");
+    // The launch timeline expands in the header rather than occupying a tab, the
+    // way /epics hangs "Show Release Timeline" off its release heading. Open by
+    // default: the runway is the first thing worth seeing on a launch, and the
+    // toggle is there to get it out of the way.
+    const [showTimeline, setShowTimeline] = useState(true);
 
     useEffect(() => {
         (async () => {
@@ -200,7 +307,16 @@ export default function GTMLaunchDetailPage() {
                         ? data.user.roles
                         : (data.user?.role ? [data.user.role] : []);
                     setCanManage(canRolesPerform(roles, "launches.manage"));
+                    // Pausing or cancelling a launch is open to the launch owner
+                    // (launches.manage) and to Product Ops / CPO, who hold
+                    // launch.status.update but not the rest of the record.
+                    setCanSetStatus(
+                        canRolesPerform(roles, "launches.manage") ||
+                        canRolesPerform(roles, "launch.status.update")
+                    );
+                    setCurrentUserEmail(data.user?.email ?? null);
                     setCanToggleTasks(canRolesPerform(roles, "launchCriteria.status.update"));
+                    setCanMarkNA(canRolesPerform(roles, "launch.markNotApplicable"));
                 }
             } catch {
                 // leave permissions false
@@ -254,32 +370,6 @@ export default function GTMLaunchDetailPage() {
 
     // Releases this launch can anchor to. The workback counts back from the
     // release date, so re-anchoring reflows every derived due date server-side.
-    const [releases, setReleases] = useState<Array<{ id: number; release_name: string; launch_date: string | null }>>([]);
-
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await fetch("/api/releases");
-                if (res.ok) {
-                    const rows = await res.json();
-                    setReleases(Array.isArray(rows) ? rows : []);
-                }
-            } catch {
-                // Without the list the date remains editable directly.
-            }
-        })();
-    }, []);
-
-    const releaseOptions = useMemo(
-        () =>
-            releases
-                .filter((r) => r.launch_date)
-                .map((r) => ({
-                    value: String(r.id),
-                    label: `${r.release_name} — ${formatDate(r.launch_date)}`,
-                })),
-        [releases]
-    );
 
     // Assignable users. /api/users is reachable by PMM/PM/ENG/PRODUCT for exactly
     // this kind of delegate dropdown, so a launch owner can assign checklist work.
@@ -308,63 +398,65 @@ export default function GTMLaunchDetailPage() {
         [users]
     );
 
-    // Assignee editor for checklist rows. owner_email has always been on the row
-    // and accepted by the PATCH endpoint; nothing ever rendered a control for it.
-    const [assignTarget, setAssignTarget] = useState<CriterionStatus | null>(null);
-    const [assignEmail, setAssignEmail] = useState<string | null>(null);
-    const [savingAssign, setSavingAssign] = useState(false);
+    /**
+     * One panel per checklist row, replacing the separate assignee, note and link
+     * modals this page used to open from three different cells. owner_email,
+     * notes and links have all been accepted by the PATCH endpoint since March
+     * with nothing rendering them; they are now edited together, in one request.
+     *
+     * Epic criteria put threaded comments in the notes column. A launch criterion
+     * has nowhere to store a thread, so this stays a single text field.
+     */
+    const [detailTarget, setDetailTarget] = useState<
+        { row: CriterionStatus; section: LaunchCriterionDetailSection } | null
+    >(null);
+    const [savingDetail, setSavingDetail] = useState(false);
 
-    const saveAssignee = async () => {
-        if (!assignTarget) return;
-        setSavingAssign(true);
-        try {
-            const res = await fetch(`/api/launch-criteria-status/${launchId}`, {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    criterion_id: assignTarget.criterion_id,
-                    owner_email: assignEmail,
-                }),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            await fetchLaunch();
-            setAssignTarget(null);
-        } catch (err) {
-            console.error("Failed to assign:", err);
-            notifications.show({ color: "red", message: "Could not save that assignee." });
-        } finally {
-            setSavingAssign(false);
+    const saveDetail = async (patch: LaunchCriterionPatch) => {
+        if (!detailTarget) return;
+
+        // Normalised here rather than in the modal so a bad address leaves the
+        // panel open with the draft intact instead of closing over a lost edit.
+        let links = patch.links;
+        if (links && links.length > 0) {
+            const url = normalizeUrl(links[0].url);
+            if (!url) {
+                notifications.show({
+                    color: "red",
+                    message: "That does not look like a valid web address.",
+                });
+                return;
+            }
+            links = [{ url, ...(links[0].label ? { label: links[0].label } : {}) }];
         }
-    };
 
-    // Notes editor. launch_criterion_status.notes has been accepted by the PATCH
-    // endpoint since March with nothing rendering it -- the same gap as links and
-    // assignees. Epic criteria put threaded comments in this column; a launch
-    // criterion carries a single note, so this stays a plain text field.
-    const [notesTarget, setNotesTarget] = useState<CriterionStatus | null>(null);
-    const [notesDraft, setNotesDraft] = useState("");
-    const [savingNotes, setSavingNotes] = useState(false);
+        const body: Record<string, unknown> = { criterion_id: detailTarget.row.criterion_id };
+        if ("owner_email" in patch) body.owner_email = patch.owner_email;
+        if ("notes" in patch) body.notes = patch.notes;
+        if (links !== undefined) body.links = links;
 
-    const saveNotes = async () => {
-        if (!notesTarget) return;
-        setSavingNotes(true);
+        // Nothing but the id: the Save button is disabled when clean, so this is
+        // only reachable by a race. Close rather than PATCH a no-op.
+        if (Object.keys(body).length === 1) {
+            setDetailTarget(null);
+            return;
+        }
+
+        setSavingDetail(true);
         try {
             const res = await fetch(`/api/launch-criteria-status/${launchId}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    criterion_id: notesTarget.criterion_id,
-                    notes: notesDraft.trim() || null,
-                }),
+                body: JSON.stringify(body),
             });
             if (!res.ok) throw new Error(await res.text());
             await fetchLaunch();
-            setNotesTarget(null);
+            setDetailTarget(null);
         } catch (err) {
-            console.error("Failed to save note:", err);
-            notifications.show({ color: "red", message: "Could not save that note." });
+            console.error("Failed to save checklist row:", err);
+            notifications.show({ color: "red", message: "Could not save those changes." });
         } finally {
-            setSavingNotes(false);
+            setSavingDetail(false);
         }
     };
 
@@ -434,7 +526,7 @@ export default function GTMLaunchDetailPage() {
     };
 
     const cycleAssetStatus = async (asset: LaunchAsset) => {
-        const status = nextAssetStatus(asset.status, asset.optional);
+        const status = nextAssetStatus(asset.status, canMarkNA);
         setUpdatingAsset(asset.id);
         // Optimistic: the row is a single field and the request is tiny, so
         // reverting on failure is cheaper than making the user wait.
@@ -489,6 +581,60 @@ export default function GTMLaunchDetailPage() {
     const assetsRequired = assets.filter((a) => a.status !== "NOT_APPLICABLE").length;
     const assetsDone = assets.filter((a) => a.status === "DONE").length;
 
+    // The five runway artifacts, in workback order.
+    const artifacts = useMemo(
+        () =>
+            statuses
+                .filter((s) => (s.criterion?.phase || "").startsWith(ARTIFACT_PHASE_PREFIX))
+                .sort((a, b) => (a.criterion?.sort_order ?? 0) - (b.criterion?.sort_order ?? 0)),
+        [statuses]
+    );
+    const artifactsDone = artifacts.filter((a) => a.status === "DONE").length;
+
+    /**
+     * A launch scheduled before one of its own epics ships. Kept out of readiness
+     * on purpose: readiness says whether the GTM work is done, this says whether
+     * the date is possible at all, and a launch can be 100% ready and still
+     * impossible.
+     */
+    const dateConflicts = useMemo(
+        () =>
+            findEpicDateConflicts({
+                launchDate: launch?.target_launch_date ?? null,
+                epics: epics.map((e) => ({
+                    id: e.id,
+                    name: e.name,
+                    target_launch_date: e.target_launch_date ?? null,
+                })),
+            }),
+        [launch?.target_launch_date, epics]
+    );
+
+    /**
+     * Rows after the chips, and the source the phase groups are built from -- so
+     * a filter empties a group's table and drops the group when nothing in it
+     * matches, rather than leaving headings over empty tables.
+     */
+    const filteredStatuses = useMemo(
+        () =>
+            filterLaunchChecklistRows(statuses, filters, {
+                targetLaunchDate: launch?.target_launch_date ?? null,
+                tier: launch?.tier ?? null,
+                launchCreatedAt: launch?.created_at ?? null,
+                currentUserEmail,
+            }),
+        [
+            statuses,
+            filters,
+            launch?.target_launch_date,
+            launch?.tier,
+            launch?.created_at,
+            currentUserEmail,
+        ]
+    );
+
+    const filtersActive = anyLaunchChecklistFilterActive(filters);
+
     const phases = useMemo(() => {
         // A Map preserves INSERTION order, so the phase headings previously came
         // out in whatever order the API happened to return rows — which is
@@ -499,7 +645,7 @@ export default function GTMLaunchDetailPage() {
         // 'Phase 0:' because '0' < ':', which puts the commercialization gate
         // ahead of the artifact runway, and single-digit phases 1-6 follow.
         // "Uncategorized" is forced last rather than sorting under 'U'.
-        const ordered = [...statuses].sort((a, b) => {
+        const ordered = [...filteredStatuses].sort((a, b) => {
             const pa = a.criterion?.phase ?? "";
             const pb = b.criterion?.phase ?? "";
             if (pa !== pb) {
@@ -524,7 +670,7 @@ export default function GTMLaunchDetailPage() {
             map.set(phase, list);
         }
         return map;
-    }, [statuses]);
+    }, [filteredStatuses]);
 
     // Inline field save
     const patchLaunchFields = async (fields: Record<string, unknown>) => {
@@ -539,7 +685,7 @@ export default function GTMLaunchDetailPage() {
                 setLaunch((prev) => prev ? { ...prev, ...updated } : prev);
                 // A moved anchor or date reflows derived due dates server-side,
                 // so the checklist has to be re-read rather than patched locally.
-                if ("schedule_id" in fields || "target_launch_date" in fields || "tier" in fields) {
+                if ("target_launch_date" in fields || "tier" in fields) {
                     await fetchLaunch();
                 }
                 notifications.show({ message: "Updated", color: "teal", autoClose: 1500 });
@@ -553,12 +699,69 @@ export default function GTMLaunchDetailPage() {
 
     const patchLaunch = (field: string, value: unknown) => patchLaunchFields({ [field]: value });
 
+    // Every status can be pinned, so the list is the whole vocabulary plus an
+    // Auto entry that names the date-derived value -- otherwise "Auto" gives no
+    // hint about what unpinning would show.
+    const statusOptions = useMemo(() => {
+        const computed = launch?.computed_status ?? launch?.status ?? "Planning";
+        return [
+            { value: "AUTO", label: `Auto — ${computed}` },
+            ...LAUNCH_STATUSES.map((value) => ({ value, label: value })),
+        ];
+    }, [launch?.computed_status, launch?.status]);
+
+    /**
+     * Tick one checklist item inside a gate.
+     *
+     * The gate's own status is derived from its items, so this does not write a
+     * gate status -- it refetches and lets the API recompute. Optional items get
+     * the extra NOT_APPLICABLE stop, the same cycle supporting assets use, because
+     * the Beta gate's items must be closeable on a capability that runs no beta.
+     */
+    const handleToggleItem = useCallback(
+        async (item: { id: string; status: TaskStatus; optional: boolean }) => {
+            if (!launch) return;
+            const next = nextAssetStatus(item.status as AssetStatus, canMarkNA);
+
+            setUpdating(item.id);
+            // Optimistic: the gate above it will settle when the refetch lands.
+            setLaunch((prev) => {
+                if (!prev) return prev;
+                return {
+                    ...prev,
+                    launch_criterion_status: (prev.launch_criterion_status || []).map((s) => ({
+                        ...s,
+                        items: (s.items || []).map((i) =>
+                            i.id === item.id ? { ...i, status: next as TaskStatus } : i
+                        ),
+                    })),
+                };
+            });
+
+            try {
+                const res = await fetch(`/api/launches/${launch.id}/items`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ item_row_id: item.id, status: next }),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                // Refetch so the gate's derived status and readiness catch up.
+                await fetchLaunch();
+            } catch (err) {
+                console.error("Failed to update gate item:", err);
+                notifications.show({ color: "red", message: "Could not update that item." });
+                await fetchLaunch();
+            } finally {
+                setUpdating(null);
+            }
+        },
+        [launch, fetchLaunch, canMarkNA]
+    );
+
     const handleToggleStatus = useCallback(
         async (criterionId: string, currentStatus: TaskStatus) => {
             if (!launch) return;
-            const nextIdx =
-                (STATUS_CYCLE.indexOf(currentStatus) + 1) % STATUS_CYCLE.length;
-            const nextStatus = STATUS_CYCLE[nextIdx];
+            const nextStatus = nextCriterionStatus(currentStatus);
 
             setUpdating(criterionId);
 
@@ -689,8 +892,19 @@ export default function GTMLaunchDetailPage() {
         return e.name.toLowerCase().includes(epicSearch.toLowerCase());
     });
 
-    const readinessPct = launch?.readiness_pct ?? 0;
-    const doneCount = statuses.filter((s) => s.status === "DONE").length;
+    /**
+     * Whole days from today to the target date; negative once the date has passed.
+     * Compared date-only so a launch scheduled for today never reads as "1 day out"
+     * because of the clock.
+     */
+    const daysToLaunch = useMemo(() => {
+        if (!launch?.target_launch_date) return null;
+        const target = new Date(launch.target_launch_date + "T00:00:00");
+        if (Number.isNaN(target.getTime())) return null;
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        return Math.round((target.getTime() - today.getTime()) / 86_400_000);
+    }, [launch?.target_launch_date]);
 
     if (loading) {
         return (
@@ -731,241 +945,255 @@ export default function GTMLaunchDetailPage() {
                     paddingBottom: "var(--spacing-8)",
                 }}
             >
-                {/* Back link + Title */}
-                <div className="mb-6">
+                {/* Back link */}
+                <div className="mb-3">
                     <button
                         onClick={() => router.push("/gtm-launches")}
-                        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 mb-3 transition-colors"
+                        className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700 transition-colors"
                     >
                         <IconArrowLeft size={16} />
                         Back to GTM Launches
                     </button>
+                </div>
 
-                    <div className="flex items-start justify-between flex-wrap gap-4">
-                        <div>
-                            <h1
-                                className="text-2xl font-bold text-gray-900"
-                                style={{ fontFamily: "var(--font-heading)" }}
-                            >
-                                {launch.name}
-                            </h1>
+                {/* Sits ABOVE the title because it outranks readiness: no amount of GTM
+                    readiness fixes a launch that lands before its own feature. Same slot
+                    the epic page gives its launch-hold banner. */}
+                {dateConflicts.length > 0 && (
+                    <div className="rounded-lg border border-red-300 bg-red-50 px-4 py-3 mb-4">
+                        <div className="flex items-start gap-2">
+                            <IconAlertTriangle size={18} className="text-red-600 flex-shrink-0 mt-0.5" />
+                            <div className="min-w-0">
+                                <div className="text-sm font-semibold text-red-800">
+                                    Launch date is before an epic ships
+                                </div>
+                                <p className="text-xs text-red-700 mt-1">
+                                    {describeEpicDateConflicts(dateConflicts)}
+                                </p>
+                                <ul className="mt-2 space-y-0.5">
+                                    {dateConflicts.map((c) => (
+                                        <li key={c.epicId} className="text-xs text-red-700">
+                                            <span className="font-medium">{c.epicName}</span> ships{" "}
+                                            {formatDate(c.epicDate)} — {c.daysEarly} day
+                                            {c.daysEarly === 1 ? "" : "s"} after this launch
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         </div>
+                    </div>
+                )}
 
-                        {/* Readiness gauge */}
-                        <div className="bg-white rounded-lg border border-gray-200 px-5 py-3 text-center min-w-[140px]">
-                            <div className="text-2xl font-bold text-gray-900">
-                                {readinessPct}%
-                            </div>
-                            <div className="text-xs text-gray-500">
-                                {doneCount}/{statuses.length} tasks done
-                            </div>
-                            <div className="mt-1.5 w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                    className={`h-full rounded-full transition-all ${readinessPct >= 80 ? "bg-emerald-500" : readinessPct >= 40 ? "bg-amber-500" : "bg-red-500"}`}
-                                    style={{ width: `${readinessPct}%` }}
+                {/* Title row — name plus the launch's own fields inline, the way the epic
+                    header carries tier/status/owner. These used to be a card on an
+                    Overview tab, which meant every visit started one click away from the
+                    work. */}
+                <div className="flex flex-wrap justify-between items-center gap-4 mb-2">
+                    <div className="flex-1 min-w-0">
+                        <h1
+                            className="text-2xl font-bold text-gray-900 mb-2"
+                            style={{ fontFamily: "var(--font-heading)" }}
+                        >
+                            {launch.name}
+                        </h1>
+                        <div className="flex gap-3 items-center flex-wrap">
+                            <Select
+                                aria-label="Tier"
+                                placeholder="Tier"
+                                size="xs"
+                                style={{ width: 120 }}
+                                data={[
+                                    { value: "TIER_1", label: "Tier 1" },
+                                    { value: "TIER_2", label: "Tier 2" },
+                                ]}
+                                value={launch.tier || null}
+                                onChange={(val) => patchLaunch("tier", val)}
+                                clearable
+                                disabled={!canManage}
+                            />
+                            <div className="flex items-center gap-1">
+                                <Select
+                                    aria-label="Status"
+                                    size="xs"
+                                    style={{ width: 180 }}
+                                    data={statusOptions}
+                                    // AUTO is a sentinel, not a status: picking it
+                                    // clears the override so the launch follows its
+                                    // target date again.
+                                    value={launch.status_override ?? "AUTO"}
+                                    onChange={(val) => {
+                                        if (!val) return;
+                                        patchLaunch("status", val === "AUTO" ? null : val);
+                                    }}
+                                    disabled={!canSetStatus}
                                 />
+                                <Tooltip
+                                    withArrow
+                                    multiline
+                                    label={
+                                        <div style={{ maxWidth: 300, fontSize: 12, lineHeight: 1.5 }}>
+                                            <div style={{ fontWeight: 600, marginBottom: 8 }}>
+                                                How is status determined?
+                                            </div>
+                                            Status normally follows the target launch date, so nobody has to
+                                            keep it current. Pick any value to pin it instead, or Auto to
+                                            hand it back to the date.
+                                            <br />
+                                            <br />
+                                            <strong>Planning:</strong> no target date, or the workback has not
+                                            opened yet
+                                            <br />
+                                            <strong>In Progress:</strong> inside the workback window before
+                                            launch day
+                                            <br />
+                                            <strong>Launched:</strong> on the target launch date
+                                            <br />
+                                            <strong>Post-Launch:</strong> the day after launch onward
+                                            <br />
+                                            <strong>On Hold / Cancelled:</strong> set manually only
+                                        </div>
+                                    }
+                                >
+                                    <IconInfoCircle
+                                        size={14}
+                                        style={{ color: "var(--color-gray-400)", cursor: "help" }}
+                                    />
+                                </Tooltip>
                             </div>
+                            <DateInput
+                                aria-label="Target launch date"
+                                placeholder="Target launch date"
+                                size="xs"
+                                style={{ width: 170 }}
+                                value={launch.target_launch_date ? new Date(launch.target_launch_date + "T00:00:00") : null}
+                                onChange={(val) => {
+                                    const d = val as Date | null;
+                                    patchLaunch("target_launch_date", d ? d.toISOString().split("T")[0] : null);
+                                }}
+                                clearable
+                                disabled={!canManage}
+                            />
+                            <Select
+                                aria-label="Owner"
+                                size="xs"
+                                style={{ width: 190 }}
+                                placeholder="Owner"
+                                data={userOptions}
+                                value={launch.owner_email}
+                                onChange={(val) => {
+                                    if (val !== launch.owner_email) patchLaunch("owner_email", val);
+                                }}
+                                searchable
+                                clearable
+                                nothingFoundMessage="No matching user"
+                                disabled={!canManage}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Readiness gauge. Reads the computed verdict rather than the stored
+                        readiness_pct column so the number and the label can never
+                        disagree with the checklist they summarise. */}
+                    <div className="bg-white rounded-lg border border-gray-200 px-5 py-3 text-center min-w-[150px] flex-shrink-0">
+                        <div className="text-2xl font-bold text-gray-900">
+                            {readiness.readinessPct}%
+                        </div>
+                        <div
+                            className={`inline-block mt-1 px-2 py-0.5 rounded border text-[11px] font-semibold ${VERDICT_CLASS[readiness.verdict]}`}
+                        >
+                            {VERDICT_LABEL[readiness.verdict]}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1.5">
+                            {checklistDone}/{statuses.length} tasks done
+                        </div>
+                        <div className="mt-1.5 w-full h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className={`h-full rounded-full transition-all ${readiness.readinessPct >= 80 ? "bg-emerald-500" : readiness.readinessPct >= 40 ? "bg-amber-500" : "bg-red-500"}`}
+                                style={{ width: `${readiness.readinessPct}%` }}
+                            />
                         </div>
                     </div>
                 </div>
 
-                {/* Detail tabs — same strip epics use, via the shared DetailTabs */}
-                <div className="mt-6">
-                    <DetailTabs
-                        ariaLabel="Launch detail tabs"
-                        activeTab={tab}
-                        onTabChange={(t) => setTab(t as typeof tab)}
-                        tabs={[
-                            { value: "overview", label: "Overview" },
-                            {
-                                value: "checklist",
-                                label: "Checklist",
-                                badge: <TabCount>{checklistDone}/{statuses.length}</TabCount>,
-                            },
-                            {
-                                value: "assets",
-                                label: "Assets",
-                                badge: <TabCount>{assetsDone}/{assetsRequired}</TabCount>,
-                            },
-                            {
-                                value: "epics",
-                                label: "Epics",
-                                badge: <TabCount>{epics.length}</TabCount>,
-                            },
-                        ]}
-                    />
-                </div>
+                {/* Summary row — the facts that are not already an editable control
+                    above, dot-separated the way the epic header does it. */}
                 <div
-                    className="rounded-b-lg rounded-tr-lg p-5 mb-8"
+                    className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2"
                     style={{
-                        backgroundColor: "var(--color-tab-panel-bg)",
-                        border: "1px solid var(--color-gray-900)",
+                        fontFamily: "var(--font-body)",
+                        fontSize: "var(--font-size-sm)",
+                        color: "var(--color-gray-600)",
                     }}
-                    role="tabpanel"
                 >
-                {tab === "overview" && (<>
-                {/* Readiness verdict — same vocabulary the epic model uses */}
-                <div
-                    className={`rounded-lg border px-4 py-3 mb-5 ${VERDICT_CLASS[readiness.verdict]}`}
-                >
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                        <div className="flex items-baseline gap-3">
-                            <span className="text-sm font-semibold">
-                                {VERDICT_LABEL[readiness.verdict]}
-                            </span>
-                            <span className="text-xs opacity-80">
-                                {readiness.readinessPct}% ready · {readiness.gatesDone}/
-                                {readiness.gatesTotal} gates cleared
-                            </span>
-                        </div>
-                        <span className="text-[11px] opacity-70">
-                            Gates count triple; in-progress counts half.
+                    <span>
+                        <span style={{ color: "var(--color-gray-500)" }}>Launch </span>
+                        <span style={{ fontWeight: 500, color: "var(--color-gray-900)" }}>
+                            {formatDate(launch.target_launch_date)}
                         </span>
-                    </div>
-
-                    {readiness.blockers.length > 0 && (
-                        <div className="mt-2 text-xs">
-                            <span className="font-medium">Blocking:</span>{" "}
-                            {readiness.blockers.map((b) => b.label).join(" · ")}
-                        </div>
-                    )}
-                    {readiness.blockers.length === 0 && readiness.atRisk.length > 0 && (
-                        <div className="mt-2 text-xs">
-                            <span className="font-medium">Needs attention now:</span>{" "}
-                            {readiness.atRisk.map((a) => a.label).join(" · ")}
-                        </div>
-                    )}
-                </div>
-
-                {/* Editable metadata card */}
-                <div className="bg-white rounded-xl border border-gray-200 p-5 mb-6">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <Select
-                            label="Tier"
-                            size="sm"
-                            data={[
-                                { value: "TIER_1", label: "Tier 1" },
-                                { value: "TIER_2", label: "Tier 2" },
-                            ]}
-                            value={launch.tier || null}
-                            onChange={(val) => patchLaunch("tier", val)}
-                            clearable
-                            disabled={!canManage}
-                        />
-                        <Select
-                            label="Status"
-                            size="sm"
-                            data={[
-                                { value: "Planning", label: "Planning" },
-                                { value: "In Progress", label: "In Progress" },
-                                { value: "Launched", label: "Launched" },
-                                { value: "Post-Launch", label: "Post-Launch" },
-                            ]}
-                            value={launch.status}
-                            onChange={(val) => val && patchLaunch("status", val)}
-                            disabled={!canManage}
-                        />
-                        <Select
-                            label="Release"
-                            placeholder="Anchor to a release"
-                            data={releaseOptions}
-                            value={launch.schedule_id ? String(launch.schedule_id) : null}
-                            onChange={(val) => {
-                                const rel = releases.find((r) => String(r.id) === val);
-                                // Sent together: the reflow keys off the new target date,
-                                // so splitting these would reflow twice off a stale one.
-                                patchLaunchFields({
-                                    schedule_id: val ? Number(val) : null,
-                                    ...(rel?.launch_date ? { target_launch_date: rel.launch_date } : {}),
-                                });
-                            }}
-                            searchable
-                            clearable
-                            disabled={!canManage}
-                            size="sm"
-                        />
-                        <DateInput
-                            label="Target Launch Date"
-                            size="sm"
-                            value={launch.target_launch_date ? new Date(launch.target_launch_date + "T00:00:00") : null}
-                            onChange={(val) => {
-                                const d = val as Date | null;
-                                patchLaunch("target_launch_date", d ? d.toISOString().split("T")[0] : null);
-                            }}
-                            clearable
-                            disabled={!canManage}
-                        />
-                        <Select
-                            label="Owner"
-                            size="sm"
-                            placeholder="Search people..."
-                            description="PMM accountable for this launch. Every downstream artifact defaults to them."
-                            data={userOptions}
-                            value={launch.owner_email}
-                            onChange={(val) => {
-                                if (val !== launch.owner_email) patchLaunch("owner_email", val);
-                            }}
-                            searchable
-                            clearable
-                            nothingFoundMessage="No matching user"
-                            disabled={!canManage}
-                        />
-                        <div>
-                            <TextInput
-                                label="Brief URL"
-                                size="sm"
-                                placeholder="https://docs.google.com/..."
-                                defaultValue={launch.brief_url || ""}
-                                key={`brief-${launch.brief_url}`}
-                                onBlur={(e) => {
-                                    const val = e.currentTarget.value.trim() || null;
-                                    if (val !== launch.brief_url) patchLaunch("brief_url", val);
-                                }}
-                                disabled={!canManage}
-                                rightSection={
-                                    launch.brief_url ? (
-                                        <a href={launch.brief_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                                            <IconExternalLink size={14} className="text-gray-400 hover:text-indigo-600" />
-                                        </a>
-                                    ) : undefined
-                                }
-                            />
-                        </div>
-                        <div>
-                            <TextInput
-                                label="FEG URL"
-                                size="sm"
-                                placeholder="https://docs.google.com/..."
-                                defaultValue={launch.feg_url || ""}
-                                key={`feg-${launch.feg_url}`}
-                                onBlur={(e) => {
-                                    const val = e.currentTarget.value.trim() || null;
-                                    if (val !== launch.feg_url) patchLaunch("feg_url", val);
-                                }}
-                                disabled={!canManage}
-                                rightSection={
-                                    launch.feg_url ? (
-                                        <a href={launch.feg_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
-                                            <IconExternalLink size={14} className="text-gray-400 hover:text-indigo-600" />
-                                        </a>
-                                    ) : undefined
-                                }
-                            />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Workback timeline — the artifact runway counted back from GA */}
-                <div className="mb-8">
-                    <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-semibold text-gray-700">Workback</h2>
-                        {launch?.tier && (
-                            <span className="text-xs text-gray-400">
-                                {launch.tier === "TIER_1" ? "Tier 1 · ~8 week runway" : "Tier 2 · ~5 week runway"}
+                        {daysToLaunch !== null && (
+                            <span style={{ color: "var(--color-gray-500)" }}>
+                                {daysToLaunch === 0
+                                    ? " (today)"
+                                    : daysToLaunch > 0
+                                        ? ` (${daysToLaunch} day${daysToLaunch === 1 ? "" : "s"} out)`
+                                        : ` (${Math.abs(daysToLaunch)} day${Math.abs(daysToLaunch) === 1 ? "" : "s"} ago)`}
                             </span>
                         )}
-                    </div>
-                    <div className="border border-gray-200 rounded-lg p-4">
+                    </span>
+                    <span style={{ color: "var(--color-gray-300)" }} aria-hidden>·</span>
+                    <span>
+                        <span style={{ color: "var(--color-gray-500)" }}>Gates </span>
+                        <span style={{ fontWeight: 500, color: "var(--color-gray-900)" }}>
+                            {readiness.gatesDone}/{readiness.gatesTotal} cleared
+                        </span>
+                    </span>
+                    <span style={{ color: "var(--color-gray-300)" }} aria-hidden>·</span>
+                    <span>
+                        <span style={{ color: "var(--color-gray-500)" }}>Epics </span>
+                        <span style={{ fontWeight: 500, color: "var(--color-gray-900)" }}>
+                            {epics.length}
+                        </span>
+                    </span>
+                    <span style={{ color: "var(--color-gray-300)" }} aria-hidden>·</span>
+                    <button
+                        type="button"
+                        onClick={() => setShowTimeline((v) => !v)}
+                        aria-expanded={showTimeline}
+                        style={{
+                            fontSize: "inherit",
+                            fontFamily: "inherit",
+                            color: "#2196F3",
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            padding: 0,
+                        }}
+                        onMouseEnter={(e) => {
+                            e.currentTarget.style.color = "#1976D2";
+                            e.currentTarget.style.textDecoration = "underline";
+                        }}
+                        onMouseLeave={(e) => {
+                            e.currentTarget.style.color = "#2196F3";
+                            e.currentTarget.style.textDecoration = "none";
+                        }}
+                    >
+                        {showTimeline ? "Hide Launch Timeline" : "Show Launch Timeline"}
+                    </button>
+                </div>
+
+                {/* Expands in place above the tabs, matching where /epics drops its
+                    release timeline relative to the table. */}
+                {showTimeline && (
+                    <div className="mt-4 bg-white border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-end mb-3">
+                            {launch?.tier && (
+                                <span className="text-xs text-gray-400">
+                                    {launch.tier === "TIER_1"
+                                        ? "Tier 1 · ~15 week runway"
+                                        : "Tier 2 · ~11 week runway"}
+                                </span>
+                            )}
+                        </div>
                         <LaunchWorkbackTimeline
                             items={statuses
                                 .filter((s) => (s.criterion?.phase || "").startsWith("Phase 0"))
@@ -984,18 +1212,143 @@ export default function GTMLaunchDetailPage() {
                             launchCreatedAt={launch?.created_at ?? null}
                         />
                     </div>
+                )}
+
+                {/* Naming every item turned this into a paragraph -- with 14 gates the
+                    at-risk list ran to six labels. A blocker is what stops GO, so name
+                    the soonest few; at-risk is a count that jumps to the checklist,
+                    which is where the work actually gets done. */}
+                {(readiness.blockers.length > 0 || readiness.atRisk.length > 0) && (
+                    <div
+                        className={`mt-3 rounded-lg border px-4 py-2 text-xs ${VERDICT_CLASS[readiness.verdict]}`}
+                    >
+                        {readiness.blockers.length > 0 ? (
+                            <>
+                                <span className="font-medium">Blocking:</span>{" "}
+                                {byDueDate(readiness.blockers).slice(0, MAX_NAMED_BLOCKERS).map((b) => b.label).join(" · ")}
+                                {readiness.blockers.length > MAX_NAMED_BLOCKERS && (
+                                    <>
+                                        {" "}
+                                        <button
+                                            type="button"
+                                            onClick={() => setTab("checklist")}
+                                            className="underline underline-offset-2 hover:no-underline"
+                                        >
+                                            +{readiness.blockers.length - MAX_NAMED_BLOCKERS} more
+                                        </button>
+                                    </>
+                                )}
+                            </>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setTab("checklist")}
+                                className="underline underline-offset-2 hover:no-underline"
+                            >
+                                {readiness.atRisk.length} item{readiness.atRisk.length === 1 ? "" : "s"} need
+                                {readiness.atRisk.length === 1 ? "s" : ""} attention now
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* Detail tabs — same strip epics use, via the shared DetailTabs.
+                    Checklist leads for the same reason Readiness does on an epic: it is
+                    the work, and it was previously one click behind an Overview tab. */}
+                <div className="mt-6 flex flex-wrap items-end justify-between gap-3">
+                    <DetailTabs
+                        ariaLabel="Launch detail tabs"
+                        activeTab={tab}
+                        onTabChange={(t) => setTab(t as typeof tab)}
+                        tabs={[
+                            {
+                                value: "checklist",
+                                label: "Checklist",
+                                badge: <TabCount>{checklistDone}/{statuses.length}</TabCount>,
+                            },
+                            {
+                                value: "assets",
+                                label: "Assets",
+                                badge: <TabCount>{assetsDone}/{assetsRequired}</TabCount>,
+                            },
+                            {
+                                value: "epics",
+                                label: "Epics",
+                                badge: <TabCount>{epics.length}</TabCount>,
+                            },
+                        ]}
+                    />
+
+                    {/* The epic readiness tab's chips, same semantics. Rendered at
+                        every width and allowed to wrap under the tabs, rather than
+                        duplicated into a separate mobile block as on the epic page. */}
+                    {tab === "checklist" && statuses.length > 0 && (
+                        <Group gap="xs" align="center" className="pb-2">
+                            <span className="text-sm font-medium text-gray-700">Filters</span>
+                            {CHECKLIST_FILTERS.map(({ key, label }) => (
+                                <Badge
+                                    key={key}
+                                    variant={filters[key] ? "filled" : "outline"}
+                                    color="gray"
+                                    style={{ cursor: "pointer" }}
+                                    onClick={() =>
+                                        setFilters((prev) => ({ ...prev, [key]: !prev[key] }))
+                                    }
+                                >
+                                    {label}
+                                </Badge>
+                            ))}
+                        </Group>
+                    )}
                 </div>
-
-                </>)}
-
+                <div
+                    className="rounded-b-lg rounded-tr-lg p-5 mb-8"
+                    style={{
+                        backgroundColor: "var(--color-tab-panel-bg)",
+                        border: "1px solid var(--color-gray-900)",
+                    }}
+                    role="tabpanel"
+                >
                 {tab === "checklist" && (<>
                 {/* Readiness checklist — same table shape epics use for criteria */}
                 {statuses.length > 0 && (
                     <div className="space-y-4 mb-8">
-                        <h2 className="text-sm font-semibold text-gray-700">Readiness Checklist</h2>
+                        <div className="flex items-baseline gap-2">
+                            <h2 className="text-sm font-semibold text-gray-700">Readiness Checklist</h2>
+                            {/* Without this an active filter makes a launch look
+                                finished rather than filtered. */}
+                            {filtersActive && (
+                                <span className="text-xs text-gray-400">
+                                    {filteredStatuses.length} of {statuses.length} shown
+                                </span>
+                            )}
+                        </div>
+
+                        {filtersActive && filteredStatuses.length === 0 && (
+                            <div className="bg-white rounded-xl border border-gray-200 px-5 py-8 text-center">
+                                <p className="text-sm text-gray-500">
+                                    No tasks match these filters.
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={() =>
+                                        setFilters({ myTasks: false, overdue: false, dueSoon: false })
+                                    }
+                                    className="mt-2 text-xs text-purple-600 underline underline-offset-2 hover:no-underline"
+                                >
+                                    Clear filters
+                                </button>
+                            </div>
+                        )}
+
                         {[...phases.entries()].map(([phase, items]) => {
                             const isCollapsed = collapsedPhases.has(phase);
-                            const phDone = items.filter((i) => i.status === "DONE").length;
+                            // NOT_APPLICABLE leaves the denominator rather than
+                            // counting as done, so a phase whose remaining rows do
+                            // not apply reads x/x instead of stalling below it.
+                            // Same rule as groupProgress on the epic readiness table.
+                            const phCounted = items.filter((i) => i.status !== "NOT_APPLICABLE");
+                            const phDone = phCounted.filter((i) => i.status === "DONE").length;
 
                             return (
                                 <div
@@ -1015,7 +1368,7 @@ export default function GTMLaunchDetailPage() {
                                             <span className="text-sm font-medium text-gray-900">{phase}</span>
                                         </div>
                                         <span className="text-xs text-gray-400">
-                                            {phDone}/{items.length} done
+                                            {phDone}/{phCounted.length} done
                                         </span>
                                     </button>
 
@@ -1029,20 +1382,33 @@ export default function GTMLaunchDetailPage() {
                                                 launchCreatedAt={launch?.created_at ?? null}
                                                 canEdit={canToggleTasks}
                                                 busyId={updating}
-                                                onCycleStatus={(row) =>
-                                                    handleToggleStatus(row.criterion_id, row.status)
+                                                onCycleItem={(_row, item) =>
+                                                    handleToggleItem({
+                                                        id: item.id,
+                                                        status: item.status as TaskStatus,
+                                                        optional: item.optional,
+                                                    })
                                                 }
-                                                onAssign={(row) => {
-                                                    setAssignEmail(row.owner_email);
-                                                    setAssignTarget(row as CriterionStatus);
+                                                onCycleStatus={(row) => {
+                                                    // A gate with items clears when its items clear,
+                                                    // and a derived sign-off is answered on the epic.
+                                                    // Silently doing nothing would read as a bug.
+                                                    if (row.status_source === "items") {
+                                                        notifications.show({
+                                                            color: "gray",
+                                                            message:
+                                                                "This gate clears when its checklist items do — tick those instead.",
+                                                        });
+                                                        return;
+                                                    }
+                                                    handleToggleStatus(row.criterion_id, row.status);
                                                 }}
-                                                onEditLinks={(row) =>
-                                                    openLinkEditor("criterion", row as CriterionStatus)
+                                                onOpenDetail={(row, section) =>
+                                                    setDetailTarget({
+                                                        row: row as CriterionStatus,
+                                                        section,
+                                                    })
                                                 }
-                                                onEditNotes={(row) => {
-                                                    setNotesDraft((row as CriterionStatus).notes || "");
-                                                    setNotesTarget(row as CriterionStatus);
-                                                }}
                                             />
                                         </div>
                                     )}
@@ -1055,7 +1421,112 @@ export default function GTMLaunchDetailPage() {
                 </>)}
 
                 {tab === "assets" && (<>
-                {/* Supporting assets - Campaign Brief Part 6, same table shape */}
+                {/* The five launch artifacts. Status and owner are the very rows the
+                    Checklist tab edits -- this is a view onto them, not a copy. */}
+                <div className="mb-8">
+                    <div className="flex items-center justify-between mb-3">
+                        <h2 className="text-sm font-semibold text-gray-700">
+                            Launch Artifacts ({artifactsDone}/{artifacts.length})
+                        </h2>
+                        <span className="text-xs text-gray-400">
+                            Status is set on the Checklist tab
+                        </span>
+                    </div>
+                    {artifacts.length === 0 ? (
+                        <p className="text-xs text-gray-400">
+                            No artifacts yet. They are created with the launch once a tier is set.
+                        </p>
+                    ) : (
+                        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
+                            <table
+                                className="min-w-full table-fixed w-full"
+                                style={{ borderCollapse: "collapse", minWidth: "700px" }}
+                            >
+                                <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
+                                    <tr>
+                                        <th className="px-4 py-3 text-left font-medium" style={TH_STYLE}>Artifact</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "90px" }}>Status</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "170px" }}>Accountable</th>
+                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "160px" }}>Where to Find It</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {artifacts.map((a) => {
+                                        const owner = users.find(
+                                            (u) => (u.email || "").toLowerCase() === (a.owner_email || "").toLowerCase()
+                                        );
+                                        const link = asLinkList(a.links)[0];
+                                        const struck = a.status === "DONE";
+                                        return (
+                                            <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/60">
+                                                <td className="px-4 py-3">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={struck ? "text-sm text-gray-400 line-through" : "text-sm text-gray-900"}>
+                                                            {artifactDisplayName(a.criterion?.label ?? "")}
+                                                        </span>
+                                                        {isGating(a.criterion?.gate) && (
+                                                            <span className="text-[10px] uppercase tracking-wider text-gray-400 flex-shrink-0">
+                                                                Gate
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 align-middle" style={{ width: "90px" }}>
+                                                    <span title={a.status.replace(/_/g, " ")}>
+                                                        {assetStatusIcon(a.status as AssetStatus)}
+                                                    </span>
+                                                </td>
+                                                <td className="px-4 py-3 align-middle" style={{ width: "170px" }}>
+                                                    {a.owner_email ? (
+                                                        <UserDisplay
+                                                            email={a.owner_email}
+                                                            firstName={owner?.first_name}
+                                                            lastName={owner?.last_name}
+                                                            size="xs"
+                                                        />
+                                                    ) : (
+                                                        <span className="text-sm text-gray-500">-</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm align-middle" style={{ width: "160px" }}>
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        {link?.url && (
+                                                            <a
+                                                                href={link.url}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="text-xs text-purple-600 hover:underline flex items-center gap-1 truncate"
+                                                                title={link.label || link.url}
+                                                            >
+                                                                <IconExternalLink size={12} className="flex-shrink-0" />
+                                                                <span className="truncate">{link.label || "Open"}</span>
+                                                            </a>
+                                                        )}
+                                                        {canToggleTasks && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => openLinkEditor("criterion", a)}
+                                                                className="p-1 rounded hover:bg-gray-100 text-gray-400 flex-shrink-0"
+                                                                title={link?.url ? "Edit link" : "Add a link"}
+                                                            >
+                                                                <IconLink size={14} />
+                                                            </button>
+                                                        )}
+                                                        {!canToggleTasks && !link?.url && (
+                                                            <span className="text-sm text-gray-500">-</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+
+                {/* Supporting assets - Marketing Brief Part 6, same table shape */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-3">
                         <h2 className="text-sm font-semibold text-gray-700">
@@ -1261,69 +1732,19 @@ export default function GTMLaunchDetailPage() {
                 </div>
             </div>
 
-            {/* Note editor for checklist rows */}
-            <Modal
-                opened={notesTarget !== null}
-                onClose={() => setNotesTarget(null)}
-                title={`Note on \u201c${notesTarget?.criterion?.label ?? ""}\u201d`}
-                centered
-            >
-                <Stack gap="sm">
-                    <Textarea
-                        label="Note"
-                        placeholder="Context, blockers, who you are waiting on..."
-                        description="Visible to anyone who can see this launch. Clear it to remove."
-                        value={notesDraft}
-                        onChange={(e) => setNotesDraft(e.currentTarget.value)}
-                        autosize
-                        minRows={3}
-                        maxRows={10}
-                        data-autofocus
-                    />
-                    <Group justify="flex-end" gap="sm">
-                        <Button variant="subtle" onClick={() => setNotesTarget(null)} disabled={savingNotes}>
-                            Cancel
-                        </Button>
-                        <Button onClick={saveNotes} loading={savingNotes}>
-                            Save
-                        </Button>
-                    </Group>
-                </Stack>
-            </Modal>
+            {/* One panel per checklist row, opened by the row chevron or by any of
+                the inline cells, which each ask for their own field. */}
+            <LaunchCriterionDetailModal
+                row={detailTarget?.row ?? null}
+                section={detailTarget?.section}
+                userOptions={userOptions}
+                canEdit={canToggleTasks}
+                saving={savingDetail}
+                onClose={() => setDetailTarget(null)}
+                onSave={saveDetail}
+            />
 
-            {/* Assignee picker for checklist rows */}
-            <Modal
-                opened={assignTarget !== null}
-                onClose={() => setAssignTarget(null)}
-                title={`Assign “${assignTarget?.criterion?.label ?? ""}”`}
-                centered
-            >
-                <Stack gap="sm">
-                    <Select
-                        label="Assignee"
-                        placeholder="Search people..."
-                        description="Leave empty to unassign."
-                        data={userOptions}
-                        value={assignEmail}
-                        onChange={setAssignEmail}
-                        searchable
-                        clearable
-                        nothingFoundMessage="No matching user"
-                        comboboxProps={{ withinPortal: true }}
-                        data-autofocus
-                    />
-                    <Group justify="flex-end" gap="sm">
-                        <Button variant="subtle" onClick={() => setAssignTarget(null)} disabled={savingAssign}>
-                            Cancel
-                        </Button>
-                        <Button onClick={saveAssignee} loading={savingAssign}>
-                            Save
-                        </Button>
-                    </Group>
-                </Stack>
-            </Modal>
-
-            {/* Link editor — checklist items store a links[] array, assets a single url */}
+            {/* Link editor for the Assets tab: artifact rows store a links[] array, assets a single url. Checklist rows edit their link in the detail panel above. */}
             <Modal
                 opened={linkTarget !== null}
                 onClose={() => setLinkTarget(null)}

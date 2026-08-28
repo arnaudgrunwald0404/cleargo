@@ -34,6 +34,7 @@ async function patchHandler(
         const allowedFields = [
             'label', 'description', 'phase',
             'sort_order', 'is_active', 'default_owner_email', 'default_due_offset_days',
+            'decision_owner_role', 'required_signoff_roles', 'blocked_by_criterion_id',
             'depends_on_criterion_id'
         ];
         const updates: Record<string, any> = {};
