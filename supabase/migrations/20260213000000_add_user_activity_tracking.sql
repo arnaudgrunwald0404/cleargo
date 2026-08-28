@@ -18,11 +18,13 @@ CREATE INDEX IF NOT EXISTS idx_user_activity_created_at ON user_activity(created
 ALTER TABLE user_activity ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policy: Authenticated users can read all activity (for analytics)
+DROP POLICY IF EXISTS "Authenticated users can select user_activity" ON user_activity;
 CREATE POLICY "Authenticated users can select user_activity" ON user_activity
   FOR SELECT TO authenticated
   USING (true);
 
 -- RLS Policy: Users can insert their own activity
+DROP POLICY IF EXISTS "Users can insert their own activity" ON user_activity;
 CREATE POLICY "Users can insert their own activity" ON user_activity
   FOR INSERT TO authenticated
   WITH CHECK (

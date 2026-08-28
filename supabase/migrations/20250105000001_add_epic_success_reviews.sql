@@ -22,16 +22,19 @@ CREATE INDEX IF NOT EXISTS idx_epic_success_reviews_reviewed_at
 -- Row-Level Security
 ALTER TABLE public.epic_success_reviews ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "Allow read access to authenticated users" ON public.epic_success_reviews;
 CREATE POLICY "Allow read access to authenticated users" ON public.epic_success_reviews
   FOR SELECT
   TO authenticated
   USING (true);
 
+DROP POLICY IF EXISTS "Allow insert access to authenticated users" ON public.epic_success_reviews;
 CREATE POLICY "Allow insert access to authenticated users" ON public.epic_success_reviews
   FOR INSERT
   TO authenticated
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "Allow update access to authenticated users" ON public.epic_success_reviews;
 CREATE POLICY "Allow update access to authenticated users" ON public.epic_success_reviews
   FOR UPDATE
   TO authenticated
