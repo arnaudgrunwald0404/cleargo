@@ -3,8 +3,12 @@
  * Fetches data from Pendo and calculates HEART metric values
  */
 
-import { getClient } from '@/lib/db';
+import { getAdminClient } from '@/lib/db';
 import { PendoClient } from '@/lib/integrations/pendo/client';
+
+// Snapshots are created by cron jobs and background tasks with no user session,
+// so use the admin client (bypasses RLS) like the rest of the server-side HEART code.
+const getClient = () => getAdminClient();
 import type {
   EpicHeartMetric,
   EpicHeartSnapshot,
@@ -198,67 +202,83 @@ async function calculateMetricValue(
 
       case 'events_per_user':
       case 'events_per_user_per_week': {
-        // Get event count and divide by unique users
-        const count = await client.getEventCount({
-          eventId: primaryEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        // Get percentage to estimate user count (rough estimate)
-        // In production, this would use actual user aggregation
-        const percentage = await client.getEventPercentage({
-          eventId: primaryEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        rawData.eventCount = count;
-        rawData.percentage = percentage;
-        
-        // Estimate users based on percentage (very rough)
-        // In production, you'd get actual unique user counts
-        if (percentage > 0) {
-          const estimatedUsers = count / (percentage / 100 * 10); // Rough estimate
-          value = estimatedUsers > 0 ? count / estimatedUsers : 0;
-          
-          // If weekly, divide by weeks in range
+        // Same math as the live dashboard path (service.ts): real event counts and
+        // unique-visitor aggregations across all configured events, so stored history
+        // always agrees with the live cards.
+        const eventIdsToUse = eventIds.length > 1 ? eventIds : [primaryEventId];
+        const perEvent = await Promise.all(
+          eventIdsToUse.map((eid) =>
+            Promise.all([
+              client.getEventCount({
+                eventId: eid,
+                startDate,
+                endDate,
+                filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+              }),
+              client.getUniqueVisitors({
+                eventId: eid,
+                startDate,
+                endDate,
+                filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+              }),
+            ])
+          )
+        );
+        const totalEvents = perEvent.reduce((sum, [ev]) => sum + ev, 0);
+        // Union of users across events is not available from the API; sum of per-event
+        // unique visitors is the conservative denominator (rate is a lower bound).
+        const uniqueUsers = perEvent.reduce((sum, [, u]) => sum + u, 0);
+
+        rawData.eventCount = totalEvents;
+        rawData.uniqueUsers = uniqueUsers;
+
+        if (uniqueUsers > 0) {
+          value = totalEvents / uniqueUsers;
+
           if (measurementType === 'events_per_user_per_week') {
             const days = (snapshotDate.getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24);
             const weeks = Math.max(1, days / 7);
             value = value / weeks;
           }
+        } else {
+          value = 0;
         }
         break;
       }
       
       case 'unique_users_percentage': {
-        const percentage = await client.getEventPercentage({
-          eventId: primaryEventId,
-          startDate,
-          endDate,
-          filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
-        });
-        
-        rawData.percentage = percentage;
-        value = percentage;
+        // Live-path parity: unique visitors on the event vs total app visitors
+        const [uniqueVis, totalVis] = await Promise.all([
+          client.getUniqueVisitors({
+            eventId: primaryEventId,
+            startDate,
+            endDate,
+            filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
+          }),
+          client.getTotalUniqueVisitors({
+            startDate,
+            endDate,
+            segmentId: metric.pendo_segment_id ?? undefined,
+          }),
+        ]);
+
+        rawData.uniqueVisitors = uniqueVis;
+        rawData.totalAppVisitors = totalVis;
+        value = totalVis > 0 ? (uniqueVis / totalVis) * 100 : 0;
         break;
       }
-      
+
       case 'unique_users_count': {
-        // Estimate from count and percentage
-        const count = await client.getEventCount({
+        // Real unique-visitor aggregation (was a count*0.7 estimate)
+        const uniqueVis = await client.getUniqueVisitors({
           eventId: primaryEventId,
           startDate,
           endDate,
           filters: metric.pendo_segment_id ? { segmentId: metric.pendo_segment_id } : undefined,
         });
-        
-        rawData.eventCount = count;
-        // This is a rough estimate - in production use actual aggregation
-        value = count > 0 ? Math.min(count, count * 0.7) : 0; // Assume some repeat usage
+
+        rawData.uniqueVisitors = uniqueVis;
+        value = uniqueVis;
         break;
       }
       

@@ -1,0 +1,37 @@
+name: Daily HEART Snapshots
+
+on:
+  schedule:
+    # Daily 07:00 UTC (02:00 EST / 03:00 EDT) — after the previous day's usage is complete.
+    # Production Success Metrics dashboards read stored snapshots, so this keeps them fresh.
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger HEART snapshots job
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BASE_URL/api/jobs/heart-snapshots") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then exit 0; fi
+            echo "Retry $i..."; sleep 10
+          done
+          echo "Failed after retries" >&2
+          exit 1
