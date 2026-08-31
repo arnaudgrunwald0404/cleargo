@@ -119,11 +119,83 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
                 );
             }
 
+            const admin = createAdminClient();
+
+            // Read the row first for two reasons: a missing one is a 404 rather
+            // than a background function that fails out of sight, and its
+            // current status is what the worker restores if the run throws.
+            const { data: row } = await admin
+                .from('launch_artifact')
+                .select('status')
+                .eq('launch_id', launchId)
+                .eq('artifact_type', body.artifact_type)
+                .maybeSingle();
+
+            if (!row) {
+                return NextResponse.json(
+                    { error: 'No such artifact on this launch. Create the documents first.' },
+                    { status: 404 }
+                );
+            }
+
+            if (row.status === 'DRAFTING') {
+                return NextResponse.json(
+                    { error: 'A draft is already running for this artifact.' },
+                    { status: 409 }
+                );
+            }
+
+            // Drafting takes minutes; netlify.toml caps a SYNCHRONOUS function
+            // at 26s, so the maxDuration above is not honoured in production and
+            // this must hand off. Same shape as HEART setup
+            // (api/epics/[id]/heart/route.ts:174-278): inline locally, 202 on Netlify.
+            const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
+            const secret =
+                process.env.NETLIFY_ARTIFACT_DRAFT_SECRET || process.env.NETLIFY_HEART_SETUP_SECRET;
+            const useBackground =
+                Boolean(baseUrl) && !baseUrl.includes('localhost') && Boolean(secret);
+
+            if (useBackground) {
+                const triggered = await fetch(
+                    `${baseUrl}/.netlify/functions/artifact-draft-background`,
+                    {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            launchId,
+                            artifactType: body.artifact_type,
+                            previousStatus: row.status,
+                            sourceNotes: body.source_notes,
+                            actorEmail: actor.email,
+                            secret,
+                        }),
+                    }
+                ).catch((err) => {
+                    console.error('[artifacts] background trigger failed:', err);
+                    return null;
+                });
+
+                if (!triggered?.ok) {
+                    return NextResponse.json(
+                        { error: 'Could not start the draft. Try again.' },
+                        { status: 502 }
+                    );
+                }
+
+                // 202: accepted, not done. The client polls GET until the row
+                // leaves DRAFTING -- launch_artifact already carries that state,
+                // so there is no separate job table to read.
+                return NextResponse.json(
+                    { accepted: true, artifact_type: body.artifact_type, status: 'DRAFTING' },
+                    { status: 202 }
+                );
+            }
+
             const draft = await draftArtifact(
                 launchId,
                 body.artifact_type,
                 { sourceNotes: body.source_notes, actorEmail: actor.email },
-                createAdminClient()
+                admin
             );
 
             // 207 when the draft landed but something adjacent did not (the

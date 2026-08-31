@@ -29,13 +29,14 @@ import { LaunchWorkbackTimeline } from "@/components/LaunchWorkbackTimeline";
 import { DetailTabs, TabCount } from "@/components/DetailTabs";
 import { LaunchChecklistTable, type LaunchCriterionDetailSection } from "@/components/launch/LaunchChecklistTable";
 import { LaunchCriterionDetailModal, type LaunchCriterionPatch } from "@/components/launch/LaunchCriterionDetailModal";
+import { LaunchArtifactsPanel } from "@/components/launch/LaunchArtifactsPanel";
 import {
     anyLaunchChecklistFilterActive,
     filterLaunchChecklistRows,
     type LaunchChecklistFilters,
 } from "@/lib/launchChecklistFilters";
 import { UserDisplay } from "@/components/UserDisplay";
-import { computeLaunchReadiness, isGating, VERDICT_CLASS, VERDICT_LABEL } from "@/lib/launch-readiness";
+import { computeLaunchReadiness, VERDICT_CLASS, VERDICT_LABEL } from "@/lib/launch-readiness";
 
 type TaskStatus = "NOT_STARTED" | "IN_PROGRESS" | "DONE" | "NOT_APPLICABLE";
 
@@ -163,36 +164,6 @@ function byDueDate<T extends { due_date: string | null }>(rows: T[]): T[] {
 const MAX_NAMED_BLOCKERS = 3;
 
 /**
- * The five launch artifacts: Story Brief, Message Brief, Field Enablement Guide,
- * Marketing Brief, Supporting Assets. They live in `launch_criterion_status` like
- * every other checklist row -- that is what drives readiness -- so the Assets
- * tab lists them rather than duplicating them, and "Where to Find It" edits the
- * same `links` array the checklist does.
- *
- * Replaces the old pair of `brief_url` / `feg_url` columns on the Overview tab,
- * which gave two of the five a URL and the other three nowhere to go.
- */
-const ARTIFACT_PHASE_PREFIX = "Phase 01";
-
-/**
- * Display names. The seeded labels are sentence-length status statements
- * ("Enablement Brief delivered"), which read as noise in a table whose whole
- * point is "here is the artifact and here is its link".
- */
-const ARTIFACT_DISPLAY_NAME: Record<string, string> = {
-    "Story Brief delivered to PMM + Product Education": "Story Brief",
-    "Message Brief ratified": "Message Brief",
-    "Enablement Brief delivered": "Field Enablement Guide",
-    "Marketing Brief delivered": "Marketing Brief",
-    "Campaign Brief delivered": "Marketing Brief",
-    "Supporting Assets delivered": "Supporting Assets",
-};
-
-function artifactDisplayName(label: string): string {
-    return ARTIFACT_DISPLAY_NAME[label] ?? label;
-}
-
-/**
  * launch_criterion_status.links is a free-form jsonb array; the API has always
  * accepted it but nothing ever wrote to it, so anything could be in there.
  * Normalise defensively rather than trusting the shape.
@@ -290,7 +261,7 @@ export default function GTMLaunchDetailPage() {
     const [canMarkNA, setCanMarkNA] = useState(false);
     // Checklist leads: it is the work. The old default was an Overview tab whose
     // contents now live in the page header.
-    const [tab, setTab] = useState<"checklist" | "assets" | "epics">("checklist");
+    const [tab, setTab] = useState<"checklist" | "assets" | "artifacts" | "epics">("checklist");
     // The launch timeline expands in the header rather than occupying a tab, the
     // way /epics hangs "Show Release Timeline" off its release heading. Open by
     // default: the runway is the first thing worth seeing on a launch, and the
@@ -581,15 +552,6 @@ export default function GTMLaunchDetailPage() {
     const assetsRequired = assets.filter((a) => a.status !== "NOT_APPLICABLE").length;
     const assetsDone = assets.filter((a) => a.status === "DONE").length;
 
-    // The five runway artifacts, in workback order.
-    const artifacts = useMemo(
-        () =>
-            statuses
-                .filter((s) => (s.criterion?.phase || "").startsWith(ARTIFACT_PHASE_PREFIX))
-                .sort((a, b) => (a.criterion?.sort_order ?? 0) - (b.criterion?.sort_order ?? 0)),
-        [statuses]
-    );
-    const artifactsDone = artifacts.filter((a) => a.status === "DONE").length;
 
     /**
      * A launch scheduled before one of its own epics ships. Kept out of readiness
@@ -1269,6 +1231,10 @@ export default function GTMLaunchDetailPage() {
                                 badge: <TabCount>{assetsDone}/{assetsRequired}</TabCount>,
                             },
                             {
+                                value: "artifacts",
+                                label: "Artifacts",
+                            },
+                            {
                                 value: "epics",
                                 label: "Epics",
                                 badge: <TabCount>{epics.length}</TabCount>,
@@ -1418,110 +1384,6 @@ export default function GTMLaunchDetailPage() {
                 </>)}
 
                 {tab === "assets" && (<>
-                {/* The five launch artifacts. Status and owner are the very rows the
-                    Checklist tab edits -- this is a view onto them, not a copy. */}
-                <div className="mb-8">
-                    <div className="flex items-center justify-between mb-3">
-                        <h2 className="text-sm font-semibold text-gray-700">
-                            Launch Artifacts ({artifactsDone}/{artifacts.length})
-                        </h2>
-                        <span className="text-xs text-gray-400">
-                            Status is set on the Checklist tab
-                        </span>
-                    </div>
-                    {artifacts.length === 0 ? (
-                        <p className="text-xs text-gray-400">
-                            No artifacts yet. They are created with the launch once a tier is set.
-                        </p>
-                    ) : (
-                        <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto">
-                            <table
-                                className="min-w-full table-fixed w-full"
-                                style={{ borderCollapse: "collapse", minWidth: "700px" }}
-                            >
-                                <thead style={{ backgroundColor: "#FFFFFF", borderBottom: "2px solid #E5E7EB" }}>
-                                    <tr>
-                                        <th className="px-4 py-3 text-left font-medium" style={TH_STYLE}>Artifact</th>
-                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "90px" }}>Status</th>
-                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "170px" }}>Accountable</th>
-                                        <th className="px-4 py-3 text-left font-medium" style={{ ...TH_STYLE, width: "160px" }}>Where to Find It</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {artifacts.map((a) => {
-                                        const owner = users.find(
-                                            (u) => (u.email || "").toLowerCase() === (a.owner_email || "").toLowerCase()
-                                        );
-                                        const link = asLinkList(a.links)[0];
-                                        const struck = a.status === "DONE";
-                                        return (
-                                            <tr key={a.id} className="border-b border-gray-100 hover:bg-gray-50/60">
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className={struck ? "text-sm text-gray-400 line-through" : "text-sm text-gray-900"}>
-                                                            {artifactDisplayName(a.criterion?.label ?? "")}
-                                                        </span>
-                                                        {isGating(a.criterion?.gate) && (
-                                                            <span className="text-[10px] uppercase tracking-wider text-gray-400 flex-shrink-0">
-                                                                Gate
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 align-middle" style={{ width: "90px" }}>
-                                                    <span title={a.status.replace(/_/g, " ")}>
-                                                        {assetStatusIcon(a.status as AssetStatus)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 align-middle" style={{ width: "170px" }}>
-                                                    {a.owner_email ? (
-                                                        <UserDisplay
-                                                            email={a.owner_email}
-                                                            firstName={owner?.first_name}
-                                                            lastName={owner?.last_name}
-                                                            size="xs"
-                                                        />
-                                                    ) : (
-                                                        <span className="text-sm text-gray-500">-</span>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3 text-sm align-middle" style={{ width: "160px" }}>
-                                                    <div className="flex items-center gap-1.5 min-w-0">
-                                                        {link?.url && (
-                                                            <a
-                                                                href={link.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="text-xs text-purple-600 hover:underline flex items-center gap-1 truncate"
-                                                                title={link.label || link.url}
-                                                            >
-                                                                <IconExternalLink size={12} className="flex-shrink-0" />
-                                                                <span className="truncate">{link.label || "Open"}</span>
-                                                            </a>
-                                                        )}
-                                                        {canToggleTasks && (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => openLinkEditor("criterion", a)}
-                                                                className="p-1 rounded hover:bg-gray-100 text-gray-400 flex-shrink-0"
-                                                                title={link?.url ? "Edit link" : "Add a link"}
-                                                            >
-                                                                <IconLink size={14} />
-                                                            </button>
-                                                        )}
-                                                        {!canToggleTasks && !link?.url && (
-                                                            <span className="text-sm text-gray-500">-</span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
 
                 {/* Supporting assets - Marketing Brief Part 6, same table shape */}
                 <div className="mb-8">
@@ -1630,6 +1492,15 @@ export default function GTMLaunchDetailPage() {
                 </div>
 
                 </>)}
+
+                {tab === "artifacts" && (
+                    <LaunchArtifactsPanel
+                        launchId={launchId}
+                        // Approving an artifact marks its runway criterion DONE,
+                        // so readiness, the gate chain and the timeline all move.
+                        onArtifactApproved={fetchLaunch}
+                    />
+                )}
 
                 {tab === "epics" && (<>
                 {/* Linked Epics */}
