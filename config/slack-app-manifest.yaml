@@ -1,7 +1,7 @@
 # Reference manifest for the ClearGO Slack app.
 #
-# Replace https://your-domain.com with the deployed host before pasting into
-# Slack (Your Apps > the app > Features > App Manifest).
+# Points at the production site. Change the host if the site moves to a custom
+# domain. Paste into Slack: Your Apps > the app > Features > App Manifest.
 #
 # Every url and request_url below corresponds to a route that exists in this
 # repo. Do not add a command here before its route exists: a declared command
@@ -23,23 +23,23 @@ features:
   # (handleLinkShared in api/integrations/slack/events) is reachable only for
   # domains listed here; without them Slack never sends the event.
   unfurl_domains:
-    - your-domain.com
+    - cleargo.netlify.app
   # NOTE: these commands operate on RELEASES (the `epic` table), not launches.
   # Releases and launches are different objects in ClearGO — the launch side
   # (`launch`, `launch_criterion_status`, `launch_artifact`) has no commands yet.
   slash_commands:
     - command: /release-status
-      url: https://your-domain.com/api/integrations/slack/commands/release-status
+      url: https://cleargo.netlify.app/api/integrations/slack/commands/release-status
       description: Get the current status of a release
       usage_hint: "[release-name or aha-id]"
       should_escape: false
     - command: /my-releases
-      url: https://your-domain.com/api/integrations/slack/commands/my-releases
+      url: https://cleargo.netlify.app/api/integrations/slack/commands/my-releases
       description: View releases you own or are involved with
       usage_hint: ""
       should_escape: false
     - command: /who-is-blocking
-      url: https://your-domain.com/api/integrations/slack/commands/who-is-blocking
+      url: https://cleargo.netlify.app/api/integrations/slack/commands/who-is-blocking
       description: Rank people by unreviewed criteria on active releases
       usage_hint: "[TIER_1 | TIER_2 | TIER_3]"
       should_escape: false
@@ -72,7 +72,7 @@ oauth_config:
 
 settings:
   event_subscriptions:
-    request_url: https://your-domain.com/api/integrations/slack/events
+    request_url: https://cleargo.netlify.app/api/integrations/slack/events
     bot_events:
       - app_home_opened
       - app_mention
@@ -80,7 +80,7 @@ settings:
       - message.im
   interactivity:
     is_enabled: true
-    request_url: https://your-domain.com/api/integrations/slack/interactions
+    request_url: https://cleargo.netlify.app/api/integrations/slack/interactions
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false
