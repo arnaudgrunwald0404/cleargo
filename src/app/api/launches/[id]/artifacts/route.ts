@@ -11,8 +11,14 @@ import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { canRolesPerform } from '@/lib/permissions';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { ensureLaunchArtifacts } from '@/lib/artifacts/docFactory';
+import {
+    dispatchLaunchArtifactSetup,
+    launchArtifactSetupTarget,
+} from '@/lib/artifacts/backgroundSetup';
 import { draftArtifact } from '@/lib/artifacts/draftService';
-import { getArtifactDefinition } from '@/lib/artifacts/registry';
+import { artifactsForTier, getArtifactDefinition } from '@/lib/artifacts/registry';
+import { isGoogleConfigured } from '@/lib/google/auth';
+import type { LaunchTier } from '@/types/launches';
 import {
     ARTIFACT_TYPES,
     isDraftStalled,
@@ -39,6 +45,43 @@ async function resolveRoles(
     const raw = data?.roles;
     const roles = Array.isArray(raw) ? raw : raw ? [String(raw)] : [];
     return { email: user.email, roles };
+}
+
+/**
+ * Is there anything for a setup run to actually do?
+ *
+ * True when the launch is missing a row for an artifact its tier calls for, or
+ * has a row with no document. Two reads and no Google calls, because its whole
+ * job is to decide whether to pay for the slow path.
+ */
+async function hasMissingDocs(
+    launchId: string,
+    admin: ReturnType<typeof createAdminClient>
+): Promise<boolean> {
+    const { data: launch } = await admin
+        .from('launch')
+        .select('tier')
+        .eq('id', launchId)
+        .maybeSingle();
+
+    const { data: rows, error } = await admin
+        .from('launch_artifact')
+        .select('artifact_type, doc_id')
+        .eq('launch_id', launchId);
+
+    // Unreadable (the migration may not be applied here): call it work to do and
+    // let ensureLaunchArtifacts report the real reason.
+    if (error) return true;
+
+    const withDoc = new Set(
+        ((rows ?? []) as Array<{ artifact_type: string; doc_id: string | null }>)
+            .filter((r) => r.doc_id)
+            .map((r) => r.artifact_type)
+    );
+
+    return artifactsForTier((launch?.tier as LaunchTier) ?? null).some(
+        (def) => !withDoc.has(def.type)
+    );
 }
 
 async function getHandler(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -234,7 +277,38 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
             return NextResponse.json(draft, { status: draft.warnings.length > 0 ? 207 : 200 });
         }
 
-        const result = await ensureLaunchArtifacts(launchId, createAdminClient());
+        // Same handoff as drafting, and for the same reason: filling in five
+        // missing documents is ~20 sequential Google calls against a 26s cap.
+        // This is fast when everything already exists, which is exactly why the
+        // exposure went unnoticed -- the slow case is a launch whose documents
+        // were never created.
+        //
+        // Only hand off when there is real Google work to do, though. Pressing
+        // this on a complete launch is the common case, and ensureLaunchArtifacts
+        // makes no Drive copies then, so answering it with a 202 would trade a
+        // truthful "nothing missing" for a spinner and two minutes of polling.
+        // Same for an environment with no Google connection: nothing slow can
+        // happen, and inline keeps the "connect Google" message that explains why
+        // rows appeared without documents.
+        const admin = createAdminClient();
+        const needsSlowPath =
+            (await isGoogleConfigured()) && (await hasMissingDocs(launchId, admin));
+        const setupTarget = needsSlowPath ? launchArtifactSetupTarget() : null;
+
+        if (setupTarget) {
+            const started = await dispatchLaunchArtifactSetup(launchId, setupTarget);
+            if (!started) {
+                return NextResponse.json(
+                    { error: 'Could not start document setup. Try again.' },
+                    { status: 502 }
+                );
+            }
+            // 202: accepted, not done. The client polls the normal GET, where a
+            // filled-in doc_id is the completion signal.
+            return NextResponse.json({ accepted: true }, { status: 202 });
+        }
+
+        const result = await ensureLaunchArtifacts(launchId, admin);
 
         // Reported rather than thrown: partial success is the normal case before
         // the Google credentials land, and the caller needs to see which half

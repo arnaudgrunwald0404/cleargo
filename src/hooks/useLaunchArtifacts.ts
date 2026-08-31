@@ -62,6 +62,12 @@ export interface EnsureArtifactsResponse {
     skipped: number;
     googleConfigured: boolean;
     errors: string[];
+    /**
+     * True when the work was handed to a background function (202) rather than
+     * finished inline, so none of the counts above are populated yet. Same shape
+     * as drafting: on Netlify the caller polls, locally it runs inline.
+     */
+    accepted?: boolean;
 }
 
 /**
@@ -73,7 +79,10 @@ export interface EnsureArtifactsResponse {
  * someone is editing is unrecoverable.
  *
  * A 207 is success-with-warnings (the usual shape before Google is configured),
- * NOT a failure.
+ * NOT a failure. A 202 means the work went to a background function — same
+ * split as drafting, because filling in five documents is ~20 sequential Google
+ * calls and a synchronous Netlify function is capped at 26s. Callers must handle
+ * both: `accepted` true means the counts are absent and the answer is to poll.
  */
 export function useEnsureLaunchArtifacts(launchId: string) {
     const qc = useQueryClient();

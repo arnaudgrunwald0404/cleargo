@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { ensureLaunchArtifacts } from '@/lib/artifacts/docFactory';
+import {
+    dispatchLaunchArtifactSetup,
+    launchArtifactSetupTarget,
+} from '@/lib/artifacts/backgroundSetup';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { canRolesPerformWithRules } from '@/lib/permissions';
@@ -204,16 +208,42 @@ async function postHandler(req: NextRequest) {
         // Deliberately last and deliberately non-fatal -- a Drive outage must
         // not stop a launch being created, and ensureLaunchArtifacts is
         // idempotent so a later retry fills in whatever was missed.
-        try {
-            const artifacts = await ensureLaunchArtifacts(launch.id, supabase);
-            if (artifacts.errors.length > 0) {
-                console.warn('[launches] artifact setup partial:', artifacts.errors.join('; '));
+        //
+        // Handed to a background function on Netlify. For a Tier 1/2 launch this
+        // is ~20 sequential Google calls, and netlify.toml caps a synchronous
+        // function at 26s -- running it inline is what made this endpoint answer
+        // a fully successful create with a timeout. Everything above is plain DB
+        // work, so the response now goes back in about a second.
+        let artifactsPending = false;
+        const target = launchArtifactSetupTarget();
+
+        if (target) {
+            artifactsPending = await dispatchLaunchArtifactSetup(launch.id, target);
+            if (!artifactsPending) {
+                // Nothing will run, but the launch is real and the documents are
+                // still one button press away, so this is logged rather than
+                // failing a create that otherwise worked.
+                console.warn(
+                    `[launches] artifact setup not started for ${launch.id}; use "Create missing documents"`
+                );
             }
-        } catch (artifactError) {
-            console.warn('[launches] artifacts not instantiated:', artifactError);
+        } else {
+            try {
+                const artifacts = await ensureLaunchArtifacts(launch.id, supabase);
+                if (artifacts.errors.length > 0) {
+                    console.warn('[launches] artifact setup partial:', artifacts.errors.join('; '));
+                }
+            } catch (artifactError) {
+                console.warn('[launches] artifacts not instantiated:', artifactError);
+            }
         }
 
-        return NextResponse.json(withLaunchStatus(launch), { status: 201 });
+        // artifacts_pending tells the client whether the documents exist yet, so
+        // the toast can say "being set up" instead of implying it is all done.
+        return NextResponse.json(
+            { ...withLaunchStatus(launch), artifacts_pending: artifactsPending },
+            { status: 201 }
+        );
     } catch (error: any) {
         console.error('Error in POST /api/launches:', error);
         return NextResponse.json({ error: error.message }, { status: 500 });

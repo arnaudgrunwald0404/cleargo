@@ -327,13 +327,31 @@ export default function GtmLaunchesClient() {
             });
 
             if (!res.ok) {
-                const err = await res.json();
-                notifications.show({ title: "Error", message: err.error || "Failed to create launch", color: "red" });
+                // Tolerate a non-JSON body. A proxy or gateway that times out the
+                // request answers with an HTML error page, and parsing that threw
+                // — so a create that had actually succeeded server-side surfaced
+                // as the generic catch below with no status code and no hint.
+                const err = await res.json().catch(() => ({}));
+                notifications.show({
+                    title: "Error",
+                    message: err.error || `Failed to create launch (HTTP ${res.status})`,
+                    color: "red",
+                });
                 return;
             }
 
             const launch = await res.json();
-            notifications.show({ title: "Created", message: `Launch "${launch.name}" created`, color: "teal" });
+            notifications.show({
+                title: "Created",
+                // The Drive folder and the five template copies are made by a
+                // background function, so at this point they do not exist yet.
+                // Saying so beats a bare "created" that implies otherwise and
+                // sends people looking for documents that are still minutes out.
+                message: launch.artifacts_pending
+                    ? `Launch "${launch.name}" created — its documents are being set up.`
+                    : `Launch "${launch.name}" created`,
+                color: "teal",
+            });
             setCreateOpen(false);
             setFormData(EMPTY_FORM);
             fetchLaunches();
