@@ -78,19 +78,117 @@ export function resolveDefaultModel(
   claudeModel: string = 'claude-haiku-4-5',
   geminiModel: string = 'gemini-2.5-flash'
 ): LanguageModel | null {
+  return resolveModelChain(claudeModel, geminiModel)[0]?.model ?? null;
+}
+
+export interface ModelCandidate {
+  model: LanguageModel;
+  /** For log lines when one candidate hands off to the next. */
+  label: string;
+}
+
+/**
+ * Every model we could use, best first.
+ *
+ * Previously only the first of these was ever returned, so the Gemini fallback
+ * fired only when no Anthropic key was CONFIGURED -- never when a configured
+ * one FAILED. An exhausted Anthropic quota therefore took every AI feature down
+ * while a perfectly good Gemini key sat unused in the same environment.
+ */
+export function resolveModelChain(
+  claudeModel: string = 'claude-haiku-4-5',
+  geminiModel: string = 'gemini-2.5-flash'
+): ModelCandidate[] {
+  const chain: ModelCandidate[] = [];
+
   if (!process.env.ANTHROPIC_API_KEY && process.env.CLAUDE_API_KEY) {
     process.env.ANTHROPIC_API_KEY = process.env.CLAUDE_API_KEY;
   }
   const anthropicKey = process.env.ANTHROPIC_API_KEY || '';
-  if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
-    return createAnthropic({ baseURL: getAnthropicBaseUrl() })(claudeModel);
+  if (anthropicKey.startsWith('sk-ant-')) {
+    chain.push({
+      model: createAnthropic({ baseURL: getAnthropicBaseUrl() })(claudeModel),
+      label: claudeModel,
+    });
   }
+
   const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY || '';
   if (geminiKey) {
     if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
       process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
     }
-    return google(geminiModel);
+    chain.push({ model: google(geminiModel), label: geminiModel });
   }
-  return null;
+
+  return chain;
+}
+
+/** Quota, spend-cap and capacity wording, which does not always carry a 429. */
+const TRANSIENT_MESSAGE = /usage limit|quota|credit balance|rate limit|overloaded|capacity|too many requests/i;
+
+/**
+ * Whether another provider is worth trying.
+ *
+ * Deliberately conservative on 400: a malformed request or a schema the model
+ * cannot satisfy fails identically everywhere, and retrying would double the
+ * latency and hide our own bug. The exception is a 400 whose message is about
+ * spend or quota -- Anthropic does not always return 429 for those.
+ */
+export function shouldTryNextModel(error: unknown): boolean {
+  const status = (error as { statusCode?: number } | null)?.statusCode;
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (typeof status === 'number') {
+    if (status >= 500) return true;
+    // 401/403: a bad or revoked key. 402: billing. 408/409/429: transient.
+    if ([401, 402, 403, 408, 409, 429].includes(status)) return true;
+    if (status === 400) return TRANSIENT_MESSAGE.test(message);
+    return false;
+  }
+
+  // No status: a network or DNS failure, or a wrapped error we cannot classify.
+  // The other provider is a different host, so it is worth one attempt.
+  return true;
+}
+
+/**
+ * Run `operation` against each candidate until one succeeds.
+ *
+ * Rethrows the FIRST error rather than the last when everything fails: the
+ * primary model's failure is the one that describes the actual problem, and a
+ * downstream "no Gemini key" would bury it.
+ */
+export async function runWithModelFallback<T>(
+  candidates: ModelCandidate[],
+  operation: (model: LanguageModel) => Promise<T>,
+  log: (message: string) => void = console.warn
+): Promise<T> {
+  if (candidates.length === 0) {
+    throw new Error(
+      'No AI model configured (set CLAUDE_API_KEY/ANTHROPIC_API_KEY or GEMINI_API_KEY)'
+    );
+  }
+
+  let firstError: unknown = null;
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    try {
+      return await operation(candidate.model);
+    } catch (error) {
+      if (firstError === null) firstError = error;
+
+      const isLast = i === candidates.length - 1;
+      if (isLast || !shouldTryNextModel(error)) throw firstError;
+
+      log(
+        `[ai] ${candidate.label} failed (${
+          error instanceof Error ? error.message : String(error)
+        }); trying ${candidates[i + 1].label}.`
+      );
+    }
+  }
+
+  // Unreachable: the loop either returns or throws.
+  throw firstError;
 }

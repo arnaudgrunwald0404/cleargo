@@ -4,10 +4,9 @@
  */
 
 import { generateObject } from 'ai';
-import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { buildAgentContext, findRelatedEntities, findRelatedEvents, type FullAgentContext } from './pendo-context';
-import { resolveDefaultModel } from '@/lib/ai/resolve-model';
+import { resolveModelChain, runWithModelFallback, type ModelCandidate } from '@/lib/ai/resolve-model';
 import type {
   HeartAgentRecommendation,
   HeartMeasurementType,
@@ -19,11 +18,12 @@ import type {
 } from './types';
 
 /**
- * Resolve the AI model: prefer Claude with a real sk-ant- key, fall back to Gemini.
- * Netlify's AI integration injects a proxy key that fails against api.anthropic.com.
+ * Every model we could use, best first. The chain rather than a single model so
+ * an exhausted or failing Anthropic key hands off to Gemini instead of dropping
+ * the whole request to heuristics.
  */
-function resolveHeartModel(): LanguageModel | null {
-  return resolveDefaultModel('claude-haiku-4-5', 'gemini-2.5-flash');
+function resolveHeartModels(): ModelCandidate[] {
+  return resolveModelChain('claude-haiku-4-5', 'gemini-2.5-flash');
 }
 
 // ============================================================================
@@ -396,7 +396,7 @@ export async function runHeartAgent(
   epicId: string,
   options?: { userContext?: string }
 ): Promise<HeartAgentResult> {
-  const model = resolveHeartModel();
+  const models = resolveHeartModels();
   
   // Build context first so we can still produce fallback recommendations
   const context = await buildAgentContext(epicId);
@@ -419,7 +419,7 @@ export async function runHeartAgent(
     };
   }
 
-  if (!model) {
+  if (models.length === 0) {
     return {
       success: true,
       recommendations: buildHeuristicRecommendations(context),
@@ -435,10 +435,17 @@ export async function runHeartAgent(
     const prompt = buildHeartAgentPrompt(context, options?.userContext);
     
     // Call AI
-    const { object } = await generateObject({
-      model,
-      schema: heartRecommendationSchema,
-      prompt,
+    // Which model actually produced this: with a fallback chain it is not
+    // necessarily the first candidate, and modelVersion below is the record of
+    // what generated the recommendations.
+    let usedModel = models[0].label;
+    const { object } = await runWithModelFallback(models, (model) => {
+      usedModel = (model as { modelId?: string }).modelId || usedModel;
+      return generateObject({
+        model,
+        schema: heartRecommendationSchema,
+        prompt,
+      });
     });
     console.log('[HeartAgent] raw model recommendations:', JSON.stringify(object));
 
@@ -452,7 +459,7 @@ export async function runHeartAgent(
       success: true,
       recommendations: validatedRecommendations,
       context,
-      modelVersion: (model as any).modelId || 'ai-model',
+      modelVersion: usedModel || 'ai-model',
       dataConfidence: object.dataConfidence as PendoDataConfidenceLevel | undefined,
       dataConfidenceReason: object.dataConfidenceReason,
       rawHadRecommendations,

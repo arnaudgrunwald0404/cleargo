@@ -1,5 +1,10 @@
-import { describe, it, expect, beforeEach, afterAll } from '@jest/globals';
-import { getAnthropicBaseUrl } from '@/lib/ai/resolve-model';
+import { describe, it, expect, beforeEach, afterAll, jest } from '@jest/globals';
+import type { LanguageModel } from 'ai';
+import {
+    getAnthropicBaseUrl,
+    runWithModelFallback,
+    shouldTryNextModel,
+} from '@/lib/ai/resolve-model';
 
 const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
 const originalEnv = { ...process.env };
@@ -78,5 +83,105 @@ describe('getAnthropicBaseUrl', () => {
     it('falls back rather than throwing on an unparseable value', () => {
         setEnv({ ANTHROPIC_BASE_URL: 'not a url' });
         expect(getAnthropicBaseUrl()).toBe(ANTHROPIC_API_V1);
+    });
+});
+
+describe('shouldTryNextModel', () => {
+    const err = (statusCode: number | undefined, message = 'boom') =>
+        Object.assign(new Error(message), statusCode === undefined ? {} : { statusCode });
+
+    it('falls back on rate limiting and quota', () => {
+        expect(shouldTryNextModel(err(429))).toBe(true);
+        expect(shouldTryNextModel(err(402))).toBe(true);
+    });
+
+    it('falls back on a bad or revoked key', () => {
+        expect(shouldTryNextModel(err(401))).toBe(true);
+        expect(shouldTryNextModel(err(403))).toBe(true);
+    });
+
+    it('falls back on server errors', () => {
+        expect(shouldTryNextModel(err(500))).toBe(true);
+        expect(shouldTryNextModel(err(503))).toBe(true);
+    });
+
+    /**
+     * A schema the model cannot satisfy fails the same way everywhere. Retrying
+     * doubles latency and hides our own bug.
+     */
+    it('does NOT fall back on an ordinary bad request', () => {
+        expect(shouldTryNextModel(err(400, 'invalid schema'))).toBe(false);
+        expect(shouldTryNextModel(err(404, 'Not Found'))).toBe(false);
+    });
+
+    /** The real error text seen when the account hit its spend cap. */
+    it('falls back on a 400 that is actually about usage limits', () => {
+        expect(
+            shouldTryNextModel(
+                err(400, 'You have reached your specified API usage limits. You will regain access on 2026-09-01')
+            )
+        ).toBe(true);
+    });
+
+    it('falls back on an unclassifiable error, since the next provider is a different host', () => {
+        expect(shouldTryNextModel(err(undefined, 'ECONNRESET'))).toBe(true);
+        expect(shouldTryNextModel(null)).toBe(true);
+    });
+});
+
+describe('runWithModelFallback', () => {
+    const candidate = (label: string) => ({ model: label as never, label });
+
+    it('throws a clear error when nothing is configured', async () => {
+        await expect(runWithModelFallback([], async () => 'x')).rejects.toThrow(
+            /No AI model configured/
+        );
+    });
+
+    it('uses the first candidate when it works', async () => {
+        const op = jest.fn<(m: LanguageModel) => Promise<string>>(async (m) => `ran:${String(m)}`);
+        await expect(
+            runWithModelFallback([candidate('haiku'), candidate('gemini')], op)
+        ).resolves.toBe('ran:haiku');
+        expect(op).toHaveBeenCalledTimes(1);
+    });
+
+    it('moves to the next candidate when the first is rate limited', async () => {
+        const log = jest.fn<(m: string) => void>();
+        const op = jest
+            .fn<(m: LanguageModel) => Promise<string>>()
+            .mockRejectedValueOnce(Object.assign(new Error('limit'), { statusCode: 429 }))
+            .mockResolvedValueOnce('ran:gemini');
+
+        await expect(
+            runWithModelFallback([candidate('haiku'), candidate('gemini')], op, log)
+        ).resolves.toBe('ran:gemini');
+        expect(op).toHaveBeenCalledTimes(2);
+        expect(log.mock.calls[0][0]).toContain('haiku');
+        expect(log.mock.calls[0][0]).toContain('gemini');
+    });
+
+    it('does not move on for a non-retryable failure', async () => {
+        const op = jest
+            .fn<(m: LanguageModel) => Promise<string>>()
+            .mockRejectedValue(Object.assign(new Error('invalid schema'), { statusCode: 400 }));
+
+        await expect(
+            runWithModelFallback([candidate('haiku'), candidate('gemini')], op)
+        ).rejects.toThrow('invalid schema');
+        expect(op).toHaveBeenCalledTimes(1);
+    });
+
+    /** The primary failure describes the real problem; the last one buries it. */
+    it('rethrows the FIRST error when every candidate fails', async () => {
+        const op = jest
+            .fn<(m: LanguageModel) => Promise<string>>()
+            .mockRejectedValueOnce(Object.assign(new Error('anthropic quota'), { statusCode: 429 }))
+            .mockRejectedValueOnce(Object.assign(new Error('gemini unavailable'), { statusCode: 503 }));
+
+        await expect(
+            runWithModelFallback([candidate('haiku'), candidate('gemini')], op, () => {})
+        ).rejects.toThrow('anthropic quota');
+        expect(op).toHaveBeenCalledTimes(2);
     });
 });

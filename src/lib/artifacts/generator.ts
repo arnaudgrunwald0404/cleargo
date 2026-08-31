@@ -11,7 +11,7 @@
  * does it: jsdom lacks TransformStream, which the AI SDK needs at import time,
  * and the pure functions in this module must stay unit-testable.
  */
-import { resolveDefaultModel } from '@/lib/ai/resolve-model';
+import { resolveModelChain, runWithModelFallback } from '@/lib/ai/resolve-model';
 import type { ArtifactType } from '@/types/artifacts';
 import { getArtifactDefinition } from './registry';
 import { buildArtifactPrompt, GROUNDING_RULES } from './prompts';
@@ -50,12 +50,9 @@ export async function generateArtifact(
 ): Promise<GenerateArtifactResult> {
     const def = getArtifactDefinition(input.artifactType);
 
-    const model = resolveDefaultModel('claude-haiku-4-5', 'gemini-2.5-flash');
-    if (!model) {
-        throw new Error(
-            'No AI model configured (set CLAUDE_API_KEY/ANTHROPIC_API_KEY or GEMINI_API_KEY)'
-        );
-    }
+    // The whole chain, not just the best one: an exhausted Anthropic quota used
+    // to take drafting down while a working Gemini key sat unused beside it.
+    const candidates = resolveModelChain('claude-haiku-4-5', 'gemini-2.5-flash');
 
     const { generateObject } = await import('ai');
     const context = await assembleLaunchContext(input.launchId);
@@ -78,11 +75,13 @@ export async function generateArtifact(
         changeRequestNote: input.changeRequestNote ?? null,
     });
 
-    const { object } = await generateObject({
-        model,
-        schema: def.schema,
-        prompt,
-    });
+    const { object } = await runWithModelFallback(candidates, (model) =>
+        generateObject({
+            model,
+            schema: def.schema,
+            prompt,
+        })
+    );
 
     const referenceText = buildReferenceText(context, [
         input.sourceNotes,
