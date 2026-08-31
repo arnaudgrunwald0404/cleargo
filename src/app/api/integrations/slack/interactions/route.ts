@@ -31,7 +31,7 @@ import {
     type ArtifactReviewTarget,
 } from '@/lib/slack/templates/artifact-review';
 import {
-    loadArtifactInterview,
+    loadArtifactFlags,
     markArtifactFlagsAsked,
     recordArtifactFlagAnswers,
 } from '@/lib/artifacts/flags';
@@ -87,13 +87,41 @@ export async function POST(request: NextRequest) {
     }
 }
 
+/**
+ * Run one button's handler without letting it fail the whole response.
+ *
+ * Slack renders ANY non-2xx from this endpoint as "This app returned an error.
+ * Please try again, or contact the app's developer." — which tells the person
+ * clicking nothing and the person debugging less. A throw out of a handler used
+ * to reach the route's catch and become exactly that. Now the reason is said out
+ * loud in the channel and Slack still gets its 200.
+ *
+ * handleArtifactApproval already reports its own failures this way; this gives
+ * the modal openers the same treatment.
+ */
+async function runAction(
+    payload: SlackInteractionPayload,
+    actionId: string,
+    run: () => Promise<void>
+): Promise<void> {
+    try {
+        await run();
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(`slack action ${actionId} failed:`, message);
+        await respondInChannel(payload, `:x: That did not work: ${message}`);
+    }
+}
+
 async function handleBlockActions(payload: SlackInteractionPayload) {
     const actions = payload.actions || [];
 
     for (const action of actions) {
         switch (action.action_id) {
             case FLAG_INTERVIEW_ACTION:
-                await openFlagInterview(payload, action.value);
+                await runAction(payload, action.action_id, () =>
+                    openFlagInterview(payload, action.value)
+                );
                 break;
 
             case ARTIFACT_APPROVE_ACTION:
@@ -101,11 +129,15 @@ async function handleBlockActions(payload: SlackInteractionPayload) {
                 break;
 
             case ARTIFACT_CHANGES_ACTION:
-                await openChangeRequest(payload, action.value);
+                await runAction(payload, action.action_id, () =>
+                    openChangeRequest(payload, action.value)
+                );
                 break;
 
             case ARTIFACT_ANSWER_ACTION:
-                await openArtifactInterview(payload, action.value);
+                await runAction(payload, action.action_id, () =>
+                    openArtifactInterview(payload, action.value)
+                );
                 break;
 
             // A url button does not dispatch, but Slack still posts the action.
@@ -258,15 +290,22 @@ async function openChangeRequest(payload: SlackInteractionPayload, value?: strin
     await getSlackClient().openView(payload.trigger_id, buildChangeRequestModal(target));
 }
 
-/** Open the interview for an artifact's ungrounded claims. */
+/**
+ * Open the interview for an artifact's ungrounded claims.
+ *
+ * One query, deliberately: `trigger_id` is valid for roughly three seconds and
+ * views.open has to land inside that. The button already carries the artifact
+ * type and the launch name, so joining to re-read them would be a round trip
+ * spent fetching what we were handed.
+ */
 async function openArtifactInterview(payload: SlackInteractionPayload, value?: string) {
     const target = parseArtifactButton(value);
     if (!target) return;
 
-    const interview = await loadArtifactInterview(target.artifactId);
+    const flags = await loadArtifactFlags(target.artifactId);
     const client = getSlackClient();
 
-    if (!interview || interview.flags.length === 0) {
+    if (flags.length === 0) {
         await client.openView(payload.trigger_id, {
             type: 'modal',
             title: { type: 'plain_text', text: 'Nothing to answer' },
@@ -281,18 +320,10 @@ async function openArtifactInterview(payload: SlackInteractionPayload, value?: s
         return;
     }
 
-    await client.openView(
-        payload.trigger_id,
-        buildArtifactInterviewModal(
-            { ...target, launchName: interview.launchName },
-            interview.flags
-        )
-    );
+    await client.openView(payload.trigger_id, buildArtifactInterviewModal(target, flags));
 
     // After the view is up: losing this is not worth losing the modal over.
-    await markArtifactFlagsAsked(
-        interview.flags.slice(0, ARTIFACT_MAX_QUESTIONS).map((f) => f.id)
-    );
+    await markArtifactFlagsAsked(flags.slice(0, ARTIFACT_MAX_QUESTIONS).map((f) => f.id));
 }
 
 /** Replace the review message once a decision is made. */
