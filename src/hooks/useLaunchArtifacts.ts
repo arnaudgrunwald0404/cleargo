@@ -1,7 +1,6 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import type { ArtifactStatus, ArtifactType, LaunchArtifact } from '@/types/artifacts';
 
 export interface LaunchArtifactsResponse {
@@ -27,9 +26,16 @@ export function useLaunchArtifacts(launchId: string | null | undefined, refetchM
     return useQuery({
         queryKey: launchArtifactsKey(launchId || ''),
         queryFn: async (): Promise<LaunchArtifactsResponse> => {
-            const res = await fetchWithRateLimit(`/api/launches/${launchId}/artifacts`, {
-                maxRetries: 1,
-            });
+            // Plain fetch, deliberately NOT fetchWithRateLimit. That wrapper
+            // runs every GET through deduplicateRequest, which serves any
+            // COMPLETED response for the same URL for 5s
+            // (request-deduplication.ts:13). Two things broke on that: the
+            // refetch fired right after starting a draft was answered with the
+            // pre-draft snapshot, so the button re-enabled and polling never
+            // started; and a 5s poll against a 5s TTL is served from cache
+            // roughly half the time. React Query already dedupes and caches
+            // this query properly.
+            const res = await fetch(`/api/launches/${launchId}/artifacts`);
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.error || 'Failed to load artifacts');

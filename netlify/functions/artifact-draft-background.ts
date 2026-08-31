@@ -17,7 +17,6 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { setOverrideAdminClient } from '../../src/lib/db';
-import { draftArtifact } from '../../src/lib/artifacts/draftService';
 import type { ArtifactStatus, ArtifactType } from '../../src/types/artifacts';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -68,9 +67,20 @@ const handler = async (req: Request): Promise<Response> => {
     }
 
     const adminClient = createClient(supabaseUrl, supabaseKey);
+    // Covers anything reached through getAdminClient() in src/lib/db. Note it
+    // does NOT cover the artifacts chain itself, which calls createAdminClient()
+    // from src/lib/supabase/server directly -- that builds its own client from
+    // env, which works here. Kept for transitive consumers (settings, Slack).
     setOverrideAdminClient(adminClient);
 
     try {
+        // Imported HERE, not at module scope, so that a failure to LOAD the
+        // draft chain is caught by the handler below and written onto the row.
+        // Netlify answers a background invocation with 202 immediately, so a
+        // module-load crash is otherwise completely invisible: the artifact
+        // sits in DRAFTING forever with nothing anywhere saying why.
+        const { draftArtifact } = await import('../../src/lib/artifacts/draftService');
+
         const result = await draftArtifact(
             launchId,
             artifactType,
