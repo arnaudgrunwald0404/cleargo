@@ -17,12 +17,16 @@
  */
 
 /**
- * Stored as one newline-separated block rather than 84 quoted string
- * literals. Many of these names contain SECRET, TOKEN, PRIVATE_KEY or API_KEY,
- * and as an array of quoted literals the file reads to a secret scanner as a
- * dense cluster of credentials -- GitGuardian failed the PR on it. There is no
- * value here, only names, so the fix is to stop looking like assignments. It is
- * also easier to read and to regenerate.
+ * A newline-separated block rather than one quoted literal per name, purely
+ * because it is easier to read and to regenerate.
+ *
+ * Note for anyone who sees a secret-scanner alert on this file: it holds NAMES
+ * ONLY, never values. GitGuardian's "Username Password" detector has flagged it
+ * before, on the adjacency of SNOWFLAKE_PASSWORD and SNOWFLAKE_USERNAME (PR #49,
+ * incident 36747789) -- a false positive, triaged as such. Reformatting does not
+ * help, because the scan covers every commit in a pull request rather than its
+ * head state, so a finding pinned to an earlier commit survives any later fix.
+ * Triage it in GitGuardian instead of reshaping this file to dodge a detector.
  */
 const NAMES = `
 AHA_API_TOKEN
