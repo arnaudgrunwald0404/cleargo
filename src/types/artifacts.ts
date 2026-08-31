@@ -123,3 +123,29 @@ export const ARTIFACT_STATUS_LABEL: Record<ArtifactStatus, string> = {
     CHANGES_REQUESTED: 'Changes requested',
     APPROVED: 'Approved',
 };
+
+/**
+ * How long a DRAFTING row is believed before it is treated as abandoned.
+ *
+ * DRAFTING is claimed by the route and cleared by a Netlify background
+ * function, which is itself capped at 15 minutes -- so a row still DRAFTING
+ * after that cannot have a worker behind it. Something killed the function
+ * before its own error handler could restore the status.
+ *
+ * Without this a single crash disables that artifact's Draft button forever,
+ * with no way back short of editing the database.
+ */
+export const DRAFT_STALE_AFTER_MS = 15 * 60 * 1000;
+
+/** A draft that claims to be running but cannot be. */
+export function isDraftStalled(
+    artifact: Pick<LaunchArtifact, 'status' | 'updated_at'>,
+    now: number = Date.now()
+): boolean {
+    if (artifact.status !== 'DRAFTING') return false;
+    const startedAt = Date.parse(artifact.updated_at);
+    // An unparseable timestamp should not strand the row: treat it as stalled
+    // so the button is usable rather than permanently dead.
+    if (Number.isNaN(startedAt)) return true;
+    return now - startedAt > DRAFT_STALE_AFTER_MS;
+}

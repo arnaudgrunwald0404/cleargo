@@ -13,7 +13,13 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { ensureLaunchArtifacts } from '@/lib/artifacts/docFactory';
 import { draftArtifact } from '@/lib/artifacts/draftService';
 import { getArtifactDefinition } from '@/lib/artifacts/registry';
-import { ARTIFACT_TYPES, type ArtifactStatus, type ArtifactType } from '@/types/artifacts';
+import {
+    ARTIFACT_TYPES,
+    isDraftStalled,
+    type ArtifactStatus,
+    type ArtifactType,
+    type LaunchArtifact,
+} from '@/types/artifacts';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -126,7 +132,7 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
             // current status is what the worker restores if the run throws.
             const { data: row } = await admin
                 .from('launch_artifact')
-                .select('status')
+                .select('status, updated_at')
                 .eq('launch_id', launchId)
                 .eq('artifact_type', body.artifact_type)
                 .maybeSingle();
@@ -138,7 +144,11 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
                 );
             }
 
-            if (row.status === 'DRAFTING') {
+            // Blocked only while a run could genuinely still be in flight. A
+            // background function that was killed before its error handler ran
+            // leaves the row DRAFTING forever, and refusing on that basis would
+            // disable the artifact permanently.
+            if (row.status === 'DRAFTING' && !isDraftStalled(row as LaunchArtifact)) {
                 return NextResponse.json(
                     { error: 'A draft is already running for this artifact.' },
                     { status: 409 }
@@ -156,6 +166,17 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
                 Boolean(baseUrl) && !baseUrl.includes('localhost') && Boolean(secret);
 
             if (useBackground) {
+                // Claim the row BEFORE dispatching. draftArtifact is what sets
+                // DRAFTING, and it does not run until the background function
+                // spins up a second or two later -- until then the row still
+                // reads NOT_STARTED, so a second click sails past the guard
+                // above and starts a concurrent run against the same document.
+                await admin
+                    .from('launch_artifact')
+                    .update({ status: 'DRAFTING', updated_at: new Date().toISOString() })
+                    .eq('launch_id', launchId)
+                    .eq('artifact_type', body.artifact_type);
+
                 const triggered = await fetch(
                     `${baseUrl}/.netlify/functions/artifact-draft-background`,
                     {
@@ -176,6 +197,14 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
                 });
 
                 if (!triggered?.ok) {
+                    // Nothing is going to run, so release the claim rather than
+                    // leaving the row stuck in DRAFTING with no worker behind it.
+                    await admin
+                        .from('launch_artifact')
+                        .update({ status: row.status, updated_at: new Date().toISOString() })
+                        .eq('launch_id', launchId)
+                        .eq('artifact_type', body.artifact_type);
+
                     return NextResponse.json(
                         { error: 'Could not start the draft. Try again.' },
                         { status: 502 }

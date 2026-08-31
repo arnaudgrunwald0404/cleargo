@@ -38,7 +38,14 @@ export function useLaunchArtifacts(launchId: string | null | undefined, refetchM
         },
         enabled: Boolean(launchId),
         staleTime: 15 * 1000,
-        refetchOnWindowFocus: false,
+        // Drafting completes out of band in a background function, so the cache
+        // is stale the moment the panel is out of view and nothing tells us it
+        // changed. Re-read whenever the panel comes back -- remount (tab switch,
+        // navigating back) and window focus -- rather than making people
+        // refresh to find out a draft finished. Cached data still renders
+        // immediately, so neither causes a loading flash.
+        refetchOnMount: 'always',
+        refetchOnWindowFocus: true,
         refetchInterval: refetchMs > 0 ? refetchMs : false,
     });
 }
