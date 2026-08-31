@@ -34,6 +34,24 @@ export function isChannelForbidden(channel: string): boolean {
     return isChannelForbiddenWithSet(channel, getForbiddenChannels());
 }
 
+/**
+ * Slack's error code plus the detail it puts beside it.
+ *
+ * `data.error` alone is often not actionable: for anything carrying blocks or a
+ * view, `invalid_arguments` and `invalid_blocks` say nothing about WHICH block,
+ * and the answer is in `response_metadata.messages` — which was being dropped.
+ * That is the difference between a debuggable failure and a log line reading
+ * "Slack API error: invalid_arguments".
+ */
+export function describeSlackError(data: {
+    error?: string;
+    response_metadata?: { messages?: string[] };
+}): string {
+    const detail = data.response_metadata?.messages ?? [];
+    const code = data.error || 'unknown_error';
+    return detail.length > 0 ? `${code} (${detail.join('; ')})` : code;
+}
+
 export class SlackClient {
     private botToken: string;
 
@@ -84,8 +102,8 @@ export class SlackClient {
             }
 
             // For other errors or final attempt, throw
-            console.error('Slack API error:', data.error);
-            throw new Error(`Slack API error: ${data.error}`);
+            console.error('Slack API error (chat.postMessage):', describeSlackError(data));
+            throw new Error(`Slack API error: ${describeSlackError(data)}`);
         }
 
         throw new Error('Slack API: Max retries exceeded');
@@ -138,8 +156,8 @@ export class SlackClient {
         const data = await response.json();
 
         if (!data.ok) {
-            console.error('Slack API error:', data.error);
-            throw new Error(`Slack API error: ${data.error}`);
+            console.error('Slack API error (chat.update):', describeSlackError(data));
+            throw new Error(`Slack API error: ${describeSlackError(data)}`);
         }
 
         return data;
@@ -325,8 +343,8 @@ export class SlackClient {
         const data = await response.json();
 
         if (!data.ok) {
-            console.error('Slack API error:', data.error);
-            throw new Error(`Slack API error: ${data.error}`);
+            console.error('Slack API error (views.open):', describeSlackError(data));
+            throw new Error(`Slack API error: ${describeSlackError(data)}`);
         }
 
         return data;
@@ -352,8 +370,8 @@ export class SlackClient {
         const data = await response.json();
 
         if (!data.ok) {
-            console.error('Slack API error:', data.error);
-            throw new Error(`Slack API error: ${data.error}`);
+            console.error('Slack API error (views.update):', describeSlackError(data));
+            throw new Error(`Slack API error: ${describeSlackError(data)}`);
         }
 
         return data;
@@ -378,8 +396,8 @@ export class SlackClient {
         const data = await response.json();
 
         if (!data.ok) {
-            console.error('Slack API error:', data.error);
-            throw new Error(`Slack API error: ${data.error}`);
+            console.error('Slack API error (views.publish):', describeSlackError(data));
+            throw new Error(`Slack API error: ${describeSlackError(data)}`);
         }
 
         return data;

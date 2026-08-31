@@ -133,43 +133,35 @@ export function buildQuestion(claim: string): string {
     return `Can you confirm or correct this? "${trimmed}"`;
 }
 
-export interface ArtifactInterview {
-    artifactId: string;
-    launchId: string;
-    launchName: string;
-    artifactType: string;
-    flags: LaunchArtifactFlag[];
-}
-
-/** Everything still waiting on a human for one artifact, oldest first. */
-export async function loadArtifactInterview(
+/**
+ * The open questions for one artifact, oldest first.
+ *
+ * One query, no join to launch_artifact or launch. This is opened from a Slack
+ * button, where a `trigger_id` is valid for about three seconds and `views.open`
+ * has to land inside that window — a cold lambda plus two round trips is not a
+ * safe budget. The button's own value already carries the artifact type and the
+ * launch name, so joining to re-read them would be a round trip spent fetching
+ * what the caller was handed.
+ *
+ * Scoped by launch_artifact_id, so a crafted button value gets its own
+ * artifact's flags or nothing.
+ */
+export async function loadArtifactFlags(
     artifactId: string,
     supabase: Supabase = createAdminClient()
-): Promise<ArtifactInterview | null> {
-    const { data: artifact, error } = await supabase
-        .from('launch_artifact')
-        .select('id, launch_id, artifact_type, launch:launch(name)')
-        .eq('id', artifactId)
-        .single();
-
-    if (error || !artifact) return null;
-
-    const { data: flags } = await supabase
+): Promise<LaunchArtifactFlag[]> {
+    const { data, error } = await supabase
         .from('launch_artifact_flag')
         .select('*')
         .eq('launch_artifact_id', artifactId)
         .in('status', ['open', 'asked'])
         .order('created_at', { ascending: true });
 
-    const launch = artifact.launch as unknown as { name?: string } | null;
-
-    return {
-        artifactId: artifact.id as string,
-        launchId: artifact.launch_id as string,
-        launchName: launch?.name ?? 'Launch',
-        artifactType: artifact.artifact_type as string,
-        flags: (flags ?? []) as LaunchArtifactFlag[],
-    };
+    if (error) {
+        console.error('loadArtifactFlags failed', error);
+        return [];
+    }
+    return (data ?? []) as LaunchArtifactFlag[];
 }
 
 /**

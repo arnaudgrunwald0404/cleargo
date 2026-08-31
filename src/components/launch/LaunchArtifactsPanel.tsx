@@ -14,7 +14,7 @@
  * therefore could never say whether a document existed.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
     Alert,
     Badge,
@@ -59,6 +59,15 @@ import {
 
 /** How often to re-read while a draft runs in the background function. */
 const DRAFT_POLL_MS = 5000;
+
+/**
+ * How long to keep polling after document setup is handed to the background
+ * function. A hard stop, because unlike drafting there is no status column to
+ * watch: the rows themselves may not exist until the worker runs, so "not
+ * finished" and "never started" look identical from here. Five documents is
+ * ~20 Google calls, so this is generous.
+ */
+const SETUP_POLL_WINDOW_MS = 120_000;
 
 const STATUS_COLOR: Record<ArtifactStatus, string> = {
     NOT_STARTED: 'gray',
@@ -114,9 +123,50 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
         [artifacts]
     );
 
+    // Absolute deadline for the setup poll, or 0 when no setup is in flight. An
+    // absolute time rather than a countdown: `artifacts` is a fresh array on
+    // every successful refetch, so a timer keyed off it would be reset by its
+    // own polling and never expire.
+    const [setupDeadline, setSetupDeadline] = useState(0);
+
     useEffect(() => {
-        setPollMs(anyDrafting ? DRAFT_POLL_MS : 0);
-    }, [anyDrafting]);
+        if (!setupDeadline) return;
+
+        // Done as soon as every artifact has its document.
+        if (artifacts.length > 0 && artifacts.every((a) => a.doc_id)) {
+            setSetupDeadline(0);
+            return;
+        }
+
+        const remaining = setupDeadline - Date.now();
+        if (remaining <= 0) {
+            setSetupDeadline(0);
+            return;
+        }
+
+        const stop = setTimeout(() => setSetupDeadline(0), remaining);
+        return () => clearTimeout(stop);
+    }, [setupDeadline, artifacts]);
+
+    useEffect(() => {
+        setPollMs(anyDrafting || setupDeadline > 0 ? DRAFT_POLL_MS : 0);
+    }, [anyDrafting, setupDeadline]);
+
+    // A launch with no rows at all is one whose setup has not run yet — creating
+    // a launch dispatches the same background function, so opening the launch
+    // straight afterwards lands here. Arm the poll once so the panel fills in on
+    // its own rather than asking for a refresh.
+    //
+    // Safe as a signal because rows are created even when Google is unconfigured,
+    // and an untiered launch gets every artifact (artifactsForTier(null)) — so an
+    // established launch never has zero.
+    const armedForSetup = useRef(false);
+
+    useEffect(() => {
+        if (armedForSetup.current || isLoading || error || artifacts.length > 0) return;
+        armedForSetup.current = true;
+        setSetupDeadline(Date.now() + SETUP_POLL_WINDOW_MS);
+    }, [isLoading, error, artifacts.length]);
 
     const ensure = useEnsureLaunchArtifacts(launchId);
     const draft = useDraftLaunchArtifact(launchId);
@@ -131,7 +181,16 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
     const handleEnsure = async () => {
         try {
             const result = await ensure.mutateAsync();
-            if (!result.googleConfigured) {
+            if (result.accepted) {
+                // Handed to the background function, so there are no counts to
+                // report yet. Poll until the documents land.
+                setSetupDeadline(Date.now() + SETUP_POLL_WINDOW_MS);
+                notifications.show({
+                    title: 'Setting up documents',
+                    message: 'This takes a moment. The panel updates on its own.',
+                    color: 'blue',
+                });
+            } else if (!result.googleConfigured) {
                 notifications.show({
                     title: 'Google is not connected',
                     message:
@@ -151,7 +210,10 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                     autoClose: 2000,
                 });
             }
-            if (result.errors.length > 0) {
+            // A 202 body carries no errors array — the worker's failures land in
+            // the function log, and anything it misses shows as a row with no
+            // document and is fixed by pressing this button again.
+            if (result.errors?.length) {
                 notifications.show({
                     title: 'Some documents were not created',
                     message: result.errors.join('; '),
