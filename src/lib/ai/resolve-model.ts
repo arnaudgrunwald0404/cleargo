@@ -11,6 +11,24 @@ import type { LanguageModel } from 'ai';
 const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
 
 /**
+ * The models every call site uses, in one place.
+ *
+ * Google retires Gemini versions and then REFUSES them for new users with
+ * "no longer available to new users" -- which is a runtime failure, not a
+ * deprecation warning. This repo had two different stale ids scattered across
+ * six files (gemini-2.5-flash in five, gemini-1.5-pro-latest in two more), so
+ * the last retirement broke retros, the weekly digest and stale-criteria nudges
+ * silently. Import these instead of writing an id inline, so the next
+ * retirement is a one-line change.
+ *
+ * Note the @ai-sdk/google type union in the installed version stops at
+ * gemini-3-pro-preview; ids newer than that still typecheck because the union
+ * carries a `(string & {})` member.
+ */
+export const DEFAULT_CLAUDE_MODEL = 'claude-haiku-4-5';
+export const DEFAULT_GEMINI_MODEL = 'gemini-3.6-flash';
+
+/**
  * A base URL must end in the API version: the SDK appends `/messages` to it, so
  * `https://host` yields `https://host/messages` and 404s. Every documented
  * Anthropic base URL includes `/v1`.
@@ -75,8 +93,8 @@ export function getAnthropicBaseUrl(): string {
  * Netlify's AI integration injects a proxy key that fails against api.anthropic.com.
  */
 export function resolveDefaultModel(
-  claudeModel: string = 'claude-haiku-4-5',
-  geminiModel: string = 'gemini-2.5-flash'
+  claudeModel: string = DEFAULT_CLAUDE_MODEL,
+  geminiModel: string = DEFAULT_GEMINI_MODEL
 ): LanguageModel | null {
   return resolveModelChain(claudeModel, geminiModel)[0]?.model ?? null;
 }
@@ -96,8 +114,8 @@ export interface ModelCandidate {
  * while a perfectly good Gemini key sat unused in the same environment.
  */
 export function resolveModelChain(
-  claudeModel: string = 'claude-haiku-4-5',
-  geminiModel: string = 'gemini-2.5-flash'
+  claudeModel: string = DEFAULT_CLAUDE_MODEL,
+  geminiModel: string = DEFAULT_GEMINI_MODEL
 ): ModelCandidate[] {
   const chain: ModelCandidate[] = [];
 

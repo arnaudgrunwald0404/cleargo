@@ -23,7 +23,7 @@ import type {
  * the whole request to heuristics.
  */
 function resolveHeartModels(): ModelCandidate[] {
-  return resolveModelChain('claude-haiku-4-5', 'gemini-2.5-flash');
+  return resolveModelChain();
 }
 
 // ============================================================================

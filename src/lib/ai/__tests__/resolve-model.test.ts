@@ -1,9 +1,12 @@
 import { describe, it, expect, beforeEach, afterAll, jest } from '@jest/globals';
 import type { LanguageModel } from 'ai';
+import fs from 'fs';
+import path from 'path';
 import {
     getAnthropicBaseUrl,
     runWithModelFallback,
     shouldTryNextModel,
+    DEFAULT_GEMINI_MODEL,
 } from '@/lib/ai/resolve-model';
 
 const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
@@ -183,5 +186,51 @@ describe('runWithModelFallback', () => {
             runWithModelFallback([candidate('haiku'), candidate('gemini')], op, () => {})
         ).rejects.toThrow('anthropic quota');
         expect(op).toHaveBeenCalledTimes(2);
+    });
+});
+
+/**
+ * Google retires Gemini versions and then REFUSES them at runtime ("no longer
+ * available to new users") rather than warning. Two different stale ids were
+ * scattered across six files here, so retros, the weekly digest and
+ * stale-criteria nudges were failing without anyone noticing.
+ */
+describe('model ids', () => {
+    const RETIRED = /gemini-(1\.5|2\.0|2\.5)[a-z0-9.\-]*/g;
+
+    function sourceFiles(dir: string, out: string[] = []): string[] {
+        for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            const full = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                if (entry.name === 'node_modules' || entry.name === '__tests__') continue;
+                sourceFiles(full, out);
+            } else if (entry.name.endsWith('.ts') || entry.name.endsWith('.tsx')) {
+                out.push(full);
+            }
+        }
+        return out;
+    }
+
+    it('has no retired Gemini id anywhere in src/', () => {
+        const src = path.resolve(__dirname, '../../..');
+        const offenders: string[] = [];
+
+        for (const file of sourceFiles(src)) {
+            const source = fs.readFileSync(file, 'utf8');
+            // Only real code -- the constant's own doc comment names the old ids
+            // deliberately, to explain why they are gone.
+            const withoutComments = source
+                .replace(/\/\*[\s\S]*?\*\//g, '')
+                .replace(/\/\/.*$/gm, '');
+            for (const match of withoutComments.matchAll(RETIRED)) {
+                offenders.push(`${path.relative(src, file)}: ${match[0]}`);
+            }
+        }
+
+        expect(offenders).toEqual([]);
+    });
+
+    it('points the Gemini fallback at the id Google told us to use', () => {
+        expect(DEFAULT_GEMINI_MODEL).toBe('gemini-3.6-flash');
     });
 });

@@ -52,7 +52,7 @@ export async function generateArtifact(
 
     // The whole chain, not just the best one: an exhausted Anthropic quota used
     // to take drafting down while a working Gemini key sat unused beside it.
-    const candidates = resolveModelChain('claude-haiku-4-5', 'gemini-2.5-flash');
+    const candidates = resolveModelChain();
 
     const { generateObject } = await import('ai');
     const context = await assembleLaunchContext(input.launchId);
