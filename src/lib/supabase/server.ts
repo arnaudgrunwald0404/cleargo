@@ -1,6 +1,21 @@
+/**
+ * NOTE ON `next/headers`: it is imported dynamically inside createClient()'s
+ * cookie handlers rather than at the top of this module, and must stay that way.
+ *
+ * createAdminClient() below needs nothing from Next -- it is service-role key
+ * plus URL -- but a module-level `import { cookies } from 'next/headers'` couples
+ * the WHOLE file to the Next server runtime. That breaks any consumer running
+ * outside it, and the one that matters is netlify/functions/*-background.ts:
+ * every src/lib/artifacts/* module imports createAdminClient from here, so a
+ * background function drafting an artifact loaded next/headers on a plain Node
+ * runtime and died before its own error handler could run. Because Netlify
+ * answers a background invocation with 202 immediately, that failure was
+ * completely invisible -- the artifact just sat in DRAFTING forever.
+ *
+ * Both handlers are already async, so deferring the import costs nothing.
+ */
 import { createServerClient } from '@supabase/ssr';
 import { createClient as createSupabaseJsClient } from '@supabase/supabase-js';
-import { cookies } from 'next/headers';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseFetchTimeoutMs } from '@/lib/supabase/supabaseFetchTimeout';
 
@@ -93,11 +108,13 @@ export function createClient(): SupabaseClient {
             },
             cookies: {
                 async getAll() {
+                    const { cookies } = await import('next/headers');
                     const cookieStore = await cookies();
                     return cookieStore.getAll();
                 },
                 async setAll(cookiesToSet) {
                     try {
+                        const { cookies } = await import('next/headers');
                         const cookieStore = await cookies();
                         cookiesToSet.forEach(({ name, value, options }) => {
                             cookieStore.set(name, value, options);

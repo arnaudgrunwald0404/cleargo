@@ -22,16 +22,25 @@ const { createClient } = jest.requireMock('@supabase/supabase-js') as { createCl
 const { draftArtifact } = jest.requireMock('../../../src/lib/artifacts/draftService') as {
     draftArtifact: jest.Mock;
 };
-const handler = (require('../artifact-draft-background') as { default: Handler }).default;
+const handler = jest.requireActual<{ default: Handler }>('../artifact-draft-background').default;
 
 const LAUNCH_ID = 'launch-001';
 
-/** Records the update payload so the failure path can be asserted on. */
+/**
+ * Records the update payload so the failure path can be asserted on.
+ *
+ * The mocks carry explicit call signatures: inferred ones would be zero-arg and
+ * every toHaveBeenCalledWith below would fail to compile.
+ */
 function mockSupabase() {
-    const eq2 = jest.fn(() => Promise.resolve({ error: null }));
-    const eq1 = jest.fn(() => ({ eq: eq2 }));
-    const update = jest.fn(() => ({ eq: eq1 }));
-    const from = jest.fn(() => ({ update }));
+    const eq2 = jest.fn<(column: string, value: unknown) => Promise<{ error: null }>>(() =>
+        Promise.resolve({ error: null })
+    );
+    const eq1 = jest.fn<(column: string, value: unknown) => { eq: typeof eq2 }>(() => ({ eq: eq2 }));
+    const update = jest.fn<(payload: Record<string, unknown>) => { eq: typeof eq1 }>(() => ({
+        eq: eq1,
+    }));
+    const from = jest.fn<(table: string) => { update: typeof update }>(() => ({ update }));
     createClient.mockReturnValue({ from });
     return { from, update };
 }

@@ -245,7 +245,15 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
             return NextResponse.json({ error: 'Invalid body', details: error.issues }, { status: 400 });
         }
         console.error('POST /api/launches/[id]/artifacts:', error);
-        return NextResponse.json({ error: 'Failed to create artifacts' }, { status: 500 });
+        // Return the real message. Drafting chains an LLM call, a Drive read, a
+        // Docs write and a Slack DM, so "Failed to create artifacts" tells the
+        // person clicking the button nothing and tells the person debugging it
+        // less -- the actual reason was reachable only in the server console.
+        // Matches POST /api/launches, which already returns error.message.
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Failed to create artifacts' },
+            { status: 500 }
+        );
     }
 }
 

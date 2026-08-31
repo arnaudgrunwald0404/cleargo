@@ -1,19 +1,10 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { getAnthropicBaseUrl } from '@/lib/ai/resolve-model';
 import { generateText } from 'ai';
-
-const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
 
 /**
  * Match HEART agent / Netlify workaround: avoid site-local Netlify AI URLs that 404.
  */
-function getAnthropicBaseUrl(): string {
-  const fromEnv = process.env.ANTHROPIC_BASE_URL?.trim().replace(/\/$/, '');
-  if (fromEnv && (fromEnv.includes('/.netlify/ai') || fromEnv.includes('.netlify.app'))) {
-    return ANTHROPIC_API_V1;
-  }
-  if (fromEnv) return fromEnv;
-  return ANTHROPIC_API_V1;
-}
 
 /** ClearGO standard is `CLAUDE_API_KEY`; `ANTHROPIC_API_KEY` is supported as fallback. */
 function resolveAnthropicApiKey(): string | undefined {
