@@ -406,12 +406,18 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                                         maxRows={4}
                                         placeholder="Optional notes for the next draft — call notes, decisions, anything Aha and Jira cannot tell it."
                                         value={sourceNotes[a.artifact_type] ?? ''}
-                                        onChange={(e) =>
+                                        onChange={(e) => {
+                                            // Read synchronously. React invokes
+                                            // a functional updater during the
+                                            // render phase, by which point the
+                                            // event has been handled and
+                                            // currentTarget is null.
+                                            const value = e.currentTarget.value;
                                             setSourceNotes((prev) => ({
                                                 ...prev,
-                                                [a.artifact_type]: e.currentTarget.value,
-                                            }))
-                                        }
+                                                [a.artifact_type]: value,
+                                            }));
+                                        }}
                                         disabled={rowBusy}
                                     />
                                 )}
