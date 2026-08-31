@@ -191,9 +191,13 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
             await refetch();
         } catch (err) {
             notifications.show({
-                title: 'Error',
+                title: 'Draft failed',
                 message: err instanceof Error ? err.message : 'Failed to start the draft',
                 color: 'red',
+                // The server's message is the diagnosis (a model error, a Drive
+                // failure, a missing upstream). Long enough to need reading, so
+                // it does not disappear on a timer.
+                autoClose: false,
             });
         } finally {
             setBusy(null);
