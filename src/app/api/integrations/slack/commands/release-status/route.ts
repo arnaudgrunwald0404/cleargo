@@ -1,6 +1,6 @@
 /**
- * Slack slash command: /launch-status
- * Get the current status of a specific launch
+ * Slack slash command: /release-status
+ * Get the current status of a specific release
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,7 +9,7 @@ import { formatDateOnlyForDisplay, parseDateOnlyLocal } from '@/lib/date-utils';
 import type { SlackCommandPayload, SlackBlock } from '@/types/slack';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
 
 export async function POST(request: NextRequest) {
     try {
@@ -48,56 +48,56 @@ export async function POST(request: NextRequest) {
         if (!searchTerm) {
             return NextResponse.json({
                 response_type: 'ephemeral',
-                text: 'Please provide a launch name or Aha ID. Example: `/launch-status HIRE-123`',
+                text: 'Please provide a release name or Aha ID. Example: `/release-status HIRE-123`',
             });
         }
 
-        // Query launch by name or Aha ID
+        // Query release by name or Aha ID
         const supabase = (await import('@/lib/supabase/server')).createClient();
 
-        const { data: launches, error: launchError } = await supabase
+        const { data: releases, error: releaseError } = await supabase
             .from('epic')
             .select('id, name, aha_reference_num, tier, readiness_status, readiness_score, risk_level, target_launch_date')
             .or(`name.ilike.%${searchTerm}%,aha_reference_num.ilike.%${searchTerm}%`)
             .limit(5);
 
-        if (launchError) {
-            console.error('Error fetching launch:', launchError);
+        if (releaseError) {
+            console.error('Error fetching release:', releaseError);
             return NextResponse.json({
                 response_type: 'ephemeral',
-                text: `❌ Error searching for launch: ${launchError.message}`,
+                text: `❌ Error searching for release: ${releaseError.message}`,
             });
         }
 
-        if (!launches || launches.length === 0) {
+        if (!releases || releases.length === 0) {
             return NextResponse.json({
                 response_type: 'ephemeral',
-                text: `🔍 No launches found matching "${searchTerm}"`,
+                text: `🔍 No releases found matching "${searchTerm}"`,
             });
         }
 
         // If multiple matches, show list
-        if (launches.length > 1) {
+        if (releases.length > 1) {
             const blocks: SlackBlock[] = [
                 {
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `Found ${launches.length} launches matching "${searchTerm}":`,
+                        text: `Found ${releases.length} releases matching "${searchTerm}":`,
                     },
                 },
                 { type: 'divider' },
             ];
 
-            for (const launch of launches) {
-                const statusEmoji = launch.readiness_status === 'GO' ? '✅' :
-                    launch.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
+            for (const release of releases) {
+                const statusEmoji = release.readiness_status === 'GO' ? '✅' :
+                    release.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
 
                 blocks.push({
                     type: 'section',
                     text: {
                         type: 'mrkdwn',
-                        text: `${statusEmoji} *${launch.name}*\nAha ID: ${launch.aha_reference_num || 'N/A'} | Tier: ${launch.tier}`,
+                        text: `${statusEmoji} *${release.name}*\nAha ID: ${release.aha_reference_num || 'N/A'} | Tier: ${release.tier}`,
                     },
                     accessory: {
                         type: 'button',
@@ -106,7 +106,7 @@ export async function POST(request: NextRequest) {
                             text: 'View',
                             emoji: true,
                         },
-                        url: `${APP_URL}/epics/${launch.id}`,
+                        url: `${APP_URL}/epics/${release.id}`,
                     },
                 });
             }
@@ -118,7 +118,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Single match - show detailed status
-        const launch = launches[0];
+        const release = releases[0];
 
         // Get gate criteria summary
         const { data: gateStatuses } = await supabase
@@ -129,7 +129,7 @@ export async function POST(request: NextRequest) {
                     gate
                 )
             `)
-            .eq('epic_id', launch.id);
+            .eq('epic_id', release.id);
 
         const gates = (gateStatuses || []).filter((s: any) => {
             const criterion = Array.isArray(s.criterion) ? s.criterion[0] : s.criterion;
@@ -139,28 +139,28 @@ export async function POST(request: NextRequest) {
         const gateGo = gates.filter((g: any) => g.status === 'GO').length;
         const gateTotal = gates.length;
 
-        const statusEmoji = launch.readiness_status === 'GO' ? '✅' :
-            launch.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
-        const riskEmoji = launch.risk_level === 'HIGH' ? '🔴' :
-            launch.risk_level === 'MEDIUM' ? '🟡' : '🟢';
-        const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
+        const statusEmoji = release.readiness_status === 'GO' ? '✅' :
+            release.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
+        const riskEmoji = release.risk_level === 'HIGH' ? '🔴' :
+            release.risk_level === 'MEDIUM' ? '🟡' : '🟢';
+        const score = release.readiness_score ? Math.round(release.readiness_score * 100) : 0;
 
-        const targetDate = launch.target_launch_date
-            ? formatDateOnlyForDisplay(launch.target_launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
+        const targetDate = release.target_launch_date
+            ? formatDateOnlyForDisplay(release.target_launch_date, { month: 'short', day: 'numeric', year: 'numeric' })
             : 'Not set';
 
-        const daysToLaunch = (() => {
-            if (!launch.target_launch_date) return null;
-            const launchDay = parseDateOnlyLocal(launch.target_launch_date);
-            if (!launchDay) return null;
+        const daysToTarget = (() => {
+            if (!release.target_launch_date) return null;
+            const targetDay = parseDateOnlyLocal(release.target_launch_date);
+            if (!targetDay) return null;
             const today = new Date();
             today.setHours(0, 0, 0, 0);
-            launchDay.setHours(0, 0, 0, 0);
-            return Math.ceil((launchDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            targetDay.setHours(0, 0, 0, 0);
+            return Math.ceil((targetDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
         })();
 
-        const daysText = daysToLaunch !== null
-            ? daysToLaunch > 0 ? `(${daysToLaunch} days away)` : `(${Math.abs(daysToLaunch)} days overdue)`
+        const daysText = daysToTarget !== null
+            ? daysToTarget > 0 ? `(${daysToTarget} days away)` : `(${Math.abs(daysToTarget)} days overdue)`
             : '';
 
         return NextResponse.json({
@@ -170,7 +170,7 @@ export async function POST(request: NextRequest) {
                     type: 'header',
                     text: {
                         type: 'plain_text',
-                        text: launch.name,
+                        text: release.name,
                         emoji: true,
                     },
                 },
@@ -179,19 +179,19 @@ export async function POST(request: NextRequest) {
                     fields: [
                         {
                             type: 'mrkdwn',
-                            text: `*Aha ID:*\n${launch.aha_reference_num || 'N/A'}`,
+                            text: `*Aha ID:*\n${release.aha_reference_num || 'N/A'}`,
                         },
                         {
                             type: 'mrkdwn',
-                            text: `*Tier:*\n${launch.tier}`,
+                            text: `*Tier:*\n${release.tier}`,
                         },
                         {
                             type: 'mrkdwn',
-                            text: `*Status:*\n${statusEmoji} ${launch.readiness_status}`,
+                            text: `*Status:*\n${statusEmoji} ${release.readiness_status}`,
                         },
                         {
                             type: 'mrkdwn',
-                            text: `*Risk:*\n${riskEmoji} ${launch.risk_level}`,
+                            text: `*Risk:*\n${riskEmoji} ${release.risk_level}`,
                         },
                         {
                             type: 'mrkdwn',
@@ -220,7 +220,7 @@ export async function POST(request: NextRequest) {
                                 text: 'View Full Details',
                                 emoji: true,
                             },
-                            url: `${APP_URL}/epics/${launch.id}`,
+                            url: `${APP_URL}/epics/${release.id}`,
                             style: 'primary',
                         },
                     ],

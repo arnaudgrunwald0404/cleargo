@@ -1,7 +1,7 @@
 /**
  * Slack slash command: /who-is-blocking
- * Ranks people by unreviewed (NOT_SET) criteria on active launches, weighted
- * by tier, gate status, and proximity to target launch date.
+ * Ranks people by unreviewed (NOT_SET) criteria on active releases, weighted
+ * by tier, gate status, and proximity to target release date.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,7 +11,7 @@ import { createAdminClient } from '@/lib/supabase/server';
 export const dynamic = 'force-dynamic';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
 
 const TIER_WEIGHT: Record<string, number> = { TIER_1: 10, TIER_2: 5, TIER_3: 2 };
 
@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
             name: string;
             email: string;
             score: number;
-            criteria: Array<{ epic: string; tier: string; label: string; isGate: boolean; daysUntilLaunch: number | null }>;
+            criteria: Array<{ epic: string; tier: string; label: string; isGate: boolean; daysUntilTarget: number | null }>;
         };
 
         const personMap: Record<string, PersonEntry> = {};
@@ -82,13 +82,13 @@ export async function POST(request: NextRequest) {
             const gateMultiplier = criterion?.gate ? 2 : 1;
 
             let urgencyMultiplier = 1;
-            let daysUntilLaunch: number | null = null;
+            let daysUntilTarget: number | null = null;
             if (epic.target_launch_date) {
                 const msUntil = new Date(epic.target_launch_date).getTime() - now;
-                daysUntilLaunch = Math.ceil(msUntil / (1000 * 60 * 60 * 24));
-                if (daysUntilLaunch < 0) urgencyMultiplier = 3;
-                else if (daysUntilLaunch <= 14) urgencyMultiplier = 2.5;
-                else if (daysUntilLaunch <= 30) urgencyMultiplier = 1.5;
+                daysUntilTarget = Math.ceil(msUntil / (1000 * 60 * 60 * 24));
+                if (daysUntilTarget < 0) urgencyMultiplier = 3;
+                else if (daysUntilTarget <= 14) urgencyMultiplier = 2.5;
+                else if (daysUntilTarget <= 30) urgencyMultiplier = 1.5;
             }
 
             personMap[personKey].score += weight * gateMultiplier * urgencyMultiplier;
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
                 tier: epic.tier,
                 label: criterion?.label ?? 'Unknown',
                 isGate: criterion?.gate ?? false,
-                daysUntilLaunch,
+                daysUntilTarget,
             });
         }
 
@@ -116,8 +116,8 @@ export async function POST(request: NextRequest) {
         }
 
         const headerText = tierFilter
-            ? `🚨 Who is blocking ${tierFilter} launches?`
-            : '🚨 Who is blocking launches?';
+            ? `🚨 Who is blocking ${tierFilter} releases?`
+            : '🚨 Who is blocking releases?';
 
         const blocks: any[] = [
             {
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `*${totalCriteria} unreviewed criteria* across *${totalPeople} people*${tierFilter ? ` (${tierFilter} only)` : ''}. Ranked by impact on launch timelines:`,
+                    text: `*${totalCriteria} unreviewed criteria* across *${totalPeople} people*${tierFilter ? ` (${tierFilter} only)` : ''}. Ranked by impact on release timelines:`,
                 },
             },
             { type: 'divider' },
@@ -142,19 +142,19 @@ export async function POST(request: NextRequest) {
 
             // Sort their criteria by urgency
             const sortedCriteria = [...p.criteria].sort((a, b) => {
-                if (a.daysUntilLaunch === null) return 1;
-                if (b.daysUntilLaunch === null) return -1;
-                return a.daysUntilLaunch - b.daysUntilLaunch;
+                if (a.daysUntilTarget === null) return 1;
+                if (b.daysUntilTarget === null) return -1;
+                return a.daysUntilTarget - b.daysUntilTarget;
             });
 
             const topCriteria = sortedCriteria.slice(0, 2);
             const criteriaLines = topCriteria.map((c) => {
                 const gateTag = c.isGate ? ' *(GATE)*' : '';
-                const urgency = c.daysUntilLaunch === null
+                const urgency = c.daysUntilTarget === null
                     ? ''
-                    : c.daysUntilLaunch < 0
-                        ? ` — ⚠️ overdue by ${Math.abs(c.daysUntilLaunch)}d`
-                        : ` — due in ${c.daysUntilLaunch}d`;
+                    : c.daysUntilTarget < 0
+                        ? ` — ⚠️ overdue by ${Math.abs(c.daysUntilTarget)}d`
+                        : ` — due in ${c.daysUntilTarget}d`;
                 return `  • _${c.label}_${gateTag} on *${c.epic}*${urgency}`;
             }).join('\n');
 

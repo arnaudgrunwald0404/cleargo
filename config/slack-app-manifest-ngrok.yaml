@@ -12,24 +12,14 @@ features:
     display_name: ClearGO
     always_online: true
   slash_commands:
-    - command: /launch-status
-      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/launch-status
+    - command: /release-status
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/release-status
       description: Get the current status of a launch
       usage_hint: "[launch-name or aha-id]"
       should_escape: false
-    - command: /my-launches
-      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/my-launches
+    - command: /my-releases
+      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/my-releases
       description: View launches you own or are involved with
-      should_escape: false
-    - command: /launch-summary
-      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/launch-summary
-      description: Get a summary of all active launches
-      usage_hint: "[tier] [risk-level]"
-      should_escape: false
-    - command: /update-criterion
-      url: https://fructuously-unsystematised-anjanette.ngrok-free.dev/api/integrations/slack/commands/update-criterion
-      description: Update a criterion status for a launch
-      usage_hint: "[launch-id] [criterion-id] [status]"
       should_escape: false
 
 oauth_config:

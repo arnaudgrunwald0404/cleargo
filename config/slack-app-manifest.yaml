@@ -1,7 +1,15 @@
+# Reference manifest for the ClearGO Slack app.
+#
+# Replace https://your-domain.com with the deployed host before pasting into
+# Slack (Your Apps > the app > Features > App Manifest).
+#
+# Every url and request_url below corresponds to a route that exists in this
+# repo. Do not add a command here before its route exists: a declared command
+# with no handler returns 404 and Slack shows the user a dispatch error.
 display_information:
-  name: Launch Readiness Console
-  description: Launch readiness tracking, notifications, and collaboration for product launches
-  background_color: "#2c3e50"
+  name: ClearGO
+  description: Product release readiness tracking, ownership, and collaboration
+  background_color: "#697771"
 
 features:
   app_home:
@@ -9,60 +17,58 @@ features:
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
   bot_user:
-    display_name: Launch Console
+    display_name: ClearGO
     always_online: true
+  # Required for the link_shared event to fire at all. The handler
+  # (handleLinkShared in api/integrations/slack/events) is reachable only for
+  # domains listed here; without them Slack never sends the event.
+  unfurl_domains:
+    - your-domain.com
+  # NOTE: these commands operate on RELEASES (the `epic` table), not launches.
+  # Releases and launches are different objects in ClearGO — the launch side
+  # (`launch`, `launch_criterion_status`, `launch_artifact`) has no commands yet.
   slash_commands:
-    - command: /launch-status
-      url: https://your-domain.com/api/integrations/slack/commands/launch-status
-      description: Get the current status of a launch
-      usage_hint: "[launch-name or aha-id]"
+    - command: /release-status
+      url: https://your-domain.com/api/integrations/slack/commands/release-status
+      description: Get the current status of a release
+      usage_hint: "[release-name or aha-id]"
       should_escape: false
-    - command: /my-launches
-      url: https://your-domain.com/api/integrations/slack/commands/my-launches
-      description: View launches you own or are involved with
+    - command: /my-releases
+      url: https://your-domain.com/api/integrations/slack/commands/my-releases
+      description: View releases you own or are involved with
       usage_hint: ""
-      should_escape: false
-    - command: /launch-summary
-      url: https://your-domain.com/api/integrations/slack/commands/launch-summary
-      description: Get a summary of all active launches
-      usage_hint: "[tier] [risk-level]"
-      should_escape: false
-    - command: /update-criterion
-      url: https://your-domain.com/api/integrations/slack/commands/update-criterion
-      description: Update a criterion status for a launch
-      usage_hint: "[launch-id] [criterion-id] [status]"
       should_escape: false
     - command: /who-is-blocking
       url: https://your-domain.com/api/integrations/slack/commands/who-is-blocking
-      description: Rank people by unreviewed criteria on active launches
+      description: Rank people by unreviewed criteria on active releases
       usage_hint: "[TIER_1 | TIER_2 | TIER_3]"
       should_escape: false
 
 oauth_config:
   scopes:
     bot:
-      - chat:write
-      - chat:write.public
-      - chat:write.customize
-      - users:read
-      - users:read.email
-      - channels:read
-      - channels:create
-      - channels:manage
-      - channels:write
-      - groups:read
-      - im:read
-      - mpim:read
-      - mpim:write
-      - commands
-      - im:write
-      - im:history
-      - conversations:write
       - app_mentions:read
+      - channels:read
+      - channels:manage
+      - chat:write
+      - chat:write.customize
+      - chat:write.public
+      - commands
       - files:write
-      - reactions:write
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
       - links:read
       - links:write
+      # Required by SlackClient.openMultiUserConversation, which
+      # src/lib/slack/notifications.ts uses for group DMs. With mpim:read alone,
+      # conversations.open fails with missing_scope.
+      - mpim:read
+      - mpim:write
+      - reactions:write
+      - users:read
+      - users:read.email
 
 settings:
   event_subscriptions:
@@ -70,12 +76,11 @@ settings:
     bot_events:
       - app_home_opened
       - app_mention
-      - message.im
       - link_shared
-      - team_join
+      - message.im
   interactivity:
     is_enabled: true
     request_url: https://your-domain.com/api/integrations/slack/interactions
   org_deploy_enabled: false
   socket_mode_enabled: false
-  token_rotation_enabled: true
+  token_rotation_enabled: false
