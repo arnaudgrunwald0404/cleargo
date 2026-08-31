@@ -50,6 +50,7 @@ import {
 import {
     ARTIFACT_LABEL,
     ARTIFACT_STATUS_LABEL,
+    isDraftStalled,
     type ArtifactStatus,
     type ArtifactType,
     type LaunchArtifact,
@@ -100,8 +101,11 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
     const artifacts = useMemo(() => data?.artifacts ?? [], [data]);
     const openQuestions = data?.openQuestions ?? {};
 
+    // A row whose worker died stays DRAFTING forever. Polling it is pointless
+    // and disabling its button on that basis would kill the artifact, so it is
+    // treated as idle here and the server agrees (isDraftStalled in the route).
     const anyDrafting = useMemo(
-        () => artifacts.some((a) => a.status === 'DRAFTING'),
+        () => artifacts.some((a) => a.status === 'DRAFTING' && !isDraftStalled(a)),
         [artifacts]
     );
 
@@ -180,7 +184,11 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                     color: 'orange',
                 });
             }
-            refetch();
+            // Awaited, not fired and forgotten: `busy` clears in the finally
+            // below, and the button must not become clickable again before the
+            // fetched row says DRAFTING. The server claims the row before it
+            // returns 202, so this read is guaranteed to see it.
+            await refetch();
         } catch (err) {
             notifications.show({
                 title: 'Error',
@@ -277,7 +285,8 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
 
                     {artifacts.map((a) => {
                         const questions = openQuestions[a.id] ?? 0;
-                        const drafting = a.status === 'DRAFTING';
+                        const stalled = isDraftStalled(a);
+                        const drafting = a.status === 'DRAFTING' && !stalled;
                         const rowBusy = busy === a.artifact_type || drafting;
                         return (
                             <Paper key={a.id} withBorder p="md" radius="md">
@@ -289,10 +298,12 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                                             </Text>
                                             <Badge
                                                 size="sm"
-                                                color={STATUS_COLOR[a.status]}
+                                                color={stalled ? 'red' : STATUS_COLOR[a.status]}
                                                 variant="light"
                                             >
-                                                {ARTIFACT_STATUS_LABEL[a.status]}
+                                                {stalled
+                                                    ? 'Drafting stalled'
+                                                    : ARTIFACT_STATUS_LABEL[a.status]}
                                             </Badge>
                                             <Text size="xs" c="dimmed">
                                                 {a.version}
