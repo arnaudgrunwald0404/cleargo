@@ -36,7 +36,8 @@ import {
     IconFilePlus,
     IconMessageCircle,
     IconRobot,
-    IconX,
+    IconArrowBackUp,
+    IconPlus,
 } from '@tabler/icons-react';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 import { canRolesPerform } from '@/lib/permissions';
@@ -79,6 +80,10 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
     const [changeTarget, setChangeTarget] = useState<LaunchArtifact | null>(null);
     const [changeNote, setChangeNote] = useState('');
     const [busy, setBusy] = useState<ArtifactType | null>(null);
+    // Rows whose context field is revealed. Collapsed by default: a permanent
+    // textarea on all five rows competed with the Request-changes modal for the
+    // same "write the agent a note" job, and most drafts need neither.
+    const [contextOpen, setContextOpen] = useState<Record<string, boolean>>({});
 
     useEffect(() => {
         fetchWithRateLimit('/api/me', { maxRetries: 1 })
@@ -170,6 +175,7 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                 sourceNotes: sourceNotes[a.artifact_type],
             });
             setSourceNotes((prev) => ({ ...prev, [a.artifact_type]: '' }));
+            setContextOpen((prev) => ({ ...prev, [a.artifact_type]: false }));
             notifications.show({
                 title: result.accepted ? 'Drafting started' : 'Draft ready',
                 message: result.accepted
@@ -339,7 +345,7 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                                         )}
                                     </Stack>
 
-                                    <Group gap="xs" wrap="nowrap">
+                                    <Group gap="xs" justify="flex-end">
                                         {a.doc_url ? (
                                             <Button
                                                 size="xs"
@@ -373,14 +379,19 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                                                 size="xs"
                                                 variant="subtle"
                                                 color="orange"
-                                                leftSection={<IconX size={13} />}
+                                                // Not an X: this sends the draft
+                                                // back for rework, it does not
+                                                // delete or cancel anything, and
+                                                // an X next to a destructive-
+                                                // looking colour read that way.
+                                                leftSection={<IconArrowBackUp size={13} />}
                                                 disabled={rowBusy}
                                                 onClick={() => {
                                                     setChangeTarget(a);
                                                     setChangeNote('');
                                                 }}
                                             >
-                                                Changes
+                                                Request changes
                                             </Button>
                                         )}
                                         {canApprove && a.status === 'PENDING_REVIEW' && (
@@ -398,28 +409,53 @@ export function LaunchArtifactsPanel({ launchId, onArtifactApproved }: Props) {
                                 </Group>
 
                                 {canDraft && a.status !== 'APPROVED' && (
-                                    <Textarea
-                                        mt="sm"
-                                        size="xs"
-                                        autosize
-                                        minRows={1}
-                                        maxRows={4}
-                                        placeholder="Optional notes for the next draft — call notes, decisions, anything Aha and Jira cannot tell it."
-                                        value={sourceNotes[a.artifact_type] ?? ''}
-                                        onChange={(e) => {
-                                            // Read synchronously. React invokes
-                                            // a functional updater during the
-                                            // render phase, by which point the
-                                            // event has been handled and
-                                            // currentTarget is null.
-                                            const value = e.currentTarget.value;
-                                            setSourceNotes((prev) => ({
-                                                ...prev,
-                                                [a.artifact_type]: value,
-                                            }));
-                                        }}
-                                        disabled={rowBusy}
-                                    />
+                                    <>
+                                        {contextOpen[a.artifact_type] ? (
+                                            <Textarea
+                                                mt="sm"
+                                                size="xs"
+                                                autosize
+                                                minRows={2}
+                                                maxRows={6}
+                                                autoFocus
+                                                label="Context for the next draft"
+                                                description="Call notes, decisions, anything Aha and Jira cannot tell it. Not feedback on an existing draft — use Request changes for that."
+                                                value={sourceNotes[a.artifact_type] ?? ''}
+                                                onChange={(e) => {
+                                                    // Read synchronously. React
+                                                    // invokes a functional
+                                                    // updater during the render
+                                                    // phase, by which point the
+                                                    // event has been handled and
+                                                    // currentTarget is null.
+                                                    const value = e.currentTarget.value;
+                                                    setSourceNotes((prev) => ({
+                                                        ...prev,
+                                                        [a.artifact_type]: value,
+                                                    }));
+                                                }}
+                                                disabled={rowBusy}
+                                            />
+                                        ) : (
+                                            <Button
+                                                mt="xs"
+                                                size="compact-xs"
+                                                variant="subtle"
+                                                color="gray"
+                                                leftSection={<IconPlus size={12} />}
+                                                onClick={() =>
+                                                    setContextOpen((prev) => ({
+                                                        ...prev,
+                                                        [a.artifact_type]: true,
+                                                    }))
+                                                }
+                                            >
+                                                {sourceNotes[a.artifact_type]?.trim()
+                                                    ? 'Edit context'
+                                                    : 'Add context'}
+                                            </Button>
+                                        )}
+                                    </>
                                 )}
                             </Paper>
                         );
