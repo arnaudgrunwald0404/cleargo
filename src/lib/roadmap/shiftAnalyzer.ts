@@ -1,4 +1,5 @@
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { getAnthropicBaseUrl } from '@/lib/ai/resolve-model';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import type {
@@ -8,17 +9,6 @@ import type {
   PlanVsActualReportPayload,
 } from '@/types/roadmap';
 import { mergeItemInsightsWithItems } from '@/lib/roadmap/planVsActualAnalysisMerge';
-
-const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
-
-function getAnthropicBaseUrl(): string {
-  const fromEnv = process.env.ANTHROPIC_BASE_URL?.trim().replace(/\/$/, '');
-  if (fromEnv && (fromEnv.includes('/.netlify/ai') || fromEnv.includes('.netlify.app'))) {
-    return ANTHROPIC_API_V1;
-  }
-  if (fromEnv) return fromEnv;
-  return ANTHROPIC_API_V1;
-}
 
 function resolveAnthropicApiKey(): string | undefined {
   const k = process.env.CLAUDE_API_KEY?.trim() || process.env.ANTHROPIC_API_KEY?.trim();

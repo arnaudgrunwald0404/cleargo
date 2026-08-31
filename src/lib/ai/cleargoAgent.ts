@@ -8,23 +8,13 @@
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { getAnthropicBaseUrl } from '@/lib/ai/resolve-model';
 import { google } from '@ai-sdk/google';
 import { generateText, streamText, tool, stepCountIs } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient } from '@/lib/slack/client';
-
-const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
-
-function getAnthropicBaseUrl(): string {
-  const fromEnv = process.env.ANTHROPIC_BASE_URL?.trim().replace(/\/$/, '');
-  if (fromEnv && (fromEnv.includes('/.netlify/ai') || fromEnv.includes('.netlify.app'))) {
-    return ANTHROPIC_API_V1;
-  }
-  if (fromEnv) return fromEnv;
-  return ANTHROPIC_API_V1;
-}
 
 function ensureKeys(): void {
   // Map CLAUDE_API_KEY → ANTHROPIC_API_KEY (Claude SDK convention)
