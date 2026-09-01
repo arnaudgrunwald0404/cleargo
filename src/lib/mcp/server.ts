@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod/v3';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { McpAuthInfo } from '@/lib/oauth/tokens';
+import { registerArtifactTools } from './tools';
 import {
   queryTeamMembers,
   queryOneOnOnePrep,
@@ -9,7 +11,19 @@ import {
   queryEpicDetail,
 } from './queries';
 
-export function createClearGoMcpServer(supabase: SupabaseClient): McpServer {
+/**
+ * Build the tool surface for one MCP request.
+ *
+ * `actor` is the authenticated caller, resolved from the OAuth access token in
+ * src/app/api/mcp/route.ts. It is threaded into the artifact tools because their
+ * writes are capability-checked against that person's ClearGO roles -- the server
+ * itself holds a service-role Supabase client, so the actor is the only thing
+ * limiting what a call can do.
+ */
+export function createClearGoMcpServer(
+  supabase: SupabaseClient,
+  actor: McpAuthInfo
+): McpServer {
   const server = new McpServer(
     { name: 'cleargo', version: '1.0.0' },
     { capabilities: { tools: {} } }
@@ -87,6 +101,8 @@ export function createClearGoMcpServer(supabase: SupabaseClient): McpServer {
       return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true };
     }
   });
+
+  registerArtifactTools(server, supabase, actor);
 
   return server;
 }
