@@ -728,7 +728,7 @@ Scheduled outbound notifications only reach people on **US business days** in th
     - Epic has no `epic_success_metrics` entries
     - `track_offline = false` in `epic_success_configs`
     - Reminder uses the "Success Defined" criterion due date if available, otherwise uses today's date
-- **App Home**: Personalized dashboard in Slack
+- **App Home**: Personalized dashboard in Slack, published on `app_home_opened` for the Home tab only. Five sections, in order: **Releases you own** (from `epic`), **Criteria awaiting your decision** (`epic_criterion_status` rows still `NOT_SET`), **Your launch artifacts** and **Needs an owner** (the GTM `launch` side, via `launchHomeService`), and **Story Brief questions waiting on you**. Releases and launches are captioned as the distinct objects they are — the release sections previously carried launch headings. Both release sections exclude archived and `Cancelled` epics, state the true total rather than the page size, and note how many rows were withheld. Owned releases are ordered soonest-target-date first and topped up with recently shipped work only when that bucket is thin, so the tab leads with what is coming rather than what shipped years ago
 - **URL Unfurling**: Rich previews for launch console links
 - **Channel Notifications**: Post to configured Slack channels
 - **DM Notifications**: Send direct messages to users

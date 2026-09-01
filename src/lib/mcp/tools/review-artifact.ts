@@ -10,6 +10,7 @@ import { z } from 'zod/v3';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { McpAuthInfo } from '@/lib/oauth/tokens';
 import { canRolesPerform } from '@/lib/permissions';
+import { markLaunchCriterionDone } from '@/lib/artifacts/criterionCompletion';
 
 export const InputSchema = z.object({
   launchId: z.string().describe('The launch ID'),
@@ -99,17 +100,21 @@ export async function reviewArtifact(
 
   // If approved, mark the readiness criterion DONE
   if (parsed.data.status === 'APPROVED' && artifact.criterion_id) {
-    const { error: criterionError } = await supabase
-      .from('launch_criterion_status')
-      .update({ status: 'DONE', last_updated_at: now, last_updated_by: actorEmail })
-      .eq('launch_id', parsed.data.launchId)
-      .eq('criterion_id', artifact.criterion_id);
+    const completion = await markLaunchCriterionDone(
+      supabase,
+      {
+        launchId: parsed.data.launchId,
+        criterionId: artifact.criterion_id,
+        actorEmail,
+      },
+      now
+    );
 
-    if (criterionError) {
+    if (completion.warning) {
       return {
         success: true,
         artifact: { id: updated.id, status: updated.status, version: updated.version },
-        warning: `Criterion not marked done: ${criterionError.message}`,
+        warning: completion.warning,
       };
     }
   }

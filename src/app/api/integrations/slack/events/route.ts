@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { verifySlackRequest, extractSlackHeaders } from '@/lib/slack/verify';
 import type { SlackEventPayload } from '@/types/slack';
 import { getSlackClient } from '@/lib/slack/client';
@@ -13,10 +14,18 @@ import {
     buildStoryBriefQuestionBlocks,
     buildUnassignedBlocks,
 } from '@/lib/slack/templates/launch-home';
-import { loadLaunchHomeWork, loadHomeBriefs } from '@/lib/services/launchHomeService';
+import {
+    buildOwnedReleaseBlocks,
+    buildPendingCriteriaBlocks,
+    MAX_HOME_CRITERIA,
+    MAX_HOME_RELEASES,
+    type HomeCriterion,
+    type HomeRelease,
+} from '@/lib/slack/templates/release-home';
+import { getMyWork, type OwedCriterion } from '@/lib/services/myWorkService';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
 
 async function triggerAgentBackground(payload: {
     type: 'app_mention' | 'direct_message';
@@ -104,11 +113,39 @@ export async function POST(request: NextRequest) {
     }
 }
 
+/** OwedCriterion -> the shape the home tab block builder speaks. */
+function toHomeCriterion(c: OwedCriterion): HomeCriterion {
+    return {
+        label: c.label,
+        epicId: c.epicId,
+        epicName: c.epicName,
+        lastUpdatedAt: c.lastUpdatedAt,
+    };
+}
+
+/**
+ * A section that failed to load says so. Rendering it as empty would tell
+ * someone they owe nothing, which is worse than telling them we do not know.
+ */
+function unavailableSection(title: string): unknown {
+    return {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${title}*\n_Could not load this right now._` },
+    };
+}
+
 async function handleAppHomeOpened(event: any) {
     try {
         const userId = event.user;
         if (!userId) {
             console.error('No user ID in app_home_opened event');
+            return;
+        }
+
+        // app_home_opened also fires when someone opens the Messages tab. Only
+        // the Home tab has a view to publish; republishing on a DM open is a
+        // wasted round-trip to the database and to Slack.
+        if (event.tab && event.tab !== 'home') {
             return;
         }
 
@@ -135,7 +172,7 @@ async function handleAppHomeOpened(event: any) {
                 type: 'header',
                 text: {
                     type: 'plain_text',
-                    text: '🚀 ClearGO Launch Console',
+                    text: '🚀 ClearGO',
                     emoji: true,
                 },
             },
@@ -147,47 +184,29 @@ async function handleAppHomeOpened(event: any) {
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: `👋 Hi! I couldn't find your account linked to this Slack user.\n\nPlease make sure your Slack handle is synced in the Launch Console.`,
+                    text:
+                        `👋 Hi! I couldn't find your account linked to this Slack user.` +
+                        `\n\nPlease make sure your Slack handle is synced in ClearGO.`,
                 },
             });
             blocks.push({
                 type: 'section',
                 text: {
                     type: 'mrkdwn',
-                    text: 'Once your account is linked, you\'ll see your launches and criteria here.',
+                    text: "Once your account is linked, you'll see your releases and criteria here.",
                 },
             });
         } else {
-            // Query launches where user is owner
-            const { data: ownedLaunches } = await supabase
-                .from('epic')
-                .select('id, name, tier, readiness_status, readiness_score, risk_level, target_launch_date')
-                .eq('owner_id', appUser.id)
-                .order('target_launch_date', { ascending: true })
-                .limit(5);
+            // Releases you OWN is container ownership (epic.owner_id) and stays
+            // its own query -- it is a different question from what you owe.
+            const { releases, releaseTotal } = await loadOwnedReleases(supabase, appUser.id);
 
-            // Query criteria where user is decision owner
-            const { data: criteriaStatuses } = await supabase
-                .from('epic_criterion_status')
-                .select(`
-                    id,
-                    status,
-                    last_updated_at,
-                    epic:epic_id (
-                        id,
-                        name
-                    ),
-                    criterion:criterion_id (
-                        id,
-                        label
-                    )
-                `)
-                .eq('decision_owner_id', appUser.id)
-                .in('status', ['NOT_SET'])
-                .limit(5);
-
-            const launches = ownedLaunches || [];
-            const criteria = criteriaStatuses || [];
+            // Everything you OWE, both sides, from the one shared definition.
+            // This also widens who sees what: the old inline query matched
+            // decision_owner_id alone, so a PM who owns criteria only through
+            // the pod->PM mapping saw an empty list here while My Items showed
+            // them a full one.
+            const work = await getMyWork(appUser.email, { supabase });
 
             // Add welcome message
             const firstName = appUser.first_name || 'there';
@@ -200,99 +219,21 @@ async function handleAppHomeOpened(event: any) {
             });
 
             blocks.push({ type: 'divider' });
-
-            // Add owned launches section
-            if (launches.length > 0) {
-                blocks.push({
-                    type: 'section',
-                    text: {
-                        type: 'mrkdwn',
-                        text: `*Launches you own (${launches.length}):*`,
-                    },
-                });
-
-                for (const launch of launches) {
-                    const statusEmoji = launch.readiness_status === 'GO' ? '✅' :
-                        launch.readiness_status === 'CONDITIONAL_GO' ? '⚠️' : '❌';
-                    const riskEmoji = launch.risk_level === 'HIGH' ? '🔴' :
-                        launch.risk_level === 'MEDIUM' ? '🟡' : '🟢';
-                    const score = launch.readiness_score ? Math.round(launch.readiness_score * 100) : 0;
-
-                    blocks.push({
-                        type: 'section',
-                        text: {
-                            type: 'mrkdwn',
-                            text: `${statusEmoji} *${launch.name}* (${launch.tier})\n${riskEmoji} Risk: ${launch.risk_level} | Score: ${score}%`,
-                        },
-                        accessory: {
-                            type: 'button',
-                            text: {
-                                type: 'plain_text',
-                                text: 'View Details',
-                                emoji: true,
-                            },
-                            url: `${APP_URL}/epics/${launch.id}`,
-                        },
-                    });
-                }
-            } else {
-                blocks.push({
-                    type: 'section',
-                    text: {
-                        type: 'mrkdwn',
-                        text: '_You don\'t own any launches yet._',
-                    },
-                });
-            }
+            blocks.push(...buildOwnedReleaseBlocks(releases, releaseTotal, APP_URL));
 
             blocks.push({ type: 'divider' });
-
-            // Add criteria section
-            if (criteria.length > 0) {
-                blocks.push({
-                    type: 'section',
-                    text: {
-                        type: 'mrkdwn',
-                        text: `*Criteria awaiting your decision (${criteria.length}):*`,
-                    },
-                });
-
-                for (const criterion of criteria) {
-                    const epic = Array.isArray(criterion.epic) ? criterion.epic[0] : criterion.epic;
-                    const criterionData = Array.isArray(criterion.criterion) ? criterion.criterion[0] : criterion.criterion;
-
-                    if (epic && criterionData) {
-                        const daysSinceUpdate = Math.floor(
-                            (Date.now() - new Date(criterion.last_updated_at).getTime()) / (1000 * 60 * 60 * 24)
-                        );
-                        const staleIndicator = daysSinceUpdate > 14 ? '⏰ ' : '';
-
-                        blocks.push({
-                            type: 'section',
-                            text: {
-                                type: 'mrkdwn',
-                                text: `${staleIndicator}*${criterionData.label}*\nLaunch: ${epic.name} | Status: ${criterion.status}`,
-                            },
-                            accessory: {
-                                type: 'button',
-                                text: {
-                                    type: 'plain_text',
-                                    text: 'View Launch',
-                                    emoji: true,
-                                },
-                                url: `${APP_URL}/epics/${epic.id}`,
-                            },
-                        });
-                    }
-                }
+            if (work.degraded.release) {
+                console.error('home: release criteria unavailable', work.degraded.release);
+                blocks.push(unavailableSection('Criteria awaiting your decision'));
             } else {
-                blocks.push({
-                    type: 'section',
-                    text: {
-                        type: 'mrkdwn',
-                        text: '_No criteria awaiting your decision._ ✅',
-                    },
-                });
+                const owed = work.owed.map(toHomeCriterion);
+                blocks.push(
+                    ...buildPendingCriteriaBlocks(
+                        owed.slice(0, MAX_HOME_CRITERIA),
+                        owed.length,
+                        APP_URL
+                    )
+                );
             }
 
             blocks.push({ type: 'divider' });
@@ -300,27 +241,26 @@ async function handleAppHomeOpened(event: any) {
             // GTM launch work. The home tab has only ever known about epics, so
             // a PMM carrying artifacts on the launch table saw nothing here.
             // Failures degrade to a missing section rather than an error view.
-            try {
-                const work = await loadLaunchHomeWork(appUser.email);
-                blocks.push(...buildArtifactBlocks(work.artifacts, APP_URL));
-                const gaps = buildUnassignedBlocks(work.unassigned, APP_URL);
+            if (work.degraded.launch) {
+                console.error('home: launch artifacts unavailable', work.degraded.launch);
+                blocks.push(unavailableSection('Your launch artifacts'));
+            } else {
+                blocks.push(...buildArtifactBlocks(work.launchArtifacts, APP_URL));
+                const gaps = buildUnassignedBlocks(work.unassignedLaunchWork, APP_URL);
                 if (gaps.length > 0) {
                     blocks.push({ type: 'divider' });
                     blocks.push(...gaps);
                 }
-            } catch (err) {
-                console.error('home: launch artifacts unavailable', err);
             }
 
-            try {
-                const briefs = await loadHomeBriefs(appUser.email);
-                const briefBlocks = buildStoryBriefQuestionBlocks(briefs);
+            if (work.degraded.briefs) {
+                console.error('home: story brief questions unavailable', work.degraded.briefs);
+            } else {
+                const briefBlocks = buildStoryBriefQuestionBlocks(work.storyBriefs);
                 if (briefBlocks.length > 0) {
                     blocks.push({ type: 'divider' });
                     blocks.push(...briefBlocks);
                 }
-            } catch (err) {
-                console.error('home: story brief questions unavailable', err);
             }
 
             blocks.push({ type: 'divider' });
@@ -342,7 +282,7 @@ async function handleAppHomeOpened(event: any) {
                         type: 'button',
                         text: {
                             type: 'plain_text',
-                            text: 'View All Launches',
+                            text: 'All Releases',
                             emoji: true,
                         },
                         url: `${APP_URL}/epics`,
@@ -389,6 +329,83 @@ async function handleAppHomeOpened(event: any) {
             console.error('Failed to publish error home view:', publishError);
         }
     }
+}
+
+/**
+ * Releases this person owns that are still live work.
+ *
+ * Three things the old inline query got wrong:
+ *  - it returned archived epics (not ClearGO candidates — hidden everywhere
+ *    else in the app) and Cancelled ones;
+ *  - it ordered by target_launch_date ASC across all time and took five, so a
+ *    long-serving PM got their five OLDEST releases, all of them shipped years
+ *    ago, and never saw the one launching next week;
+ *  - it reported `rows.length` as the total, which is always <= the page size.
+ *
+ * Ordering here is upcoming-first (soonest target date), topped up with the
+ * most recently shipped when there is room. Release lifecycle is derived, not
+ * stored (see src/lib/epic-release-status.ts), and deriving it needs retros and
+ * the release schedule per epic — too much for a home tab — so the target date
+ * stands in for it. Cancelled is the one status that is genuinely stored.
+ */
+async function loadOwnedReleases(
+    supabase: SupabaseClient,
+    ownerId: string
+): Promise<{ releases: HomeRelease[]; releaseTotal: number }> {
+    const COLUMNS =
+        'id, name, tier, readiness_status, readiness_score, risk_level, target_launch_date';
+    const today = new Date().toISOString().slice(0, 10);
+
+    const active = () =>
+        supabase
+            .from('epic')
+            .select(COLUMNS)
+            .eq('owner_id', ownerId)
+            .eq('archived', false)
+            .neq('status', 'Cancelled');
+
+    // Counted over the whole active set in one head request, so the heading is
+    // a real total rather than however many rows the two pages below returned.
+    const { count } = await supabase
+        .from('epic')
+        .select('id', { count: 'exact', head: true })
+        .eq('owner_id', ownerId)
+        .eq('archived', false)
+        .neq('status', 'Cancelled');
+
+    // Undated releases sort last in an ASC order, so they ride along with the
+    // upcoming bucket rather than being stranded behind the shipped ones.
+    const upcoming = await active()
+        .or(`target_launch_date.gte.${today},target_launch_date.is.null`)
+        .order('target_launch_date', { ascending: true, nullsFirst: false })
+        .limit(MAX_HOME_RELEASES);
+
+    if (upcoming.error) throw upcoming.error;
+    const rows = [...(upcoming.data ?? [])];
+
+    // Only top up with recently shipped work when the upcoming bucket is thin.
+    if (rows.length < MAX_HOME_RELEASES) {
+        const shipped = await active()
+            .lt('target_launch_date', today)
+            .order('target_launch_date', { ascending: false })
+            .limit(MAX_HOME_RELEASES - rows.length);
+
+        if (shipped.error) throw shipped.error;
+        rows.push(...(shipped.data ?? []));
+    }
+
+    return {
+        releases: rows.map((r) => ({
+            id: r.id,
+            name: r.name,
+            tier: r.tier ?? null,
+            readinessStatus: r.readiness_status ?? null,
+            readinessScore: r.readiness_score ?? null,
+            riskLevel: r.risk_level ?? null,
+            targetLaunchDate: r.target_launch_date ?? null,
+        })),
+        releaseTotal: count ?? rows.length,
+    };
 }
 
 async function resolveUserEmailFromSlackId(slackUserId: string): Promise<string | null> {

@@ -7,9 +7,19 @@
  * who could see the message could promote a document to v1.0.
  */
 import { createAdminClient } from '@/lib/supabase/server';
-import { canRolesPerform } from '@/lib/permissions';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { canRolesPerformWithRules, type CapabilityId } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
 
 export interface SlackActor {
+    /**
+     * `app_user.id`. Required, not cosmetic: `epic_criterion_status
+     * .last_updated_by` and `audit_log.actor_id` are uuid FKs to `app_user`, so
+     * without this a Slack write cannot attribute itself. Leaving it out is how
+     * three artifact approval paths ended up writing an email into a uuid
+     * column (see lib/artifacts/criterionCompletion.ts).
+     */
+    id: string | null;
     email: string | null;
     name: string | null;
     roles: string[];
@@ -18,6 +28,7 @@ export interface SlackActor {
 }
 
 const UNKNOWN: SlackActor = {
+    id: null,
     email: null,
     name: null,
     roles: [],
@@ -33,13 +44,14 @@ export async function resolveActorFromSlack(
 
     const { data, error } = await supabase
         .from('app_user')
-        .select('email, first_name, last_name, roles')
+        .select('id, email, first_name, last_name, roles')
         .eq('slack_handle', slackUserId)
         .maybeSingle();
 
     if (error || !data) return UNKNOWN;
 
     const row = data as {
+        id: string;
         email: string;
         first_name?: string | null;
         last_name?: string | null;
@@ -54,13 +66,33 @@ export async function resolveActorFromSlack(
 
     const name = `${row.first_name ?? ''} ${row.last_name ?? ''}`.trim() || row.email;
 
+    // EFFECTIVE rules, not DEFAULT_RULES. This previously used canRolesPerform,
+    // whose comment claimed "same capabilities the HTTP route enforces" -- it
+    // was not: every UI route resolves DB overrides via
+    // getEffectivePermissionRules, so an admin who narrowed a capability in
+    // Settings had narrowed it in the web app and not in Slack.
+    const rules = await getEffectivePermissionRules(supabase);
+
     return {
+        id: row.id,
         email: row.email,
         name,
         roles,
-        // Same capabilities the HTTP route enforces, so Slack cannot be used to
-        // do something the web app would refuse.
-        allowedToApprove: canRolesPerform(roles, 'launchArtifact.approve'),
-        allowedToReview: canRolesPerform(roles, 'launchArtifact.review'),
+        allowedToApprove: canRolesPerformWithRules(roles, 'launchArtifact.approve', rules),
+        allowedToReview: canRolesPerformWithRules(roles, 'launchArtifact.review', rules),
     };
+}
+
+/**
+ * Capability check for any actor resolved above, against the same effective
+ * rules the web app uses. Prefer this over the two booleans for new
+ * capabilities rather than growing the interface one flag at a time.
+ */
+export async function actorCan(
+    actor: Pick<SlackActor, 'roles'>,
+    capability: CapabilityId,
+    supabase: SupabaseClient = createAdminClient()
+): Promise<boolean> {
+    const rules = await getEffectivePermissionRules(supabase);
+    return canRolesPerformWithRules(actor.roles, capability, rules);
 }

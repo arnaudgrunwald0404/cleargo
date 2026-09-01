@@ -102,9 +102,20 @@ const DEFAULT_PENDO_APP_NAMES: Record<string, string> = {
     "6212546329378816": "ClearCompany Learning",
 };
 
-/** Effective permission rules: DEFAULT_RULES merged with DB overrides (DB wins). Use for server-side permission checks. */
-export async function getEffectivePermissionRules(): Promise<Record<CapabilityId, string[]>> {
-    const settings = await getSettings();
+/**
+ * Effective permission rules: DEFAULT_RULES merged with DB overrides (DB wins).
+ * Use for server-side permission checks.
+ *
+ * Pass a client from anywhere without a user session — Slack, MCP, cron. The
+ * default reaches `app_settings` as `anon`, so without one an admin's
+ * permission override is invisible and the caller silently falls back to
+ * DEFAULT_RULES, which is how Slack and MCP came to disagree with the web app
+ * about who may do what.
+ */
+export async function getEffectivePermissionRules(
+    client?: SupabaseClient
+): Promise<Record<CapabilityId, string[]>> {
+    const settings = await getSettings(client);
     const overrides = settings.permissions || {};
     return { ...DEFAULT_RULES, ...overrides } as Record<CapabilityId, string[]>;
 }
@@ -337,7 +348,13 @@ export async function updateSettings(
     return currentSettings as AppSettings;
 }
 
-export async function getFeatureFlags(): Promise<string[]> {
-    const s = await getSettings();
+/**
+ * Pass a client from anywhere without a user session -- Slack, MCP, cron. The
+ * default reaches app_settings as `anon`, which returns no row, so every flag
+ * reads as disabled and a flag-gated path silently refuses. Same reason
+ * getEffectivePermissionRules takes one.
+ */
+export async function getFeatureFlags(client?: SupabaseClient): Promise<string[]> {
+    const s = await getSettings(client);
     return Array.isArray(s.feature_flags) ? s.feature_flags : [];
 }

@@ -53,7 +53,10 @@ export async function POST(request: NextRequest) {
         }
 
         // Query release by name or Aha ID
-        const supabase = (await import('@/lib/supabase/server')).createClient();
+        // Service role, not the cookie client. A Slack slash command carries no
+        // session, so createClient() authenticates as `anon` while the SELECT
+        // policies on `epic` and `app_user` are granted to `authenticated`.
+        const supabase = (await import('@/lib/supabase/server')).createAdminClient();
 
         const { data: releases, error: releaseError } = await supabase
             .from('epic')
