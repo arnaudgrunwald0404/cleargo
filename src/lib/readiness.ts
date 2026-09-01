@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { parseDateOnlyLocal } from '@/lib/date-utils';
 import { Epic, EpicStatus } from '@/types/epics';
 import { sendSlackNotification } from '@/lib/slack/notifications';
@@ -14,8 +15,18 @@ import { createGtmAccessPhaseResolver, type GtmPhaseEpic } from '@/lib/gtm-phase
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
 
-export async function recomputeEpicReadiness(epicId: string, excludeUserId?: string) {
-    const supabase = createClient();
+/**
+ * `supabase` is a parameter because the default is the cookie-backed client,
+ * which authenticates as `anon` wherever there is no session — a Slack
+ * interaction, an MCP tool call, a background function, a cron job. Every one
+ * of those needs to pass a service-role client or this reads nothing and
+ * silently recomputes readiness from an empty criteria set.
+ */
+export async function recomputeEpicReadiness(
+    epicId: string,
+    excludeUserId?: string,
+    supabase: SupabaseClient = createClient()
+) {
 
     // 1. Fetch epic data and criteria statuses
     const { data: epic, error: epicError } = await supabase
