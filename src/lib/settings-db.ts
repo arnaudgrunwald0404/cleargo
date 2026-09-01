@@ -348,7 +348,13 @@ export async function updateSettings(
     return currentSettings as AppSettings;
 }
 
-export async function getFeatureFlags(): Promise<string[]> {
-    const s = await getSettings();
+/**
+ * Pass a client from anywhere without a user session -- Slack, MCP, cron. The
+ * default reaches app_settings as `anon`, which returns no row, so every flag
+ * reads as disabled and a flag-gated path silently refuses. Same reason
+ * getEffectivePermissionRules takes one.
+ */
+export async function getFeatureFlags(client?: SupabaseClient): Promise<string[]> {
+    const s = await getSettings(client);
     return Array.isArray(s.feature_flags) ? s.feature_flags : [];
 }
