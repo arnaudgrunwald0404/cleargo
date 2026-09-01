@@ -15,7 +15,39 @@ import { defaultSlackTheme } from './theme';
 export { buildRetroReminderMessage } from './templates/retro-reminders';
 export { buildScorecardAlertMessage } from './templates/scorecard-alerts';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://launch-console.clearcompany.com';
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
+
+export type RiskLevel = 'LOW' | 'MEDIUM' | 'HIGH';
+
+/**
+ * `epic.risk_level` is written in upper case by src/lib/readiness.ts ('LOW' |
+ * 'MEDIUM' | 'HIGH'). The risk templates below used to compare against 'High'
+ * and 'Medium', which never matched a stored value, so every alert — including
+ * the ones the job only sends BECAUSE risk went high — rendered green.
+ *
+ * Accepts either casing so hand-written callers (the admin template preview
+ * passes 'High') keep working, and returns null for anything unrecognised so
+ * callers can say "not set" instead of defaulting to low.
+ */
+export function normalizeRiskLevel(value: string | null | undefined): RiskLevel | null {
+    switch ((value ?? '').trim().toUpperCase()) {
+        case 'HIGH':
+            return 'HIGH';
+        case 'MEDIUM':
+            return 'MEDIUM';
+        case 'LOW':
+            return 'LOW';
+        default:
+            return null;
+    }
+}
+
+/** Title case for display: 'HIGH' -> 'High'. */
+export function formatRiskLevel(value: string | null | undefined): string {
+    const level = normalizeRiskLevel(value);
+    if (!level) return 'Not set';
+    return level.charAt(0) + level.slice(1).toLowerCase();
+}
 
 /**
  * Stale Criterion Reminder
@@ -131,7 +163,8 @@ export function buildLaunchRiskAlertMessage(
         launch_name: string;
         launch_id: string;
         tier: string;
-        risk_level: 'Low' | 'Medium' | 'High';
+        /** Upper case as stored on `epic.risk_level`; title case tolerated. */
+        risk_level: string;
         readiness_score: number;
         days_to_launch: number;
         gate_blockers: number;
@@ -139,11 +172,15 @@ export function buildLaunchRiskAlertMessage(
     },
     theme: SlackThemeConfig = defaultSlackTheme
 ): { text: string; blocks: SlackBlock[] } {
-    const riskEmoji = data.risk_level === 'High' ? theme.emojis.risk.high : data.risk_level === 'Medium' ? theme.emojis.risk.medium : theme.emojis.risk.low;
-    const riskColor = data.risk_level === 'High' ? 'danger' : data.risk_level === 'Medium' ? 'warning' : 'good';
+    const risk = normalizeRiskLevel(data.risk_level);
+    const riskEmoji =
+        risk === 'HIGH' ? theme.emojis.risk.high
+            : risk === 'MEDIUM' ? theme.emojis.risk.medium
+                : theme.emojis.risk.low;
+    const riskColor = risk === 'HIGH' ? 'danger' : risk === 'MEDIUM' ? 'warning' : 'good';
 
     return {
-        text: `${riskEmoji} High Risk Alert: ${data.launch_name}`,
+        text: `${riskEmoji} ${formatRiskLevel(data.risk_level)} Risk Alert: ${data.launch_name}`,
         blocks: [
             {
                 type: 'header',
@@ -165,7 +202,7 @@ export function buildLaunchRiskAlertMessage(
                 fields: [
                     {
                         type: 'mrkdwn',
-                        text: `*Risk Level:*\n${riskEmoji} ${data.risk_level}`,
+                        text: `*Risk Level:*\n${riskEmoji} ${formatRiskLevel(data.risk_level)}`,
                     },
                     {
                         type: 'mrkdwn',
@@ -674,7 +711,8 @@ export function buildLaunchUnfurl(data: {
     target_release_date: string;
     gate_summary: string;
 }): SlackBlock[] {
-    const riskEmoji = data.risk_level === 'High' ? '🔴' : data.risk_level === 'Medium' ? '🟡' : '🟢';
+    const risk = normalizeRiskLevel(data.risk_level);
+    const riskEmoji = risk === 'HIGH' ? '🔴' : risk === 'MEDIUM' ? '🟡' : risk === 'LOW' ? '🟢' : '⚪';
 
     return [
         {
@@ -697,7 +735,7 @@ export function buildLaunchUnfurl(data: {
                 },
                 {
                     type: 'mrkdwn',
-                    text: `*Risk:*\n${riskEmoji} ${data.risk_level}`,
+                    text: `*Risk:*\n${riskEmoji} ${formatRiskLevel(data.risk_level)}`,
                 },
                 {
                     type: 'mrkdwn',

@@ -12,6 +12,8 @@ import {
 } from '@/lib/readiness-scoring';
 import { createGtmAccessPhaseResolver, type GtmPhaseEpic } from '@/lib/gtm-phase';
 
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
+
 export async function recomputeEpicReadiness(epicId: string, excludeUserId?: string) {
     const supabase = createClient();
 
@@ -147,12 +149,16 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     // 4. Compute Risk
     // "HIGH if close to launch and below thresholds or gates not GO"
     let riskLevel = 'LOW';
+    // Hoisted out of the block below so the risk alert can quote it. Null when
+    // the epic has no target date at all, which the template renders as unknown
+    // rather than as "0 days to launch".
+    let daysToLaunch: number | null = null;
     if (epic?.target_launch_date) {
         const { parseDateOnlyLocal } = await import('@/lib/date-utils');
         const launch = parseDateOnlyLocal(epic.target_launch_date);
         const today = new Date();
         today.setHours(0, 0, 0, 0);
-        const daysToLaunch = launch
+        daysToLaunch = launch
             ? Math.ceil((launch.getTime() - today.getTime()) / (1000 * 60 * 60 * 24))
             : 0;
 
@@ -275,15 +281,29 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     };
 
     // 6. Send Notifications if changed
+    const epicUrl = epic.console_url || `${APP_URL}/epics/${epic.id}`;
+
     if (epic.readiness_status && epic.readiness_status !== readinessStatus) {
-        const metadata = {
-            epicName: epic.name,
+        const ownerRecipient = await getOwnerRecipient(epic.owner_email);
+
+        // Two consumers, two shapes. buildLaunchStatusChangeMessage reads
+        // snake_case (launch_name, old_status, ...); sendEmailNotification reads
+        // launchName / launchUrl. This used to send one camelCase object keyed
+        // for neither, so both channels rendered `undefined` throughout.
+        const slackMetadata = {
+            launch_name: epic.name,
+            launch_id: epic.id,
+            old_status: epic.readiness_status,
+            new_status: readinessStatus,
+            changed_by: 'ClearGO',
+            reason: 'Readiness was recalculated after a criterion changed.',
+        };
+        const emailMetadata = {
+            launchName: epic.name,
             oldStatus: epic.readiness_status,
             newStatus: readinessStatus,
-            epicUrl: epic.console_url || `http://localhost:3000/epics/${epic.id}`
+            launchUrl: epicUrl,
         };
-
-        const ownerRecipient = await getOwnerRecipient(epic.owner_email);
 
         // Send Slack notification to epic owner (if not the person who made the change)
         if (ownerRecipient) {
@@ -292,7 +312,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
                 priority: 'high',
                 recipient: ownerRecipient,
                 launch_id: epic.id,
-                metadata
+                metadata: slackMetadata,
             }).catch(console.error);
         }
 
@@ -301,7 +321,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
             await sendEmailNotification({
                 type: 'launch_status_change',
                 recipientEmail: epic.owner_email,
-                metadata,
+                metadata: emailMetadata,
                 userId: ownerRecipient.id,
                 epicId: epic.id,
             });
@@ -309,14 +329,33 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
     }
 
     if (epic.risk_level && epic.risk_level !== riskLevel && (riskLevel === 'HIGH' || riskLevel === 'MEDIUM')) {
-        const metadata = {
-            epicName: epic.name,
-            riskLevel: riskLevel,
-            epicUrl: epic.console_url || `http://localhost:3000/epics/${epic.id}`,
-            reason: "Readiness score dropped or launch date approaching with unresolved items."
-        };
-
         const ownerRecipient = await getOwnerRecipient(epic.owner_email);
+
+        // Gating criteria that are not a clear GO — the concrete thing behind
+        // "risk went up". buildLaunchRiskAlertMessage prints this as a count.
+        const gateBlockers = criteriaInputs.filter(
+            (c) => c.isGating && c.status !== 'GO'
+        ).length;
+
+        // Same key mismatch as the status change above: the Slack template reads
+        // launch_name / risk_level / readiness_score / days_to_launch /
+        // gate_blockers / owner_name, none of which the old camelCase object had.
+        const slackMetadata = {
+            launch_name: epic.name,
+            launch_id: epic.id,
+            tier: epic.tier,
+            risk_level: riskLevel,
+            readiness_score: readinessScore,
+            days_to_launch: daysToLaunch ?? 0,
+            gate_blockers: gateBlockers,
+            owner_name: ownerRecipient?.name ?? epic.owner_email ?? 'Unassigned',
+        };
+        const emailMetadata = {
+            launchName: epic.name,
+            riskLevel,
+            reason: 'Readiness score dropped or launch date approaching with unresolved items.',
+            launchUrl: epicUrl,
+        };
 
         // Send Slack notification to epic owner (if not the person who made the change)
         if (ownerRecipient) {
@@ -325,7 +364,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
                 priority: 'high',
                 recipient: ownerRecipient,
                 launch_id: epic.id,
-                metadata
+                metadata: slackMetadata,
             }).catch(console.error);
         }
 
@@ -334,7 +373,7 @@ export async function recomputeEpicReadiness(epicId: string, excludeUserId?: str
             await sendEmailNotification({
                 type: 'launch_risk_alert',
                 recipientEmail: epic.owner_email,
-                metadata,
+                metadata: emailMetadata,
                 userId: ownerRecipient.id,
                 epicId: epic.id,
             });
