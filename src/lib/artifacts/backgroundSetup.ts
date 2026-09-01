@@ -1,3 +1,7 @@
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { artifactsForTier } from './registry';
+import type { LaunchTier } from '@/types/launches';
+
 /**
  * Handing launch artifact setup to the background function.
  *
@@ -53,4 +57,41 @@ export async function dispatchLaunchArtifactSetup(
     }
 
     return true;
+}
+
+/**
+ * Is there anything for a setup run to actually do?
+ *
+ * True when the launch is missing a row for an artifact its tier calls for, or
+ * has a row with no document. Two reads and no Google calls, because its whole
+ * job is to decide whether to pay for the slow path.
+ */
+export async function hasMissingDocs(
+    launchId: string,
+    admin: SupabaseClient
+): Promise<boolean> {
+    const { data: launch } = await admin
+        .from('launch')
+        .select('tier')
+        .eq('id', launchId)
+        .maybeSingle();
+
+    const { data: rows, error } = await admin
+        .from('launch_artifact')
+        .select('artifact_type, doc_id')
+        .eq('launch_id', launchId);
+
+    // Unreadable (the migration may not be applied here): call it work to do and
+    // let ensureLaunchArtifacts report the real reason.
+    if (error) return true;
+
+    const withDoc = new Set(
+        ((rows ?? []) as Array<{ artifact_type: string; doc_id: string | null }>)
+            .filter((r) => r.doc_id)
+            .map((r) => r.artifact_type)
+    );
+
+    return artifactsForTier((launch?.tier as LaunchTier) ?? null).some(
+        (def) => !withDoc.has(def.type)
+    );
 }

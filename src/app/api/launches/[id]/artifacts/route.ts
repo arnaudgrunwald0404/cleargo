@@ -13,18 +13,16 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { ensureLaunchArtifacts } from '@/lib/artifacts/docFactory';
 import {
     dispatchLaunchArtifactSetup,
+    hasMissingDocs,
     launchArtifactSetupTarget,
 } from '@/lib/artifacts/backgroundSetup';
-import { draftArtifact } from '@/lib/artifacts/draftService';
-import { artifactsForTier, getArtifactDefinition } from '@/lib/artifacts/registry';
+import { startArtifactDraft } from '@/lib/artifacts/startDraft';
+import { getArtifactDefinition } from '@/lib/artifacts/registry';
 import { isGoogleConfigured } from '@/lib/google/auth';
-import type { LaunchTier } from '@/types/launches';
 import {
     ARTIFACT_TYPES,
-    isDraftStalled,
     type ArtifactStatus,
     type ArtifactType,
-    type LaunchArtifact,
 } from '@/types/artifacts';
 
 export const dynamic = 'force-dynamic';
@@ -45,43 +43,6 @@ async function resolveRoles(
     const raw = data?.roles;
     const roles = Array.isArray(raw) ? raw : raw ? [String(raw)] : [];
     return { email: user.email, roles };
-}
-
-/**
- * Is there anything for a setup run to actually do?
- *
- * True when the launch is missing a row for an artifact its tier calls for, or
- * has a row with no document. Two reads and no Google calls, because its whole
- * job is to decide whether to pay for the slow path.
- */
-async function hasMissingDocs(
-    launchId: string,
-    admin: ReturnType<typeof createAdminClient>
-): Promise<boolean> {
-    const { data: launch } = await admin
-        .from('launch')
-        .select('tier')
-        .eq('id', launchId)
-        .maybeSingle();
-
-    const { data: rows, error } = await admin
-        .from('launch_artifact')
-        .select('artifact_type, doc_id')
-        .eq('launch_id', launchId);
-
-    // Unreadable (the migration may not be applied here): call it work to do and
-    // let ensureLaunchArtifacts report the real reason.
-    if (error) return true;
-
-    const withDoc = new Set(
-        ((rows ?? []) as Array<{ artifact_type: string; doc_id: string | null }>)
-            .filter((r) => r.doc_id)
-            .map((r) => r.artifact_type)
-    );
-
-    return artifactsForTier((launch?.tier as LaunchTier) ?? null).some(
-        (def) => !withDoc.has(def.type)
-    );
 }
 
 async function getHandler(request: NextRequest, context: { params: Promise<{ id: string }> }) {
@@ -170,111 +131,53 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
 
             const admin = createAdminClient();
 
-            // Read the row first for two reasons: a missing one is a 404 rather
-            // than a background function that fails out of sight, and its
-            // current status is what the worker restores if the run throws.
-            const { data: row } = await admin
-                .from('launch_artifact')
-                .select('status, updated_at')
-                .eq('launch_id', launchId)
-                .eq('artifact_type', body.artifact_type)
-                .maybeSingle();
-
-            if (!row) {
-                return NextResponse.json(
-                    { error: 'No such artifact on this launch. Create the documents first.' },
-                    { status: 404 }
-                );
-            }
-
-            // Blocked only while a run could genuinely still be in flight. A
-            // background function that was killed before its error handler ran
-            // leaves the row DRAFTING forever, and refusing on that basis would
-            // disable the artifact permanently.
-            if (row.status === 'DRAFTING' && !isDraftStalled(row as LaunchArtifact)) {
-                return NextResponse.json(
-                    { error: 'A draft is already running for this artifact.' },
-                    { status: 409 }
-                );
-            }
-
-            // Drafting takes minutes; netlify.toml caps a SYNCHRONOUS function
-            // at 26s, so the maxDuration above is not honoured in production and
-            // this must hand off. Same shape as HEART setup
-            // (api/epics/[id]/heart/route.ts:174-278): inline locally, 202 on Netlify.
-            const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
-            const secret =
-                process.env.NETLIFY_ARTIFACT_DRAFT_SECRET || process.env.NETLIFY_HEART_SETUP_SECRET;
-            const useBackground =
-                Boolean(baseUrl) && !baseUrl.includes('localhost') && Boolean(secret);
-
-            if (useBackground) {
-                // Claim the row BEFORE dispatching. draftArtifact is what sets
-                // DRAFTING, and it does not run until the background function
-                // spins up a second or two later -- until then the row still
-                // reads NOT_STARTED, so a second click sails past the guard
-                // above and starts a concurrent run against the same document.
-                await admin
-                    .from('launch_artifact')
-                    .update({ status: 'DRAFTING', updated_at: new Date().toISOString() })
-                    .eq('launch_id', launchId)
-                    .eq('artifact_type', body.artifact_type);
-
-                const triggered = await fetch(
-                    `${baseUrl}/.netlify/functions/artifact-draft-background`,
-                    {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            launchId,
-                            artifactType: body.artifact_type,
-                            previousStatus: row.status,
-                            sourceNotes: body.source_notes,
-                            actorEmail: actor.email,
-                            secret,
-                        }),
-                    }
-                ).catch((err) => {
-                    console.error('[artifacts] background trigger failed:', err);
-                    return null;
-                });
-
-                if (!triggered?.ok) {
-                    // Nothing is going to run, so release the claim rather than
-                    // leaving the row stuck in DRAFTING with no worker behind it.
-                    await admin
-                        .from('launch_artifact')
-                        .update({ status: row.status, updated_at: new Date().toISOString() })
-                        .eq('launch_id', launchId)
-                        .eq('artifact_type', body.artifact_type);
-
-                    return NextResponse.json(
-                        { error: 'Could not start the draft. Try again.' },
-                        { status: 502 }
-                    );
-                }
-
-                // 202: accepted, not done. The client polls GET until the row
-                // leaves DRAFTING -- launch_artifact already carries that state,
-                // so there is no separate job table to read.
-                return NextResponse.json(
-                    { accepted: true, artifact_type: body.artifact_type, status: 'DRAFTING' },
-                    { status: 202 }
-                );
-            }
-
-            const draft = await draftArtifact(
+            // The 26s cap, the claim-before-dispatch race, and the release on a
+            // failed trigger all live in startArtifactDraft -- shared with the MCP
+            // draft tools so the two cannot drift apart.
+            const started = await startArtifactDraft(
                 launchId,
                 body.artifact_type,
                 { sourceNotes: body.source_notes, actorEmail: actor.email },
                 admin
             );
 
-            // 207 when the draft landed but something adjacent did not (the
-            // document could not be written, the upstream was unapproved) — the
-            // caller needs to know the difference between "ready to review" and
-            // "ready to review, but the Doc is stale".
-            return NextResponse.json(draft, { status: draft.warnings.length > 0 ? 207 : 200 });
+            switch (started.outcome) {
+                case 'not_found':
+                    return NextResponse.json(
+                        { error: 'No such artifact on this launch. Create the documents first.' },
+                        { status: 404 }
+                    );
+
+                case 'already_running':
+                    return NextResponse.json(
+                        { error: 'A draft is already running for this artifact.' },
+                        { status: 409 }
+                    );
+
+                case 'dispatch_failed':
+                    return NextResponse.json(
+                        { error: 'Could not start the draft. Try again.' },
+                        { status: 502 }
+                    );
+
+                case 'accepted':
+                    // 202: accepted, not done. The client polls GET until the row
+                    // leaves DRAFTING -- launch_artifact already carries that
+                    // state, so there is no separate job table to read.
+                    return NextResponse.json(
+                        { accepted: true, artifact_type: started.artifactType, status: 'DRAFTING' },
+                        { status: 202 }
+                    );
+
+                case 'completed':
+                    // 207 when the draft landed but something adjacent did not (the
+                    // document could not be written, the upstream was unapproved) --
+                    // the caller needs to know the difference between "ready to
+                    // review" and "ready to review, but the Doc is stale".
+                    return NextResponse.json(started.draft, {
+                        status: started.draft.warnings.length > 0 ? 207 : 200,
+                    });
+            }
         }
 
         // Same handoff as drafting, and for the same reason: filling in five

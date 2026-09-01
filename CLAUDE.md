@@ -100,6 +100,15 @@ All API routes follow this pattern:
 - Rate limiting via `withRateLimit(handler, config)` wrapper
 - Return JSON with appropriate HTTP status codes
 
+### MCP Connector (remote, OAuth)
+
+`POST /api/mcp` is an OAuth 2.0 resource server exposing 20 tools (5 team-management, 15 launch-artifact). Teammates add it in Claude Desktop with just the URL — the app is its own authorization server and supports dynamic client registration, so nothing is pasted or installed. See `docs/MCP-Connector.md`.
+
+- Access tokens are stateless JWTs (1h, audience-bound, carrying email + roles); refresh tokens rotate and are stored hashed. PKCE S256 required.
+- Tool writes are capability-gated (`launchArtifact.draft` / `.review` / `.approve`) against the caller's roles — the server holds a service-role client, so the actor is the only limit.
+- Drafting tools return immediately with `DRAFTING` and hand off to `netlify/functions/artifact-draft-background` (the 26s cap again); callers poll `get-artifact`. Shared with the UI route via `startArtifactDraft` in `src/lib/artifacts/startDraft.ts`.
+- The `mcp_oauth_*` migration auto-applies to **dev** on merge to `main` (`.github/workflows/supabase-migrations.yml`); **production needs a manual dispatch** of that workflow. Dispatch production *before* merging — code deploys immediately, and the OAuth endpoints 500 against a schema without the tables.
+
 ### External Integrations
 
 | Integration | Purpose | Key Files |
@@ -111,6 +120,7 @@ All API routes follow this pattern:
 | **Pendo** | Product analytics, HEART metrics | `src/lib/integrations/` |
 | **Rovo** | MCP protocol integration | `src/lib/rovo/` |
 | **Resend** | Email notifications | `src/lib/email/` |
+| **MCP connector** | Launch artifacts from Claude Desktop, per-user OAuth | `src/lib/mcp/`, `src/lib/oauth/` |
 
 All external API clients use **exponential backoff retry logic** (typically 3 retries).
 
