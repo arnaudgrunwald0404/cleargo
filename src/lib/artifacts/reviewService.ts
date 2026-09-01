@@ -7,6 +7,7 @@
  * the two carry different capabilities.
  */
 import { createAdminClient } from '@/lib/supabase/server';
+import { markLaunchCriterionDone } from './criterionCompletion';
 import { getSlackClient } from '@/lib/slack/client';
 import type { SlackBlock } from '@/types/slack';
 import { getArtifactDefinition } from './registry';
@@ -140,19 +141,17 @@ export async function approveArtifact(
 
     // The readiness criterion. This is what makes approval move the launch
     // rather than just move a row.
-    let criterionMarkedDone = false;
-    if (artifact.criterion_id) {
-        const { error: criterionError } = await supabase
-            .from('launch_criterion_status')
-            .update({ status: 'DONE', last_updated_at: now, last_updated_by: actor.email })
-            .eq('launch_id', artifact.launch_id)
-            .eq('criterion_id', artifact.criterion_id);
-
-        if (criterionError) warnings.push(`Criterion not marked done: ${criterionError.message}`);
-        else criterionMarkedDone = true;
-    } else {
-        warnings.push('This artifact is not linked to a readiness criterion.');
-    }
+    const completion = await markLaunchCriterionDone(
+        supabase,
+        {
+            launchId: artifact.launch_id,
+            criterionId: artifact.criterion_id ?? null,
+            actorEmail: actor.email,
+        },
+        now
+    );
+    const criterionMarkedDone = completion.done;
+    if (completion.warning) warnings.push(completion.warning);
 
     // Gate criteria carry required_signoff_roles. Record the approver against
     // the first role they can satisfy rather than inventing one.

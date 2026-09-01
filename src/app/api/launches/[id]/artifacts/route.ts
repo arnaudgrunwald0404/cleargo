@@ -24,6 +24,7 @@ import {
     type ArtifactStatus,
     type ArtifactType,
 } from '@/types/artifacts';
+import { markLaunchCriterionDone } from '@/lib/artifacts/criterionCompletion';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 300;
@@ -300,14 +301,13 @@ async function patchHandler(request: NextRequest, context: { params: Promise<{ i
         // Approval is what actually moves the launch: mark the runway row done
         // so readiness, the gate chain, and the workback timeline all reflect it.
         if (body.status === 'APPROVED' && artifact.criterion_id) {
-            const { error: criterionError } = await admin
-                .from('launch_criterion_status')
-                .update({ status: 'DONE', last_updated_at: now, last_updated_by: actor.email })
-                .eq('launch_id', launchId)
-                .eq('criterion_id', artifact.criterion_id);
-
-            if (criterionError) {
-                console.warn('[artifacts] criterion not marked done:', criterionError.message);
+            const completion = await markLaunchCriterionDone(
+                admin,
+                { launchId, criterionId: artifact.criterion_id, actorEmail: actor.email },
+                now
+            );
+            if (completion.warning) {
+                console.warn('[artifacts]', completion.warning);
             }
         }
 
