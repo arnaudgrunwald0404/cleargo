@@ -22,7 +22,7 @@ import {
     type HomeCriterion,
     type HomeRelease,
 } from '@/lib/slack/templates/release-home';
-import { loadLaunchHomeWork, loadHomeBriefs } from '@/lib/services/launchHomeService';
+import { getMyWork, type OwedCriterion } from '@/lib/services/myWorkService';
 
 const SLACK_SIGNING_SECRET = process.env.SLACK_SIGNING_SECRET || '';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'https://cleargo.netlify.app';
@@ -113,6 +113,27 @@ export async function POST(request: NextRequest) {
     }
 }
 
+/** OwedCriterion -> the shape the home tab block builder speaks. */
+function toHomeCriterion(c: OwedCriterion): HomeCriterion {
+    return {
+        label: c.label,
+        epicId: c.epicId,
+        epicName: c.epicName,
+        lastUpdatedAt: c.lastUpdatedAt,
+    };
+}
+
+/**
+ * A section that failed to load says so. Rendering it as empty would tell
+ * someone they owe nothing, which is worse than telling them we do not know.
+ */
+function unavailableSection(title: string): unknown {
+    return {
+        type: 'section',
+        text: { type: 'mrkdwn', text: `*${title}*\n_Could not load this right now._` },
+    };
+}
+
 async function handleAppHomeOpened(event: any) {
     try {
         const userId = event.user;
@@ -176,8 +197,16 @@ async function handleAppHomeOpened(event: any) {
                 },
             });
         } else {
+            // Releases you OWN is container ownership (epic.owner_id) and stays
+            // its own query -- it is a different question from what you owe.
             const { releases, releaseTotal } = await loadOwnedReleases(supabase, appUser.id);
-            const { criteria, criteriaTotal } = await loadPendingCriteria(supabase, appUser.id);
+
+            // Everything you OWE, both sides, from the one shared definition.
+            // This also widens who sees what: the old inline query matched
+            // decision_owner_id alone, so a PM who owns criteria only through
+            // the pod->PM mapping saw an empty list here while My Items showed
+            // them a full one.
+            const work = await getMyWork(appUser.email, { supabase });
 
             // Add welcome message
             const firstName = appUser.first_name || 'there';
@@ -191,35 +220,47 @@ async function handleAppHomeOpened(event: any) {
 
             blocks.push({ type: 'divider' });
             blocks.push(...buildOwnedReleaseBlocks(releases, releaseTotal, APP_URL));
+
             blocks.push({ type: 'divider' });
-            blocks.push(...buildPendingCriteriaBlocks(criteria, criteriaTotal, APP_URL));
+            if (work.degraded.release) {
+                console.error('home: release criteria unavailable', work.degraded.release);
+                blocks.push(unavailableSection('Criteria awaiting your decision'));
+            } else {
+                const owed = work.owed.map(toHomeCriterion);
+                blocks.push(
+                    ...buildPendingCriteriaBlocks(
+                        owed.slice(0, MAX_HOME_CRITERIA),
+                        owed.length,
+                        APP_URL
+                    )
+                );
+            }
 
             blocks.push({ type: 'divider' });
 
             // GTM launch work. The home tab has only ever known about epics, so
             // a PMM carrying artifacts on the launch table saw nothing here.
             // Failures degrade to a missing section rather than an error view.
-            try {
-                const work = await loadLaunchHomeWork(appUser.email);
-                blocks.push(...buildArtifactBlocks(work.artifacts, APP_URL));
-                const gaps = buildUnassignedBlocks(work.unassigned, APP_URL);
+            if (work.degraded.launch) {
+                console.error('home: launch artifacts unavailable', work.degraded.launch);
+                blocks.push(unavailableSection('Your launch artifacts'));
+            } else {
+                blocks.push(...buildArtifactBlocks(work.launchArtifacts, APP_URL));
+                const gaps = buildUnassignedBlocks(work.unassignedLaunchWork, APP_URL);
                 if (gaps.length > 0) {
                     blocks.push({ type: 'divider' });
                     blocks.push(...gaps);
                 }
-            } catch (err) {
-                console.error('home: launch artifacts unavailable', err);
             }
 
-            try {
-                const briefs = await loadHomeBriefs(appUser.email);
-                const briefBlocks = buildStoryBriefQuestionBlocks(briefs);
+            if (work.degraded.briefs) {
+                console.error('home: story brief questions unavailable', work.degraded.briefs);
+            } else {
+                const briefBlocks = buildStoryBriefQuestionBlocks(work.storyBriefs);
                 if (briefBlocks.length > 0) {
                     blocks.push({ type: 'divider' });
                     blocks.push(...briefBlocks);
                 }
-            } catch (err) {
-                console.error('home: story brief questions unavailable', err);
             }
 
             blocks.push({ type: 'divider' });
@@ -365,59 +406,6 @@ async function loadOwnedReleases(
         })),
         releaseTotal: count ?? rows.length,
     };
-}
-
-/**
- * Criteria waiting on this person's decision. `!inner` on the epic join is what
- * lets the archived/Cancelled filter apply — without it the embed is a left
- * join and the filters silently do nothing.
- *
- * NOT_SET only, matching the section heading. /my-releases also counts
- * CONDITIONAL, which the nudge jobs treat as never complete; that asymmetry is
- * a product decision (see COMPLETE_STATUSES in criteriaNotificationFilters) and
- * is deliberately not changed here.
- */
-async function loadPendingCriteria(
-    supabase: SupabaseClient,
-    decisionOwnerId: string
-): Promise<{ criteria: HomeCriterion[]; criteriaTotal: number }> {
-    const { data, error, count } = await supabase
-        .from('epic_criterion_status')
-        .select(
-            `
-                id,
-                status,
-                last_updated_at,
-                epic:epic_id!inner (id, name, archived, status),
-                criterion:criterion_id!inner (id, label)
-            `,
-            { count: 'exact' }
-        )
-        .eq('decision_owner_id', decisionOwnerId)
-        .eq('status', 'NOT_SET')
-        .eq('epic.archived', false)
-        .neq('epic.status', 'Cancelled')
-        // Stalest first: the ones that have sat longest are the ones the
-        // section's clock icon is about.
-        .order('last_updated_at', { ascending: true, nullsFirst: true })
-        .limit(MAX_HOME_CRITERIA);
-
-    if (error) throw error;
-
-    const criteria: HomeCriterion[] = [];
-    for (const row of data ?? []) {
-        const epic = Array.isArray(row.epic) ? row.epic[0] : row.epic;
-        const criterion = Array.isArray(row.criterion) ? row.criterion[0] : row.criterion;
-        if (!epic || !criterion) continue;
-        criteria.push({
-            label: criterion.label,
-            epicId: epic.id,
-            epicName: epic.name,
-            lastUpdatedAt: row.last_updated_at ?? null,
-        });
-    }
-
-    return { criteria, criteriaTotal: count ?? criteria.length };
 }
 
 async function resolveUserEmailFromSlackId(slackUserId: string): Promise<string | null> {
