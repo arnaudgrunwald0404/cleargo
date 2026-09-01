@@ -42,14 +42,19 @@ export async function POST(request: NextRequest) {
             trigger_id: formData.get('trigger_id') || '',
         };
 
-        // Look up user by Slack user_id
-        const supabase = (await import('@/lib/supabase/server')).createClient();
+        // Look up user by Slack user_id.
+        //
+        // Admin client, not the RLS one: `app_user` requires an authenticated
+        // role to read and a slash command carries no session, so this always
+        // found nobody and the command always answered "I couldn't find your
+        // account linked to this Slack user."
+        const supabase = (await import('@/lib/supabase/server')).createAdminClient();
 
         const { data: appUser, error: userError } = await supabase
             .from('app_user')
             .select('id, email, first_name, last_name')
             .eq('slack_handle', payload.user_id)
-            .single();
+            .maybeSingle();
 
         if (userError || !appUser) {
             return NextResponse.json({

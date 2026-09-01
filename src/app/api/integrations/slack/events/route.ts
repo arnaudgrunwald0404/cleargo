@@ -112,14 +112,22 @@ async function handleAppHomeOpened(event: any) {
             return;
         }
 
-        // Look up user by Slack user_id
-        const supabase = (await import('@/lib/supabase/server')).createClient();
+        // Look up user by Slack user_id.
+        //
+        // MUST be the admin client. `app_user` carries RLS "Allow authenticated
+        // read USING (auth.role() = 'authenticated')" (20240101000000), and a
+        // Slack webhook has no session at all -- so under the RLS client this
+        // read returns zero rows whatever the person's slack_handle is, and App
+        // Home told everyone their account was not linked. Matches
+        // resolveUserEmailFromSlackId below and slackActor.ts, which is why the
+        // review buttons could resolve an actor and this could not.
+        const supabase = (await import('@/lib/supabase/server')).createAdminClient();
 
         const { data: appUser, error: userError } = await supabase
             .from('app_user')
             .select('id, email, first_name, last_name')
             .eq('slack_handle', userId)
-            .single();
+            .maybeSingle();
 
         // Build home view blocks
         const blocks: any[] = [
