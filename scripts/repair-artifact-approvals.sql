@@ -8,11 +8,21 @@
 -- artifact went to APPROVED / v1.0 and the criterion stayed open: readiness,
 -- the gate chain, and the workback timeline never saw the approval.
 --
--- Fixed in code by src/lib/artifacts/criterionCompletion.ts. This repairs the
--- rows that were left behind. Affects every approval since the launch tables
--- were created (20260314000001), on every surface.
+-- Fixed in code by src/lib/artifacts/criterionCompletion.ts.
 --
--- Run step 1, read it, then run step 2. Step 2 is transactional.
+-- CHECKED 2026-09-01: STEP 1 returned no rows. The bug was latent, not active
+-- -- no artifact had ever reached APPROVED (8 NOT_STARTED, 1 PENDING_REVIEW,
+-- 1 CHANGES_REQUESTED) and no launch_criterion_status row had ever reached DONE
+-- (193 rows, all NOT_STARTED). The very first approval would have hit it.
+-- Confirmed the same day that last_updated_by really is `uuid` in the live
+-- schema, so the premise held; there was simply nothing yet to break.
+--
+-- Kept because it is still the right check before trusting approvals in any
+-- environment that has them, and because the schema for this table has drifted
+-- from its migration once before (20260717000001).
+--
+-- Run step 1. If it returns no rows, stop -- there is nothing to repair.
+-- Step 2 is transactional.
 
 -- ---------------------------------------------------------------------------
 -- STEP 1 -- What is affected. Read-only, safe to run any time.
