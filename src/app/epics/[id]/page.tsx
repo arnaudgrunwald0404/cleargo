@@ -40,6 +40,7 @@ import { EpicRoadmapConfidencePanel } from "@/components/epic/EpicRoadmapConfide
 // Lazy load tab components for code splitting
 const HeartDashboard = lazy(() => import("@/components/epic/HeartDashboard").then(m => ({ default: m.HeartDashboard })));
 const ScorecardPageContent = lazy(() => import("@/components/epic/ScorecardPageContent").then(m => ({ default: m.ScorecardPageContent })));
+const ForecastPageContent = lazy(() => import("@/components/epic/ForecastPageContent").then(m => ({ default: m.ForecastPageContent })));
 const RetroPageContent = lazy(() => import("@/components/epic/RetroPageContent").then(m => ({ default: m.RetroPageContent })));
 const StoryBriefPanel = lazy(() => import("@/components/epic/StoryBriefPanel").then(m => ({ default: m.StoryBriefPanel })));
 
@@ -1734,6 +1735,7 @@ export default function EpicDetailPage() {
         { value: "talktrack", label: hasTalkTrackVideo ? "Talk Track \u25B6" : "Talk Track" },
         { value: "adoption", label: "Success Metrics" },
         { value: "scorecard", label: "Scorecard" },
+        { value: "forecast", label: "Forecast" },
         { value: "retro", label: "Retro" },
         ...(showStoryBrief ? [{ value: "storyBrief", label: "Story Brief" }] : []),
         ...(showRoadmapRewind
@@ -2284,6 +2286,16 @@ export default function EpicDetailPage() {
                         {activeTab === 'scorecard' && (
                             <Suspense fallback={<PurpleLoader size="md" />}>
                                 <ScorecardPageContent epicId={epic.id} />
+                            </Suspense>
+                        )}
+                        </div>
+                    </Tabs.Panel>
+
+                    <Tabs.Panel value="forecast" pt={0} style={{ marginTop: 0, paddingTop: 0 }}>
+                        <div style={{ paddingTop: 'var(--spacing-4)', paddingLeft: 'var(--spacing-4)', paddingRight: 'var(--spacing-4)' }}>
+                        {activeTab === 'forecast' && epic?.aha_id && (
+                            <Suspense fallback={<PurpleLoader size="md" />}>
+                                <ForecastPageContent epicAhaId={epic.aha_id} />
                             </Suspense>
                         )}
                         </div>

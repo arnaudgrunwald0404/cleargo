@@ -18,6 +18,7 @@ const baseTabs = [
     { value: 'talktrack', label: 'Talk Track' },
     { value: 'adoption', label: 'Success Metrics' },
     { value: 'scorecard', label: 'Scorecard' },
+    { value: 'forecast', label: 'Forecast' },
     { value: 'retro', label: 'Retro' },
 ] as const;
 
