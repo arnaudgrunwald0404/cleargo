@@ -10,6 +10,11 @@
 
 [build.environment]
   NEXT_DISABLE_NETLIFY_EDGE = "true"
+  # Next's build-time TypeScript type-checking hit Netlify's default ~2GB V8 heap limit
+  # (PR #54 — forecast engine migration added enough new TS surface to tip it over). Raises the
+  # heap for the whole build command chain (npm run build -> next build) via standard NODE_OPTIONS
+  # env-var inheritance; adjust upward if it recurs as the app keeps growing.
+  NODE_OPTIONS = "--max-old-space-size=4096"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
