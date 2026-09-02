@@ -850,6 +850,35 @@ This is the ClearGo equivalent of RRV's `user_visits` feature, swapping IP-addre
 
 ---
 
+### 12. Revenue Forecast
+
+**In progress — migrating from an external skill.** Revenue forecasting for ClearCo innovation products previously lived entirely in a separate `chrysalis-product-requirements` repo, run via a Claude Code skill (`/forecast`) that wrote markdown documents and pushed only summary ARR numbers + a static HTML link back into `epic_forecast_link`. It is being moved in-app as a **Forecast tab** on the epic detail page so the model, its assumptions, and its narrative live natively in ClearGO and PMs can edit assumptions interactively instead of regenerating a document externally. As of this entry: the data model, a one-time migration of the 11 existing product forecasts, and read-only rendering are live. Interactive assumption editing, the pricing-lookup agent, the live multi-agent generation pipeline, and retiring the external skill are not yet built.
+
+#### 12.1 Data model
+- **`forecast_runs`** — one row per generated/migrated forecast version for an epic (`epic_aha_id`, `source` = `migrated_from_chrysalis` \| `generated`, `status`, `is_current`). For migrated rows, `raw_markdown_forecast` / `raw_markdown_assumptions` archive the original source documents **verbatim** — the record of truth if the structured extraction below is imperfect for a given product.
+- **`forecast_assumptions`** — per-run assumption rows (`key`, `label`, bear/base/bull values, `confidence` = `confirmed` \| `hypothesis` \| `low_confidence`, `source_note` for provenance, `overridden_by`/`overridden_at` for future PM edits).
+- **`forecast_periods`** — per-run, per-scenario ARR rows (`period_type` = `year` \| `quarter` \| `month`, `cross_sell_arr_usd`, `net_new_arr_usd`, `churn_reduction_arr_usd`, `total_arr_usd` — the last excludes churn reduction, which is tracked as a separate protected-ARR line, not summed into bookings).
+- **`forecast_narrative`** — per-run markdown sections (`why_we_believe`, `friction_points`, `tactical_roadmap`, `risks`, `methodology_notes`).
+- **`forecast_generation_jobs`** — async job status table (`pending`/`running`/`completed`/`failed`), same shape as `heart_setup_jobs` (§5.7), reserved for the not-yet-built live generation pipeline (background function + poll route, mirroring the HEART AI setup flow).
+- **`epic_forecast_link`** (pre-existing, §—) gained a nullable `forecast_run_id` FK tying its shareable-link records to the canonical run.
+
+#### 12.2 One-time migration from the Chrysalis repo
+`scripts/migrate-chrysalis-forecasts.ts` reads each product's `forecast.md` + `assumptions.md`, archives them verbatim, and runs an LLM extraction pass (`src/lib/forecast/migrateFromMarkdown.ts`, Gemini via `generateObject`, same pattern as `src/lib/ai/client.ts`) to populate the structured tables above. Includes a sanity check comparing the extracted 3-year base-case bookings total against the Chrysalis repo's `CONSOLIDATED.md` portfolio rollup. Defaults to a dry run; `--do-insert` writes to Supabase. Run once (2026-09-02) for all 11 products (`ai-agents`, `ai-course-builder-v2`, `ai-notetaker`, `ai-screening`, `ai-sourcing`, `career-sites`, `crm-agentic`, `employee-lifecycle-events`, `succession-planning`, `talent-profile`, `workforce-learning-enablement`) — 10 of 11 verified exact or hand-confirmed against source; `ai-sourcing`'s headline figure is flagged unstable across extraction runs (it's a live product with a run-rate revenue model rather than the new-bookings breakout the other 10 have) and should be spot-checked against its archived raw markdown before being trusted.
+
+#### 12.3 Forecast tab (`/epics/[id]`)
+Read-only view of an epic's current forecast run: bear/base/bull `SegmentedControl`, an annual new-bookings table (cross-sell / net-new / total, with a 3-year total row) alongside a protected-ARR (churn reduction) column, quarterly detail when present, the assumptions table with confidence badges, and each narrative section. An on-demand "view original migrated document" panel fetches the archived raw markdown separately from the main payload (it can be tens of KB). Served by `GET /api/forecasts/[epicId]/current` (structured data) and `GET /api/forecasts/[epicId]/current/raw` (archived source), both following the existing `/api/forecasts/*` auth pattern (`X-ClearGo-Key` header or session auth).
+
+#### 12.4 Pricing (planned, not yet built)
+The Volume/Revenue model's ACV inputs are intended to be driven by ClearCo's live **"2026 Price Calculator"** Google Sheet (owned by the product owner, actively maintained) via the Sheets API against a ClearGo-owned duplicate — reading Google's own computed `Quote` tab output rather than reimplementing the sheet's formulas in code, deliberately avoiding a prior attempt (Customer Hub's `pricing_catalog`, since retired as a POC) that reimplemented pricing formulas and drifted from the live sheet. Intended as a stopgap until Salesforce CPQ replaces manual pricing entirely, behind a single interface (`getPackagePrice`, `getAddonPrice`, …) so swapping backends later is a one-module change.
+
+#### 12.5 Live generation pipeline (planned, not yet built)
+Market Research, Competitive Analysis, and Narrative/Tactical-Roadmap agents as an on-demand "Generate/Refresh Forecast" action, using the existing tool-calling `generateText` pattern in `src/lib/ai/cleargoAgent.ts`, backgrounded via `forecast_generation_jobs` + a Netlify background function (mirroring §5.7's HEART AI setup flow) since a full multi-agent run can take minutes.
+
+#### 12.6 Retirement of the external skill (planned, not yet built)
+Once the Forecast tab is verified for all 11 products, `forecasts/` (all product folders, `CONSOLIDATED.md`, the HTML reports) and the `/forecast` skill are to be removed from the `chrysalis-product-requirements` repo in a separate PR there — ClearGO becomes the sole source of truth for revenue forecasts, not a write-back target for an external process.
+
+---
+
 ## Technical Architecture
 
 ### Frontend Stack
@@ -1325,6 +1354,14 @@ All gated behind `FEATURE_ROADMAP_REWIND`. RLS pattern is **universal SELECT for
 - **pm_impact_override**: PM impact-level overrides per `(aha_key, week_start)` (`original_impact`, `override_impact`, `override_note`). Optional FK to `epic.id`.
 - **roadmap_hidden_item**: per-user hidden roadmap items, keyed by `(app_user_id, aha_key)`. RLS allows insert/delete only for the owning user.
 - **epic_comment**: epic-level comments (separate from `criterion_comment`). Used for general epic discussion *and* movement notes (PM Notes from RRV) — `category` ∈ general | movement | risk | decision; PM roadmap notes store `movement_cause` as Internal/External **subtype** (`Internal, Engineering`, `Internal, Design`, `Internal, Product`, `Internal, GTM`, `External, Third-party`) or legacy `Internal`/`External`; movement rows additionally store `movement_date`, `from_release`, `to_release`, `related_snapshot_date`. RLS: read = all authenticated, insert = PM/PRODUCT_OPS/CPO/SUPERADMIN (matches `roadmap.movementNote.write`), update/delete = author of the row only.
+
+#### Revenue Forecast (see Core Features §12)
+- **forecast_runs**: one row per generated/migrated forecast version (`epic_aha_id`, `source` ∈ migrated_from_chrysalis | generated, `status`, `is_current`). Migrated rows archive the original source markdown verbatim in `raw_markdown_forecast` / `raw_markdown_assumptions`.
+- **forecast_assumptions**: per-run assumption rows (`key`, `label`, `value_bear`/`value_base`/`value_bull`, `confidence` ∈ confirmed | hypothesis | low_confidence, `source_note`, `overridden_by`/`overridden_at` reserved for future PM edits).
+- **forecast_periods**: per-run, per-scenario ARR rows (`scenario` ∈ bear | base | bull, `period_type` ∈ month | quarter | year, `cross_sell_arr_usd`, `net_new_arr_usd`, `churn_reduction_arr_usd`, `total_arr_usd` — the last is bookings only, churn reduction is tracked separately).
+- **forecast_narrative**: per-run markdown sections (`section` ∈ why_we_believe | friction_points | tactical_roadmap | risks | methodology_notes).
+- **forecast_generation_jobs**: reserved for the not-yet-built live generation pipeline; same shape as `heart_setup_jobs` above.
+- `epic_forecast_link` (pre-existing) gained a nullable `forecast_run_id` FK to the canonical run.
 
 #### Roadmap RPCs (Supabase functions)
 All ported from RRV with ClearGo-aligned table names:
