@@ -71,12 +71,16 @@ function readProductDocs(chrysalisRepo: string, product: string) {
   const dir = path.join(chrysalisRepo, 'forecasts', product);
   const forecastPath = path.join(dir, 'forecast.md');
   const assumptionsPath = path.join(dir, 'assumptions.md');
-  if (!fs.existsSync(forecastPath) || !fs.existsSync(assumptionsPath)) {
-    throw new Error(`Missing forecast.md/assumptions.md for "${product}" at ${dir}`);
+  if (!fs.existsSync(forecastPath)) {
+    throw new Error(`Missing forecast.md for "${product}" at ${dir}`);
+  }
+  const hasAssumptions = fs.existsSync(assumptionsPath);
+  if (!hasAssumptions) {
+    console.warn(`  ⚠️  No assumptions.md for "${product}" — extracting from forecast.md alone.`);
   }
   return {
     forecastMd: fs.readFileSync(forecastPath, 'utf8'),
-    assumptionsMd: fs.readFileSync(assumptionsPath, 'utf8'),
+    assumptionsMd: hasAssumptions ? fs.readFileSync(assumptionsPath, 'utf8') : '(no assumptions.md exists for this product)',
   };
 }
 

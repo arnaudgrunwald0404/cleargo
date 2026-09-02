@@ -81,7 +81,7 @@ const ExtractedForecastSchema = z.object({
       .number()
       .int()
       .describe(
-        'The base-case 3-Year NEW BOOKINGS total specifically — i.e. cross-sell + net new revenue upside, matching the figure in a table titled something like "New Bookings" or "3-Year New Bookings" or "Revenue Upside". Do NOT use a "Combined Value", "Total Value", or any figure that adds Protected ARR / churn reduction on top of bookings — those are a separate track. This is a sanity-check value cross-referenced against CONSOLIDATED.md\'s Revenue Upside Summary table, which is bookings-only.'
+        'The base-case 3-Year NEW BOOKINGS total specifically — i.e. cross-sell + net new revenue upside, matching the figure in a table titled something like "New Bookings" or "3-Year New Bookings" or "Revenue Upside". Do NOT use a "Combined Value", "Total Value", or any figure that adds Protected ARR / churn reduction on top of bookings — those are a separate track. If the document has an explicit "3-Year Total"/"3-Year Revenue"/"3-Year Bookings" row in its Executive Summary or headline table, use that value exactly (do not recompute it). If NO such explicit 3-year total row exists anywhere, sum the base-case 2026+2027+2028 new-bookings figures yourself and double-check the arithmetic before returning it. If the document has multiple headline tables with different totals (e.g. an original figure superseded by a later "Updated Totals" section), use the LATEST/most-current one. This is a sanity-check value cross-referenced against CONSOLIDATED.md\'s Revenue Upside Summary table, which is bookings-only.'
       ),
   }),
 });
