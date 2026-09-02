@@ -14,6 +14,8 @@ function validateApiKey(req: NextRequest): boolean {
 // GET /api/forecasts/[epicId]/current
 // Returns the current forecast run for an epic (assumptions, periods, narrative) — the data
 // the Forecast tab renders. epicId = Aha reference_num, e.g. "APP-E-670".
+// Optional ?runId=<uuid> returns that specific historical run instead (for the version history
+// view) — still scoped to this epic, so one epic's runId can't be used to read another's.
 async function getHandler(
     req: NextRequest,
     { params }: { params: Promise<{ epicId: string }> }
@@ -27,14 +29,15 @@ async function getHandler(
     }
 
     const { epicId: epicAhaId } = await params;
+    const requestedRunId = req.nextUrl.searchParams.get('runId');
     const adminSupabase = createAdminClient();
 
-    const { data: run, error: runError } = await adminSupabase
+    let runQuery = adminSupabase
         .from('forecast_runs')
         .select('id, epic_aha_id, source, status, is_current, created_at, created_by')
-        .eq('epic_aha_id', epicAhaId)
-        .eq('is_current', true)
-        .maybeSingle();
+        .eq('epic_aha_id', epicAhaId);
+    runQuery = requestedRunId ? runQuery.eq('id', requestedRunId) : runQuery.eq('is_current', true);
+    const { data: run, error: runError } = await runQuery.maybeSingle();
 
     if (runError) {
         console.error('Error fetching forecast run:', runError);
