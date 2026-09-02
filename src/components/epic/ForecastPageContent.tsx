@@ -18,7 +18,7 @@ import {
   Anchor,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconChartLine, IconPencil, IconDeviceFloppy, IconX } from '@tabler/icons-react';
+import { IconChartLine, IconPencil, IconDeviceFloppy, IconX, IconSparkles } from '@tabler/icons-react';
 import { PurpleLoader } from '../PurpleLoader';
 import { fetchWithRateLimit } from '@/lib/fetch-with-rate-limit';
 
@@ -151,6 +151,71 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [saving, setSaving] = useState(false);
   const [editAssumptions, setEditAssumptions] = useState<ForecastAssumption[]>([]);
   const [editPeriods, setEditPeriods] = useState<ForecastPeriod[]>([]);
+
+  const [generating, setGenerating] = useState(false);
+  const [generationJobId, setGenerationJobId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!generationJobId) return;
+    const start = Date.now();
+    const interval = setInterval(async () => {
+      if (Date.now() - start > 5 * 60 * 1000) {
+        clearInterval(interval);
+        setGenerating(false);
+        setGenerationJobId(null);
+        notifications.show({ color: 'red', message: 'Forecast generation timed out after 5 minutes.' });
+        return;
+      }
+      try {
+        const res = await fetchWithRateLimit(
+          `/api/forecasts/${encodeURIComponent(epicAhaId)}/generate-status?job_id=${encodeURIComponent(generationJobId)}`,
+          { maxRetries: 1 }
+        );
+        if (!res.ok) return;
+        const job = (await res.json()) as { status: string; error_message?: string | null };
+        if (job.status === 'completed') {
+          clearInterval(interval);
+          setGenerating(false);
+          setGenerationJobId(null);
+          notifications.show({ color: 'green', message: 'Forecast generated.' });
+          await Promise.all([fetchForecast(null), fetchVersions()]);
+        } else if (job.status === 'failed') {
+          clearInterval(interval);
+          setGenerating(false);
+          setGenerationJobId(null);
+          notifications.show({ color: 'red', message: job.error_message ?? 'Forecast generation failed.' });
+        }
+      } catch {
+        // transient poll failure — try again next tick
+      }
+    }, 2500);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generationJobId]);
+
+  const startGeneration = async () => {
+    setGenerating(true);
+    let handedOffToPolling = false;
+    try {
+      const res = await fetchWithRateLimit(`/api/forecasts/${encodeURIComponent(epicAhaId)}/generate`, {
+        method: 'POST',
+        maxRetries: 1,
+      });
+      if (res.status === 202) {
+        const { job_id } = (await res.json()) as { job_id: string };
+        handedOffToPolling = true;
+        setGenerationJobId(job_id); // the polling effect above takes over from here
+        return;
+      }
+      if (!res.ok) throw new Error(`Failed to start generation (${res.status})`);
+      notifications.show({ color: 'green', message: 'Forecast generated.' });
+      await Promise.all([fetchForecast(null), fetchVersions()]);
+    } catch (err) {
+      notifications.show({ color: 'red', message: err instanceof Error ? err.message : 'Failed to generate forecast' });
+    } finally {
+      if (!handedOffToPolling) setGenerating(false);
+    }
+  };
 
   const fetchForecast = async (runId: string | null) => {
     setLoading(true);
@@ -439,9 +504,22 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
             />
           )}
           {!editMode ? (
-            <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={startEditing} disabled={isViewingHistorical}>
-              Edit
-            </Button>
+            <Group gap={4}>
+              <Button size="xs" variant="light" leftSection={<IconPencil size={14} />} onClick={startEditing} disabled={isViewingHistorical || generating}>
+                Edit
+              </Button>
+              <Button
+                size="xs"
+                variant="light"
+                color="grape"
+                leftSection={<IconSparkles size={14} />}
+                onClick={startGeneration}
+                loading={generating}
+                disabled={isViewingHistorical}
+              >
+                {generating ? 'Generating…' : 'Generate Forecast'}
+              </Button>
+            </Group>
           ) : (
             <Group gap={4}>
               <Button size="xs" color="green" leftSection={<IconDeviceFloppy size={14} />} loading={saving} onClick={saveNewVersion}>
