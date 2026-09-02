@@ -19,7 +19,7 @@ if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
 }
 
-const model = google('gemini-2.5-pro');
+const model = google('gemini-3.1-pro-preview');
 
 const ConfidenceEnum = z.enum(['confirmed', 'hypothesis', 'low_confidence']);
 const ScenarioEnum = z.enum(['bear', 'base', 'bull']);
@@ -55,8 +55,14 @@ const ExtractedForecastSchema = z.object({
         periodLabel: z.string().describe('e.g. "2027" or "Q2 2027"'),
         crossSellArrUsd: z.number().int(),
         netNewArrUsd: z.number().int(),
-        churnReductionArrUsd: z.number().int(),
-        totalArrUsd: z.number().int(),
+        churnReductionArrUsd: z
+          .number()
+          .int()
+          .describe('Protected ARR for this period, if the document tracks it. This is a separate track from bookings — do not add it into totalArrUsd.'),
+        totalArrUsd: z
+          .number()
+          .int()
+          .describe('crossSellArrUsd + netNewArrUsd for this period — the new-bookings total. Must NOT include churnReductionArrUsd.'),
       })
     )
     .describe(
@@ -74,7 +80,9 @@ const ExtractedForecastSchema = z.object({
     threeYearBaseTotalUsd: z
       .number()
       .int()
-      .describe('The base-case 3-year total revenue/bookings figure as stated in the Executive Summary, for a sanity-check against CONSOLIDATED.md.'),
+      .describe(
+        'The base-case 3-Year NEW BOOKINGS total specifically — i.e. cross-sell + net new revenue upside, matching the figure in a table titled something like "New Bookings" or "3-Year New Bookings" or "Revenue Upside". Do NOT use a "Combined Value", "Total Value", or any figure that adds Protected ARR / churn reduction on top of bookings — those are a separate track. This is a sanity-check value cross-referenced against CONSOLIDATED.md\'s Revenue Upside Summary table, which is bookings-only.'
+      ),
   }),
 });
 
