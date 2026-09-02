@@ -16,6 +16,8 @@ export interface ForecastLink {
   generation_date: string | null;
   created_at: string;
   created_by: string | null;
+  /** 'forecast_run' for the new in-app model (Phase 1+); 'epic_forecast_link' for the legacy write-back record. */
+  source?: 'forecast_run' | 'epic_forecast_link';
 }
 
 export interface ForecastEpicSummary {
@@ -48,8 +50,60 @@ async function getHandler(_req: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch forecasts', details: error.message, code: error.code }, { status: 500 });
   }
 
+  // forecast_runs is the canonical model as of the in-app Forecast tab (see PRD §12) — build a
+  // synthetic ForecastLink per epic's current run so the portfolio rollup reflects it even
+  // though these runs never write an epic_forecast_link row. Base scenario only (that's what
+  // this page has always shown one number for per epic).
+  const { data: currentRuns } = await adminSupabase
+    .from('forecast_runs')
+    .select('id, epic_id, epic_aha_id, created_at, created_by')
+    .eq('is_current', true);
+
+  const runRows: Array<{ epic_aha_id: string; link: ForecastLink; epic_id: string | null }> = [];
+  if (currentRuns && currentRuns.length > 0) {
+    const runIds = currentRuns.map((r) => r.id as string);
+    const { data: yearPeriods } = await adminSupabase
+      .from('forecast_periods')
+      .select('run_id, period_label, cross_sell_arr_usd, net_new_arr_usd, churn_reduction_arr_usd')
+      .in('run_id', runIds)
+      .eq('period_type', 'year')
+      .eq('scenario', 'base');
+
+    const periodsByRun = new Map<string, typeof yearPeriods>();
+    for (const p of yearPeriods ?? []) {
+      const list = periodsByRun.get(p.run_id as string) ?? [];
+      list.push(p);
+      periodsByRun.set(p.run_id as string, list);
+    }
+
+    for (const run of currentRuns) {
+      const periods = periodsByRun.get(run.id as string) ?? [];
+      const find2027 = periods.find((p) => p!.period_label === '2027');
+      const find2028 = periods.find((p) => p!.period_label === '2028');
+      const bookings = (p: typeof find2027) => (p ? (p.cross_sell_arr_usd as number) + (p.net_new_arr_usd as number) : null);
+      const epicId = run.epic_id as string | null;
+      runRows.push({
+        epic_aha_id: run.epic_aha_id as string,
+        epic_id: epicId,
+        link: {
+          id: `forecast_run:${run.id}`,
+          scenario: 'base',
+          arr_incremental_2027_usd: bookings(find2027),
+          arr_incremental_2028_usd: bookings(find2028),
+          arr_churn_reduction_2027_usd: find2027 ? (find2027.churn_reduction_arr_usd as number) : null,
+          arr_churn_reduction_2028_usd: find2028 ? (find2028.churn_reduction_arr_usd as number) : null,
+          url: epicId ? `/epics/${epicId}` : '',
+          generation_date: (run.created_at as string)?.slice(0, 10) ?? null,
+          created_at: run.created_at as string,
+          created_by: run.created_by as string | null,
+          source: 'forecast_run',
+        },
+      });
+    }
+  }
+
   // Fetch epic metadata (name, aha_fields) and gtm_module for all referenced epics
-  const ahaIds = [...new Set((rows ?? []).map(r => r.epic_aha_id as string))];
+  const ahaIds = [...new Set([...(rows ?? []).map(r => r.epic_aha_id as string), ...runRows.map(r => r.epic_aha_id)])];
   const epicMeta = new Map<string, { id: string | null; name: string | null; launch_tier: string | null; gtm_module: string | null }>();
 
   if (ahaIds.length > 0) {
@@ -105,14 +159,14 @@ async function getHandler(_req: NextRequest) {
     }
   }
 
-  // Group by epic_aha_id
+  // Group by epic_aha_id. forecast_runs entries go first (they're the canonical model — see
+  // PRD §12) so they're the default shown; epic_forecast_link entries (legacy write-backs,
+  // or a still-useful shareable HTML link even for a migrated epic) follow.
   const byEpic = new Map<string, ForecastEpicSummary>();
 
-  for (const row of rows ?? []) {
-    const key = row.epic_aha_id as string;
-    const meta = epicMeta.get(key);
-
+  function ensureEpic(key: string): ForecastEpicSummary {
     if (!byEpic.has(key)) {
+      const meta = epicMeta.get(key);
       byEpic.set(key, {
         epic_aha_id: key,
         epic_id: meta?.id ?? null,
@@ -122,8 +176,15 @@ async function getHandler(_req: NextRequest) {
         links: [],
       });
     }
+    return byEpic.get(key)!;
+  }
 
-    byEpic.get(key)!.links.push({
+  for (const r of runRows) {
+    ensureEpic(r.epic_aha_id).links.push(r.link);
+  }
+
+  for (const row of rows ?? []) {
+    ensureEpic(row.epic_aha_id as string).links.push({
       id: row.id as string,
       scenario: row.scenario as string,
       arr_incremental_2027_usd: row.arr_incremental_2027_usd as number | null,
@@ -134,6 +195,7 @@ async function getHandler(_req: NextRequest) {
       generation_date: row.generation_date as string | null,
       created_at: row.created_at as string,
       created_by: row.created_by as string | null,
+      source: 'epic_forecast_link',
     });
   }
 
