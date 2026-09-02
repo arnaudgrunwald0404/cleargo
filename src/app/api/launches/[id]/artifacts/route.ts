@@ -8,7 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
-import { canRolesPerform } from '@/lib/permissions';
+import { canRolesPerformWithRules } from '@/lib/permissions';
+import { getEffectivePermissionRules } from '@/lib/settings-db';
 import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middleware';
 import { ensureLaunchArtifacts } from '@/lib/artifacts/docFactory';
 import {
@@ -116,7 +117,13 @@ async function postHandler(request: NextRequest, context: { params: Promise<{ id
         const actor = await resolveRoles(supabase);
         if (!actor) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-        if (!canRolesPerform(actor.roles, 'launchArtifact.draft')) {
+        // Effective rules, not DEFAULT_RULES. Every sibling launch route
+        // (api/launches, api/launches/[id]/assets) already resolves the admin
+        // overrides in app_settings.permissions; this one did not, so the same
+        // capability was enforced two different ways depending on which
+        // endpoint you hit.
+        const rules = await getEffectivePermissionRules();
+        if (!canRolesPerformWithRules(actor.roles, 'launchArtifact.draft', rules)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
@@ -258,7 +265,8 @@ async function patchHandler(request: NextRequest, context: { params: Promise<{ i
         const body = patchSchema.parse(await request.json());
 
         const needed = body.status === 'APPROVED' ? 'launchArtifact.approve' : 'launchArtifact.review';
-        if (!canRolesPerform(actor.roles, needed)) {
+        const rules = await getEffectivePermissionRules();
+        if (!canRolesPerformWithRules(actor.roles, needed, rules)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 

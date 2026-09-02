@@ -30,7 +30,6 @@ import {
 } from "@tabler/icons-react";
 import type { Launch } from "@/types/launches";
 import { LAUNCH_STATUSES } from "@/lib/launch-status";
-import { canRolesPerform } from "@/lib/permissions";
 
 interface LaunchRow extends Launch {
     launch_epic?: Array<{
@@ -202,10 +201,14 @@ export default function GtmLaunchesClient() {
                 const res = await fetch("/api/me", { credentials: "include" });
                 if (res.ok) {
                     const data = await res.json();
-                    const roles = Array.isArray(data.user?.roles)
-                        ? data.user.roles
-                        : (data.user?.role ? [data.user.role] : []);
-                    setCanManage(canRolesPerform(roles, "launches.manage"));
+                    // Effective capabilities from the server, not
+                    // DEFAULT_RULES: launches.manage is overridden to CPO
+                    // only in production, so this used to show create and
+                    // edit controls to PMMs that the API rejects.
+                    setCanManage(
+                        Array.isArray(data.capabilities) &&
+                            data.capabilities.includes("launches.manage")
+                    );
                 }
             } catch {
                 // leave canManage false
