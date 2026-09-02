@@ -19,6 +19,13 @@ import {
     parseDateOnlyLocal,
 } from '@/lib/date-utils';
 import { getReleaseNameFromEpic } from '@/lib/services/releaseAnalyticsService';
+import {
+    classifyEpic,
+    loadEpicLifecycleContext,
+    normalizeReleaseName,
+    resolveReleaseLaunchDate,
+    type LifecycleEpicRow,
+} from '@/lib/services/epicLifecycle';
 import { resolveProductManagerUserId } from '@/lib/services/successMeasurementService';
 import { getEpicCategoryPairsWithUnratedSubcriteria } from '@/lib/services/gateSignoffService';
 import {
@@ -29,31 +36,18 @@ import {
     isConditionalStatus,
     isOverdueNudgeDue,
 } from '@/lib/services/criteriaNotificationFilters';
-import { normalizeStatus } from '@/lib/readiness-scoring';
 import {
-    computeEpicReleaseStatus,
-    isReleasedStatus,
-    type EpicForStatus,
-    type ReleaseScheduleDateRow,
-    type RetroForStatus,
-} from '@/lib/epic-release-status';
+    attachDerivedDueDates,
+    daysUntilDue,
+} from '@/lib/services/derivedCriterionDueDates';
+import { normalizeStatus } from '@/lib/readiness-scoring';
 
 /** Epic columns the nudge job needs to decide whether an epic still warrants reminders. */
-type NudgeEpicRow = EpicForStatus & { archived?: boolean | null };
+type NudgeEpicRow = LifecycleEpicRow;
 
 // Match Home list rules: Success Defined criterion (metrics, goals, reporting)
 const isSuccessDefinedCriterion = (c: { criterion?: { label?: string } | null }): boolean =>
     ((c.criterion?.label ?? '') as string).toLowerCase().includes('success defined');
-
-// Normalize release names by removing "Release " prefix (handles multiple occurrences)
-const normalizeReleaseName = (name: string): string => {
-    if (!name) return name;
-    let normalized = name.trim();
-    while (normalized.toLowerCase().startsWith('release ')) {
-        normalized = normalized.substring(8).trim();
-    }
-    return normalized;
-};
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow up to 60 seconds for job execution
@@ -350,6 +344,114 @@ export async function GET(request: NextRequest) {
             }
         }
 
+        // ---------------------------------------------------------------------
+        // Stage-derived deadlines.
+        //
+        // Everything above keys off condition_due_date, which only exists once
+        // someone has recorded a Conditional Go condition. But epic criteria have
+        // a real derived deadline: computeCriterionDueDateYmd turns rating_timing
+        // (the release stage a criterion must be ready by) into a date, and the
+        // epic page, My Items and HomeDashboard all display it. This job was the
+        // only consumer ignoring it, so those dates were shown and never chased.
+        //
+        // Rows already collected above are skipped — an explicit condition date
+        // wins, and nothing should be nudged twice in one pass.
+        // ---------------------------------------------------------------------
+        {
+            const alreadyCollected = new Set(allCriteria.map((c: any) => c.id));
+
+            const { data: undatedCriteria, error: undatedError } = await supabase
+                .from('epic_criterion_status')
+                .select(
+                    `
+                    id,
+                    epic_id,
+                    criterion_id,
+                    decision_owner_id,
+                    condition_due_date,
+                    status,
+                    last_nudge_sent_at,
+                    criterion:criterion_id (
+                        label,
+                        category,
+                        gate,
+                        rating_timing
+                    ),
+                    epic:epic_id (
+                        name,
+                        aha_fields,
+                        target_launch_date
+                    ),
+                    decision_owner:decision_owner_id (
+                        id,
+                        email,
+                        first_name,
+                        last_name,
+                        slack_handle
+                    )
+                `
+                )
+                .is('condition_due_date', null)
+                .in('status', ['NOT_SET', 'CONDITIONAL'])
+                .not('decision_owner_id', 'is', null);
+
+            if (undatedError) {
+                console.error('Error fetching stage-dated criteria:', undatedError);
+            } else if (undatedCriteria && undatedCriteria.length > 0) {
+                const withDates = await attachDerivedDueDates(
+                    supabase,
+                    undatedCriteria.filter((c: any) => !alreadyCollected.has(c.id)) as any
+                );
+
+                let dueToday = 0;
+                let overdue = 0;
+                for (const row of withDates) {
+                    const days = daysUntilDue(row.dueDate, todayStr);
+                    if (days == null) continue;
+
+                    // Same three windows the condition-dated path uses, so the
+                    // message a stakeholder gets does not depend on which kind of
+                    // date drove it.
+                    let nudgeType: string | null = null;
+                    if (nudge1WeekBefore && days === 7) nudgeType = 'week_before';
+                    else if (nudgeOnDueDate && days === 0) nudgeType = 'on_due_date';
+                    else if (nudgeDailyAfter && days < 0) nudgeType = 'daily_after';
+                    if (!nudgeType) continue;
+
+                    // Reuse the ageing back-off rather than nudging daily forever.
+                    if (
+                        nudgeType === 'daily_after' &&
+                        shouldFilterByNudgeDate &&
+                        !isConditionalStatus(row.status) &&
+                        !isOverdueNudgeDue({ ...row, condition_due_date: row.dueDate } as any, todayStr)
+                    ) {
+                        continue;
+                    }
+                    if (
+                        nudgeType !== 'daily_after' &&
+                        shouldFilterByNudgeDate &&
+                        (row as any).last_nudge_sent_at &&
+                        (row as any).last_nudge_sent_at >= todayStr
+                    ) {
+                        continue;
+                    }
+
+                    if (nudgeType === 'daily_after') overdue += 1;
+                    else dueToday += 1;
+
+                    // condition_due_date is what the templates read for "due", so
+                    // the derived date is surfaced through the same field.
+                    allCriteria.push({ ...row, condition_due_date: row.dueDate, nudgeType });
+                }
+
+                if (dueToday || overdue) {
+                    console.log(
+                        `📅 Stage-derived deadlines: ${dueToday} approaching/due, ${overdue} overdue`
+                    );
+                }
+            }
+        }
+
         // Debug: If test_email is provided and no criteria found, check what's in the database
         let debugInfo: any = null;
         // Note: We check allCriteria.length here (before cleargo_candidate filter) for debug purposes
@@ -617,41 +719,12 @@ export async function GET(request: NextRequest) {
                 .select('id, aha_fields, status, target_launch_date, scheduled_ga_dev_date, archived')
                 .in('id', epicIds);
 
-            const { data: releasesData } = await supabase
-                .from('release_schedule')
-                .select('release_name, launch_date, cohort2_date')
-                .eq('archived', false);
-            
-            const releaseToDate = new Map<string, string | null>();
-            // Normalize release names: create a map with both original and normalized versions
-            // This handles cases where epics have "Release 2026.2" but DB has "2026.2" or vice versa
-            if (releasesData) {
-                for (const release of releasesData) {
-                    const originalName = release.release_name;
-                    const normalizedName = normalizeReleaseName(originalName);
-                    // Store both original and normalized versions
-                    releaseToDate.set(originalName, release.launch_date);
-                    if (normalizedName !== originalName) {
-                        releaseToDate.set(normalizedName, release.launch_date);
-                    }
-                }
-            }
+            // Retros + the release schedule, batched. Shared with every other
+            // surface that needs to know whether an epic is still live work.
+            const lifecycle = await loadEpicLifecycleContext(epicIds as string[], supabase);
+            const releaseToDate = lifecycle.releaseToDate;
             sharedReleaseToDate = releaseToDate;
 
-            // Retro completion is one of the inputs to the computed release status
-            const { data: retroRows } = await supabase
-                .from('epic_retros')
-                .select('epic_id, day_marker, status')
-                .in('epic_id', epicIds);
-
-            const retrosByEpic = new Map<string, RetroForStatus[]>();
-            ((retroRows || []) as Array<RetroForStatus & { epic_id: string }>).forEach((r) => {
-                const list = retrosByEpic.get(r.epic_id) || [];
-                list.push({ day_marker: r.day_marker, status: r.status });
-                retrosByEpic.set(r.epic_id, list);
-            });
-
-            const releaseScheduleRows = (releasesData || []) as ReleaseScheduleDateRow[];
             const epicRows = (epicsWithReleases || []) as NudgeEpicRow[];
 
             // Once an epic is live, only "Success Defined" is still worth chasing — post-launch
@@ -672,25 +745,15 @@ export async function GET(request: NextRequest) {
                     return true; // Keep if epic not found (shouldn't happen)
                 }
 
-                // Archived epics are out of view everywhere else; never nudge for them.
-                if (epic.archived === true) {
-                    return false;
-                }
-
-                // Release status is DERIVED from launch/GA dates and retro completion. epic.status
-                // only ever stores a 'Cancelled' override, so comparing it to 'Released_*' never
-                // matches and shipped epics used to nudge forever (CLEARGO-I-22).
-                const computedStatus = computeEpicReleaseStatus(
-                    epic,
-                    retrosByEpic.get(epic.id) || [],
-                    { releaseSchedule: releaseScheduleRows }
-                );
-                if (computedStatus === 'Cancelled') {
-                    return false;
-                }
-                if (isReleasedStatus(computedStatus)) {
-                    return isStillDueAfterLaunch(c);
-                }
+                // Archived, cancelled, and shipped, decided once in
+                // epicLifecycle. Release status is DERIVED from launch/GA dates
+                // and retro completion -- epic.status only ever stores a
+                // 'Cancelled' override, so comparing it to 'Released_*' never
+                // matches and shipped epics used to nudge forever
+                // (CLEARGO-I-22).
+                const state = classifyEpic(epic, lifecycle);
+                if (state.excluded) return false;
+                if (state.released) return isStillDueAfterLaunch(c);
 
                 // Check release date
                 const releaseName = getReleaseNameFromEpic({ ...epic, name: '', tier: null, status: '', created_at: '', updated_at: '' } as any);
@@ -700,25 +763,8 @@ export async function GET(request: NextRequest) {
                     return true; // Keep if no release assigned
                 }
                 
-                // Normalize release name for lookup (handle "Release " prefix variations)
-                const normalizedReleaseName = normalizeReleaseName(releaseName);
-                
-                // Try both original and normalized names, plus fuzzy matching for edge cases
-                let releaseDate = releaseToDate.get(releaseName) || releaseToDate.get(normalizedReleaseName);
-                
-                // If still not found, try fuzzy matching (case-insensitive contains)
-                if (!releaseDate) {
-                    for (const [dbReleaseName, dbDate] of releaseToDate.entries()) {
-                        const dbNormalized = normalizeReleaseName(dbReleaseName);
-                        if (normalizedReleaseName.toLowerCase() === dbNormalized.toLowerCase() ||
-                            normalizedReleaseName.toLowerCase() === dbReleaseName.toLowerCase() ||
-                            releaseName.toLowerCase() === dbReleaseName.toLowerCase()) {
-                            releaseDate = dbDate;
-                            break;
-                        }
-                    }
-                }
-                
+                const releaseDate = resolveReleaseLaunchDate(releaseName, lifecycle);
+
                 if (!releaseDate) {
                     // Same as above: nothing to anchor an open condition to.
                     if (isConditionalStatus(c.status)) return false;

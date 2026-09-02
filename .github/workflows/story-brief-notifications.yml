@@ -1,0 +1,41 @@
+name: Story Brief Notifications
+
+on:
+  schedule:
+    # Daily at 9:00 AM America/New_York
+    - cron: '0 13 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  send-notifications:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Story Brief notifications
+        env:
+          BASE_URL: ${{ secrets.APP_BASE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          BASE_URL="${BASE_URL:-https://cleargo.netlify.app}"
+          if [ -z "$BASE_URL" ]; then
+            echo "APP_BASE_URL secret not set" >&2
+            exit 1
+          fi
+          if [ -z "$CRON_SECRET" ]; then
+            echo "CRON_SECRET secret not set" >&2
+            exit 1
+          fi
+          echo "Triggering Story Brief notification job..."
+          for i in 1 2 3; do
+            STATUS=$(curl -sS -o response.json -w "%{http_code}" \
+              -H "Authorization: Bearer $CRON_SECRET" \
+              "$BASE_URL/api/jobs/story-brief-notifications") || true
+            echo "HTTP $STATUS"
+            cat response.json || true
+            if [ "$STATUS" = "200" ]; then
+              echo "Story Brief notifications sent successfully"
+              exit 0
+            fi
+            echo "Retry $i..."; sleep 10
+          done
+          echo "Failed after retries" >&2
+          exit 1

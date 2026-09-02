@@ -1118,7 +1118,11 @@ async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[]
 
   const isPM = (pmUser.roles as string[] || []).includes('PM');
 
-  const { data: criteria } = await supabase
+  // decision_owner_role did not exist as a column until 20260821000100, so this
+  // query has always failed. Because only `data` was destructured the error was
+  // swallowed and the branch silently returned nothing. Check it now, and fall
+  // back to the assignment-only filter if the column is still missing.
+  let { data: criteria, error: criteriaError } = await supabase
     .from('epic_criterion_status')
     .select(`
       *,
@@ -1132,6 +1136,30 @@ async function getPMOwnedItems(epicId: string, releaseStages?: ReleaseStageRow[]
     `)
     .eq('epic_id', epicId)
     .or(`decision_owner_id.eq.${pmUserId},criterion.decision_owner_role.eq.PM`);
+
+  if (criteriaError) {
+    console.warn(
+      '[analyticsService] role-aware criterion query failed; falling back to direct assignment only.',
+      criteriaError.message
+    );
+    const fallback = await supabase
+      .from('epic_criterion_status')
+      .select(`
+        *,
+        criterion:criterion_id (
+          id,
+          label,
+          rating_timing,
+          gate
+        )
+      `)
+      .eq('epic_id', epicId)
+      .eq('decision_owner_id', pmUserId);
+    criteria = fallback.data;
+    if (fallback.error) {
+      console.error('[analyticsService] fallback criterion query failed:', fallback.error.message);
+    }
+  }
 
   if (criteria) {
     for (const status of criteria) {

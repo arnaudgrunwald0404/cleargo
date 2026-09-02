@@ -10,16 +10,19 @@ VALUES (
 ON CONFLICT (id) DO NOTHING;
 
 -- Allow anyone to read forecast reports (they are intentionally public)
+DROP POLICY IF EXISTS "Public read access for forecast reports" ON storage.objects;
 CREATE POLICY "Public read access for forecast reports"
   ON storage.objects FOR SELECT
   USING (bucket_id = 'forecast-reports');
 
 -- Allow authenticated uploads
+DROP POLICY IF EXISTS "Authenticated users can upload forecast reports" ON storage.objects;
 CREATE POLICY "Authenticated users can upload forecast reports"
   ON storage.objects FOR INSERT
   WITH CHECK (bucket_id = 'forecast-reports');
 
 -- Allow overwriting existing forecast reports
+DROP POLICY IF EXISTS "Authenticated users can update forecast reports" ON storage.objects;
 CREATE POLICY "Authenticated users can update forecast reports"
   ON storage.objects FOR UPDATE
   USING (bucket_id = 'forecast-reports');
@@ -38,24 +41,28 @@ CREATE TABLE IF NOT EXISTS epic_forecast_link (
   created_by          text                     -- Email of user who created this link
 );
 
-CREATE INDEX idx_epic_forecast_link_aha_id ON epic_forecast_link (epic_aha_id);
-CREATE INDEX idx_epic_forecast_link_epic_id ON epic_forecast_link (epic_id);
-CREATE INDEX idx_epic_forecast_link_created_at ON epic_forecast_link (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_epic_forecast_link_aha_id ON epic_forecast_link (epic_aha_id);
+CREATE INDEX IF NOT EXISTS idx_epic_forecast_link_epic_id ON epic_forecast_link (epic_id);
+CREATE INDEX IF NOT EXISTS idx_epic_forecast_link_created_at ON epic_forecast_link (created_at DESC);
 
 ALTER TABLE epic_forecast_link ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "All authenticated users can read forecast links" ON epic_forecast_link;
 CREATE POLICY "All authenticated users can read forecast links"
   ON epic_forecast_link FOR SELECT
   USING (true);
 
+DROP POLICY IF EXISTS "All authenticated users can create forecast links" ON epic_forecast_link;
 CREATE POLICY "All authenticated users can create forecast links"
   ON epic_forecast_link FOR INSERT
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "All authenticated users can update forecast links" ON epic_forecast_link;
 CREATE POLICY "All authenticated users can update forecast links"
   ON epic_forecast_link FOR UPDATE
   USING (true);
 
+DROP POLICY IF EXISTS "All authenticated users can delete forecast links" ON epic_forecast_link;
 CREATE POLICY "All authenticated users can delete forecast links"
   ON epic_forecast_link FOR DELETE
   USING (true);

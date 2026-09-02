@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { AppSettings } from "@/lib/settings-db";
-import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getReleaseStages, getLaunchCriteria, getLaunchSchedule, type ReleaseStagesScope } from "@/lib/services/settingsService";
+import { getPermissions, getUsers, getPods, getReleases, getSettings, patchSettings, getAhaFields, refreshAhaFieldsFromAha, syncAhaFields, patchEmailTemplates, getReleaseStages, getLaunchCriteria, type ReleaseStagesScope } from "@/lib/services/settingsService";
 import { fetchWithRateLimit } from "@/lib/fetch-with-rate-limit";
 import type { ReleaseStageLevelDurations } from "@/components/admin/settings/ReleaseStagesSection";
 
@@ -94,9 +94,6 @@ interface SettingsContextType {
     fetchLaunchCriteria: () => Promise<void>;
 
     // Launch Schedule
-    launchSchedule: any[];
-    launchScheduleLoading: boolean;
-    fetchLaunchSchedule: (includeArchived?: boolean) => Promise<void>;
 
     // Current User
     currentUserRoles: string[];
@@ -144,8 +141,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     const [launchCriteria, setLaunchCriteria] = useState<any[]>([]);
     const [launchCriteriaLoading, setLaunchCriteriaLoading] = useState(false);
 
-    const [launchSchedule, setLaunchSchedule] = useState<any[]>([]);
-    const [launchScheduleLoading, setLaunchScheduleLoading] = useState(false);
 
     const [emailTemplates, setEmailTemplates] = useState({
         invite_subject: "",
@@ -383,18 +378,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
         }
     };
 
-    const fetchLaunchSchedule = async (includeArchived: boolean = false) => {
-        setLaunchScheduleLoading(true);
-        try {
-            const data = await getLaunchSchedule(includeArchived);
-            setLaunchSchedule(data.schedules || []);
-        } catch (error: any) {
-            console.error("Failed to fetch launch schedule:", error);
-        } finally {
-            setLaunchScheduleLoading(false);
-        }
-    };
-
     const fetchEmailTemplates = async () => {
         setEmailTemplatesLoading(true);
         try {
@@ -449,8 +432,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
 
         setTimeout(async () => {
             await fetchLaunchCriteria();
-            await new Promise(resolve => setTimeout(resolve, 300));
-            await fetchLaunchSchedule();
         }, 4500);
     }, []);
     
@@ -530,9 +511,6 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
                 launchCriteria,
                 launchCriteriaLoading,
                 fetchLaunchCriteria,
-                launchSchedule,
-                launchScheduleLoading,
-                fetchLaunchSchedule,
                 emailTemplates,
                 emailTemplatesLoading,
                 emailTemplatesSaving,

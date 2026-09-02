@@ -12,7 +12,7 @@ export default function AdminSettingsPage() {
     useEffect(() => {
         // Redirect to the first settings page based on the current app mode
         if (appMode === 'launch') {
-            router.replace("/admin/settings/launch-schedule");
+            router.replace("/admin/settings/launch-criteria");
         } else {
             router.replace("/admin/settings/releases");
         }

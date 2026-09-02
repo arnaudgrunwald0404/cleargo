@@ -1,4 +1,5 @@
 import { google } from '@ai-sdk/google';
+import { DEFAULT_GEMINI_MODEL } from '@/lib/ai/resolve-model';
 import { generateObject } from 'ai';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
@@ -7,7 +8,7 @@ if (!process.env.GOOGLE_GENERATIVE_AI_API_KEY && process.env.GEMINI_API_KEY) {
   process.env.GOOGLE_GENERATIVE_AI_API_KEY = process.env.GEMINI_API_KEY;
 }
 
-const model = google('gemini-1.5-pro-latest');
+const model = google(DEFAULT_GEMINI_MODEL);
 
 const supabaseServiceKey =
   process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;

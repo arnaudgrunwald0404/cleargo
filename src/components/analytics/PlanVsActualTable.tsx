@@ -595,9 +595,12 @@ export function PlanVsActualTable({
           placeholder="GTM module"
           size="xs"
           value={value}
-          onChange={(e) =>
-            setGtmTyping((prev) => ({ ...prev, [row.ahaKey]: e.currentTarget.value }))
-          }
+          onChange={(e) => {
+            // Read synchronously: currentTarget is null by the time React runs
+            // the updater during render.
+            const next = e.currentTarget.value;
+            setGtmTyping((prev) => ({ ...prev, [row.ahaKey]: next }));
+          }}
           onBlur={() => {
             const v = gtmTyping[row.ahaKey] ?? display;
             setGtmTyping((prev) => {

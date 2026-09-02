@@ -25,6 +25,7 @@ export type CapabilityId =
   | "launchCriteria.update"
   | "launchCriteria.delete"
   | "launchCriteria.status.update"
+  | "launch.markNotApplicable"
   | "launchSchedule.manage"
   | "settings.read"
   | "settings.update"
@@ -45,6 +46,12 @@ export type CapabilityId =
   | "roadmap.planVsActual.arr.write"
   | "roadmap.planVsActual.gtm.write"
   | "launch.accessDates.update"
+  | "storyBrief.generate"
+  | "storyBrief.edit"
+  | "storyBrief.ratify"
+  | "launchArtifact.draft"
+  | "launchArtifact.review"
+  | "launchArtifact.approve"
   | "paprico.manage";
 
 export type Capability = {
@@ -170,6 +177,12 @@ export const CAPABILITIES: Capability[] = [
     description: "Allow updating task status, owner, notes, and links on launch criteria.",
   },
   {
+    id: "launch.markNotApplicable",
+    label: "Mark Launch Items Not Applicable",
+    description:
+      "Allow marking a checklist row, gate item, or supporting asset as Not Applicable on a launch. Deciding that something does not apply is a scoping call, so it is narrower than ticking a task.",
+  },
+  {
     id: "launchSchedule.manage",
     label: "Manage Launch Schedule",
     description: "Allow creating/updating/deleting launch schedule entries.",
@@ -270,6 +283,39 @@ export const CAPABILITIES: Capability[] = [
     description: "Set actual GTM access and Internal Readiness dates, mark N/A, and confirm completion on epics (PM only).",
   },
   {
+    id: "storyBrief.generate",
+    label: "Generate Story Brief",
+    description: "Allow generating/regenerating the AI-drafted epic Story Brief.",
+  },
+  {
+    id: "storyBrief.edit",
+    label: "Edit Story Brief",
+    description: "Allow editing the AI-drafted Story Brief content before ratification.",
+  },
+  {
+    id: "storyBrief.ratify",
+    label: "Ratify Story Brief",
+    description: "Allow ratifying a Story Brief to v1.0, locking it as the record of truth for downstream teams.",
+  },
+  {
+    id: "launchArtifact.draft",
+    label: "Draft Launch Artifacts",
+    description:
+      "Allow the agent to draft or redraft a launch document (gate checklist, story brief, messaging, enablement, campaign) into its Google Doc.",
+  },
+  {
+    id: "launchArtifact.review",
+    label: "Review Launch Artifacts",
+    description:
+      "Allow answering the agent's open questions and requesting changes on a drafted launch document.",
+  },
+  {
+    id: "launchArtifact.approve",
+    label: "Approve Launch Artifacts",
+    description:
+      "Allow approving a launch document to v1.0, which clears its readiness criterion and unblocks the next artifact in the runway.",
+  },
+  {
     id: "paprico.manage",
     label: "Manage PaPriCo",
     description: "Create PaPriCo meetings, edit agenda items, record decisions, publish agendas, and configure gating criteria. Reading the PaPriCo report is open to all authenticated users.",
@@ -300,6 +346,8 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "launchCriteria.update": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.delete": ["PMM", "CPO", "PRODUCT_OPS"],
   "launchCriteria.status.update": ["PM", "PMM", "ENG", "CPO", "PRODUCT_OPS", "PRODUCT"],
+  // SUPERADMIN is implicit: canRolesPerformWithRules short-circuits on it.
+  "launch.markNotApplicable": ["PMM"],
   "launchSchedule.manage": ["PMM", "CPO", "PRODUCT_OPS"],
   "settings.read": ["PRODUCT_OPS", "CPO"],
   "settings.update": ["PRODUCT_OPS", "CPO"],
@@ -320,6 +368,15 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "roadmap.planVsActual.arr.write": ["CPO", "PRODUCT_OPS", "PM"],
   "roadmap.planVsActual.gtm.write": ["CPO", "PRODUCT_OPS", "PM"],
   "launch.accessDates.update": ["PM"],
+  "storyBrief.generate": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "storyBrief.edit": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "storyBrief.ratify": ["PMM", "CPO", "PRODUCT_OPS"],
+  // Drafting is cheap and reversible, so it is open to everyone who owns launch
+  // work. Approval is not: it promotes to v1.0, clears a readiness criterion and
+  // releases the next artifact, so it matches storyBrief.ratify's narrower set.
+  "launchArtifact.draft": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "launchArtifact.review": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
+  "launchArtifact.approve": ["PMM", "CPO", "PRODUCT_OPS"],
   "paprico.manage": ["PRODUCT_OPS", "CPO"],
 };
 

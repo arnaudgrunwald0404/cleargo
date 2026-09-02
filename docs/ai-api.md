@@ -517,9 +517,18 @@ ClearGo also exposes the AI API as an MCP server at `POST /api/mcp`.
 
 **Transport:** Streamable HTTP (stateless, one session per request)
 
-**Auth:** Same `X-ClearGo-Key` header as the REST endpoints
+**Auth:** OAuth 2.1 bearer token, or the legacy `X-ClearGo-Key` header.
 
-### Available tools
+`X-ClearGo-Key` still works for the team-management tools below and is what TTS
+uses. It authenticates a service account with **no roles**, so the launch-artifact
+write tools refuse it — those need a per-user OAuth token. A request with neither
+gets a 401 carrying `WWW-Authenticate: Bearer resource_metadata="…"`, which is how
+an OAuth-capable client discovers the flow.
+
+For the OAuth path and the launch-artifact tools, see
+[`MCP-Connector.md`](./MCP-Connector.md).
+
+### Available tools — team management
 
 | Tool | Description |
 |------|-------------|
@@ -528,6 +537,9 @@ ClearGo also exposes the AI API as an MCP server at `POST /api/mcp`.
 | `list_member_epics` | Epics for a team member, optional status filter |
 | `list_member_blockers` | Open blockers with escalation flags |
 | `get_epic_detail` | Full epic with milestones and criteria breakdown |
+
+The same endpoint also serves 15 launch-artifact tools (`list-launches`,
+`draft-artifact`, `review-artifact`, …), which require OAuth.
 
 ### Connecting from TTS (or any MCP client)
 

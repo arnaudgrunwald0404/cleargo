@@ -8,23 +8,13 @@
  */
 
 import { createAnthropic } from '@ai-sdk/anthropic';
+import { getAnthropicBaseUrl, DEFAULT_GEMINI_MODEL } from '@/lib/ai/resolve-model';
 import { google } from '@ai-sdk/google';
 import { generateText, streamText, tool, stepCountIs } from 'ai';
 import type { LanguageModel } from 'ai';
 import { z } from 'zod';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getSlackClient } from '@/lib/slack/client';
-
-const ANTHROPIC_API_V1 = 'https://api.anthropic.com/v1';
-
-function getAnthropicBaseUrl(): string {
-  const fromEnv = process.env.ANTHROPIC_BASE_URL?.trim().replace(/\/$/, '');
-  if (fromEnv && (fromEnv.includes('/.netlify/ai') || fromEnv.includes('.netlify.app'))) {
-    return ANTHROPIC_API_V1;
-  }
-  if (fromEnv) return fromEnv;
-  return ANTHROPIC_API_V1;
-}
 
 function ensureKeys(): void {
   // Map CLAUDE_API_KEY → ANTHROPIC_API_KEY (Claude SDK convention)
@@ -53,9 +43,9 @@ function resolveModel(): LanguageModel {
   // Only use Claude with a real Anthropic key — Netlify's AI integration injects a proxy
   // key that starts with something other than sk-ant- and fails against api.anthropic.com
   if (anthropicKey && anthropicKey.startsWith('sk-ant-')) {
-    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5-20251001');
+    return createAnthropic({ baseURL: getAnthropicBaseUrl() })('claude-haiku-4-5');
   }
-  return google('gemini-2.5-flash');
+  return google(DEFAULT_GEMINI_MODEL);
 }
 
 const SYSTEM_PROMPT = `You are ClearGO Assistant, an AI embedded in the ClearGO Launch Readiness Console.
