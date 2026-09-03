@@ -96,13 +96,10 @@ LIMIT 10;
 
 
 -- ---------------------------------------------------------------------------
--- E. CLEANUP -- remove the diagnostic client row.
+-- E. CLEANUP -- now a migration.
 --
--- Registration was tested against production on 2026-09-02 by POSTing to
--- /api/oauth/register, which proved the whole chain works: it returned 201 with
--- client_id mcp_fa721104cd8e729709325f6829279865. That row is not a real client
--- and should be deleted.
+-- Proving registration still worked meant POSTing to /api/oauth/register
+-- against production, which returned 201 and left a real client row behind.
+-- Deleting it is:
+--   supabase/migrations/20260903000200_remove_mcp_oauth_diagnostic_client.sql
 -- ---------------------------------------------------------------------------
-DELETE FROM public.mcp_oauth_client
-WHERE client_id = 'mcp_fa721104cd8e729709325f6829279865';
--- Expect 1.

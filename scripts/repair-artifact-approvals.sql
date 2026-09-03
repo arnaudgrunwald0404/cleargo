@@ -21,8 +21,16 @@
 -- environment that has them, and because the schema for this table has drifted
 -- from its migration once before (20260717000001).
 --
--- Run step 1. If it returns no rows, stop -- there is nothing to repair.
--- Step 2 is transactional.
+-- THE REPAIR ITSELF IS NOW A MIGRATION:
+--   supabase/migrations/20260903000100_repair_artifact_approval_criteria.sql
+--
+-- It used to live here as a step 2, which is a bad shape for a data repair: two
+-- copies of the same UPDATE invite running it twice, and the manual copy only
+-- ever reaches whichever environment somebody remembers to run it against.
+--
+-- What is left here is the diagnostic. Run it before and after the migration --
+-- before to see the damage, after to confirm it is gone (both should now be
+-- empty in production, which had nothing to repair).
 
 -- ---------------------------------------------------------------------------
 -- STEP 1 -- What is affected. Read-only, safe to run any time.
@@ -55,56 +63,7 @@ ORDER BY a.approved_at DESC NULLS LAST;
 
 
 -- ---------------------------------------------------------------------------
--- STEP 2 -- Repair. Run as one transaction; check the count before COMMIT.
--- ---------------------------------------------------------------------------
-BEGIN;
-
-WITH approved AS (
-    -- DISTINCT ON because launch_artifact is unique on (launch_id,
-    -- artifact_type), not on criterion_id -- two artifact types could point at
-    -- the same criterion. Latest approval wins.
-    SELECT DISTINCT ON (a.launch_id, a.criterion_id)
-        a.launch_id,
-        a.criterion_id,
-        a.approved_at,
-        a.approved_by
-    FROM public.launch_artifact a
-    WHERE a.status = 'APPROVED'
-      AND a.criterion_id IS NOT NULL
-    ORDER BY a.launch_id, a.criterion_id, a.approved_at DESC NULLS LAST
-),
-resolved AS (
-    SELECT
-        approved.*,
-        (SELECT u.id
-           FROM public.app_user u
-          WHERE lower(u.email) = lower(approved.approved_by)
-          LIMIT 1) AS approver_id
-    FROM approved
-)
-UPDATE public.launch_criterion_status lcs
-SET
-    status          = 'DONE',
-    -- The approval's own timestamp, not now(): the criterion was decided when
-    -- the document was approved, and the history should say so.
-    last_updated_at = COALESCE(resolved.approved_at, lcs.last_updated_at, now()),
-    -- Nullable, so an approver who no longer matches an app_user still
-    -- completes the criterion, just unattributed.
-    last_updated_by = COALESCE(resolved.approver_id, lcs.last_updated_by)
-FROM resolved
-WHERE lcs.launch_id    = resolved.launch_id
-  AND lcs.criterion_id = resolved.criterion_id
-  -- Never overwrite a deliberate decision. NOT_APPLICABLE is somebody's call;
-  -- DONE is already correct.
-  AND lcs.status NOT IN ('DONE', 'NOT_APPLICABLE');
-
--- Expect this to match the row count from STEP 1 (minus any "(no criterion
--- row)" lines, which have nothing to update). If it is wildly larger, ROLLBACK.
-COMMIT;
-
-
--- ---------------------------------------------------------------------------
--- STEP 3 -- Verify. Should return zero rows.
+-- STEP 2 -- Verify after the migration. Should return zero rows.
 -- ---------------------------------------------------------------------------
 SELECT l.name AS launch, a.artifact_type, lcs.status
 FROM public.launch_artifact a
