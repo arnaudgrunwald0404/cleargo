@@ -1,3 +1,19 @@
+-- RENAMED from 20260902000000. That version collided with
+-- 20260902000000_add_forecast_engine_tables.sql from a branch that merged
+-- first: supabase_migrations.schema_migrations has `version` as its PRIMARY
+-- KEY, not (version, name), so the second file to apply cannot record itself
+-- and `db push` fails with
+--   duplicate key value violates unique constraint "schema_migrations_pkey"
+-- after its SQL body has already run.
+--
+-- Cause: both versions were hand-picked round numbers. `supabase migration new`
+-- stamps YYYYMMDDHHMMSS from the clock, which is why it does not collide.
+-- Do not hand-write a version.
+--
+-- Safe to re-apply: CREATE OR REPLACE FUNCTION is idempotent, and the failed
+-- push either rolled the body back with the transaction or left the function in
+-- exactly the state this file defines.
+
 -- Restore criterion.rating_timing and criterion.data_sources to my_items_for_user.
 --
 -- 20260630000000_hide_conditional_non_gate_from_home.sql was authored from a
