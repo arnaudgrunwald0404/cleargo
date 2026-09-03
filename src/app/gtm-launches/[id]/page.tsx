@@ -20,7 +20,7 @@ import { notifications } from "@mantine/notifications";
 import { IconAlertTriangle, IconArrowLeft, IconCheck, IconChevronDown, IconChevronRight, IconCircle, IconExternalLink, IconLink, IconInfoCircle, IconLoader2, IconSearch, IconX } from "@tabler/icons-react";
 import type { LaunchStatus, LaunchAsset, AssetStatus } from "@/types/launches";
 import { LAUNCH_STATUSES } from "@/lib/launch-status";
-import { canRolesPerform } from "@/lib/permissions";
+import type { CapabilityId } from "@/lib/permissions";
 import {
     findEpicDateConflicts,
     describeEpicDateConflicts,
@@ -274,20 +274,26 @@ export default function GTMLaunchDetailPage() {
                 const res = await fetch("/api/me", { credentials: "include" });
                 if (res.ok) {
                     const data = await res.json();
-                    const roles = Array.isArray(data.user?.roles)
-                        ? data.user.roles
-                        : (data.user?.role ? [data.user.role] : []);
-                    setCanManage(canRolesPerform(roles, "launches.manage"));
+                    // /api/me now returns the caller's EFFECTIVE capabilities.
+                    // These used to be computed here with canRolesPerform,
+                    // which reads the hardcoded DEFAULT_RULES while every API
+                    // route enforces the admin overrides in
+                    // app_settings.permissions -- so in production this page
+                    // showed edit controls to PMMs that /api/launches rejects
+                    // (launches.manage is overridden to CPO only), task toggles
+                    // to five roles that cannot use them, and a status control
+                    // to two roles when the override grants it to nobody.
+                    const can = (c: CapabilityId) =>
+                        Array.isArray(data.capabilities) && data.capabilities.includes(c);
+
+                    setCanManage(can("launches.manage"));
                     // Pausing or cancelling a launch is open to the launch owner
                     // (launches.manage) and to Product Ops / CPO, who hold
                     // launch.status.update but not the rest of the record.
-                    setCanSetStatus(
-                        canRolesPerform(roles, "launches.manage") ||
-                        canRolesPerform(roles, "launch.status.update")
-                    );
+                    setCanSetStatus(can("launches.manage") || can("launch.status.update"));
                     setCurrentUserEmail(data.user?.email ?? null);
-                    setCanToggleTasks(canRolesPerform(roles, "launchCriteria.status.update"));
-                    setCanMarkNA(canRolesPerform(roles, "launch.markNotApplicable"));
+                    setCanToggleTasks(can("launchCriteria.status.update"));
+                    setCanMarkNA(can("launch.markNotApplicable"));
                 }
             } catch {
                 // leave permissions false

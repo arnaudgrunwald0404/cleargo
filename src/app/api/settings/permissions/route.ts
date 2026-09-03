@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { ALL_ROLES, Role } from "@/lib/roles-constants";
 import { CAPABILITIES, DEFAULT_RULES, canRolesPerformWithRules } from "@/lib/permissions";
 import { getSettings, updateSettings, getEffectivePermissionRules } from "@/lib/settings-db";
+import { getAuthenticatedUserEmail } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,48 @@ async function writeMapping(mapping: Record<string, Role>) {
 
 export async function GET() {
   try {
+    // Capability: settings.read.
+    //
+    // This GET had NO authorization at all, while returning the full email ->
+    // role mapping for the whole org plus every capability and override. It
+    // answered 200 to an unauthenticated request in production. Its own PATCH
+    // is gated, and the sibling GET /api/settings has required settings.read
+    // since it was written, so this was an oversight rather than a decision.
+    //
+    // Gated the same way as that sibling, deliberately: the only consumer is
+    // SettingsContext, which is mounted solely on /admin/settings, and that
+    // page cannot load its main settings without settings.read anyway. So no
+    // caller who could legitimately use this loses access.
+    const supabase = createClient();
+    const userEmail = await getAuthenticatedUserEmail();
+    if (!userEmail) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const { data: me, error: userError } = await supabase
+      .from("app_user")
+      .select("roles")
+      .eq("email", userEmail)
+      .maybeSingle();
+
+    if (userError) {
+      return NextResponse.json(
+        { error: "Failed to fetch user profile", details: userError.message },
+        { status: 500 }
+      );
+    }
+    if (!me) {
+      return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+    }
+
+    const effectiveRules = await getEffectivePermissionRules();
+    if (!canRolesPerformWithRules((me.roles as string[]) || [], "settings.read", effectiveRules)) {
+      return NextResponse.json(
+        { error: "Forbidden: You do not have permission to view permissions" },
+        { status: 403 }
+      );
+    }
+
     const mapping = await readMapping();
     const settings = await getSettings();
     const rawOverrides = (settings.permissions || {}) as Record<string, string[]>;

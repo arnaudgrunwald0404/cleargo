@@ -8,6 +8,8 @@ import { isSuperAdmin } from "@/lib/auth-helpers";
 import { getEffectiveUserEmail, getImpersonatedEmail, IMPERSONATE_COOKIE_NAME } from "@/lib/auth/impersonation";
 import { trackLogin } from "@/lib/services/userActivityService";
 import { getUser } from "@/lib/auth/getUser";
+import { CAPABILITIES, canRolesPerformWithRules } from "@/lib/permissions";
+import { getEffectivePermissionRules } from "@/lib/settings-db";
 
 const notificationChannelSchema = z.enum(['email', 'slack', 'both', 'none']);
 
@@ -183,8 +185,37 @@ async function getHandler(req: NextRequest) {
       }
     }
 
+    // The caller's own EFFECTIVE capabilities.
+    //
+    // Client components have been calling canRolesPerform, which reads the
+    // hardcoded DEFAULT_RULES, while the API routes enforce
+    // getEffectivePermissionRules -- defaults merged with the admin overrides in
+    // app_settings.permissions. Wherever an override narrows a capability the
+    // two disagree, and the user sees a control whose every save is rejected.
+    // In production today that is `launches.manage` (default PMM, overridden to
+    // CPO only), `launch.status.update` (overridden to nobody) and
+    // `launchCriteria.status.update` (overridden to CPO only).
+    //
+    // Served from here rather than a new endpoint because every client already
+    // fetches /api/me, and because it resolves against `profile` -- so it
+    // follows impersonation automatically, which a roles-plus-rules approach on
+    // the client would not.
+    //
+    // Only the caller's own capability ids, never the rule set or anyone else's
+    // roles: /api/settings/permissions is the privileged view of that.
+    const capabilityRules = await getEffectivePermissionRules();
+    const profileRoles = Array.isArray(profile?.roles)
+        ? (profile.roles as string[])
+        : profile?.roles
+          ? [String(profile.roles)]
+          : [];
+    const capabilities = CAPABILITIES.map((c) => c.id).filter((id) =>
+        canRolesPerformWithRules(profileRoles, id, capabilityRules)
+    );
+
     return NextResponse.json({
         user: profile,
+        capabilities,
         isSuperAdmin: isSuperAdmin(realUserEmail),
         ...(isImpersonating && {
             impersonating: true,
