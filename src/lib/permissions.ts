@@ -51,7 +51,8 @@ export type CapabilityId =
   | "storyBrief.ratify"
   | "launchArtifact.draft"
   | "launchArtifact.review"
-  | "launchArtifact.approve";
+  | "launchArtifact.approve"
+  | "paprico.manage";
 
 export type Capability = {
   id: CapabilityId;
@@ -314,6 +315,11 @@ export const CAPABILITIES: Capability[] = [
     description:
       "Allow approving a launch document to v1.0, which clears its readiness criterion and unblocks the next artifact in the runway.",
   },
+  {
+    id: "paprico.manage",
+    label: "Manage PaPriCo",
+    description: "Create PaPriCo meetings, edit agenda items, record decisions, publish agendas, and configure gating criteria. Reading the PaPriCo report is open to all authenticated users.",
+  },
 ];
 
 export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
@@ -371,6 +377,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "launchArtifact.draft": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
   "launchArtifact.review": ["PM", "PMM", "PRODUCT", "PRODUCT_OPS", "CPO"],
   "launchArtifact.approve": ["PMM", "CPO", "PRODUCT_OPS"],
+  "paprico.manage": ["PRODUCT_OPS", "CPO"],
 };
 
 export type PermissionRules = Record<CapabilityId, Role[]>;

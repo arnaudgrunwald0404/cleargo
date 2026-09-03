@@ -866,6 +866,22 @@ The page header surfaces a `[👁 N visitor(s)]` button that opens a slideout (`
 
 This is the ClearGo equivalent of RRV's `user_visits` feature, swapping IP-address + sessionStorage department for ClearGo's authenticated user identity and the `app_user.roles` array.
 
+### 14. PaPriCo — Packaging & Pricing Committee
+
+An agenda-and-decision tracker for ClearCo's Packaging & Pricing Committee, built on release criteria data (spec: `docs/PaPriCo-report-spec.md`). Located at **Admin → Settings → Release Management → PaPriCo**.
+
+**Three jobs:** (1) generate the meeting agenda from open release criteria so scope is set by the system; (2) capture each decision with an owner and a due date (append-only log); (3) surface open commitments at the top of every agenda.
+
+- **Agenda generation (computed on read, no cron):** for the next open meeting, a release-derived item is auto-proposed when an epic has an enabled *gating criterion* (configured in `paprico_gating_criterion`, matched by `criterion_id`, never label) that is not complete (complete = `GO` or `NOT_APPLICABLE`; `CONDITIONAL_GO` stays open) and whose Ready-By stage date (`criterion.rating_timing` on the epic's launch timeline via `computeCriterionDueDateYmd`, with the category→stage fallback) falls within the lookahead (default 60 days, per-criterion override, default editable in `app_settings.paprico_default_lookahead_days`). Deferred items carry forward automatically; standing items persist until explicitly closed.
+- **Auto-close:** when a gating criterion flips complete, the matching open item closes itself with `auto_closed = true` and a system note on next load. The report never writes to `epic_criterion_status`.
+- **Urgency bands:** overdue (stage date passed) / critical (≤14d) / soon (15–30d) / horizon (31+d), always paired with a text label (never colour alone). Sections: Open commitments → Overdue and critical → Approaching → Standing items.
+- **Decisions (`paprico_decision`) are append-only:** a change of mind is a new row with `supersedes_id`. An `assigned`/`approved`/`approved_with_amendment` decision requires an owner + due date (DB CHECK + API validation); an item cannot be `decided` without a decision row. Only completion (`completed_at`/`completed_by`) is mutable. Open commitments = decisions with an owner, no completion, due in the past or within 14 days.
+- **Publish:** freezes the computed agenda into `paprico_meeting.agenda_snapshot` (later criteria changes don't alter it) and produces a copyable Slack block for `#paprico` (manual paste by design — no Slack automation in v1).
+- **In-meeting mode:** `/admin/settings/paprico/meeting/[id]`, one item at a time, keyboard navigable (`j`/`k`/arrows, `d` for the decision form), saves immediately.
+- **Minutes export:** markdown for a held meeting — decisions with owners/due dates, deferrals and why, blocked items and on what, commitments still open from prior meetings. Copy + download.
+- **Tables:** `paprico_meeting`, `paprico_item` (release-derived or standing; survives epic/criterion deletion as orphaned), `paprico_decision`, `paprico_gating_criterion` (seeded by label match against release-context criteria: Packaging & Pricing Approved, Confirmed Pricing Communicated, Revenue forecast reviewed, Revenue Forecast & Risk Analysis, Commercialization, plus Product Name Confirmed / Unit Economics & Margin Floor Documented once they exist as release criteria).
+- **APIs:** `/api/paprico/meetings` (+`[id]`, `[id]/agenda`, `[id]/publish`, `[id]/minutes`), `/api/paprico/items` (+`[id]`, `reorder`), `/api/paprico/decisions` (+`[id]`), `/api/paprico/gating-criteria` — rate-limited; reads open to authenticated users, writes gated by the `paprico.manage` capability (defaults: PRODUCT_OPS, CPO). Rendered in `America/Los_Angeles`, stored UTC.
+
 ---
 
 ### 12. Revenue Forecast
@@ -1788,6 +1804,9 @@ All ported from RRV with ClearGo-aligned table names:
 - `roadmap.hiddenItem.write` — all roles (per-user preference; RLS still scopes writes to the owner)
 - `roadmap.movementNote.write` — PM / PRODUCT_OPS / CPO (plus SUPERADMIN). Authoritative gate is the `epic_comment_insert_pm` RLS policy (migration 20260430120000); the UI helper `canEditRoadmap()` mirrors this for client-side affordances. Once a note is created, the author can still edit/delete their own row even if their role changes later.
 - `roadmap.analysis.generate` — CPO / PRODUCT_OPS (plus SUPERADMIN): generate or regenerate cached Plan vs Actual AI narrative (`POST /api/analytics/plan-vs-actual/analysis`). Viewing the report still requires `analytics.read`.
+
+**PaPriCo capability** (universal *read* — any authenticated user can view the PaPriCo agenda, item details, and minutes):
+- `paprico.manage` — PRODUCT_OPS / CPO (plus SUPERADMIN): create meetings, edit agenda items, record decisions, publish agendas, configure gating criteria.
 
 #### Permissions Matrix
 
