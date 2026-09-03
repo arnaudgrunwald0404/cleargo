@@ -1,3 +1,16 @@
+-- 2026-09-03: made replayable. Production already had these three tables --
+-- applied out-of-band, without a schema_migrations row -- so a `db push` that
+-- reached this file died on `relation "mcp_oauth_client" already exists` with
+-- its 24 predecessors already applied.
+--
+-- IF NOT EXISTS on the tables and indexes is enough to make the whole file safe
+-- to replay: every other statement here is already idempotent (COMMENT ON,
+-- ALTER TABLE ... ENABLE ROW LEVEL SECURITY, CREATE OR REPLACE FUNCTION), and
+-- there are no policies to collide.
+--
+-- Editing it is inert on any database that already recorded this version; the
+-- CLI matches on version, not on the statements it stored.
+
 -- OAuth 2.1 authorization server state for the remote MCP connector.
 --
 -- The MCP server at /api/mcp becomes an OAuth resource server so a teammate can
@@ -25,7 +38,7 @@
 -- client ID or secret. Every row is therefore self-registered and untrusted --
 -- redirect_uris is the only field with security weight, and the authorize
 -- endpoint matches against it exactly.
-CREATE TABLE public.mcp_oauth_client (
+CREATE TABLE IF NOT EXISTS public.mcp_oauth_client (
     client_id         TEXT PRIMARY KEY,
     client_name       TEXT,
     redirect_uris     TEXT[] NOT NULL CHECK (array_length(redirect_uris, 1) > 0),
@@ -50,7 +63,7 @@ COMMENT ON TABLE public.mcp_oauth_client IS
 -- worth detecting: a second presentation of a spent code means either a broken
 -- client or a stolen one, and a deleted row cannot tell those apart from a code
 -- that never existed.
-CREATE TABLE public.mcp_oauth_authorization_code (
+CREATE TABLE IF NOT EXISTS public.mcp_oauth_authorization_code (
     code                  TEXT PRIMARY KEY,
     client_id             TEXT NOT NULL REFERENCES public.mcp_oauth_client(client_id) ON DELETE CASCADE,
     user_email            TEXT NOT NULL,
@@ -68,7 +81,7 @@ CREATE TABLE public.mcp_oauth_authorization_code (
     created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_mcp_oauth_code_expires ON public.mcp_oauth_authorization_code (expires_at);
+CREATE INDEX IF NOT EXISTS idx_mcp_oauth_code_expires ON public.mcp_oauth_authorization_code (expires_at);
 
 COMMENT ON COLUMN public.mcp_oauth_authorization_code.consumed_at IS
     'Set on first exchange. A second exchange of the same code is a replay: reject it AND revoke the tokens already issued from it.';
@@ -79,7 +92,7 @@ COMMENT ON COLUMN public.mcp_oauth_authorization_code.consumed_at IS
 -- anyone a working credential. Rotating -- each refresh issues a new row and
 -- revokes the old one -- so a leaked refresh token has a short useful life and
 -- its reuse is detectable.
-CREATE TABLE public.mcp_oauth_token (
+CREATE TABLE IF NOT EXISTS public.mcp_oauth_token (
     id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     token_hash     TEXT NOT NULL UNIQUE,
     client_id      TEXT NOT NULL REFERENCES public.mcp_oauth_client(client_id) ON DELETE CASCADE,
@@ -94,8 +107,8 @@ CREATE TABLE public.mcp_oauth_token (
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_mcp_oauth_token_user ON public.mcp_oauth_token (user_email) WHERE revoked_at IS NULL;
-CREATE INDEX idx_mcp_oauth_token_expires ON public.mcp_oauth_token (expires_at);
+CREATE INDEX IF NOT EXISTS idx_mcp_oauth_token_user ON public.mcp_oauth_token (user_email) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_mcp_oauth_token_expires ON public.mcp_oauth_token (expires_at);
 
 COMMENT ON TABLE public.mcp_oauth_token IS
     'Hashed, rotating refresh tokens for the MCP connector. Access tokens are stateless JWTs and are not stored here.';
