@@ -26,6 +26,7 @@ export interface ForecastEpicSummary {
   epic_name: string | null;
   launch_tier: string | null;
   gtm_module: string | null;
+  release: string | null;
   links: ForecastLink[];
 }
 
@@ -92,7 +93,7 @@ async function getHandler(_req: NextRequest) {
           arr_incremental_2028_usd: bookings(find2028),
           arr_churn_reduction_2027_usd: find2027 ? (find2027.churn_reduction_arr_usd as number) : null,
           arr_churn_reduction_2028_usd: find2028 ? (find2028.churn_reduction_arr_usd as number) : null,
-          url: epicId ? `/epics/${epicId}` : '',
+          url: epicId ? `/epics/${epicId}?tab=forecast` : '',
           generation_date: (run.created_at as string)?.slice(0, 10) ?? null,
           created_at: run.created_at as string,
           created_by: run.created_by as string | null,
@@ -104,7 +105,7 @@ async function getHandler(_req: NextRequest) {
 
   // Fetch epic metadata (name, aha_fields) and gtm_module for all referenced epics
   const ahaIds = [...new Set([...(rows ?? []).map(r => r.epic_aha_id as string), ...runRows.map(r => r.epic_aha_id)])];
-  const epicMeta = new Map<string, { id: string | null; name: string | null; launch_tier: string | null; gtm_module: string | null }>();
+  const epicMeta = new Map<string, { id: string | null; name: string | null; launch_tier: string | null; gtm_module: string | null; release: string | null }>();
 
   if (ahaIds.length > 0) {
     const [{ data: epics }, { data: snapshots }] = await Promise.all([
@@ -112,22 +113,24 @@ async function getHandler(_req: NextRequest) {
         .from('epic')
         .select('id, aha_id, name, aha_fields')
         .in('aha_id', ahaIds),
-      // Latest gtm_module per epic — grab recent rows and dedupe in JS
+      // Latest gtm_module/release per epic — grab recent rows and dedupe in JS
       adminSupabase
         .from('roadmap_snapshot')
-        .select('aha_key, aha_name, gtm_module, snapshot_date')
+        .select('aha_key, aha_name, gtm_module, aha_release, snapshot_date')
         .in('aha_key', ahaIds)
         .order('snapshot_date', { ascending: false })
         .limit(ahaIds.length * 10),
     ]);
 
-    // Most-recent gtm_module and aha_name per aha_key
+    // Most-recent gtm_module, aha_release, and aha_name per aha_key
     const gtmByKey = new Map<string, string | null>();
+    const releaseByKey = new Map<string, string | null>();
     const nameByKey = new Map<string, string | null>();
     for (const s of snapshots ?? []) {
       const key = s.aha_key as string;
       if (!gtmByKey.has(key)) {
         gtmByKey.set(key, (s.gtm_module as string | null) ?? null);
+        releaseByKey.set(key, (s.aha_release as string | null) ?? null);
         nameByKey.set(key, (s.aha_name as string | null) ?? null);
       }
     }
@@ -144,6 +147,7 @@ async function getHandler(_req: NextRequest) {
         name: (e.name as string | null) ?? nameByKey.get(e.aha_id as string) ?? null,
         launch_tier: typeof launchTier === 'string' ? launchTier : null,
         gtm_module: gtmByKey.get(e.aha_id as string) ?? null,
+        release: releaseByKey.get(e.aha_id as string) ?? null,
       });
     }
     // Fallback: epics in forecast_link but not in epic table — use snapshot data
@@ -154,6 +158,7 @@ async function getHandler(_req: NextRequest) {
           name: nameByKey.get(id) ?? null,
           launch_tier: null,
           gtm_module: gtmByKey.get(id) ?? null,
+          release: releaseByKey.get(id) ?? null,
         });
       }
     }
@@ -173,6 +178,7 @@ async function getHandler(_req: NextRequest) {
         epic_name: meta?.name ?? null,
         launch_tier: meta?.launch_tier ?? null,
         gtm_module: meta?.gtm_module ?? null,
+        release: meta?.release ?? null,
         links: [],
       });
     }

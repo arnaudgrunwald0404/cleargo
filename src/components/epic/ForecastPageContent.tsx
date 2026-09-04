@@ -125,12 +125,13 @@ const NARRATIVE_ORDER: NarrativeSection[] = [
   'methodology_notes',
 ];
 
-function formatUsd(cents: number): string {
-  const abs = Math.abs(cents);
-  if (abs === 0) return '$0';
-  if (abs >= 1_000_000) return `${cents < 0 ? '-' : ''}$${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
-  if (abs >= 1_000) return `${cents < 0 ? '-' : ''}$${Math.round(abs / 1000)}K`;
-  return `${cents < 0 ? '-' : ''}$${abs}`;
+// Always expressed in whole $K, floored (never rounded up) — e.g. $375 renders as "$0K", not
+// "$375" or a rounded-up "$1K". Millions still get an M suffix for readability.
+function formatUsd(usd: number): string {
+  const sign = usd < 0 ? '-' : '';
+  const abs = Math.abs(usd);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(abs >= 10_000_000 ? 1 : 2)}M`;
+  return `${sign}$${Math.floor(abs / 1000)}K`;
 }
 
 function scenarioLabel(s: Scenario): string {
