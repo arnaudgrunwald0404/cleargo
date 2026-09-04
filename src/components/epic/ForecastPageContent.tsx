@@ -381,9 +381,24 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   if (!data?.run) {
     return (
       <Stack gap="md">
-        <Title order={4}>Forecast</Title>
+        <Group justify="space-between" align="center">
+          <Title order={4}>Forecast</Title>
+          <Button
+            size="xs"
+            variant="light"
+            color="grape"
+            leftSection={<IconSparkles size={14} />}
+            onClick={startGeneration}
+            loading={generating}
+          >
+            {generating ? 'Generating…' : 'Generate Forecast'}
+          </Button>
+        </Group>
         <Alert icon={<IconChartLine size={18} />} color="gray" variant="light">
-          <Text size="sm">No forecast has been generated for this epic ({epicAhaId}) yet.</Text>
+          <Text size="sm">
+            No forecast has been generated for this epic ({epicAhaId}) yet. Click <b>Generate Forecast</b> to
+            run market research, pricing, and the revenue model from scratch — this can take a minute or two.
+          </Text>
         </Alert>
       </Stack>
     );
