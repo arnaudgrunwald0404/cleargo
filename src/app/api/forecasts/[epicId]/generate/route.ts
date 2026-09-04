@@ -4,6 +4,7 @@ import { withRateLimit, RATE_LIMITS } from '@/lib/middleware/rate-limit-middlewa
 import { createAdminClient } from '@/lib/supabase/server';
 import { runForecastGeneration } from '@/lib/forecast/orchestrator';
 import { persistGeneratedRun } from '@/lib/forecast/persist';
+import { gatherEpicContext } from '@/lib/forecast/gatherEpicContext';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,7 @@ async function postHandler(
     }
     const epic = epicRow as EpicRow;
     const description = (epic.aha_fields?.description as string | undefined) ?? epic.name ?? '';
+    const epicContext = await gatherEpicContext(adminSupabase, epic.id, epic.aha_fields);
 
     const generationInput = {
         epicAhaId,
@@ -59,6 +61,10 @@ async function postHandler(
         productDescription: description,
         gaDate: epic.target_launch_date,
         pricingNotes: epic.pricing_model ?? undefined,
+        revenueRisk: epicContext.revenueRisk ?? undefined,
+        launchTier: epicContext.launchTier ?? undefined,
+        commentsContext: epicContext.commentsContext,
+        referencedUrls: epicContext.referencedUrls,
     };
 
     const baseUrl = (process.env.NETLIFY_URL || process.env.URL || '').replace(/\/$/, '');
