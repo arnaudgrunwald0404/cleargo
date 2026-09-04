@@ -92,7 +92,7 @@ async function getHandler(_req: NextRequest) {
           arr_incremental_2028_usd: bookings(find2028),
           arr_churn_reduction_2027_usd: find2027 ? (find2027.churn_reduction_arr_usd as number) : null,
           arr_churn_reduction_2028_usd: find2028 ? (find2028.churn_reduction_arr_usd as number) : null,
-          url: epicId ? `/epics/${epicId}` : '',
+          url: epicId ? `/epics/${epicId}?tab=forecast` : '',
           generation_date: (run.created_at as string)?.slice(0, 10) ?? null,
           created_at: run.created_at as string,
           created_by: run.created_by as string | null,

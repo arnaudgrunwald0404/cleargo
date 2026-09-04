@@ -419,7 +419,7 @@ export default function ForecastsPage() {
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary, #6b7280)', marginTop: 2 }}>
                         {epic.epic_id ? (
                           <a
-                            href={`/epics/${epic.epic_id}`}
+                            href={`/epics/${epic.epic_id}?tab=forecast`}
                             onClick={e => e.stopPropagation()}
                             style={{ color: 'var(--color-text-secondary, #6b7280)', textDecoration: 'underline', textDecorationColor: '#d1d5db' }}
                           >
