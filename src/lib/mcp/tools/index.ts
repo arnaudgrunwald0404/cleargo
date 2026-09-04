@@ -1,16 +1,25 @@
 /**
- * Registering the launch-artifact tools on the MCP server.
+ * The ClearGO tool registry.
  *
  * Every tool has the same shape — (supabase, args, actor) returning a plain
- * object — so registration is a table rather than fifteen near-identical blocks.
- * Each tool validates its own arguments against the schema advertised here, and
- * the write tools check the actor's ClearGO capabilities themselves; this file
- * only wires them up.
+ * object — so registration is a table rather than forty-five near-identical
+ * blocks. Each tool validates its own arguments against the schema advertised
+ * here, and the write tools check the actor's ClearGO capabilities themselves;
+ * this file only wires them up.
  *
- * These previously lived in a stdio server that ran on each person's laptop with
- * the Supabase service-role key and no authorization at all. Both problems are
- * fixed by where they now run, not by the tool code: the key stays on the server,
- * and `actor` is a real person resolved from an OAuth token.
+ * This table is the single source of truth for two transports: the MCP endpoint
+ * (registerClearGoTools, below) and the in-app ClearGO assistant, which adapts
+ * the same entries into Vercel AI SDK tools (src/lib/ai/mcpTools.ts). Register a
+ * tool anywhere else and it exists on one surface and not the other, which is
+ * exactly how the assistant ended up with its own divergent copy of the
+ * criterion write -- one that skipped the capability check, the readiness
+ * recompute and the status-history row.
+ *
+ * The artifact tools previously lived in a stdio server that ran on each
+ * person's laptop with the Supabase service-role key and no authorization at
+ * all. Both problems are fixed by where they now run, not by the tool code: the
+ * key stays on the server, and `actor` is a real person resolved from an OAuth
+ * token.
  */
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -35,6 +44,7 @@ import { ensureArtifacts, InputSchema as ensureArtifactsSchema } from './ensure-
 import { getEpicCriteria, InputSchema as getEpicCriteriaSchema } from './get-epic-criteria';
 import { getMyWorkTool, InputSchema as getMyWorkSchema } from './get-my-work';
 import { getPendingGtmAccess } from './get-pending-gtm-access';
+import { getMyNotifications, InputSchema as getMyNotificationsSchema } from './get-my-notifications';
 import { updateCriterionStatus, InputSchema as updateCriterionStatusSchema } from './update-criterion-status';
 import { findEpicsTool, InputSchema as findEpicsSchema } from './find-epics';
 import { getEpicTool, InputSchema as getEpicSchema } from './get-epic';
@@ -55,6 +65,17 @@ import { listPapricoMeetings, getPapricoAgenda, listPapricoDecisions, AgendaInpu
 import { getForecast, InputSchema as getForecastSchema } from './get-forecast';
 import { getEpicDecisions, InputSchema as getEpicDecisionsSchema } from './get-epic-decisions';
 import { getEpicStoryBrief, InputSchema as getEpicStoryBriefSchema } from './get-epic-story-brief';
+import {
+    listTeamMembers,
+    getOneOnOnePrep,
+    listMemberEpics,
+    listMemberBlockers,
+    getEpicDetail,
+    PersonSchema,
+    MemberEpicsSchema,
+    MemberSchema,
+    EpicDetailSchema,
+} from './team';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -62,7 +83,7 @@ type ToolHandler = (
     actor: McpAuthInfo
 ) => Promise<unknown>;
 
-interface ToolDefinition {
+export interface ToolDefinition {
     name: string;
     description: string;
     inputSchema: ZodRawShape;
@@ -71,7 +92,7 @@ interface ToolDefinition {
     handler: ToolHandler;
 }
 
-const TOOLS: ToolDefinition[] = [
+export const MCP_TOOLS: ToolDefinition[] = [
     // ── Read ────────────────────────────────────────────────────────────────
     {
         name: 'list-launches',
@@ -171,6 +192,13 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: getMyWorkSchema.shape,
         readOnly: true,
         handler: getMyWorkTool,
+    },
+    {
+        name: 'get-my-notifications',
+        description: 'What ClearGO has already told the caller and where: Slack and email nudges over a recent window, with counts by type and any failed deliveries. Use it before reminding someone about something they have already been chased about, or to explain why a nudge never arrived.',
+        inputSchema: getMyNotificationsSchema.shape,
+        readOnly: true,
+        handler: getMyNotifications,
     },
     {
         name: 'get-pending-gtm-access',
@@ -295,6 +323,45 @@ const TOOLS: ToolDefinition[] = [
         handler: getEpicStoryBrief,
     },
 
+
+    // ── Team management ─────────────────────────────────────────────────────
+    // snake_case on purpose: renaming would break existing consumers.
+    {
+        name: 'list_team_members',
+        description: 'List the active direct reports of the authenticated caller, with a health snapshot (active epic count, open blocker count). Returns an empty list if the caller manages nobody.',
+        inputSchema: {},
+        readOnly: true,
+        handler: listTeamMembers,
+    },
+    {
+        name: 'get_1on1_prep',
+        description: 'A structured 1:1 prep document for a team member: active epics, what shipped this week, escalations needed and suggested talking points.',
+        inputSchema: PersonSchema.shape,
+        readOnly: true,
+        handler: getOneOnOnePrep,
+    },
+    {
+        name: 'list_member_epics',
+        description: 'Epics owned by a team member, optionally filtered by status.',
+        inputSchema: MemberEpicsSchema.shape,
+        readOnly: true,
+        handler: listMemberEpics,
+    },
+    {
+        name: 'list_member_blockers',
+        description: 'Open blockers on the epics owned by a team member, with escalation flags pre-computed (needs_escalation when blocked 3+ days at high or critical severity).',
+        inputSchema: MemberSchema.shape,
+        readOnly: true,
+        handler: listMemberBlockers,
+    },
+    {
+        name: 'get_epic_detail',
+        description: 'Full detail for one epic: owner, product, blockers, milestones and a readiness criteria summary.',
+        inputSchema: EpicDetailSchema.shape,
+        readOnly: true,
+        handler: getEpicDetail,
+    },
+
     // ── Write ───────────────────────────────────────────────────────────────
     {
         name: 'update-artifact',
@@ -361,12 +428,12 @@ const TOOLS: ToolDefinition[] = [
     },
 ];
 
-export function registerArtifactTools(
+export function registerClearGoTools(
     server: McpServer,
     supabase: SupabaseClient,
     actor: McpAuthInfo
 ): void {
-    for (const tool of TOOLS) {
+    for (const tool of MCP_TOOLS) {
         server.registerTool(
             tool.name,
             {
