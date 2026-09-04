@@ -1,14 +1,18 @@
 'use client';
 
 import { useEffect, useState, useMemo, useRef } from 'react';
-import { SegmentedControl } from '@mantine/core';
+import { SegmentedControl, Select } from '@mantine/core';
 import type { ForecastEpicSummary, ForecastLink } from '@/app/api/forecasts/summary/route';
 
+// Always expressed in whole $K, floored (never rounded up) — e.g. $375 renders as "$0K". Millions
+// still get an M suffix for readability. Matches src/components/epic/ForecastPageContent.tsx's
+// formatUsd — keep both in sync if this changes.
 function formatUSD(value: number | null | undefined): string {
   if (value == null) return '—';
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toLocaleString()}`;
+  const sign = value < 0 ? '-' : '';
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  return `${sign}$${Math.floor(abs / 1_000)}K`;
 }
 
 function tierBadgeStyle(tier: string | null): React.CSSProperties {
@@ -27,6 +31,7 @@ export default function ForecastsPage() {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scenario, setScenario] = useState<string>('all');
+  const [gtmModuleFilter, setGtmModuleFilter] = useState<string>('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [expandedLinkId, setExpandedLinkId] = useState<string | null>(null);
   const [renamingLinkId, setRenamingLinkId] = useState<string | null>(null);
@@ -85,7 +90,19 @@ export default function ForecastsPage() {
     return order.map(id => map.get(id)).filter(Boolean) as ForecastEpicSummary[];
   }, [epics, order]);
 
-  const selectedEpics = orderedEpics.filter(e => selected.has(e.epic_aha_id));
+  const gtmModules = useMemo(() => {
+    const s = new Set<string>();
+    for (const e of epics) if (e.gtm_module) s.add(e.gtm_module);
+    return ['all', ...Array.from(s).sort()];
+  }, [epics]);
+
+  // Applied on top of drag order, not instead of it — filtering doesn't change saved row order.
+  const filteredEpics = useMemo(() => {
+    if (gtmModuleFilter === 'all') return orderedEpics;
+    return orderedEpics.filter(e => e.gtm_module === gtmModuleFilter);
+  }, [orderedEpics, gtmModuleFilter]);
+
+  const selectedEpics = filteredEpics.filter(e => selected.has(e.epic_aha_id));
 
   // Aggregate ARR for selected epics
   const aggregatedARR = useMemo(() => {
@@ -138,10 +155,10 @@ export default function ForecastsPage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === orderedEpics.length) {
+    if (selected.size === filteredEpics.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(orderedEpics.map(e => e.epic_aha_id)));
+      setSelected(new Set(filteredEpics.map(e => e.epic_aha_id)));
     }
   };
 
@@ -242,14 +259,26 @@ export default function ForecastsPage() {
             </p>
           </div>
 
-          {/* Scenario filter */}
-          <SegmentedControl
-            value={scenario}
-            onChange={setScenario}
-            data={scenarios.map(s => ({ value: s, label: s === 'all' ? 'All Scenarios' : s.charAt(0).toUpperCase() + s.slice(1) }))}
-            size="sm"
-            style={{ fontFamily: 'var(--font-body)' }}
-          />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+            {/* GTM Module filter */}
+            <Select
+              data={gtmModules.map(m => ({ value: m, label: m === 'all' ? 'All GTM Modules' : m }))}
+              value={gtmModuleFilter}
+              onChange={v => setGtmModuleFilter(v ?? 'all')}
+              size="sm"
+              style={{ minWidth: 180 }}
+              styles={{ input: { fontFamily: 'var(--font-body)' } }}
+            />
+
+            {/* Scenario filter */}
+            <SegmentedControl
+              value={scenario}
+              onChange={setScenario}
+              data={scenarios.map(s => ({ value: s, label: s === 'all' ? 'All Scenarios' : s.charAt(0).toUpperCase() + s.slice(1) }))}
+              size="sm"
+              style={{ fontFamily: 'var(--font-body)' }}
+            />
+          </div>
         </div>
       </div>
 
@@ -330,7 +359,7 @@ export default function ForecastsPage() {
             {/* Table header */}
             <div style={{
               display: 'grid',
-              gridTemplateColumns: '24px 40px 120px 1fr 90px 105px 105px 120px 120px 110px 80px',
+              gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 105px 105px 120px 120px 110px 80px',
               padding: '10px 16px',
               borderBottom: '1px solid var(--color-border, #e5e7eb)',
               background: 'var(--color-surface, #f9fafb)',
@@ -346,8 +375,8 @@ export default function ForecastsPage() {
               <div>
                 <input
                   type="checkbox"
-                  checked={selected.size === orderedEpics.length && orderedEpics.length > 0}
-                  ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < orderedEpics.length; }}
+                  checked={selected.size === filteredEpics.length && filteredEpics.length > 0}
+                  ref={el => { if (el) el.indeterminate = selected.size > 0 && selected.size < filteredEpics.length; }}
                   onChange={toggleAll}
                   style={{ cursor: 'pointer' }}
                 />
@@ -355,6 +384,7 @@ export default function ForecastsPage() {
               <div>GTM Module</div>
               <div>Epic</div>
               <div>Tier</div>
+              <div>Release</div>
               <div>Incr. 2027</div>
               <div>Incr. 2028</div>
               <div>Churn Red. 2027</div>
@@ -364,7 +394,7 @@ export default function ForecastsPage() {
             </div>
 
             {/* Rows */}
-            {orderedEpics.map((epic, idx) => {
+            {filteredEpics.map((epic, idx) => {
               const activeLink = displayLinks.get(epic.epic_aha_id);
               const isSelected = selected.has(epic.epic_aha_id);
               const isExpanded = expandedId === epic.epic_aha_id;
@@ -378,9 +408,9 @@ export default function ForecastsPage() {
                   <div
                     style={{
                       display: 'grid',
-                      gridTemplateColumns: '24px 40px 120px 1fr 90px 105px 105px 120px 120px 110px 80px',
+                      gridTemplateColumns: '24px 40px 120px 1fr 90px 110px 105px 105px 120px 120px 110px 80px',
                       padding: '12px 16px',
-                      borderBottom: idx < orderedEpics.length - 1 || isExpanded
+                      borderBottom: idx < filteredEpics.length - 1 || isExpanded
                         ? '1px solid var(--color-border, #e5e7eb)'
                         : 'none',
                       background: isSelected
@@ -419,7 +449,7 @@ export default function ForecastsPage() {
                       <div style={{ fontSize: 12, color: 'var(--color-text-secondary, #6b7280)', marginTop: 2 }}>
                         {epic.epic_id ? (
                           <a
-                            href={`/epics/${epic.epic_id}`}
+                            href={`/epics/${epic.epic_id}?tab=forecast`}
                             onClick={e => e.stopPropagation()}
                             style={{ color: 'var(--color-text-secondary, #6b7280)', textDecoration: 'underline', textDecorationColor: '#d1d5db' }}
                           >
@@ -446,6 +476,10 @@ export default function ForecastsPage() {
                           {epic.launch_tier}
                         </span>
                       ) : <span style={{ color: '#d1d5db' }}>—</span>}
+                    </div>
+
+                    <div style={{ fontSize: 12, color: 'var(--color-text-secondary, #6b7280)' }}>
+                      {epic.release ?? <span style={{ color: '#d1d5db' }}>—</span>}
                     </div>
 
                     <div style={{ fontSize: 15, fontWeight: 700, color: activeLink?.arr_incremental_2027_usd != null ? '#111827' : '#d1d5db' }}>
@@ -528,7 +562,7 @@ export default function ForecastsPage() {
 
                     return (
                       <div style={{
-                        borderBottom: idx < orderedEpics.length - 1 ? '1px solid var(--color-border, #e5e7eb)' : 'none',
+                        borderBottom: idx < filteredEpics.length - 1 ? '1px solid var(--color-border, #e5e7eb)' : 'none',
                         background: '#f8fafc',
                       }}>
                         {/* Version tabs — always shown (even for 1 link, so delete/rename are accessible) */}
