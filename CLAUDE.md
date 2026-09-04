@@ -102,7 +102,7 @@ All API routes follow this pattern:
 
 ### MCP Connector (remote, OAuth)
 
-`POST /api/mcp` is an OAuth 2.0 resource server over the tool registry in `src/lib/mcp/tools/index.ts` (46 tools: launch artifacts, the readiness loop, epic/release navigation, HEART and success measurement, Roadmap Rewind, analytics, Paprico, forecasts, notifications, team management). Teammates add it in Claude Desktop with just the URL — the app is its own authorization server and supports dynamic client registration, so nothing is pasted or installed. See `docs/MCP-Connector.md`.
+`POST /api/mcp` is an OAuth 2.0 resource server over the tool registry in `src/lib/mcp/tools/index.ts` (54 tools: launch artifacts, the readiness loop, epic/release navigation, HEART and success measurement, Roadmap Rewind, analytics, PaPriCo Prep, forecasting, notifications, team management). Teammates add it in Claude Desktop with just the URL — the app is its own authorization server and supports dynamic client registration, so nothing is pasted or installed. See `docs/MCP-Connector.md`.
 
 **That table is also what the in-app ClearGO assistant runs on** (`src/lib/ai/mcpTools.ts` adapts it into Vercel AI SDK tools). Register a tool anywhere else and it exists on one surface and not the other — which is how the assistant ended up with its own criterion write that skipped the capability check, the readiness recompute and the status-history row. Add tools to the registry, never to a single surface.
 
