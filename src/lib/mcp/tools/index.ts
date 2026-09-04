@@ -36,6 +36,9 @@ import { getEpicCriteria, InputSchema as getEpicCriteriaSchema } from './get-epi
 import { getMyWorkTool, InputSchema as getMyWorkSchema } from './get-my-work';
 import { getPendingGtmAccess } from './get-pending-gtm-access';
 import { updateCriterionStatus, InputSchema as updateCriterionStatusSchema } from './update-criterion-status';
+import { findEpicsTool, InputSchema as findEpicsSchema } from './find-epics';
+import { getEpicTool, InputSchema as getEpicSchema } from './get-epic';
+import { listReleases } from './list-releases';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -118,6 +121,27 @@ const TOOLS: ToolDefinition[] = [
         handler: artifactChat,
     },
 
+    {
+        name: 'find-epics',
+        description: 'Find epics (releases) by name, status, tier, owner or release. Start here when the user names something and you need its id. Note: epics are the delivery record; launches are the GTM record -- use search-launches for those.',
+        inputSchema: findEpicsSchema.shape,
+        readOnly: true,
+        handler: findEpicsTool,
+    },
+    {
+        name: 'get-epic',
+        description: 'One epic in full, including the derived release status the app displays (which is computed, not stored) and optionally the GTM launches holding it back.',
+        inputSchema: getEpicSchema.shape,
+        readOnly: true,
+        handler: getEpicTool,
+    },
+    {
+        name: 'list-releases',
+        description: 'The active release train with GA and cohort-2 dates. These are the anchors every criterion due date is derived from.',
+        inputSchema: {},
+        readOnly: true,
+        handler: listReleases,
+    },
     {
         name: 'get-epic-criteria',
         description: 'The readiness matrix for one epic, one row per criterion, with status, gate flag, owner and notes. Returns the statusRowId that update-criterion-status writes against, so call this first.',
