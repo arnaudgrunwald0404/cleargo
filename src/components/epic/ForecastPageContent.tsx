@@ -163,6 +163,39 @@ function findAssumptionLike(assumptions: ForecastAssumption[], patterns: string[
   });
 }
 
+function formatMonthLabel(yyyyMm: string): string {
+  const [y, m] = yyyyMm.split('-').map(Number);
+  if (!y || !m) return yyyyMm;
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/**
+ * The engine (src/lib/forecast/engine.ts) computes and stores month, quarter, AND year rows for
+ * every generated run — the monthly figures that literally sum into a year/quarter row are
+ * already sitting in `allPeriods`, just not otherwise displayed. This finds them so the
+ * explanation panel can show the real arithmetic instead of an approximation.
+ */
+function getConstituentMonths(row: ForecastPeriod, allPeriods: ForecastPeriod[]): ForecastPeriod[] {
+  const monthRows = allPeriods.filter((p) => p.period_type === 'month' && p.scenario === row.scenario);
+  if (row.period_type === 'year') {
+    return monthRows
+      .filter((p) => p.period_label.startsWith(`${row.period_label}-`))
+      .sort((a, b) => a.period_label.localeCompare(b.period_label));
+  }
+  if (row.period_type === 'quarter') {
+    const match = row.period_label.match(/^Q(\d)\s+(\d{4})$/);
+    if (!match) return [];
+    const quarter = Number(match[1]);
+    const year = match[2];
+    const startMonth = (quarter - 1) * 3 + 1;
+    const monthLabels = [0, 1, 2].map((i) => `${year}-${String(startMonth + i).padStart(2, '0')}`);
+    return monthRows
+      .filter((p) => monthLabels.includes(p.period_label))
+      .sort((a, b) => a.period_label.localeCompare(b.period_label));
+  }
+  return [];
+}
+
 export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
   const [data, setData] = useState<ForecastCurrentResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -502,6 +535,10 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
     const atRisk = parseNumeric(atRiskA ? assumptionValueForScenario(atRiskA, scenario) : null);
     const protectedPctOfAtRisk = atRisk && atRisk > 0 ? (row.churn_reduction_arr_usd / atRisk) * 100 : null;
 
+    // For a generated run, the exact months that sum into this row are already in the fetched
+    // data (see getConstituentMonths above) — show the real arithmetic, not an approximation.
+    const constituentMonths = row.period_type !== 'month' ? getConstituentMonths(row, data.periods) : [];
+
     return (
       <Stack gap="sm" py="sm" px="md">
         {inputRows.length > 0 && (
@@ -539,13 +576,64 @@ export function ForecastPageContent({ epicAhaId }: ForecastPageContentProps) {
             Cross-sell {formatUsd(row.cross_sell_arr_usd)}{crossSellPct !== null ? ` (${crossSellPct.toFixed(0)}% of bookings)` : ''} + net-new{' '}
             {formatUsd(row.net_new_arr_usd)}{netNewPct !== null ? ` (${netNewPct.toFixed(0)}%)` : ''} = total bookings {formatUsd(total)}.
           </Text>
-          {impliedAcvMonths !== null && (
-            <Text size="xs" mt={4}>
-              Total bookings ÷ (ACV ÷ 12) ≈ <b>{impliedAcvMonths.toFixed(1)} months</b> of full-rate ACV realized this
-              period — consistent with accounts ramping in through the period rather than a flat headcount at a single
-              point in time.
-            </Text>
+
+          {constituentMonths.length > 0 ? (
+            <div style={{ marginTop: 8 }}>
+              <Text size="xs" c="dimmed" mb={4}>
+                The engine computes bookings month by month as adopting accounts ramp in, then sums them into this
+                row. Here are the actual months:
+              </Text>
+              <Table withTableBorder={false} withColumnBorders={false} verticalSpacing={2}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Month</Text></Table.Th>
+                    <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Cross-Sell</Text></Table.Th>
+                    <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Net New</Text></Table.Th>
+                    <Table.Th style={{ border: 'none' }}><Text size="xs" fw={600}>Total</Text></Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {constituentMonths.map((m) => (
+                    <Table.Tr key={m.id}>
+                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatMonthLabel(m.period_label)}</Text></Table.Td>
+                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.cross_sell_arr_usd)}</Text></Table.Td>
+                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.net_new_arr_usd)}</Text></Table.Td>
+                      <Table.Td style={{ border: 'none' }}><Text size="xs">{formatUsd(m.total_arr_usd)}</Text></Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+                <Table.Tfoot>
+                  <Table.Tr>
+                    <Table.Th style={{ border: 'none' }}><Text size="xs" fw={700}>Sum</Text></Table.Th>
+                    <Table.Th style={{ border: 'none' }}>
+                      <Text size="xs" fw={700}>{formatUsd(constituentMonths.reduce((s, m) => s + m.cross_sell_arr_usd, 0))}</Text>
+                    </Table.Th>
+                    <Table.Th style={{ border: 'none' }}>
+                      <Text size="xs" fw={700}>{formatUsd(constituentMonths.reduce((s, m) => s + m.net_new_arr_usd, 0))}</Text>
+                    </Table.Th>
+                    <Table.Th style={{ border: 'none' }}>
+                      <Text size="xs" fw={700}>{formatUsd(constituentMonths.reduce((s, m) => s + m.total_arr_usd, 0))}</Text>
+                    </Table.Th>
+                  </Table.Tr>
+                </Table.Tfoot>
+              </Table>
+              <Text size="xs" c="dimmed" mt={4}>
+                Each month = cumulative adopting accounts (eligible pool × penetration × ramp fraction reached that
+                month) × ACV ÷ 12, split cross-sell/net-new by the cross-sell share above. Small rounding differences
+                vs. the row total above are expected — each month is rounded independently.
+              </Text>
+            </div>
+          ) : (
+            impliedAcvMonths !== null && (
+              <Text size="xs" mt={4}>
+                Total bookings ÷ (ACV ÷ 12) ≈ <b>{impliedAcvMonths.toFixed(1)} months</b> of full-rate ACV realized this
+                period — consistent with accounts ramping in through the period rather than a flat headcount at a single
+                point in time. (Monthly detail isn&apos;t available for this run — see &quot;view original migrated document&quot;
+                below for the full reasoning.)
+              </Text>
+            )
           )}
+
           {row.churn_reduction_arr_usd > 0 && (
             <Text size="xs" mt={4}>
               Protected ARR {formatUsd(row.churn_reduction_arr_usd)}
