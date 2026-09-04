@@ -30,11 +30,11 @@ export function createClearGoMcpServer(
   );
 
   server.registerTool('list_team_members', {
-    description: 'List all active direct reports with health snapshot (active epic count, open blocker count)',
+    description: 'List the active direct reports of the authenticated caller, with a health snapshot (active epic count, open blocker count). Returns an empty list if the caller manages nobody.',
     annotations: { readOnlyHint: true },
   }, async () => {
     try {
-      const data = await queryTeamMembers(supabase);
+      const data = await queryTeamMembers(supabase, actor.email);
       return { content: [{ type: 'text', text: JSON.stringify({ data }) }] };
     } catch (err) {
       console.error('[mcp] list_team_members error:', err);

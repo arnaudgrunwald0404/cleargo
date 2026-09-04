@@ -19,8 +19,25 @@ import { createClearGoMcpServer } from '@/lib/mcp/server';
 import { verifyAccessToken, type McpAuthInfo } from '@/lib/oauth/tokens';
 import { protectedResourceMetadataUrl } from '@/lib/oauth/config';
 import { createAdminSupabase } from '../../../../netlify/functions/_shared/supabase';
+import { rateLimit, type RateLimitConfig } from '@/lib/rate-limit';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Throttling, keyed on the authenticated caller.
+ *
+ * The usual withRateLimit wrapper is typed for NextRequest/NextResponse and this
+ * is a plain Request handler, so it uses the same primitive directly.
+ *
+ * Keyed on email, not IP: a whole office behind one egress address would share an
+ * IP bucket and throttle each other. It also means the legacy shared-key actor
+ * shares one bucket, which is correct — it is one service credential.
+ *
+ * Deliberately the 100/min default rather than RATE_LIMITS.heavy: one Claude
+ * Desktop turn can fan out into many tool calls, and 40/min would cut off normal
+ * interactive use. It still bounds a runaway loop.
+ */
+const MCP_RATE_LIMIT: RateLimitConfig = { windowMs: 60_000, maxRequests: 100 };
 
 const CORS_HEADERS = {
     'Access-Control-Allow-Origin': '*',
@@ -83,6 +100,24 @@ export async function POST(req: Request) {
     const auth = await authenticate(req);
     if (!auth) return unauthorized();
 
+    const limit = rateLimit(`mcp:${auth.email}`, MCP_RATE_LIMIT);
+    const limitHeaders = {
+        'X-RateLimit-Limit': String(MCP_RATE_LIMIT.maxRequests),
+        'X-RateLimit-Remaining': String(limit.remaining),
+        'X-RateLimit-Reset': new Date(limit.resetTime).toISOString(),
+    };
+
+    if (!limit.allowed) {
+        return NextResponse.json(
+            {
+                error: 'Too Many Requests',
+                message: 'Rate limit exceeded. Please try again shortly.',
+                retryAfter: Math.ceil((limit.resetTime - Date.now()) / 1000),
+            },
+            { status: 429, headers: { ...CORS_HEADERS, ...limitHeaders } }
+        );
+    }
+
     try {
         const supabase = createAdminSupabase();
         const mcpServer = createClearGoMcpServer(supabase, auth);
@@ -107,7 +142,7 @@ export async function POST(req: Request) {
         await mcpServer.close();
 
         const headers = new Headers(response.headers);
-        for (const [k, v] of Object.entries(CORS_HEADERS)) {
+        for (const [k, v] of Object.entries({ ...CORS_HEADERS, ...limitHeaders })) {
             headers.set(k, v);
         }
 

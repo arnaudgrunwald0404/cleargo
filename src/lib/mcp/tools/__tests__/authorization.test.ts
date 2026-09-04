@@ -16,6 +16,22 @@ import type { McpAuthInfo } from '@/lib/oauth/tokens';
 import { reviewArtifact } from '../review-artifact';
 import { updateArtifact } from '../update-artifact';
 
+/**
+ * The gate resolves DB-configured permission overrides (lib/permissions-server),
+ * so the check itself reads app_settings. Stubbing that read keeps both halves of
+ * this file honest: NO_DB still proves the *tool* ran no query before refusing,
+ * and `reached` in the positive cases is still set by the tool's own query rather
+ * than by the settings lookup.
+ *
+ * Note: `jest` here is the global. Importing it from @jest/globals silently
+ * disables jest.mock in this repo.
+ */
+jest.mock('@/lib/settings-db', () => ({
+    getEffectivePermissionRules: async () =>
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        (require('@/lib/permissions') as typeof import('@/lib/permissions')).DEFAULT_RULES,
+}));
+
 function actor(roles: string[]): McpAuthInfo {
     return {
         email: 'someone@clearcompany.com',

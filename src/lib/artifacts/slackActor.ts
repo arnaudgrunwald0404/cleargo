@@ -7,8 +7,7 @@
  * who could see the message could promote a document to v1.0.
  */
 import { createAdminClient } from '@/lib/supabase/server';
-import type { SupabaseClient } from '@supabase/supabase-js';
-import { canRolesPerformWithRules, type CapabilityId } from '@/lib/permissions';
+import { canRolesPerformWithRules } from '@/lib/permissions';
 import { getEffectivePermissionRules } from '@/lib/settings-db';
 
 export interface SlackActor {
@@ -87,12 +86,9 @@ export async function resolveActorFromSlack(
  * Capability check for any actor resolved above, against the same effective
  * rules the web app uses. Prefer this over the two booleans for new
  * capabilities rather than growing the interface one flag at a time.
+ *
+ * Re-exported rather than defined here: the MCP connector needs the same check
+ * and should not have to import from lib/artifacts to get it. See
+ * lib/permissions-server.ts.
  */
-export async function actorCan(
-    actor: Pick<SlackActor, 'roles'>,
-    capability: CapabilityId,
-    supabase: SupabaseClient = createAdminClient()
-): Promise<boolean> {
-    const rules = await getEffectivePermissionRules(supabase);
-    return canRolesPerformWithRules(actor.roles, capability, rules);
-}
+export { actorCan } from '@/lib/permissions-server';

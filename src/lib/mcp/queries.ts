@@ -10,8 +10,6 @@ import type {
   CriteriaSummary,
 } from '../../../netlify/functions/_shared/types';
 
-const MANAGER_EMAIL = 'agrunwald@clearcompany.com';
-
 function deriveSeverity(status: string, isGate: boolean): Blocker['severity'] {
   if (status === 'NO_GO') return isGate ? 'critical' : 'high';
   return 'medium';
@@ -21,11 +19,23 @@ function daysBlocked(loggedAt: string): number {
   return Math.floor((Date.now() - new Date(loggedAt).getTime()) / 86400000);
 }
 
-export async function queryTeamMembers(supabase: SupabaseClient): Promise<TeamMember[]> {
+/**
+ * Direct reports are resolved from the authenticated caller, not a constant.
+ *
+ * This was hardcoded to one manager's address, which predates the connector
+ * having an identity at all -- the stdio server had no caller to ask. The effect
+ * was worse than a missing feature: every other manager who ran list_team_members
+ * got somebody else's reports back, confidently and with no indication that the
+ * answer was not about them.
+ */
+export async function queryTeamMembers(
+  supabase: SupabaseClient,
+  managerEmail: string
+): Promise<TeamMember[]> {
   const { data: members, error: membersError } = await supabase
     .from('app_user')
     .select('id, name, email, role, slack_handle')
-    .eq('manager_email', MANAGER_EMAIL)
+    .eq('manager_email', managerEmail)
     .eq('is_active', true);
 
   if (membersError) throw new Error('Failed to fetch members');

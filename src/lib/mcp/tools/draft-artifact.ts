@@ -12,7 +12,7 @@
 import { z } from 'zod/v3';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { startArtifactDraft } from '@/lib/artifacts/startDraft';
-import { canRolesPerform } from '@/lib/permissions';
+import { actorCan } from '@/lib/permissions-server';
 import type { McpAuthInfo } from '@/lib/oauth/tokens';
 import type { ArtifactType } from '@/types/artifacts';
 import { describeDraftResult } from './draftResult';
@@ -35,7 +35,7 @@ export async function draftArtifactTool(
     return { error: `Invalid input: ${parsed.error.message}` };
   }
 
-  if (!canRolesPerform(actor.roles, 'launchArtifact.draft')) {
+  if (!(await actorCan(actor, 'launchArtifact.draft', supabase))) {
     return { error: 'You do not have permission to draft launch artifacts.' };
   }
 
