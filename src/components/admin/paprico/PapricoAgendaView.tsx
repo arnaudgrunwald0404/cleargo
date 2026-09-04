@@ -129,10 +129,11 @@ export default function PapricoAgendaView() {
         })();
     }, [loadMeetings, loadAgenda]);
 
-    // Calendar suggestion for the New Meeting form — a pre-fill, not automation.
-    // Silently absent when Google isn't connected or no PaPriCo event is found.
+    // Calendar suggestion, fetched on page load: it drives the "Start next
+    // meeting prep" banner when no meeting exists yet, and pre-fills the New
+    // Meeting form. Silently absent when Google isn't connected or no PaPriCo
+    // event is found.
     useEffect(() => {
-        if (!createOpen) return;
         let stale = false;
         (async () => {
             try {
@@ -160,14 +161,18 @@ export default function PapricoAgendaView() {
         return () => {
             stale = true;
         };
-    }, [createOpen]);
+    }, []);
 
-    const applyCalendarSuggestion = () => {
-        if (!calendarSuggestion) return;
-        const date = calendarSuggestion.all_day
+    const suggestionDateYmd = useMemo(() => {
+        if (!calendarSuggestion) return null;
+        return calendarSuggestion.all_day
             ? calendarSuggestion.start
             : getCalendarDateStringInTimeZone(PAPRICO_TIMEZONE, new Date(calendarSuggestion.start));
-        setNewDate(date);
+    }, [calendarSuggestion]);
+
+    const applyCalendarSuggestion = () => {
+        if (!calendarSuggestion || !suggestionDateYmd) return;
+        setNewDate(suggestionDateYmd);
         if (calendarSuggestion.duration_minutes) setNewLength(calendarSuggestion.duration_minutes);
     };
 
@@ -189,6 +194,42 @@ export default function PapricoAgendaView() {
         if (selectedMeetingId) void loadAgenda(selectedMeetingId);
         void loadMeetings();
     }, [selectedMeetingId, loadAgenda, loadMeetings]);
+
+    // "Start next meeting prep" banner: shown when the calendar knows the next
+    // committee meeting but no prep exists for it — no open (draft/published)
+    // meeting, and no meeting row already on that date. One click creates the
+    // meeting with the calendar's date and length.
+    const hasOpenMeeting = meetings.some((m) => m.status === "draft" || m.status === "agenda_published");
+    const hasMeetingForSuggestedDate =
+        !!suggestionDateYmd && meetings.some((m) => String(m.meeting_date).split("T")[0] === suggestionDateYmd);
+    const showPrepBanner =
+        !loading && canWrite && !!calendarSuggestion && !!suggestionDateYmd && !hasOpenMeeting && !hasMeetingForSuggestedDate;
+    const [startingPrep, setStartingPrep] = useState(false);
+
+    const handleStartPrep = async () => {
+        if (!calendarSuggestion || !suggestionDateYmd) return;
+        setStartingPrep(true);
+        try {
+            const res = await fetch("/api/paprico/meetings", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    meeting_date: suggestionDateYmd,
+                    meeting_length_minutes: calendarSuggestion.duration_minutes ?? 60,
+                }),
+            });
+            const body = await res.json();
+            if (!res.ok) {
+                setError(body.error || "Failed to create meeting");
+                return;
+            }
+            await loadMeetings();
+            setSelectedMeetingId(body.meeting.id);
+            await loadAgenda(body.meeting.id);
+        } finally {
+            setStartingPrep(false);
+        }
+    };
 
     const handleSelectMeeting = (id: string | null) => {
         setSelectedMeetingId(id);
@@ -509,6 +550,23 @@ export default function PapricoAgendaView() {
             {error && (
                 <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg" role="alert">
                     {error}
+                </div>
+            )}
+
+            {showPrepBanner && (
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-xl px-5 py-4 flex flex-wrap items-center gap-3">
+                    <div className="flex-1 min-w-[260px]">
+                        <Text fw={600} size="sm">
+                            Next PaPriCo on your calendar: {calendarSuggestionLabel}
+                            {calendarSuggestion?.duration_minutes ? ` (${calendarSuggestion.duration_minutes} min)` : ""}
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                            No prep exists for it yet — start one and the agenda assembles itself from open release criteria.
+                        </Text>
+                    </div>
+                    <Button onClick={handleStartPrep} loading={startingPrep}>
+                        Start next meeting prep
+                    </Button>
                 </div>
             )}
 
