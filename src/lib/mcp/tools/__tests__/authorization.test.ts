@@ -28,6 +28,8 @@ import { updateCriterionStatus } from '../update-criterion-status';
 import { getSuccessMetrics } from '../get-success-metrics';
 import { adjustConfidence } from '../adjust-confidence';
 import { setImpactOverride } from '../set-impact-override';
+import { getAnalytics } from '../get-analytics';
+import { listPapricoMeetings, getPapricoAgenda } from '../paprico';
 
 /**
  * The gate resolves DB-configured permission overrides (lib/permissions-server),
@@ -393,5 +395,37 @@ describe('roadmap writes', () => {
         await adjustConfidence(supabase, CONFIDENCE_ARGS, actor(['PM']));
 
         expect(reached).toBe(true);
+    });
+});
+
+describe('analytics and Paprico gating', () => {
+    it('refuses analytics to a role without analytics.read', async () => {
+        const result = await getAnalytics(NO_DB, { report: 'launch-hygiene' }, actor(['OTHER']));
+
+        expect(result).toEqual({ error: 'You do not have permission to read analytics.' });
+    });
+
+    it('refuses Paprico to a role without paprico.manage', async () => {
+        // PM is the case worth pinning: a real, senior role that is still not on
+        // the Paprico list (PRODUCT_OPS and CPO only).
+        const result = await listPapricoMeetings(NO_DB, {}, actor(['PM']));
+
+        expect(result).toEqual({ error: 'You do not have permission to read Paprico.' });
+    });
+
+    it('refuses the Paprico agenda for the same role', async () => {
+        const result = await getPapricoAgenda(
+            NO_DB,
+            { meetingId: '55555555-5555-4555-8555-555555555555' },
+            actor(['PM'])
+        );
+
+        expect(result).toEqual({ error: 'You do not have permission to read Paprico.' });
+    });
+
+    it('validates the report name before checking permission', async () => {
+        const result = await getAnalytics(NO_DB, { report: 'not-a-report' }, actor(['CPO']));
+
+        expect(result).toMatchObject({ error: expect.stringContaining('Invalid input') });
     });
 });

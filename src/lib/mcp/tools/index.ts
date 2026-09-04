@@ -50,6 +50,11 @@ import { getStrategicItems, InputSchema as getStrategicItemsSchema } from './get
 import { getConfidenceRating, InputSchema as getConfidenceRatingSchema } from './get-confidence-rating';
 import { adjustConfidence, InputSchema as adjustConfidenceSchema } from './adjust-confidence';
 import { setImpactOverride, InputSchema as setImpactOverrideSchema } from './set-impact-override';
+import { getAnalytics, InputSchema as getAnalyticsSchema } from './get-analytics';
+import { listPapricoMeetings, getPapricoAgenda, listPapricoDecisions, AgendaInputSchema, DecisionsInputSchema } from './paprico';
+import { getForecast, InputSchema as getForecastSchema } from './get-forecast';
+import { getEpicDecisions, InputSchema as getEpicDecisionsSchema } from './get-epic-decisions';
+import { getEpicStoryBrief, InputSchema as getEpicStoryBriefSchema } from './get-epic-story-brief';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -238,6 +243,56 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: getConfidenceRatingSchema.shape,
         readOnly: true,
         handler: getConfidenceRating,
+    },
+
+    {
+        name: 'get-analytics',
+        description: 'Run a ClearGO analytics report: success-plan-completion, criteria-timeliness, retro-completion, launch-hygiene or pm-timeliness, optionally filtered by tier, pod or date range.',
+        inputSchema: getAnalyticsSchema.shape,
+        readOnly: true,
+        handler: getAnalytics,
+    },
+    {
+        name: 'list-paprico-meetings',
+        description: 'Paprico meetings, newest first, and which one is next.',
+        inputSchema: {},
+        readOnly: true,
+        handler: listPapricoMeetings,
+    },
+    {
+        name: 'get-paprico-agenda',
+        description: 'The computed agenda for one Paprico meeting.',
+        inputSchema: AgendaInputSchema.shape,
+        readOnly: true,
+        handler: getPapricoAgenda,
+    },
+    {
+        name: 'list-paprico-decisions',
+        description: 'Decisions recorded in Paprico, optionally for one meeting.',
+        inputSchema: DecisionsInputSchema.shape,
+        readOnly: true,
+        handler: listPapricoDecisions,
+    },
+    {
+        name: 'get-forecast',
+        description: 'The current or a specific ARR forecast run for an epic, with assumptions, periods and narrative. Takes the Aha reference (CC-EPIC-123), not the epic UUID. Read only; generating a forecast is not exposed.',
+        inputSchema: getForecastSchema.shape,
+        readOnly: true,
+        handler: getForecast,
+    },
+    {
+        name: 'get-epic-decisions',
+        description: 'Decisions recorded against an epic, newest first, with who took them.',
+        inputSchema: getEpicDecisionsSchema.shape,
+        readOnly: true,
+        handler: getEpicDecisions,
+    },
+    {
+        name: 'get-epic-story-brief',
+        description: 'The Story Brief authored on an EPIC, with its change log. Distinct from the story_brief launch artifact that get-artifact returns: that one belongs to a GTM launch and is derived from these.',
+        inputSchema: getEpicStoryBriefSchema.shape,
+        readOnly: true,
+        handler: getEpicStoryBrief,
     },
 
     // ── Write ───────────────────────────────────────────────────────────────
