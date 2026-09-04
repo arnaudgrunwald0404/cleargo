@@ -29,7 +29,8 @@ import { getSuccessMetrics } from '../get-success-metrics';
 import { adjustConfidence } from '../adjust-confidence';
 import { setImpactOverride } from '../set-impact-override';
 import { getAnalytics } from '../get-analytics';
-import { listPapricoMeetings, getPapricoAgenda } from '../paprico';
+import { listPapricoMeetings, getPapricoAgenda, createPapricoMeeting, addPapricoItem, publishPapricoAgenda } from '../paprico';
+import { generateForecast } from '../generate-forecast';
 
 /**
  * The gate resolves DB-configured permission overrides (lib/permissions-server),
@@ -425,6 +426,47 @@ describe('analytics and Paprico gating', () => {
 
     it('validates the report name before checking permission', async () => {
         const result = await getAnalytics(NO_DB, { report: 'not-a-report' }, actor(['CPO']));
+
+        expect(result).toMatchObject({ error: expect.stringContaining('Invalid input') });
+    });
+});
+
+describe('PaPriCo Prep and Forecasting writes', () => {
+    it('refuses PaPriCo writes for a role without paprico.manage', async () => {
+        // PM again: senior, and still not on the PaPriCo list.
+        await expect(
+            createPapricoMeeting(NO_DB, { meetingDate: '2026-10-01' }, actor(['PM']))
+        ).resolves.toEqual({ error: 'You do not have permission to manage PaPriCo.' });
+
+        await expect(
+            addPapricoItem(NO_DB, { title: 'Pricing review' }, actor(['PM']))
+        ).resolves.toEqual({ error: 'You do not have permission to manage PaPriCo.' });
+
+        await expect(
+            publishPapricoAgenda(
+                NO_DB,
+                { meetingId: '66666666-6666-4666-8666-666666666666' },
+                actor(['PM'])
+            )
+        ).resolves.toEqual({ error: 'You do not have permission to manage PaPriCo.' });
+    });
+
+    it('refuses forecast generation for a role without forecast.generate', async () => {
+        // Generation runs several AI agents and replaces the current forecast,
+        // so this gate is the difference between a tool and a billing incident.
+        const result = await generateForecast(NO_DB, { epicAhaId: 'CC-EPIC-1' }, actor(['ENG']));
+
+        expect(result).toEqual({ error: 'You do not have permission to generate forecasts.' });
+    });
+
+    it('refuses the legacy shared-key actor for forecast generation', async () => {
+        await expect(
+            generateForecast(NO_DB, { epicAhaId: 'CC-EPIC-1' }, actor([]))
+        ).resolves.toMatchObject({ error: expect.stringContaining('permission') });
+    });
+
+    it('validates a bad meeting date before checking permission', async () => {
+        const result = await createPapricoMeeting(NO_DB, { meetingDate: 'next tuesday' }, actor(['CPO']));
 
         expect(result).toMatchObject({ error: expect.stringContaining('Invalid input') });
     });

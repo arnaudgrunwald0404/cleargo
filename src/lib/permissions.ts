@@ -52,7 +52,8 @@ export type CapabilityId =
   | "launchArtifact.draft"
   | "launchArtifact.review"
   | "launchArtifact.approve"
-  | "paprico.manage";
+  | "paprico.manage"
+  | "forecast.generate";
 
 export type Capability = {
   id: CapabilityId;
@@ -243,6 +244,12 @@ export const CAPABILITIES: Capability[] = [
     description: "Allow setting up and editing HEART metrics, Pendo config, and success measurement. Others can view only.",
   },
   {
+    id: "forecast.generate",
+    label: "Generate ARR Forecasts",
+    description:
+      "Run the live forecast pipeline for an epic. It calls several AI agents and replaces the current forecast, so it is not free and not read-only.",
+  },
+  {
     id: "roadmap.confidence.adjust",
     label: "Adjust Roadmap Confidence",
     description: "Adjust PM confidence offset on delivery confidence ratings (Roadmap Rewind).",
@@ -360,6 +367,7 @@ export const DEFAULT_RULES: Record<CapabilityId, Role[]> = {
   "settings.webhookUrl.update": ["CPO", "PRODUCT_OPS"],
   "analytics.read": ["CPO"],
   "settings.successMeasurement.update": ["CPO", "PRODUCT", "PRODUCT_OPS", "PM", "PMM", "SUPERADMIN"],
+  "forecast.generate": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.confidence.adjust": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.impactOverride.write": ["PM", "PRODUCT_OPS", "CPO"],
   "roadmap.hiddenItem.write": [...ALL_ROLES],

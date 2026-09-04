@@ -61,7 +61,26 @@ import { getConfidenceRating, InputSchema as getConfidenceRatingSchema } from '.
 import { adjustConfidence, InputSchema as adjustConfidenceSchema } from './adjust-confidence';
 import { setImpactOverride, InputSchema as setImpactOverrideSchema } from './set-impact-override';
 import { getAnalytics, InputSchema as getAnalyticsSchema } from './get-analytics';
-import { listPapricoMeetings, getPapricoAgenda, listPapricoDecisions, AgendaInputSchema, DecisionsInputSchema } from './paprico';
+import {
+    listPapricoMeetings,
+    getPapricoAgenda,
+    listPapricoDecisions,
+    listPapricoItems,
+    getNextPapricoMeeting,
+    createPapricoMeeting,
+    addPapricoItem,
+    publishPapricoAgenda,
+    AgendaInputSchema,
+    DecisionsInputSchema,
+    ItemsInputSchema,
+    NextMeetingInputSchema,
+    CreateMeetingInputSchema,
+    AddItemInputSchema,
+    PublishInputSchema,
+} from './paprico';
+import { listForecasts, InputSchema as listForecastsSchema } from './list-forecasts';
+import { generateForecast, InputSchema as generateForecastSchema } from './generate-forecast';
+import { getForecastStatus, InputSchema as getForecastStatusSchema } from './get-forecast-status';
 import { getForecast, InputSchema as getForecastSchema } from './get-forecast';
 import { getEpicDecisions, InputSchema as getEpicDecisionsSchema } from './get-epic-decisions';
 import { getEpicStoryBrief, InputSchema as getEpicStoryBriefSchema } from './get-epic-story-brief';
@@ -362,6 +381,35 @@ export const MCP_TOOLS: ToolDefinition[] = [
         handler: getEpicDetail,
     },
 
+    {
+        name: 'list-paprico-items',
+        description: 'The PaPriCo backlog, optionally filtered by status (proposed, scheduled, decided, deferred). What is waiting to be discussed.',
+        inputSchema: ItemsInputSchema.shape,
+        readOnly: true,
+        handler: listPapricoItems,
+    },
+    {
+        name: 'get-next-paprico-meeting',
+        description: 'The next matching event on the connected Google calendar, used to date a new PaPriCo meeting. Returns found:false rather than failing when Google is not connected or the calendar scope is missing.',
+        inputSchema: NextMeetingInputSchema.shape,
+        readOnly: true,
+        handler: getNextPapricoMeeting,
+    },
+    {
+        name: 'list-forecasts',
+        description: 'Committed ARR forecast links across epics, newest first — the portfolio view of what has a forecast and what it projects.',
+        inputSchema: listForecastsSchema.shape,
+        readOnly: true,
+        handler: listForecasts,
+    },
+    {
+        name: 'get-forecast-status',
+        description: 'Whether a backgrounded forecast run has finished. Poll this with the jobId from generate-forecast; it reports finished plus the runId once it succeeds.',
+        inputSchema: getForecastStatusSchema.shape,
+        readOnly: true,
+        handler: getForecastStatus,
+    },
+
     // ── Write ───────────────────────────────────────────────────────────────
     {
         name: 'update-artifact',
@@ -425,6 +473,34 @@ export const MCP_TOOLS: ToolDefinition[] = [
         inputSchema: setImpactOverrideSchema.shape,
         readOnly: false,
         handler: setImpactOverride,
+    },
+    {
+        name: 'create-paprico-meeting',
+        description: 'Create a PaPriCo meeting for a date. It starts as a draft; use publish-paprico-agenda when the agenda is ready. Pair with get-next-paprico-meeting to pick the date.',
+        inputSchema: CreateMeetingInputSchema.shape,
+        readOnly: false,
+        handler: createPapricoMeeting,
+    },
+    {
+        name: 'add-paprico-item',
+        description: 'Add an item to the PaPriCo backlog for a future meeting.',
+        inputSchema: AddItemInputSchema.shape,
+        readOnly: false,
+        handler: addPapricoItem,
+    },
+    {
+        name: 'publish-paprico-agenda',
+        description: 'Freeze the computed agenda onto a draft meeting and mark it published, returning the Slack block for #paprico. Only a draft can publish, and publishing twice is refused rather than racing.',
+        inputSchema: PublishInputSchema.shape,
+        readOnly: false,
+        handler: publishPapricoAgenda,
+    },
+    {
+        name: 'generate-forecast',
+        description: 'Run the live ARR forecast pipeline for an epic. Expensive: several AI agents, minutes of wall clock, and it replaces the current forecast. On production it returns a jobId to poll with get-forecast-status; locally it completes inline.',
+        inputSchema: generateForecastSchema.shape,
+        readOnly: false,
+        handler: generateForecast,
     },
 ];
 
