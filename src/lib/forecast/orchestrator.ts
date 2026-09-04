@@ -44,6 +44,18 @@ export interface ForecastGenerationInput {
   pricingNotes?: string;
   packageKeyGuess?: string; // best-guess platform package key, for the Pricing Agent
   employeesGuess?: number; // typical account size, for the Pricing Agent
+  /** From the epic's Aha "Revenue & Risk Analysis" custom field, if set. */
+  revenueRisk?: string;
+  /** From the epic's Aha "Launch Tier" custom field, if set. */
+  launchTier?: string;
+  /**
+   * Formatted criterion + epic comments and pasted reference links (epic_criterion_status.
+   * data_source_values) — see src/lib/forecast/gatherEpicContext.ts. This is where the strongest
+   * qualitative evidence (named accounts, churn signals, stakeholder concerns) tends to live.
+   */
+  commentsContext?: string;
+  /** URLs found across comments, data source values, and aha_fields — surfaced as citations, not fetched. */
+  referencedUrls?: string[];
 }
 
 const ScenarioNumber = z.object({ bear: z.number(), base: z.number(), bull: z.number() });
@@ -91,13 +103,24 @@ You are the Market Research + Competitive Analysis agent for a ClearCompany (HR 
 
 Product: ${input.productName}
 Description: ${input.productDescription}
-${input.pricingNotes ? `Pricing notes: ${input.pricingNotes}` : ''}
-
+${input.pricingNotes ? `Pricing notes: ${input.pricingNotes}\n` : ''}${input.revenueRisk ? `Revenue & Risk Analysis (Aha field): ${input.revenueRisk}\n` : ''}${input.launchTier ? `Launch tier: ${input.launchTier}\n` : ''}
+${input.commentsContext ? `
+=== Criterion comments, epic comments, and pasted reference links from the ClearGo epic ===
+This is where the strongest evidence usually lives — named accounts, stakeholder concerns,
+confirmed churn/loss signals, competitive intel someone pasted in. Weight it heavily where it's
+concrete (names, dollar figures, dates); treat vague comments as color, not data. Cite specific
+comments in your basis text where they materially move an estimate.
+${input.commentsContext}
+${input.referencedUrls && input.referencedUrls.length > 0 ? `\nURLs referenced in the above (not fetched — use them only as citations, e.g. "per the link shared in [criterion]"): ${input.referencedUrls.join(', ')}` : ''}
+` : ''}
 Estimate TAM, the eligible cross-sell/adoption pool, 3-year penetration, cross-sell vs net-new
 split, competitor pricing, and a churn-protection estimate (named/estimated at-risk ARR this
 product would protect, and what fraction of it gets retained over 3 years). Bear/base/bull should
 be meaningfully different, not the same number three times. Mark every estimate's confidence
 honestly — most of this should be "hypothesis" unless you have a genuinely strong, specific basis.
+If a comment above names specific at-risk/lost accounts with dollar figures, that's exactly the
+kind of evidence that should upgrade churnAtRiskArrUsd from a guess to "confirmed" or at least a
+tighter hypothesis — use it.
 `.trim(),
   });
 
