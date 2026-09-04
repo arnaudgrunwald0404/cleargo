@@ -31,7 +31,7 @@ async function getHandler(
 
     const { data: runs, error } = await adminSupabase
         .from('forecast_runs')
-        .select('id, source, status, is_current, created_at, created_by')
+        .select('id, source, status, review_status, is_current, created_at, created_by')
         .eq('epic_aha_id', epicAhaId)
         .order('created_at', { ascending: false });
 
