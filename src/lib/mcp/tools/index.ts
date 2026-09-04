@@ -32,6 +32,10 @@ import { reviewArtifact, InputSchema as reviewArtifactSchema } from './review-ar
 import { draftArtifactTool, InputSchema as draftArtifactSchema } from './draft-artifact';
 import { draftSection, InputSchema as draftSectionSchema } from './draft-section';
 import { ensureArtifacts, InputSchema as ensureArtifactsSchema } from './ensure-artifacts';
+import { getEpicCriteria, InputSchema as getEpicCriteriaSchema } from './get-epic-criteria';
+import { getMyWorkTool, InputSchema as getMyWorkSchema } from './get-my-work';
+import { getPendingGtmAccess } from './get-pending-gtm-access';
+import { updateCriterionStatus, InputSchema as updateCriterionStatusSchema } from './update-criterion-status';
 
 type ToolHandler = (
     supabase: SupabaseClient,
@@ -114,6 +118,28 @@ const TOOLS: ToolDefinition[] = [
         handler: artifactChat,
     },
 
+    {
+        name: 'get-epic-criteria',
+        description: 'The readiness matrix for one epic, one row per criterion, with status, gate flag, owner and notes. Returns the statusRowId that update-criterion-status writes against, so call this first.',
+        inputSchema: getEpicCriteriaSchema.shape,
+        readOnly: true,
+        handler: getEpicCriteria,
+    },
+    {
+        name: 'get-my-work',
+        description: 'Everything waiting on the authenticated caller: criteria they owe a decision on, criteria they have marked as blocking, GTM launch artifacts and Story Brief questions. Needs no arguments -- it is scoped to whoever is signed in.',
+        inputSchema: getMyWorkSchema.shape,
+        readOnly: true,
+        handler: getMyWorkTool,
+    },
+    {
+        name: 'get-pending-gtm-access',
+        description: 'Epics where the caller still owes a GTM access confirmation. A per-epic queue, separate from the per-criterion items in get-my-work.',
+        inputSchema: {},
+        readOnly: true,
+        handler: getPendingGtmAccess,
+    },
+
     // ── Write ───────────────────────────────────────────────────────────────
     {
         name: 'update-artifact',
@@ -156,6 +182,13 @@ const TOOLS: ToolDefinition[] = [
         inputSchema: ensureArtifactsSchema.shape,
         readOnly: false,
         handler: ensureArtifacts,
+    },
+    {
+        name: 'update-criterion-status',
+        description: 'Score a readiness criterion on an epic: GO, CONDITIONAL (same as CONDITIONAL_GO), NO_GO, NOT_SET or NOT_APPLICABLE, with optional notes and a Conditional Go condition. Get the statusRowId from get-epic-criteria or get-my-work. Recomputes the release readiness score and records who made the change.',
+        inputSchema: updateCriterionStatusSchema.shape,
+        readOnly: false,
+        handler: updateCriterionStatus,
     },
 ];
 

@@ -1,4 +1,13 @@
 /**
+ * @jest-environment node
+ *
+ * Node, not jsdom: update-criterion-status reaches scoreEpicCriterion, whose gate
+ * sign-off nudge pulls in the email client and from there react-dom's server
+ * renderer, which needs TextEncoder. jsdom does not provide one. Nothing here
+ * touches the DOM.
+ */
+
+/**
  * Capability gating on the MCP write tools.
  *
  * This is the gap the remote connector was built to close. The stdio server that
@@ -15,6 +24,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { McpAuthInfo } from '@/lib/oauth/tokens';
 import { reviewArtifact } from '../review-artifact';
 import { updateArtifact } from '../update-artifact';
+import { updateCriterionStatus } from '../update-criterion-status';
 
 /**
  * The gate resolves DB-configured permission overrides (lib/permissions-server),
@@ -136,5 +146,110 @@ describe('update-artifact', () => {
         expect(result).toEqual({
             error: 'You do not have permission to edit artifact content.',
         });
+    });
+});
+
+/**
+ * update-criterion-status is gated one level down: scoreEpicCriterion owns the
+ * capability check and returns a `forbidden` outcome rather than throwing. What
+ * matters here is that the tool surfaces that reason instead of flattening it
+ * into a generic failure, because the registrar turns a throw into "Internal
+ * server error" and the caller learns nothing.
+ *
+ * OTHER, not ENG: ENG may score criteria by default, so using it would prove
+ * nothing.
+ */
+describe('update-criterion-status', () => {
+    const args = {
+        epicId: '11111111-1111-4111-8111-111111111111',
+        statusRowId: '22222222-2222-4222-8222-222222222222',
+        status: 'GO',
+    };
+
+    /** Dispatches by table so the app_user lookup and the row read differ. */
+    function clientFor(appUserRoles: string[] | null) {
+        const seen: string[] = [];
+        const client = {
+            from: (table: string) => {
+                seen.push(table);
+                if (table === 'app_user') {
+                    return {
+                        select: () => ({
+                            eq: () => ({
+                                maybeSingle: async () => ({
+                                    data: appUserRoles
+                                        ? {
+                                              id: '33333333-3333-4333-8333-333333333333',
+                                              email: 'someone@clearcompany.com',
+                                              roles: appUserRoles,
+                                          }
+                                        : null,
+                                    error: null,
+                                }),
+                            }),
+                        }),
+                    };
+                }
+                return {
+                    select: () => ({
+                        eq: () => ({
+                            eq: () => ({
+                                maybeSingle: async () => ({ data: null, error: null }),
+                            }),
+                        }),
+                    }),
+                };
+            },
+        } as unknown as SupabaseClient;
+        return { client, seen };
+    }
+
+    it('surfaces the refusal reason for a role that cannot score criteria', async () => {
+        const { client, seen } = clientFor(['OTHER']);
+
+        const result = await updateCriterionStatus(client, args, actor(['OTHER']));
+
+        expect(result).toEqual({ error: 'You do not have permission to score criteria.' });
+        // Refused before reading the criterion row.
+        expect(seen).not.toContain('epic_criterion_status');
+    });
+
+    it('refuses when the caller has no ClearGO profile to attribute the change to', async () => {
+        // last_updated_by and audit_log.actor_id are uuid FKs to app_user, so
+        // there is no safe way to record an unattributable write.
+        const { client } = clientFor(null);
+
+        const result = await updateCriterionStatus(client, args, actor(['PM']));
+
+        expect(result).toMatchObject({
+            error: expect.stringContaining('No ClearGO user profile found'),
+        });
+    });
+
+    it('reads roles from the database, not from the access token', async () => {
+        // The token is an hour long; a role change should not have to wait it
+        // out. Token says PM, the profile says OTHER, and the profile wins.
+        const { client } = clientFor(['OTHER']);
+
+        const result = await updateCriterionStatus(client, args, actor(['PM']));
+
+        expect(result).toEqual({ error: 'You do not have permission to score criteria.' });
+    });
+
+    it('lets a permitted role through to the criterion lookup', async () => {
+        const { client, seen } = clientFor(['PM']);
+
+        await updateCriterionStatus(client, args, actor(['PM']));
+
+        expect(seen).toContain('epic_criterion_status');
+    });
+
+    it('rejects a call that would change nothing', async () => {
+        const { client, seen } = clientFor(['PM']);
+
+        const result = await updateCriterionStatus(client, { ...args, status: undefined }, actor(['PM']));
+
+        expect(result).toMatchObject({ error: expect.stringContaining('Nothing to update') });
+        expect(seen).toHaveLength(0);
     });
 });
