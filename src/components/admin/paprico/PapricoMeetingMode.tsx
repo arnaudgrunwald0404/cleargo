@@ -106,7 +106,7 @@ export default function PapricoMeetingMode({ meetingId }: { meetingId: string })
         return (
             <div className="max-w-2xl mx-auto py-16 text-center">
                 <Text c="red">{error ?? "Failed to load"}</Text>
-                <Button component={Link} href="/admin/settings/paprico" variant="light" mt="md">
+                <Button component={Link} href="/paprico" variant="light" mt="md">
                     Back to PaPriCo
                 </Button>
             </div>
@@ -129,7 +129,7 @@ export default function PapricoMeetingMode({ meetingId }: { meetingId: string })
                         <Kbd>j</Kbd>/<Kbd>k</Kbd> or arrows to move, <Kbd>d</Kbd> to record a decision
                     </Text>
                 </div>
-                <Button component={Link} href="/admin/settings/paprico" variant="subtle">
+                <Button component={Link} href="/paprico" variant="subtle">
                     Exit meeting mode
                 </Button>
             </Group>

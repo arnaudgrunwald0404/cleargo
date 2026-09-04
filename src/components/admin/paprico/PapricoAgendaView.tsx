@@ -480,7 +480,7 @@ export default function PapricoAgendaView() {
                             <>
                                 <Button
                                     component={Link}
-                                    href={`/admin/settings/paprico/meeting/${meeting.id}`}
+                                    href={`/paprico/meeting/${meeting.id}`}
                                     variant="filled"
                                     color="indigo"
                                 >
